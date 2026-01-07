@@ -3,8 +3,6 @@ import { motion } from "framer-motion";
 import {
   Brain,
   Gauge,
-  HelpCircle,
-  BookOpen,
   PieChart,
   LogOut,
   Moon,
@@ -15,7 +13,6 @@ import {
   TrendingUp,
   StickyNote
 } from "lucide-react";
-import { AgentWorkflowVisualizer } from "./AgentWorkflowVisualizer";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "./ThemeProvider";
 import { Button } from "@/components/ui/Button";
@@ -25,8 +22,6 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
 const navigationItems = [
   { href: "/chat", icon: MessageSquare, label: "AI Chat" },
   { href: "/dashboard", icon: Gauge, label: "Strategist's Desk" },
-  { href: "/scenarios", icon: HelpCircle, label: "What-If Scenarios" },
-  { href: "/financial-story", icon: BookOpen, label: "Financial Story" },
   { href: "/portfolio", icon: PieChart, label: "Investment Portfolio" },
   { href: "/all-insights", icon: ListChecks, label: "All Insights" },
   { href: "/blogs", icon: FileText, label: "Blogs" },
@@ -54,25 +49,27 @@ export function Sidebar() {
     >
       {/* Logo and Brand */}
       <div className="p-6 border-b border-border">
-        <motion.div
-          className="flex items-center space-x-3"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          data-testid="brand-logo"
-        >
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <Brain className="w-4 h-4 text-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold">Personal Finance</h1>
-            <p className="text-xs text-muted-foreground">
-              AI Financial Strategist
-            </p>
-          </div>
-        </motion.div>
+        <Link href="/dashboard">
+          <motion.div
+            className="flex items-center space-x-3 cursor-pointer"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            data-testid="brand-logo"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <Brain className="w-4 h-4 text-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold">Personal Finance</h1>
+              <p className="text-xs text-muted-foreground">
+                AI Financial Strategist
+              </p>
+            </div>
+          </motion.div>
+        </Link>
       </div>
-
-      <AgentWorkflowVisualizer />
 
       {/* Navigation Menu */}
       <nav className="flex-1 p-6 space-y-2" data-testid="navigation">

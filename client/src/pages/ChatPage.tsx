@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "wouter";
-import { Menu, X, LayoutDashboard, Brain } from "lucide-react";
+import { Menu, X, Brain, Gauge, BookOpen, FileText, TrendingUp } from "lucide-react";
 import { ChatContainer, ChatHistorySidebar } from "@/features/chat";
 import { useChatStore } from "@/stores/chatStore";
 import { Button } from "@/components/ui/Button";
@@ -36,7 +36,7 @@ export default function ChatPage() {
           </Button>
           
           {/* Logo */}
-          <Link href="/chat">
+          <Link href="/dashboard">
             <div className="flex items-center gap-2 cursor-pointer">
               <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                 <Brain className="w-4 h-4 text-primary-foreground" />
@@ -47,13 +47,36 @@ export default function ChatPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Dashboard Link */}
-          <Link href="/dashboard">
-            <Button variant="outline" size="sm" className="flex items-center gap-2">
-              <LayoutDashboard className="w-4 h-4" />
-              <span className="hidden sm:inline">Dashboard</span>
-            </Button>
-          </Link>
+          {/* Navigation Links */}
+          <div className="flex items-center gap-2 mr-2">
+            <Link href="/dashboard">
+              <Button variant="ghost" size="sm" className="flex items-center gap-2 bg-transparent hover:bg-accent">
+                <Gauge className="w-4 h-4" />
+                <span className="hidden lg:inline">Dashboard</span>
+              </Button>
+            </Link>
+            
+            <Link href="/financial-story">
+              <Button variant="ghost" size="sm" className="flex items-center gap-2 bg-transparent hover:bg-accent">
+                <BookOpen className="w-4 h-4" /> 
+                <span className="hidden lg:inline">Story</span>
+              </Button>
+            </Link>
+
+            <Link href="/blogs">
+              <Button variant="ghost" size="sm" className="flex items-center gap-2 bg-transparent hover:bg-accent">
+                <FileText className="w-4 h-4" />
+                <span className="hidden lg:inline">Blogs</span>
+              </Button>
+            </Link>
+
+            <Link href="/growth-stories">
+              <Button variant="ghost" size="sm" className="flex items-center gap-2 bg-transparent hover:bg-accent">
+                <TrendingUp className="w-4 h-4" />
+                <span className="hidden lg:inline">Learning</span>
+              </Button>
+            </Link>
+          </div>
 
           {/* Theme Toggle */}
           <Button variant="ghost" size="sm" onClick={toggleTheme}>

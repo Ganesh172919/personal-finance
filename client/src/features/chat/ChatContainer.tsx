@@ -17,7 +17,8 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
     isSending,
     selectSession,
     createSession,
-    sendMessage
+    sendMessage,
+    clearCurrentSession
   } = useChatStore();
 
   // Load session if sessionId is provided
@@ -40,6 +41,7 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
   };
 
   const handleSuggestionSelect = (suggestion: string) => {
+    clearCurrentSession();
     handleSendMessage(suggestion);
   };
 

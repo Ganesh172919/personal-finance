@@ -5,12 +5,11 @@ import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useAuth } from "@/hooks/useAuth";
-import { ThemeProvider, useTheme } from "@/components/ThemeProvider";
+import { useTheme } from "@/components/ThemeProvider";
 import { AICommandBar } from "@/components/AiCommandBar";
 import { FinancialVitals } from "@/components/FinancialVitals";
 import { ActionableInsights } from "@/components/ActionableInsights";
-import { ScenarioWidget } from "@/components/ScenarioWidget";
-import { GoalProgress } from "@/components/GoalProgress";
+
 import { InvestmentPortfolio } from "@/components/InvestmentPortfolio";
 import { SpendingAnalysis } from "@/components/SpendingAnalysis";
 
@@ -92,13 +91,8 @@ export default function Dashboard() {
         <FinancialVitals />
 
         {/* Main Dashboard Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="mt-8">
           <ActionableInsights />
-
-          <div className="space-y-8">
-            <ScenarioWidget />
-            <GoalProgress />
-          </div>
         </div>
 
         {/* Investment Portfolio & Spending Analysis */}

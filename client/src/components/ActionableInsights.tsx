@@ -44,17 +44,17 @@ export function ActionableInsights() {
   };
 
   // This handles the "Take Action" button
-  const handleAction = (e: React.MouseEvent, actionType: string | undefined, insightId: string) => {
+  const handleAction = (e: React.MouseEvent, actionType: string | undefined, _id?: string) => {
     e.stopPropagation(); // Stop the click from opening the modal
     if (!actionType) return;
 
     const actionRouteMap: Record<string, string> = {
       "invest": "/portfolio",
-      "review_budget": "/scenarios",
-      "start_learning": "/financial-story",
-      "optimize_spending": "/scenarios",
-      "manage_debt": "/scenarios",
-      "increase_savings": "/scenarios",
+      "review_budget": "/dashboard",
+      "start_learning": "/dashboard",
+      "optimize_spending": "/dashboard",
+      "manage_debt": "/dashboard",
+      "increase_savings": "/dashboard",
       "review": "/dashboard"
     };
     const route = actionRouteMap[actionType] || "/dashboard";
@@ -70,7 +70,7 @@ export function ActionableInsights() {
   };
 
   return (
-    <div className="lg:col-span-2">
+    <div className="w-full">
       <Card className="p-6">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold">AI-Generated Insights</h3>

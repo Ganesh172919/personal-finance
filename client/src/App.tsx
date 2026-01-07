@@ -10,8 +10,7 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import VerifyEmail from "@/pages/VerifyEmail";
 import Dashboard from "@/pages/Dashboard";
-import Scenarios from "@/pages/Scenarios";
-import FinancialStory from "@/pages/FinancialStory";
+
 import Portfolio from "@/pages/Portfolio";
 import AllInsights from "@/pages/AllInsights"; 
 import ChatPage from "@/pages/ChatPage";
@@ -61,8 +60,7 @@ function Router() {
 
       {/* Protected Routes - Dashboard Views */}
       <Route path="/dashboard"><ProtectedRoute><AppAuthenticatedLayout><Dashboard /></AppAuthenticatedLayout></ProtectedRoute></Route>
-      <Route path="/scenarios"><ProtectedRoute><AppAuthenticatedLayout><Scenarios /></AppAuthenticatedLayout></ProtectedRoute></Route>
-      <Route path="/financial-story"><ProtectedRoute><AppAuthenticatedLayout><FinancialStory /></AppAuthenticatedLayout></ProtectedRoute></Route>
+
       <Route path="/portfolio"><ProtectedRoute><AppAuthenticatedLayout><Portfolio /></AppAuthenticatedLayout></ProtectedRoute></Route>
       <Route path="/all-insights"><ProtectedRoute><AppAuthenticatedLayout><AllInsights /></AppAuthenticatedLayout></ProtectedRoute></Route>
 
