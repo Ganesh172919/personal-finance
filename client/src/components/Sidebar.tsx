@@ -11,8 +11,9 @@ import {
   MessageSquare,
   FileText,
   TrendingUp,
-  StickyNote
-} from "lucide-react";
+  StickyNote 
+} 
+from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "./ThemeProvider";
 import { Button } from "@/components/ui/Button";
