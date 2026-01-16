@@ -4,8 +4,6 @@ import { Card } from "../components/ui/Card";
 import { Progress } from "../components/ui/Progress";
 import { Button } from "../components/ui/Button";
 import { 
-  Trophy, 
-  Target, 
   Clock, 
   TrendingUp, 
   Star, 

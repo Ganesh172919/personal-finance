@@ -1,3 +1,5 @@
+/* stylelint-disable at-rule-no-unknown */
+
 /* Import Google Fonts for a modern look */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 
@@ -82,15 +84,8 @@
   --sidebar-ring: hsl(158 64% 52%);
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
 
-  body {
-    @apply font-sans antialiased bg-background text-foreground;
-  }
-}
+
 
 /* Custom utility classes and animations */
 @layer utilities {
