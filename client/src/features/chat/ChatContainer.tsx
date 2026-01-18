@@ -56,7 +56,7 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
       {/* Chat Header - simplified without New Chat button */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold">Personal Finance AI Assistant</h1>
+          <h1 className="text-lg font-semibold text-foreground">Personal Finance AI Assistant</h1>
         </div>
         <p className="text-xs text-muted-foreground">
           Your intelligent financial co-pilot

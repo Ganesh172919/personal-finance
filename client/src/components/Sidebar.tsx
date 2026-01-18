@@ -63,7 +63,7 @@ export function Sidebar() {
               <Brain className="w-4 h-4 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold">Personal Finance</h1>
+              <h1 className="text-lg font-semibold text-foreground">Personal Finance</h1>
               <p className="text-xs text-muted-foreground">
                 AI Financial Strategist
               </p>
@@ -89,7 +89,7 @@ export function Sidebar() {
                   className={`flex items-center space-x-3 p-3 rounded-lg transition-colors cursor-pointer ${
                     isActive
                       ? "bg-primary text-primary-foreground"
-                      : "hover:bg-accent"
+                      : "text-foreground hover:bg-accent hover:text-accent-foreground"
                   }`}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
@@ -134,7 +134,7 @@ export function Sidebar() {
             </AvatarFallback>
           </Avatar>
           <div className="flex-1">
-            <div className="font-medium text-sm">{user?.name || "User"}</div>
+            <div className="font-medium text-sm text-foreground">{user?.name || "User"}</div>
             <div className="text-xs text-muted-foreground">Premium Member</div>
           </div>
           <Button

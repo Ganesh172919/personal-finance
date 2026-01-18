@@ -36,7 +36,7 @@ export function GoalProgress() {
   if (goals.length === 0) {
     return (
       <Card className="p-6" data-testid="goal-progress">
-        <h3 className="text-lg font-semibold mb-6">Goal Progress</h3>
+        <h3 className="text-lg font-semibold text-foreground mb-6">Goal Progress</h3>
         <div className="text-center py-8 text-muted-foreground">
           No goals set yet. Start by adding your financial goals!
         </div>
@@ -62,7 +62,7 @@ export function GoalProgress() {
               data-testid={`goal-${goal.name.toLowerCase().replace(/\s/g, "-")}`}
             >
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium">{goal.name}</span>
+                <span className="text-sm font-medium text-foreground">{goal.name}</span>
                 <span className="text-sm text-muted-foreground">
                   ₹{goal.current.toLocaleString()} / ₹
                   {goal.target.toLocaleString()}

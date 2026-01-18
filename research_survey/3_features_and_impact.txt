@@ -1,0 +1,39 @@
+SURVEY PART 3: FEATURES, CAPABILITIES, AND USER JOURNEY
+
+1. User Journey and Workflow
+ The application provides a complete flow from onboarding to advanced planning:
+ - Step 1: User Onboarding (Secure account creation).
+ - Step 2: Data Ingestion (Real-time processing of income, expense, and debt data).
+ - Step 3: AI Analysis (The "AgentWorkflowVisualizer" shows the AI "thinking" in real-time).
+ - Step 4: Strategic Output (User receives a comprehensive financial plan).
+
+2. Specialized Agent Ecosystem (The "Brain")
+ The system is not a single model, but a team of specialized agents:
+ - MasterFinancialStrategistAgent: The "boss" agent. Decomposes queries, delegates tasks, and synthesizes the final report.
+ - IncomeExpenseAnalyzerAgent: Deep-dives into transaction history to find spending patterns.
+ - BudgetPlannerAgent: Constructs optimized budgets (e.g., applying the 50/30/20 rule).
+ - InvestmentAdvisorAgent: Recommends asset allocation based on the user's calculated risk tolerance.
+ - DebtOptimizerAgent: Strategies debt repayment (e.g., Snowball vs. Avalanche methods).
+ - FinancialEducatorAgent: Translates complex financial jargon into clear concepts.
+
+3. Detailed Feature Set
+ - "Strategist's Desk" Dashboard: A live view of financial vitals (Cash Flow, Savings Rate, Goal Progress).
+ - Interactive Insight Cards: AI-generated suggestions that are "clickable," opening detailed markdown-rendered reports (e.g., "🎯 YOUR COMPREHENSIVE FINANCIAL PLAN").
+ - Natural Language Command Bar: Allows users to "chat" with their finances naturally.
+ - What-If Scenarios: A simulation engine to test major decisions (buying a car, salary changes) before they happen.
+ - AgentWorkflowVisualizer: A sidebar widget that brings transparency to the AI, showing the network diagram as agents activate.
+ - History & Tracking: Dedicated pages to review past advice and track long-term goal progress.
+
+4. Security and Data Integrity
+ - Authentication: Industry-standard security using `Passport.js`.
+ - Transport Security: JWTs are handled strictly via `httpOnly` cookies, ensuring tokens are never exposed to client-side JavaScript.
+ - Data Privacy: The Backend acts as a firewall, ensuring only necessary, sanitized data reaches the AI service.
+
+5. The Science Behind: Why Agents Over Chatbots?
+ Recent research highlights that "Agentic Workflows" significantly outperform standard LLMs in high-stakes domains like finance.
+ - Reasoning vs. Prediction: Agents break down problems ("Decomposition"), allowing for precise calculation rather than probabilistic guessing.
+ - Reduced Hallucination: By isolating contexts (e.g., the Budget Agent only sees budget data), the risk of the AI "inventing" numbers is drastically reduced.
+ - Decision Support: "Collaborative Verification" (agents checking each other's work) mimics a human financial committee, providing more balanced and robust advice than a single model could.
+
+6. Significance
+ This platform demonstrates that high-level financial planning can be democratized through AI. By offering transparency (Visualizer), depth (Specialized Agents), and security (Tiered Architecture), it bridges the gap between simple trackers and human financial advisors.

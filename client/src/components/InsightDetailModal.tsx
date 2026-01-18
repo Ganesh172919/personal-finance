@@ -18,12 +18,12 @@ import { useLocation } from "wouter";
 
 // Re-using the markdown styles from AICommandBar for consistency
 const markdownComponents = {
-  h1: ({children}: any) => <h1 className="text-xl font-bold mb-3 mt-4">{children}</h1>,
-  h2: ({children}: any) => <h2 className="text-lg font-semibold mb-2 mt-3">{children}</h2>,
-  p: ({children}: any) => <p className="leading-relaxed mb-3">{children}</p>,
+  h1: ({children}: any) => <h1 className="text-xl font-bold text-foreground mb-3 mt-4">{children}</h1>,
+  h2: ({children}: any) => <h2 className="text-lg font-semibold text-foreground mb-2 mt-3">{children}</h2>,
+  p: ({children}: any) => <p className="leading-relaxed text-foreground mb-3">{children}</p>,
   ul: ({children}: any) => <ul className="list-disc list-inside space-y-1 my-3 ml-4">{children}</ul>,
   ol: ({children}: any) => <ol className="list-decimal list-inside space-y-1 my-3 ml-4">{children}</ol>,
-  li: ({children}: any) => <li className="leading-relaxed">{children}</li>,
+  li: ({children}: any) => <li className="leading-relaxed text-foreground">{children}</li>,
   blockquote: ({children}: any) => <blockquote className="border-l-4 border-primary/30 pl-4 py-2 my-3 text-muted-foreground italic">{children}</blockquote>,
   code: ({inline, children}: any) => inline ? <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">{children}</code> : <code className="block bg-muted p-3 rounded text-xs font-mono overflow-x-auto my-3">{children}</code>,
   pre: ({children}: any) => <pre className="bg-muted p-3 rounded overflow-x-auto my-3">{children}</pre>,

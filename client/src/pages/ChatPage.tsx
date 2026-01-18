@@ -41,7 +41,7 @@ export default function ChatPage() {
               <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                 <Brain className="w-4 h-4 text-primary-foreground" />
               </div>
-              <span className="font-semibold hidden sm:inline">Personal Finance</span>
+              <span className="font-semibold text-foreground hidden sm:inline">Personal Finance</span>
             </div>
           </Link>
         </div>

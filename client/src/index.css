@@ -51,23 +51,23 @@
 /* Define CSS variables for dark mode - pure black background */
 .dark {
   --background: hsl(0 0% 0%);
-  --foreground: hsl(210 40% 98%);
+  --foreground: hsl(0 0% 100%);
   --card: hsl(0 0% 5%);
-  --card-foreground: hsl(210 40% 98%);
+  --card-foreground: hsl(0 0% 100%);
   --popover: hsl(0 0% 5%);
-  --popover-foreground: hsl(210 40% 98%);
+  --popover-foreground: hsl(0 0% 100%);
   --primary: hsl(158 64% 52%);
   --primary-foreground: hsl(0 0% 0%);
   --secondary: hsl(0 0% 12%);
-  --secondary-foreground: hsl(210 40% 98%);
+  --secondary-foreground: hsl(0 0% 100%);
   --muted: hsl(0 0% 12%);
-  --muted-foreground: hsl(0 0% 65%);
-  --accent: hsl(0 0% 12%);
-  --accent-foreground: hsl(210 40% 98%);
+  --muted-foreground: hsl(0 0% 75%);
+  --accent: hsl(0 0% 15%);
+  --accent-foreground: hsl(0 0% 100%);
   --destructive: hsl(0 62% 30%);
-  --destructive-foreground: hsl(210 40% 98%);
-  --border: hsl(0 0% 18%);
-  --input: hsl(0 0% 12%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(0 0% 20%);
+  --input: hsl(0 0% 15%);
   --ring: hsl(158 64% 52%);
   --chart-1: hsl(158 64% 52%);
   --chart-2: hsl(221 83% 53%);
@@ -75,12 +75,12 @@
   --chart-4: hsl(0 84% 60%);
   --chart-5: hsl(271 81% 56%);
   --sidebar: hsl(0 0% 3%);
-  --sidebar-foreground: hsl(210 40% 98%);
+  --sidebar-foreground: hsl(0 0% 100%);
   --sidebar-primary: hsl(158 64% 52%);
   --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(0 0% 12%);
-  --sidebar-accent-foreground: hsl(210 40% 98%);
-  --sidebar-border: hsl(0 0% 18%);
+  --sidebar-accent: hsl(0 0% 15%);
+  --sidebar-accent-foreground: hsl(0 0% 100%);
+  --sidebar-border: hsl(0 0% 20%);
   --sidebar-ring: hsl(158 64% 52%);
 }
 

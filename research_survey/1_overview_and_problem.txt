@@ -1,0 +1,26 @@
+SURVEY PART 1: PROJECT OVERVIEW AND PROBLEM DOMAIN
+
+1. Introduction
+The "Personal Finance Management Platform" is a comprehensive mini-project designed to function as an intelligent "financial co-pilot." It represents a shift from passive tracking to active strategy optimization.
+- Project Type: Web Application with AI Microservice
+- Core Identity: Smart, Actionable, Personalized.
+
+2. Problem Statement: The Limitations of Traditional Apps
+The project addresses key deficiencies in the current market of personal finance applications:
+- Passive Tracking: Most apps merely record transactions without offering insight.
+- Data Overload: Users are presented with raw data but left to interpret it themselves.
+- Lack of Synthesis: Apps cannot combine data from debt, income, and savings to answer holistic questions.
+- Inability to Plan: Users cannot ask forward-looking questions like, "Based on my current spending and savings, can I afford a ₹50,000 vacation in 6 months?"
+
+3. Proposed Solution: The Multi-Agent Approach
+To solve these problems, the platform moves beyond standard chatbots or monolithic AI models.
+- "Master Strategist" Architecture: The system employs a team of specialized agents coordinated by a lead agent.
+- Decomposition of Problems: Complex financial inquiries are broken down. A question about a vacation isn't just a "yes/no"—it involves the Budget Agent (can I save?), the Debt Agent (should I pay off debt first?), and the Master Agent (synthesizing the advice).
+- Human-Centric Design: The goal is to provide a "cohesive and actionable plan," not just a chart.
+
+4. Project Team
+The project is developed by a team of four:
+- M. Jagadeeswar Reddy (23BDS033)
+- J. Ganesh Kumar Reddy (23BDS024)
+- B. Varshith (23BDS011)
+- Hari (23BEC021)

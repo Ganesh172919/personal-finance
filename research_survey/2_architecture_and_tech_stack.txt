@@ -1,0 +1,50 @@
+SURVEY PART 2: TECHNICAL ARCHITECTURE AND TECHNOLOGY STACK
+
+1. High-Level Architecture
+The platform utilizes a "Modular 3-Tier Architecture" designed for security, scalability, and clean separation of concerns.
+
+A. Frontend (Client Layer)
+- URL: http://localhost:5173
+- Core Framework: React + TypeScript (via Vite).
+- UI/UX Ecosystem:
+  - Styling: Tailwind CSS (Utility-first styling).
+  - Components: shadcn/ui (Premium, accessible component library).
+  - Animations: Framer Motion (Smooth layout transitions).
+  - Routing: Use of `wouter` for a lightweight, hook-based routing solution.
+- State Management: 
+  - Server State: React Query (TanStack Query) for caching and data fetching.
+  - Client State: React Context for Authentication (`useAuth`).
+
+B. Backend (Server Layer)
+- URL: http://localhost:3000
+- Runtime: Node.js + Express.
+- Role: Secure Gateway and Orchestrator.
+- Database: MongoDB + Mongoose.
+  - Documents include `userModel`, `financialProfileModel` (complex nested structures), and `agentOutputModel`.
+- Security Implementation:
+  - Authentication: Passport.js with JWT Strategy.
+  - Token Storage: httpOnly cookies (prevents client-side access/XSS).
+- Data Flow: Validates user input -> Constructs sanitized `user_profile` -> Requests AI analysis.
+
+C. AI Core (Microservice Layer)
+- URL: http://localhost:8001
+- Runtime: Python (3.10+).
+- API Framework: FastAPI (Asynchronous, high-performance).
+- Workflow Engine: LangGraph (by LangChain).
+  - Defines a "stateful workflow graph" (`workflow.py`).
+  - Routes queries to specific agents based on semantic intent.
+- Model Provider: Google Gemini.
+
+2. System Communication Flow
+1. User Interaction: User asks a question in the React Client.
+2. API Call: Client sends request to Node.js Backend (`/api/agent-outputs/user/:id`).
+3. Verification: Backend verifies JWT, retrieves User & Financial Profile from MongoDB.
+4. AI Request: Backend forwards anonymized profile + query to FastAPI AI Core.
+5. AI Processing: LangGraph routes the query through the agent network.
+6. Response: AI returns a structured JSON plan + metadata.
+7. Storage & Display: Node.js saves the result; Client renders it as an interactive card.
+
+3. Project Structure
+The repository is divided into two distinct roots:
+- `client/`: Contains all frontend logic, components, features, and services.
+- `server/`: Houses both the Node.js backend (`src/`) and the detailed Python AI Core (`AI_Core/`).

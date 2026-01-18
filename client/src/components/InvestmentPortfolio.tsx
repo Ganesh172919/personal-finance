@@ -41,7 +41,7 @@ export function InvestmentPortfolio() {
   return (
     <Card className="p-6" data-testid="investment-portfolio">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold">Investment Portfolio</h3>
+        <h3 className="text-lg font-semibold text-foreground">Investment Portfolio</h3>
         <Button
           variant="ghost"
           className="text-primary hover:text-primary/80 text-sm font-medium"
@@ -95,7 +95,7 @@ export function InvestmentPortfolio() {
                   className="w-3 h-3 rounded-full"
                   style={{ backgroundColor: allocation.color }}
                 />
-                <span className="text-sm">
+                <span className="text-sm text-foreground">
                   {allocation.name} ({allocation.percentage}%)
                 </span>
               </div>
@@ -123,7 +123,7 @@ export function InvestmentPortfolio() {
                 .replace(/\s/g, "-")}`}
             >
               <div>
-                <div className="font-medium text-sm">{holding.name}</div>
+                <div className="font-medium text-sm text-foreground">{holding.name}</div>
                 <div className="text-xs text-muted-foreground">
                   {holding.category} • ₹{holding.value.toLocaleString()}
                 </div>

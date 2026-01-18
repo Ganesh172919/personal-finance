@@ -57,7 +57,7 @@ export default function Dashboard() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <h2 className="text-2xl font-semibold">
+            <h2 className="text-2xl font-semibold text-foreground">
               {getGreeting()}, {user?.name?.split(" ")[0] || "User"}
             </h2>
             <p className="text-muted-foreground">
@@ -111,7 +111,7 @@ export default function Dashboard() {
         >
           <Card className="p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold">Continue Learning</h3>
+              <h3 className="text-lg font-semibold text-foreground">Continue Learning</h3>
               <Button
                 variant="ghost"
                 className="text-primary hover:text-primary/80 text-sm font-medium"

@@ -22,7 +22,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import {
   TrendingUp,
-  TrendingDown,
   Plus,
   MoreHorizontal,
   Target,
@@ -45,7 +44,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/useToast";
 import { apiClient } from "@/lib/apiClient";
 import { queryClient } from "@/lib/queryClient";
-import { IFinancialProfile, ITransaction, IAgentOutput } from "@/types";
+import { IFinancialProfile, IAgentOutput } from "@/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -254,7 +253,7 @@ export default function Portfolio() {
       >
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold mb-2">Investment Portfolio</h1>
+            <h1 className="text-3xl font-bold text-foreground mb-2">Investment Portfolio</h1>
             <p className="text-muted-foreground">
               Monitor and optimize your investment strategy
             </p>
@@ -403,7 +402,7 @@ export default function Portfolio() {
           <TabsContent value="overview" className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="p-6">
-                <h3 className="text-lg font-semibold mb-6">Asset Allocation</h3>
+                <h3 className="text-lg font-semibold text-foreground mb-6">Asset Allocation</h3>
                 <div className="h-64 flex items-center justify-center">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -434,7 +433,7 @@ export default function Portfolio() {
                         style={{ backgroundColor: item.color }}
                       />
                       <div className="text-sm">
-                        <span className="font-medium">{item.name}</span>
+                        <span className="font-medium text-foreground">{item.name}</span>
                         <span className="text-muted-foreground ml-1">
                           ({item.value.toFixed(1)}%)
                         </span>
@@ -446,7 +445,7 @@ export default function Portfolio() {
 
               {/* Performance Chart  */}
               <Card className="p-6">
-                <h3 className="text-lg font-semibold mb-6">
+                <h3 className="text-lg font-semibold text-foreground mb-6">
                   Portfolio Performance
                 </h3>
                 <div className="h-64">
@@ -475,7 +474,7 @@ export default function Portfolio() {
           {/* Holdings Tab  */}
           <TabsContent value="holdings" className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Your Holdings</h3>
+              <h3 className="text-lg font-semibold text-foreground">Your Holdings</h3>
               {/* Button is in the DialogTrigger at the top */}
             </div>
             <div className="space-y-3">
@@ -491,7 +490,7 @@ export default function Portfolio() {
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center justify-between mb-2">
-                          <h4 className="font-semibold">{holding.name}</h4>
+                          <h4 className="font-semibold text-foreground">{holding.name}</h4>
                           <Button variant="ghost" size="sm">
                             <MoreHorizontal className="w-4 h-4" />
                           </Button>
@@ -501,7 +500,7 @@ export default function Portfolio() {
                             <div className="text-sm text-muted-foreground">
                               {holding.type}
                             </div>
-                            <div className="font-medium">
+                            <div className="font-medium text-foreground">
                               {formatCurrency(holding.amount)}
                             </div>
                           </div>
@@ -525,7 +524,7 @@ export default function Portfolio() {
 
           <TabsContent value="performance">
             <Card className="p-6">
-              <h3 className="text-lg font-semibold mb-6">
+              <h3 className="text-lg font-semibold text-foreground mb-6">
                 Performance Analytics
               </h3>
               <div className="h-96">
@@ -553,7 +552,7 @@ export default function Portfolio() {
           {/* AI Analysis Tab  */}
           <TabsContent value="analysis">
             <Card className="p-6">
-              <h3 className="text-lg font-semibold mb-6 flex items-center">
+              <h3 className="text-lg font-semibold text-foreground mb-6 flex items-center">
                 <Wand2 className="w-5 h-5 mr-2 text-primary" />
                 AI Portfolio Analysis
               </h3>
@@ -565,7 +564,7 @@ export default function Portfolio() {
                 <div className="space-y-4">
                   {investmentInsights.map((insight) => (
                     <div key={insight.id} className="bg-accent rounded-lg p-4">
-                      <h4 className="font-medium mb-2">{insight.outputData.title}</h4>
+                      <h4 className="font-medium text-foreground mb-2">{insight.outputData.title}</h4>
                       <div className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {insight.outputData.response || insight.outputData.description}

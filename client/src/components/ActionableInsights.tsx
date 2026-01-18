@@ -73,7 +73,7 @@ export function ActionableInsights() {
     <div className="w-full">
       <Card className="p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold">AI-Generated Insights</h3>
+          <h3 className="text-lg font-semibold text-foreground">AI-Generated Insights</h3>
           <Button
             variant="ghost"
             className="text-primary hover:text-primary/80 text-sm font-medium"
@@ -118,7 +118,7 @@ export function ActionableInsights() {
                       <Icon className="w-4 h-4 text-white" />
                     </div>
                     <div className="flex-1">
-                      <div className="font-medium text-sm mb-1">
+                      <div className="font-medium text-sm text-foreground mb-1">
                         {insight.outputData?.title || "Financial Insight"}
                       </div>
                       <div className="text-sm text-muted-foreground mb-3">

@@ -89,7 +89,7 @@ export function SpendingAnalysis() {
   return (
     <Card className="p-6" data-testid="spending-analysis">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold">Spending Analysis</h3>
+        <h3 className="text-lg font-semibold text-foreground">Spending Analysis</h3>
         <Select defaultValue="this-month">
           <SelectTrigger className="w-32">
             <SelectValue />
@@ -107,7 +107,7 @@ export function SpendingAnalysis() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <motion.div
-              className="text-2xl font-bold"
+              className="text-2xl font-bold text-foreground"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3 }}
@@ -153,7 +153,7 @@ export function SpendingAnalysis() {
                 />
               </div>
               <div>
-                <div className="font-medium text-sm">{category.name}</div>
+                <div className="font-medium text-sm text-foreground">{category.name}</div>
                 <div className="text-xs text-muted-foreground">
                   ₹{category.amount.toLocaleString()} • {category.percentage}%
                 </div>

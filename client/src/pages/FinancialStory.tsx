@@ -99,7 +99,7 @@ export default function FinancialStory() {
         className="max-w-4xl mx-auto"
       >
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Your Financial Story</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Your Financial Story</h1>
           <p className="text-muted-foreground">
             Track your journey towards financial freedom with personalized
             milestones
@@ -109,7 +109,7 @@ export default function FinancialStory() {
         {/* Overall Progress -  Dynamic */}
         <Card className="p-6 mb-8">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold">Overall Financial Health</h3>
+            <h3 className="text-lg font-semibold text-foreground">Overall Financial Health</h3>
             <div className="text-2xl font-bold text-primary">{healthPercentage}%</div>
           </div>
 
@@ -154,7 +154,7 @@ export default function FinancialStory() {
               >
                 <Card className="p-6 hover:shadow-lg transition-shadow">
                   <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-semibold">{goal.name}</h4>
+                    <h4 className="font-semibold text-foreground">{goal.name}</h4>
                     <div className="text-xs text-muted-foreground flex items-center">
                       <Clock className="w-3 h-3 mr-1" />
                       {daysToDeadline > 0
@@ -165,8 +165,8 @@ export default function FinancialStory() {
 
                   <div className="mb-4">
                     <div className="flex justify-between text-sm mb-2">
-                      <span>{formatCurrency(goal.current)}</span>
-                      <span>{formatCurrency(goal.target)}</span>
+                      <span className="text-foreground">{formatCurrency(goal.current)}</span>
+                      <span className="text-foreground">{formatCurrency(goal.target)}</span>
                     </div>
                     <Progress value={progress} className="h-3" />
                     <div className="text-xs text-muted-foreground mt-1">
@@ -175,7 +175,7 @@ export default function FinancialStory() {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="text-sm font-medium">Story Update:</div>
+                    <div className="text-sm font-medium text-foreground">Story Update:</div>
                     <div className="text-sm text-muted-foreground">
                       {progress > 80
                         ? "You're almost there! Keep up the great work."
@@ -202,7 +202,7 @@ export default function FinancialStory() {
 
         {/* Financial Milestones Timeline -Dynamic */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold mb-6">Financial Milestones</h3>
+          <h3 className="text-lg font-semibold text-foreground mb-6">Financial Milestones</h3>
           <div className="relative">
             <div className="absolute left-6 top-0 bottom-0 w-px bg-border"></div>
             <div className="space-y-6">

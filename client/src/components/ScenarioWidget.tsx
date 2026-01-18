@@ -40,7 +40,7 @@ export function ScenarioWidget() {
   return (
     <Card className="p-6" data-testid="scenario-widget">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold">Quick Scenario</h3>
+        <h3 className="text-lg font-semibold text-foreground">Quick Scenario</h3>
         <Button
           variant="ghost"
           className="text-primary hover:text-primary/80 text-sm font-medium"
@@ -94,7 +94,7 @@ export function ScenarioWidget() {
                 className="flex justify-between items-center p-3 bg-accent rounded-lg"
                 whileHover={{ scale: 1.02 }}
               >
-                <span className="text-sm">Remaining Budget</span>
+                <span className="text-sm text-foreground">Remaining Budget</span>
                 <span className="font-medium text-chart-3">
                   ₹{results.newBudget.toLocaleString()}
                 </span>
@@ -103,7 +103,7 @@ export function ScenarioWidget() {
                 className="flex justify-between items-center p-3 bg-accent rounded-lg"
                 whileHover={{ scale: 1.02 }}
               >
-                <span className="text-sm">Savings Impact</span>
+                <span className="text-sm text-foreground">Savings Impact</span>
                 <span className="font-medium text-chart-4">
                   ₹{results.savingsImpact.toLocaleString()}
                 </span>

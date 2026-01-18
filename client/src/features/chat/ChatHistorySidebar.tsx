@@ -155,8 +155,8 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                       exit={{ opacity: 0, x: -10 }}
                       className={`group flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
                         currentSessionId === session.id
-                          ? "bg-primary/10 border border-primary/20"
-                          : "hover:bg-accent"
+                          ? "bg-primary/10 border border-primary/20 text-foreground"
+                          : "text-foreground hover:bg-accent hover:text-accent-foreground"
                       }`}
                       onClick={() => handleSelectSession(session.id)}
                     >

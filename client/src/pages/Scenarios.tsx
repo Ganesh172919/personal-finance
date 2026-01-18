@@ -59,7 +59,7 @@ export default function Scenarios() {
         className="max-w-4xl mx-auto"
       >
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">What-If Scenarios</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">What-If Scenarios</h1>
           <p className="text-muted-foreground">
             Explore different financial scenarios and see their impact on your
             goals
@@ -69,7 +69,7 @@ export default function Scenarios() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Scenario Input */}
           <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-6 flex items-center">
+            <h3 className="text-lg font-semibold text-foreground mb-6 flex items-center">
               <Calculator className="w-5 h-5 mr-2 text-primary" />
               Scenario Builder
             </h3>
@@ -136,7 +136,7 @@ export default function Scenarios() {
 
           {/* Results */}
           <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-6">Impact Analysis</h3>
+            <h3 className="text-lg font-semibold text-foreground mb-6">Impact Analysis</h3>
 
             {scenarioMutation.isPending && (
               <motion.div
@@ -163,7 +163,7 @@ export default function Scenarios() {
                     <div className="text-sm text-muted-foreground mb-1">
                       Budget Impact
                     </div>
-                    <div className="text-xl font-bold">
+                    <div className="text-xl font-bold text-foreground">
                       ₹{results.newBudget?.toLocaleString() || "0"}
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -206,7 +206,7 @@ export default function Scenarios() {
                 {/* Suggested Adjustments */}
                 {results.adjustments && results.adjustments.length > 0 && (
                   <div>
-                    <h4 className="font-medium mb-3">Suggested Adjustments</h4>
+                    <h4 className="font-medium text-foreground mb-3">Suggested Adjustments</h4>
                     <div className="space-y-2">
                       {results.adjustments.map(
                         (adjustment: any, index: number) => (
@@ -217,7 +217,7 @@ export default function Scenarios() {
                             transition={{ delay: index * 0.1 }}
                             className="flex items-center justify-between p-3 bg-accent rounded-lg"
                           >
-                            <span className="text-sm">
+                            <span className="text-sm text-foreground">
                               {adjustment.category}
                             </span>
                             <span className="text-sm font-medium text-chart-4">
