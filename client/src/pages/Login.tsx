@@ -87,7 +87,7 @@ export default function Login() {
               <Brain className="w-8 h-8 text-primary-foreground" />
             </motion.div>
             <div>
-              <h1 className="text-4xl font-bold">Personal Finance</h1>
+              <h1 className="text-4xl font-bold text-foreground">Personal Finance</h1>
               <p className="text-lg text-muted-foreground">AI Financial Strategist</p>
             </div>
           </div>
@@ -101,7 +101,7 @@ export default function Login() {
                   <feature.icon className="w-5 h-5 text-accent-foreground" />
                 </div>
                 <div>
-                  <h3 className="font-medium text-sm">{feature.title}</h3>
+                  <h3 className="font-medium text-sm text-foreground">{feature.title}</h3>
                   <p className="text-xs text-muted-foreground">{feature.description}</p>
                 </div>
               </motion.div>

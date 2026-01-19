@@ -46,7 +46,7 @@ export function GoalProgress() {
 
   return (
     <Card className="p-6" data-testid="goal-progress">
-      <h3 className="text-lg font-semibold mb-6">Goal Progress</h3>
+      <h3 className="text-lg font-semibold mb-6 text-foreground">Goal Progress</h3>
 
       <div className="space-y-6">
         {goals.map((goal: IFinancialGoal, index: number) => {

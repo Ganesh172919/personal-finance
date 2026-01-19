@@ -12,6 +12,9 @@ import { ActionableInsights } from "@/components/ActionableInsights";
 
 import { InvestmentPortfolio } from "@/components/InvestmentPortfolio";
 import { SpendingAnalysis } from "@/components/SpendingAnalysis";
+import { GoalProgress } from "@/components/GoalProgress";
+import { QuickActions } from "@/components/QuickActions";
+import { RecentActivity } from "@/components/RecentActivity";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -49,9 +52,9 @@ export default function Dashboard() {
   ];
 
   return (
-    <main className="flex-1 flex flex-col" data-testid="dashboard">
+    <main className="flex-1 flex flex-col h-screen bg-background" data-testid="dashboard">
       {/* Header with AI Command Bar */}
-      <header className="bg-card border-b border-border p-6">
+      <header className="bg-card border-b border-border p-6 shadow-sm z-10 sticky top-0">
         <div className="flex items-center justify-between mb-4">
           <motion.div
             initial={{ opacity: 0, y: -10 }}
@@ -87,19 +90,31 @@ export default function Dashboard() {
       </header>
 
       {/* Dashboard Content */}
-      <div className="flex-1 p-6 overflow-auto">
+      <div className="flex-1 p-6 overflow-auto scroll-smooth">
+        <div className="max-w-7xl mx-auto space-y-8">
         <FinancialVitals />
 
-        {/* Main Dashboard Grid */}
-        <div className="mt-8">
-          <ActionableInsights />
-        </div>
+            {/* Main Layout Grid */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                
+                {/* Left Main Column */}
+                <div className="xl:col-span-2 space-y-8">
+                    <ActionableInsights />
+                </div>
 
-        {/* Investment Portfolio & Spending Analysis */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
-          <InvestmentPortfolio />
-          <SpendingAnalysis />
-        </div>
+                {/* Right Sidebar Column */}
+                <div className="space-y-8">
+                    <QuickActions />
+                    <GoalProgress />
+                    <RecentActivity />
+                </div>
+            </div>
+
+            {/* Full Width Section */}
+            <div className="space-y-8">
+                 <InvestmentPortfolio />
+                 <SpendingAnalysis />
+            </div>
 
         {/* Financial Education Section */}
         <motion.div
@@ -156,6 +171,7 @@ export default function Dashboard() {
             </div>
           </Card>
         </motion.div>
+        </div>
       </div>
     </main>
   );
