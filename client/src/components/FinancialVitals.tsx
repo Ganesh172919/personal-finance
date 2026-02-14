@@ -2,7 +2,6 @@ import { motion } from "framer-motion";
 import { Wallet, TrendingUp, PiggyBank, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/useAuth";
 import { IFinancialProfile } from "@/types";
 
 interface Metric {
@@ -15,12 +14,8 @@ interface Metric {
 }
 
 export function FinancialVitals() {
-  const { user } = useAuth();
-  const userId = user?.id || localStorage.getItem("userId");
-
   const { data: profile } = useQuery<IFinancialProfile>({
-    queryKey: [`/api/financial-profiles`, userId],
-    enabled: !!userId,
+    queryKey: ["/api/financial-profiles/me"],
   });
 
   // Calculate metrics from profile data

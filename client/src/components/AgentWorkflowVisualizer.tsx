@@ -1,166 +1,126 @@
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
-import {
-  Brain,
-  Crown,
-  Calculator,
-  TrendingUp,
-  PiggyBank,
-  GraduationCap,
-} from "lucide-react";
+import { Crown, Calculator, TrendingUp, PiggyBank, GraduationCap, BrainCircuit } from "lucide-react";
+import { IWorkflowTraceEntry } from "@/types";
 
-interface Agent {
-  id: string;
-  name: string;
-  icon: typeof Crown;
-  status: string;
-  color: string;
+interface AgentWorkflowVisualizerProps {
+  workflowTrace?: IWorkflowTraceEntry[];
+  agentsInvolved?: string[];
+  fallbackUsed?: boolean;
+  llmCallCount?: number;
 }
 
-export function AgentWorkflowVisualizer() {
-  const [agents, setAgents] = useState<Agent[]>([
-    {
-      id: "master",
-      name: "Master Strategist",
-      icon: Crown,
-      status: "Coordinating analysis...",
-      color: "hsl(158 64% 52%)",
-    },
-    {
-      id: "budget",
-      name: "Budget Planner",
-      icon: Calculator,
-      status: "Active",
-      color: "hsl(221 83% 53%)",
-    },
-    {
-      id: "investment",
-      name: "Investment Advisor",
-      icon: TrendingUp,
-      status: "Analyzing",
-      color: "hsl(46 95% 53%)",
-    },
-    {
-      id: "debt",
-      name: "Debt Optimizer",
-      icon: PiggyBank,
-      status: "Idle",
-      color: "hsl(0 84% 60%)",
-    },
-    {
-      id: "education",
-      name: "Financial Educator",
-      icon: GraduationCap,
-      status: "Ready",
-      color: "hsl(271 81% 56%)",
-    },
-  ]);
+type AgentVisualConfig = {
+  label: string;
+  icon: typeof Crown;
+  color: string;
+};
 
-  useEffect(() => {
-    const statuses = [
-      "Active",
-      "Analyzing",
-      "Idle",
-      "Ready",
-      "Processing",
-      "Complete",
-    ];
+const AGENT_VISUALS: Record<string, AgentVisualConfig> = {
+  master_agent: { label: "Master Strategist", icon: Crown, color: "hsl(158 64% 52%)" },
+  master_synthesis: { label: "Master Synthesis", icon: Crown, color: "hsl(158 64% 44%)" },
+  comprehensive_analysis: { label: "Comprehensive Orchestrator", icon: BrainCircuit, color: "hsl(201 96% 38%)" },
+  income_expense_analyzer: { label: "Income & Expense Analyzer", icon: Calculator, color: "hsl(221 83% 53%)" },
+  budget_planner: { label: "Budget Planner", icon: Calculator, color: "hsl(210 90% 56%)" },
+  investment_advisor: { label: "Investment Advisor", icon: TrendingUp, color: "hsl(46 95% 53%)" },
+  debt_optimizer: { label: "Debt Optimizer", icon: PiggyBank, color: "hsl(0 84% 60%)" },
+  financial_educator: { label: "Financial Educator", icon: GraduationCap, color: "hsl(134 61% 41%)" },
+  ai_core_client: { label: "AI Core Client", icon: BrainCircuit, color: "hsl(271 81% 56%)" },
+};
 
-    const interval = setInterval(() => {
-      setAgents((prev) =>
-        prev.map((agent) => {
-          if (agent.id === "master") return agent;
+const normalizeAgentKey = (agent: string) => {
+  const key = agent.toLowerCase().trim();
+  return key;
+};
 
-          if (Math.random() > 0.7) {
-            const randomStatus =
-              statuses[Math.floor(Math.random() * statuses.length)];
-            return { ...agent, status: randomStatus };
-          }
-          return agent;
-        })
-      );
-    }, 3000);
+const formatDuration = (entry: IWorkflowTraceEntry) => {
+  const started = new Date(entry.startedAt).getTime();
+  const ended = new Date(entry.endedAt).getTime();
 
-    return () => clearInterval(interval);
-  }, []);
+  if (Number.isNaN(started) || Number.isNaN(ended) || ended < started) {
+    return "-";
+  }
+
+  const duration = ended - started;
+  return `${duration}ms`;
+};
+
+const buildFallbackTrace = (agentsInvolved: string[] = []): IWorkflowTraceEntry[] => {
+  const timestamp = new Date().toISOString();
+  return agentsInvolved.map(agent => ({
+    agent,
+    startedAt: timestamp,
+    endedAt: timestamp,
+    status: "completed",
+  }));
+};
+
+export function AgentWorkflowVisualizer({
+  workflowTrace = [],
+  agentsInvolved = [],
+  fallbackUsed = false,
+  llmCallCount = 0,
+}: AgentWorkflowVisualizerProps) {
+  const trace = workflowTrace.length > 0 ? workflowTrace : buildFallbackTrace(agentsInvolved);
+
+  if (trace.length === 0) {
+    return (
+      <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+        Workflow trace not available for this response.
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6">
-      <h3 className="text-sm font-medium text-muted-foreground mb-4">
-        AI Agent Network
-      </h3>
-      <div className="space-y-4">
-        {/* Master Agent */}
-        <motion.div
-          className="bg-secondary rounded-lg p-4 relative"
-          animate={{
-            boxShadow: [
-              "0 0 5px hsl(158 64% 52% / 0.5)",
-              "0 0 20px hsl(158 64% 52% / 0.8)",
-              "0 0 5px hsl(158 64% 52% / 0.5)",
-            ],
-          }}
-          transition={{ duration: 2, repeat: Infinity }}
-          data-testid="agent-master"
-        >
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
-              <Crown className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <div>
-              <div className="font-medium text-sm">{agents[0].name}</div>
-              <div className="text-xs text-muted-foreground">
-                {agents[0].status}
-              </div>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Workflow Connection Lines */}
-        <div className="ml-4 space-y-3">
-          <motion.div
-            className="h-8 flex items-center relative overflow-hidden"
-            data-testid="workflow-connection"
-          >
-            <div className="w-full h-px bg-border"></div>
-            <motion.div
-              className="absolute top-1/2 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent"
-              initial={{ x: "-100%" }}
-              animate={{ x: "100%" }}
-              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-              style={{ transform: "translateY(-50%)" }}
-            />
-          </motion.div>
-
-          {/* Sub-agents */}
-          <div className="grid grid-cols-1 gap-3">
-            {agents.slice(1).map((agent, index) => (
-              <motion.div
-                key={agent.id}
-                className="bg-accent rounded-lg p-3"
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: index * 0.1 }}
-                data-testid={`agent-${agent.id}`}
-              >
-                <div className="flex items-center space-x-2">
-                  <div
-                    className="w-6 h-6 rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: agent.color }}
-                  >
-                    <agent.icon className="w-3 h-3 text-white" />
-                  </div>
-                  <div>
-                    <div className="font-medium text-xs">{agent.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {agent.status}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
+    <div className="rounded-md border border-border bg-card/60 p-3" data-testid="workflow-visualizer">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Agent Workflow Trace</h3>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span>LLM calls: {llmCallCount}</span>
+          <span>{fallbackUsed ? "Fallback used" : "Primary path"}</span>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        {trace.map((entry, index) => {
+          const agentKey = normalizeAgentKey(entry.agent);
+          const config = AGENT_VISUALS[agentKey] || {
+            label: entry.agent,
+            icon: BrainCircuit,
+            color: "hsl(215 16% 47%)",
+          };
+
+          const Icon = config.icon;
+          const status = entry.status || "unknown";
+
+          return (
+            <motion.div
+              key={`${entry.agent}-${index}-${entry.startedAt}`}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, delay: index * 0.04 }}
+              className="flex items-center justify-between rounded-md bg-accent/35 px-3 py-2"
+              data-testid={`trace-${agentKey}-${index}`}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className="flex h-6 w-6 items-center justify-center rounded-full"
+                  style={{ backgroundColor: config.color }}
+                >
+                  <Icon className="h-3.5 w-3.5 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-foreground">{config.label}</p>
+                  <p className="text-[11px] text-muted-foreground">status: {status}</p>
+                </div>
+              </div>
+
+              <div className="text-right text-[11px] text-muted-foreground">
+                <p>{formatDuration(entry)}</p>
+                {entry.error ? <p className="max-w-[220px] truncate text-destructive">{entry.error}</p> : null}
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );

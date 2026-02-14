@@ -1,6 +1,7 @@
 import { Schema, model, Document, Types } from "mongoose";
 
 export interface IFinancialGoal {
+  _id?: Types.ObjectId;
   name: string;
   target: number;
   current: number;
@@ -9,6 +10,7 @@ export interface IFinancialGoal {
 }
 
 export interface IDebt {
+  _id?: Types.ObjectId;
   name: string;
   balance: number;
   interest_rate: number;
@@ -17,6 +19,7 @@ export interface IDebt {
 }
 
 export interface ITransaction {
+  _id?: Types.ObjectId;
   amount: number;
   category: string;
   description: string;

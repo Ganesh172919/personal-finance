@@ -1,15 +1,17 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 import uvicorn
 import logging
+import os
 from datetime import datetime
 from dotenv import load_dotenv
 import sys
 import io
 from contextlib import asynccontextmanager
 import pandas as pd  # For serializer
+from uuid import uuid4
 
 # Set UTF-8 encoding for Windows console to handle emojis
 if sys.platform == "win32":
@@ -23,7 +25,13 @@ load_dotenv()
 from config import settings
 from graph.workflow import create_financial_workflow
 from graph.state import UserProfile, FinancialGoal
-from utils import setup_logging, ColorFormatter, get_rate_limiter_status, reset_rate_limiter
+from utils import (
+    setup_logging,
+    get_rate_limiter_status,
+    reset_rate_limiter,
+    begin_request_metrics,
+    get_llm_call_count,
+)
 
 # Setup logging
 logger = setup_logging()
@@ -32,8 +40,8 @@ logger = setup_logging()
 try:
     settings.validate_api_key()
 except ValueError as e:
-    logger.error(f"Error: {str(e)}")
-    exit(1)
+    logger.warning(f"Startup warning: {str(e)}")
+    logger.warning("Continuing in fallback-capable mode (deterministic outputs + no LLM narrative).")
 
 # Lifespan for startup (fixes deprecation)
 @asynccontextmanager
@@ -48,13 +56,38 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="FinWise AI Core", version="1.0.0", lifespan=lifespan)
 
 # Add CORS middleware
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("AI_CORE_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Node.js backend
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def attach_request_id(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid4())
+    request.state.request_id = request_id
+
+    started_at = datetime.utcnow()
+    logger.info(f"[requestId={request_id}] {request.method} {request.url.path} started")
+
+    response = await call_next(request)
+
+    elapsed_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
+    response.headers["X-Request-Id"] = request_id
+    logger.info(
+        f"[requestId={request_id}] {request.method} {request.url.path} completed "
+        f"status={response.status_code} durationMs={elapsed_ms}"
+    )
+
+    return response
 
 def _simplify_for_json(obj: Any) -> Any:
     """Recursively simplify objects for JSON serialization (pandas-safe)"""
@@ -100,6 +133,7 @@ class TransactionRequest(BaseModel):
     category: str
     description: str
     date: str
+    type: Optional[str] = None
 
 class UserProfileRequest(BaseModel):
     age: int
@@ -124,42 +158,51 @@ class WhatIfScenarioRequest(BaseModel):
     description: Optional[str] = ""
 
 @app.get("/health")
-async def health_check():
+async def health_check(request: Request):
     """Health check endpoint"""
-    return {"status": "healthy", "service": "FinWise AI Core"}
+    return {
+        "status": "healthy",
+        "service": "FinWise AI Core",
+        "request_id": request.state.request_id
+    }
 
 @app.get("/api/rate-limit/status")
-async def rate_limit_status():
+async def rate_limit_status(request: Request):
     """Get current rate limiter status - useful for monitoring API usage"""
     try:
         status = get_rate_limiter_status()
         return {
             "success": True,
             "rate_limit_status": status,
-            "message": "Rate limiter is active. Requests are automatically throttled."
+            "message": "Rate limiter is active. Requests are automatically throttled.",
+            "request_id": request.state.request_id
         }
     except Exception as e:
-        logger.error(f"Error getting rate limit status: {str(e)}")
+        logger.error(f"[requestId={request.state.request_id}] Error getting rate limit status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/rate-limit/reset")
-async def rate_limit_reset():
+async def rate_limit_reset(request: Request):
     """Reset the rate limiter (useful after quota reset or for testing)"""
     try:
         reset_rate_limiter()
         return {
             "success": True,
-            "message": "Rate limiter has been reset. Token buckets refilled."
+            "message": "Rate limiter has been reset. Token buckets refilled.",
+            "request_id": request.state.request_id
         }
     except Exception as e:
-        logger.error(f"Error resetting rate limiter: {str(e)}")
+        logger.error(f"[requestId={request.state.request_id}] Error resetting rate limiter: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/agents/process")
-async def process_financial_request(request: ProcessRequest):
+async def process_financial_request(request: ProcessRequest, http_request: Request):
     """Main endpoint to process financial requests through multi-agent system"""
+    request_id = getattr(http_request.state, "request_id", str(uuid4()))
+    begin_request_metrics(request_id)
+
     try:
-        logger.info(f"Processing request: {request.user_input[:100]}...")
+        logger.info(f"[requestId={request_id}] Processing request: {request.user_input[:100]}...")
         
         user_profile_dict = request.user_profile.model_dump() if request.user_profile else None
         
@@ -195,12 +238,15 @@ async def process_financial_request(request: ProcessRequest):
         # Process through workflow
         result = workflow.process_request(request.user_input, profile_data_for_workflow)
         final_output = result.get("final_output", "")
+        workflow_trace = result.get("workflow_trace", []) or []
+        llm_call_count = get_llm_call_count()
         
         if isinstance(final_output, dict):
             response_text = final_output.get("response", str(final_output))
             agent = final_output.get("agent", "master")
             action_type = final_output.get("actionType")
             priority = final_output.get("priority", "medium")
+            fallback_used = bool(final_output.get("fallback_used")) or bool(result.get("fallback_used"))
             
             # Ensure insights is clean list of dicts
             raw_insights = final_output.get("insights", [])
@@ -221,6 +267,7 @@ async def process_financial_request(request: ProcessRequest):
             action_type = "start_learning"
             priority = "medium"
             insights = []
+            fallback_used = bool(result.get("fallback_used"))
         
         # Determine agents involved
         agents_involved = []
@@ -239,6 +286,15 @@ async def process_financial_request(request: ProcessRequest):
             agents_involved = [agent]
         elif not agents_involved:
             agents_involved = ["master"]
+
+        if workflow_trace:
+            traced_agents = []
+            for trace_entry in workflow_trace:
+                trace_agent = trace_entry.get("agent")
+                if trace_agent and trace_agent not in traced_agents:
+                    traced_agents.append(trace_agent)
+            if traced_agents:
+                agents_involved = traced_agents
         
         # Simplify detailed analysis (enhanced for pandas)
         detailed_analysis = {}
@@ -248,7 +304,7 @@ async def process_financial_request(request: ProcessRequest):
                     simplified = _simplify_for_json(result[key])
                     detailed_analysis[key] = simplified
                 except Exception as e:
-                    logger.warning(f"Error simplifying {key}: {str(e)}")
+                    logger.warning(f"[requestId={request_id}] Error simplifying {key}: {str(e)}")
                     detailed_analysis[key] = {"error": str(e)}
         
         # === FIX: Clean analysis_type (enum → str) ===
@@ -264,19 +320,45 @@ async def process_financial_request(request: ProcessRequest):
             "insights": insights,
             "analysis_type": analysis_type,
             "agents_involved": agents_involved,
-            "detailed_analysis": detailed_analysis
+            "detailed_analysis": detailed_analysis,
+            "workflow_trace": _simplify_for_json(workflow_trace),
+            "fallback_used": fallback_used,
+            "llm_call_count": llm_call_count,
+            "request_id": request_id
         }
         
         return response
         
     except Exception as e:
-        logger.error(f"Error processing request: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            f"[requestId={request_id}] Error processing request: {str(e)}",
+            exc_info=True
+        )
+        return {
+            "success": True,
+            "final_output": (
+                "AI processing is temporarily degraded. Here is a safe fallback: "
+                "stabilize cash flow, protect emergency savings, prioritize high-interest debt, "
+                "and keep investing consistently in diversified assets."
+            ),
+            "agent": "master",
+            "actionType": "review",
+            "priority": "medium",
+            "insights": [],
+            "analysis_type": "comprehensive",
+            "agents_involved": ["master"],
+            "detailed_analysis": {"error": str(e)},
+            "workflow_trace": [],
+            "fallback_used": True,
+            "llm_call_count": get_llm_call_count(),
+            "request_id": request_id
+        }
 
 @app.post("/api/agents/what-if-scenario")
-async def process_what_if_scenario(request: WhatIfScenarioRequest):
+async def process_what_if_scenario(request: WhatIfScenarioRequest, http_request: Request):
     """Process what-if financial scenarios"""
     try:
+        request_id = http_request.state.request_id
         user_profile_dict = request.user_profile.model_dump()
         
         original_budget = user_profile_dict['annual_income'] / 12 - user_profile_dict['monthly_expenses']
@@ -306,10 +388,15 @@ async def process_what_if_scenario(request: WhatIfScenarioRequest):
             impact["savingsImpact"] = request.amount * 0.7
             impact["goalDelay"] = -round(request.amount / (original_budget * 0.3)) if original_budget > 0 else 0
         
-        return impact
+        return {
+            **impact,
+            "request_id": request_id
+        }
         
     except Exception as e:
-        logger.error(f"Error processing scenario: {str(e)}")
+        logger.error(
+            f"[requestId={getattr(http_request.state, 'request_id', 'unknown')}] Error processing scenario: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/agents/budget")

@@ -1,19 +1,15 @@
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/useAuth";
 import { IFinancialProfile } from "@/types";
 import { ArrowUpRight, ArrowDownLeft, RefreshCcw } from "lucide-react";
 import { useLocation } from "wouter";
 
 export function RecentActivity() {
-  const { user } = useAuth();
-  const userId = user?.id || localStorage.getItem("userId");
   const [, navigate] = useLocation();
 
   const { data: profile } = useQuery<IFinancialProfile>({
-    queryKey: [`/api/financial-profiles/${userId}`],
-    enabled: !!userId,
+    queryKey: ["/api/financial-profiles/me"],
   });
 
   const transactions = profile?.transactions || [];

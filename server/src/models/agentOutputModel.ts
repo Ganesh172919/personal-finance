@@ -23,6 +23,17 @@ export interface IAgentOutput {
   };
   analysis_type: string;
   agents_involved: string[];
+  workflow_trace?: Array<{
+    agent: string;
+    startedAt: string;
+    endedAt: string;
+    status: string;
+    error?: string;
+  }>;
+  detailed_analysis?: Record<string, unknown>;
+  fallback_used?: boolean;
+  llm_call_count?: number;
+  request_id?: string;
   timestamp: Date;
   priority?: 'low' | 'medium' | 'high';
   actionable?: boolean;
@@ -45,6 +56,17 @@ const agentOutputSchema = new Schema<IAgentOutputDocument>(
     },
     analysis_type: { type: String, required: true },
     agents_involved: [String],
+    workflow_trace: {
+      type: [Schema.Types.Mixed],
+      default: []
+    },
+    detailed_analysis: {
+      type: Schema.Types.Mixed,
+      default: {}
+    },
+    fallback_used: { type: Boolean, default: false },
+    llm_call_count: { type: Number, default: 0 },
+    request_id: { type: String },
     timestamp: { type: Date, default: Date.now },
     priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
     actionable: { type: Boolean, default: false }

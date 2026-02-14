@@ -1,0 +1,32 @@
+import { z } from "zod";
+
+const phoneRegex = /^[+]?[0-9]{10,15}$/;
+
+export const registerBodySchema = z
+  .object({
+    name: z.string().trim().min(1, "Name is required").max(100),
+    email: z.string().trim().email("Invalid email"),
+    password: z.string().min(8, "Password must be at least 8 characters").max(128),
+    phoneNumber: z.string().trim().regex(phoneRegex, "Invalid phone number").optional()
+  })
+  .strict();
+
+export const loginBodySchema = z
+  .object({
+    email: z.string().trim().email("Invalid email"),
+    password: z.string().min(1, "Password is required").max(128)
+  })
+  .strict();
+
+export const verifyEmailBodySchema = z
+  .object({
+    email: z.string().trim().email("Invalid email"),
+    otp: z.string().trim().regex(/^\d{6}$/, "OTP must be 6 digits")
+  })
+  .strict();
+
+export const resendVerificationBodySchema = z
+  .object({
+    email: z.string().trim().email("Invalid email")
+  })
+  .strict();

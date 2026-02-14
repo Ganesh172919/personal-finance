@@ -50,8 +50,7 @@ export default function FinancialStory() {
 
 
   const { data: profile, isLoading: isLoadingProfile } = useQuery<IFinancialProfile>({
-    queryKey: [`/api/financial-profiles`, userId],
-    enabled: !!userId,
+    queryKey: ["/api/financial-profiles/me"],
   });
 
   const { data: insights, isLoading: isLoadingInsights } = useQuery<IAgentOutput[]>({

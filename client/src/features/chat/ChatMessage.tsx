@@ -7,6 +7,7 @@ import type { IChatMessage } from "@/types/chat.types";
 import { Avatar, AvatarFallback } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
+import { AgentWorkflowVisualizer } from "@/components/AgentWorkflowVisualizer";
 
 interface ChatMessageProps {
   message: IChatMessage;
@@ -124,6 +125,19 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </div>
           )}
         </div>
+
+        {!isUser &&
+          ((message.metadata?.workflowTrace && message.metadata.workflowTrace.length > 0) ||
+            (message.metadata?.agentsInvolved && message.metadata.agentsInvolved.length > 0)) && (
+          <div className="mt-2 w-full">
+            <AgentWorkflowVisualizer
+              workflowTrace={message.metadata?.workflowTrace || []}
+              agentsInvolved={message.metadata?.agentsInvolved || []}
+              fallbackUsed={message.metadata?.fallbackUsed || false}
+              llmCallCount={message.metadata?.llmCallCount || 0}
+            />
+          </div>
+          )}
 
         <div className="flex items-center gap-2 mt-1 px-2">
           <span className="text-xs text-muted-foreground">

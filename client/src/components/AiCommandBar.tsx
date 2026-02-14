@@ -9,6 +9,8 @@ import { processAICommand } from "@/lib/apiClient";
 import { useToast } from "@/hooks/useToast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { AgentWorkflowVisualizer } from "@/components/AgentWorkflowVisualizer";
+import { IWorkflowTraceEntry } from "@/types";
 
 interface AICommandBarProps {
   onCommand?: (command: string) => void;
@@ -18,6 +20,9 @@ interface AIResponse {
   response: string;
   analysis_type?: string;
   agents_involved?: string[];
+  workflow_trace?: IWorkflowTraceEntry[];
+  fallback_used?: boolean;
+  llm_call_count?: number;
   timestamp: Date;
 }
 
@@ -45,6 +50,9 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
         response: data.response || "Analysis complete",
         analysis_type: data.analysis_type,
         agents_involved: data.agents_involved,
+        workflow_trace: data.workflow_trace || [],
+        fallback_used: data.fallback_used || false,
+        llm_call_count: data.llm_call_count || 0,
         timestamp: new Date()
       });
       onCommand?.(command);
@@ -120,7 +128,7 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
         {children}
       </blockquote>
     ),
-    code: ({inline, className, children}: any) => {
+    code: ({inline, children}: any) => {
       return inline ? (
         <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono text-foreground">
           {children}
@@ -322,6 +330,15 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
                     >
                       {aiResponse.response}
                     </ReactMarkdown>
+                  </div>
+
+                  <div className="mt-4">
+                    <AgentWorkflowVisualizer
+                      workflowTrace={aiResponse.workflow_trace || []}
+                      agentsInvolved={aiResponse.agents_involved || []}
+                      fallbackUsed={aiResponse.fallback_used || false}
+                      llmCallCount={aiResponse.llm_call_count || 0}
+                    />
                   </div>
 
                   {/* Response Footer */}

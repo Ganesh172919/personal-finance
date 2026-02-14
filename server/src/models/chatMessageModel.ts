@@ -9,6 +9,17 @@ export interface IChatMessageMetadata {
   agentsInvolved?: string[];
   priority?: 'low' | 'medium' | 'high';
   actionable?: boolean;
+  detailedAnalysis?: Record<string, unknown>;
+  workflowTrace?: Array<{
+    agent: string;
+    startedAt: string;
+    endedAt: string;
+    status: string;
+    error?: string;
+  }>;
+  fallbackUsed?: boolean;
+  llmCallCount?: number;
+  requestId?: string;
 }
 
 export interface IChatMessage {
@@ -53,7 +64,18 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
         type: String, 
         enum: ['low', 'medium', 'high'] 
       },
-      actionable: Boolean
+      actionable: Boolean,
+      detailedAnalysis: {
+        type: Schema.Types.Mixed,
+        default: {}
+      },
+      workflowTrace: {
+        type: [Schema.Types.Mixed],
+        default: []
+      },
+      fallbackUsed: Boolean,
+      llmCallCount: Number,
+      requestId: String
     }
   },
   {

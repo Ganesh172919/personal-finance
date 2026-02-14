@@ -1,18 +1,59 @@
 import { Request, Response } from "express";
-import axios from "axios";
 import FinancialProfileModel, { ITransaction } from "../models/financialProfileModel";
 import AgentOutputModel from "../models/agentOutputModel";
 import { IUserDocument } from "../models/userModel";
 import { v4 as uuidv4 } from "uuid";
 import mongoose from "mongoose";
+import { processAiCoreRequest, processAiCoreScenario } from "../services/aiCoreClient";
+const DEFAULT_GOAL_TIMELINE_MONTHS = 12;
+const PROFILE_UPDATABLE_FIELDS = [
+  "age",
+  "annual_income",
+  "monthly_expenses",
+  "savings",
+  "goals",
+  "debts",
+  "transactions",
+  "risk_tolerance",
+  "investment_experience"
+] as const;
 
-const PYTHON_API_URL = process.env.PYTHON_API_URL || "http://localhost:8001";
+const sanitizeProfileUpdate = (payload: Record<string, unknown>) => {
+  const sanitized: Partial<Record<(typeof PROFILE_UPDATABLE_FIELDS)[number], unknown>> = {};
+
+  for (const field of PROFILE_UPDATABLE_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(payload, field) && payload[field] !== undefined) {
+      sanitized[field] = payload[field];
+    }
+  }
+
+  return sanitized;
+};
+
+const getTimelineMonths = (deadline?: string) => {
+  if (!deadline) {
+    return DEFAULT_GOAL_TIMELINE_MONTHS;
+  }
+
+  const deadlineDate = new Date(deadline);
+  if (Number.isNaN(deadlineDate.getTime())) {
+    return DEFAULT_GOAL_TIMELINE_MONTHS;
+  }
+
+  const now = new Date();
+  const months =
+    (deadlineDate.getFullYear() - now.getFullYear()) * 12 +
+    (deadlineDate.getMonth() - now.getMonth());
+
+  return Math.max(1, months);
+};
 
 
 export const processAICommand = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
     const { command } = req.body;
+    const { requestId } = req;
 
     // Get user's financial profile
     let profile = await FinancialProfileModel.findOne({ userId: user._id });
@@ -42,7 +83,7 @@ export const processAICommand = async (req: Request, res: Response) => {
         financial_goals: profile.goals.map(g => ({
           name: g.name,
           target: g.target,
-          timeline_months: 12,
+          timeline_months: getTimelineMonths(g.deadline),
           priority: g.priority
         })),
         risk_tolerance: profile.risk_tolerance,
@@ -52,25 +93,21 @@ export const processAICommand = async (req: Request, res: Response) => {
           amount: Number(t.amount),
           category: String(t.category),
           description: String(t.description),
-          date: new Date(t.date).toISOString().split('T')[0]
+          date: new Date(t.date).toISOString().split('T')[0],
+          type: t.type
         }))
       }
     };
 
-    console.log("=== SENDING TO PYTHON ===");
-    console.log("User Input:", command);
-    console.log("Profile Age:", profile.age);
-    console.log("Transaction Count:", profile.transactions.length);
+    console.log(`[requestId=${requestId}] Sending command to Python AI Core`);
+    console.log(`[requestId=${requestId}] userInputLength=${command?.length ?? 0}`);
+    console.log(`[requestId=${requestId}] profileAge=${profile.age} transactionCount=${profile.transactions.length}`);
 
-    // Call Python AI service
-    const response = await axios.post(`${PYTHON_API_URL}/api/agents/process`, aiRequest);
+    const aiResponse = await processAiCoreRequest(aiRequest, requestId);
     
-    const aiResponse = response.data;
-    
-    console.log("=== PYTHON RESPONSE ===");
-    console.log("Agent:", aiResponse.agent);
-    console.log("Analysis Type:", aiResponse.analysis_type);
-    console.log("Response Length:", aiResponse.final_output?.length || 0);
+    console.log(
+      `[requestId=${requestId}] Python response agent=${aiResponse.agent} analysisType=${aiResponse.analysis_type} responseLength=${aiResponse.final_output?.length || 0}`
+    );
 
     // Extract and store complete agent output
     const sessionId = uuidv4();
@@ -79,7 +116,7 @@ export const processAICommand = async (req: Request, res: Response) => {
     const actionable = !!(aiResponse.actionType || aiResponse.insights?.length > 0);
     
     // Create main agent output
-    const mainOutput = await AgentOutputModel.create({
+    await AgentOutputModel.create({
       userId: user._id,
       sessionId,
       userInput: command,
@@ -90,10 +127,17 @@ export const processAICommand = async (req: Request, res: Response) => {
         description: aiResponse.final_output?.substring(0, 200) || "Analysis complete",
         actionType: aiResponse.actionType || "review",
         agent: aiResponse.agent || "master",
-        insights: aiResponse.insights || []
+        insights: aiResponse.insights || [],
+        fallback_used: aiResponse.fallback_used,
+        llm_call_count: aiResponse.llm_call_count
       },
       analysis_type: aiResponse.analysis_type || "comprehensive",
       agents_involved: aiResponse.agents_involved || ["master"],
+      workflow_trace: aiResponse.workflow_trace || [],
+      detailed_analysis: aiResponse.detailed_analysis || {},
+      fallback_used: aiResponse.fallback_used,
+      llm_call_count: aiResponse.llm_call_count,
+      request_id: aiResponse.request_id || requestId,
       priority,
       actionable
     });
@@ -128,18 +172,23 @@ export const processAICommand = async (req: Request, res: Response) => {
       agents_involved: aiResponse.agents_involved,
       actionType: aiResponse.actionType,
       priority,
-      insights: aiResponse.insights
+      insights: aiResponse.insights,
+      workflow_trace: aiResponse.workflow_trace || [],
+      detailed_analysis: aiResponse.detailed_analysis || {},
+      fallback_used: aiResponse.fallback_used,
+      llm_call_count: aiResponse.llm_call_count,
+      request_id: aiResponse.request_id || requestId
     });
 
   } catch (error: any) {
-    console.error("=== AI PROCESSING ERROR ===");
-    console.error("Error:", error.response?.data || error.message);
-    console.error("Status:", error.response?.status);
+    console.error(`[requestId=${req.requestId}] AI processing error status=${error.response?.status ?? "unknown"}`);
+    console.error(`[requestId=${req.requestId}]`, error.response?.data || error.message);
     
     res.status(500).json({ 
       success: false,
       message: "Failed to process AI command",
-      error: error.response?.data?.detail || error.message
+      error: error.response?.data?.detail || error.message,
+      request_id: req.requestId
     });
   }
 };
@@ -148,6 +197,7 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
     const { parameters } = req.body;
+    const { requestId } = req;
 
     // Get user's financial profile
     const profile = await FinancialProfileModel.findOne({ userId: user._id });
@@ -167,7 +217,7 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
         financial_goals: profile.goals.map(g => ({
           name: g.name,
           target: g.target,
-          timeline_months: 12,
+          timeline_months: getTimelineMonths(g.deadline),
           priority: g.priority
         })),
         risk_tolerance: profile.risk_tolerance,
@@ -180,16 +230,19 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
       description: parameters.description || ""
     };
 
-    // Call Python AI service
-    const response = await axios.post(`${PYTHON_API_URL}/api/agents/what-if-scenario`, scenarioRequest);
-    
-    res.json(response.data);
+    const response = await processAiCoreScenario(scenarioRequest, requestId);
+
+    res.json({
+      ...response,
+      request_id: response?.request_id || requestId
+    });
 
   } catch (error: any) {
-    console.error("Scenario processing error:", error);
+    console.error(`[requestId=${req.requestId}] Scenario processing error`, error);
     res.status(500).json({ 
       message: "Failed to process scenario",
-      error: error.message 
+      error: error.message,
+      request_id: req.requestId
     });
   }
 };
@@ -197,6 +250,12 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
 export const getFinancialProfile = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
+
+    if (req.params.userId) {
+      console.warn(
+        `[requestId=${req.requestId}] Deprecated endpoint /financial-profiles/:userId called; ignoring userId param`
+      );
+    }
     
     let profile = await FinancialProfileModel.findOne({ userId: user._id });
     
@@ -219,98 +278,92 @@ export const getFinancialProfile = async (req: Request, res: Response) => {
     res.json(profile);
 
   } catch (error: any) {
-    console.error("Error fetching profile:", error);
-    res.status(500).json({ message: "Failed to fetch financial profile" });
+    console.error(`[requestId=${req.requestId}] Error fetching profile:`, error);
+    res.status(500).json({ message: "Failed to fetch financial profile", request_id: req.requestId });
   }
 };
 
 export const updateFinancialProfile = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
-    
+    const rawBody = (req.body ?? {}) as Record<string, unknown>;
+    const updates = sanitizeProfileUpdate(rawBody);
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({
+        message: "No valid profile fields provided for update",
+        request_id: req.requestId
+      });
+    }
+
+    if (req.params.userId) {
+      console.warn(
+        `[requestId=${req.requestId}] Deprecated endpoint /financial-profiles/:userId called; ignoring userId param`
+      );
+    }
+
     const profile = await FinancialProfileModel.findOneAndUpdate(
       { userId: user._id },
-      req.body,
-      { new: true, upsert: true }
+      {
+        $set: updates,
+        $setOnInsert: {
+          userId: user._id
+        }
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true
+      }
     );
 
     res.json(profile);
 
   } catch (error: any) {
-    console.error("Error updating profile:", error);
-    res.status(500).json({ message: "Failed to update financial profile" });
+    console.error(`[requestId=${req.requestId}] Error updating profile:`, error);
+    res.status(500).json({ message: "Failed to update financial profile", request_id: req.requestId });
   }
 };
 
 export const addInvestment = async (req: Request, res: Response) => {
   try {
-    // ===== DEBUG LOGGING =====
-    console.log("=== ADD INVESTMENT REQUEST ===");
-    console.log("req.user:", req.user);
-    console.log("req.body:", req.body);
-    console.log("req.isAuthenticated():", req.isAuthenticated ? req.isAuthenticated() : "N/A");
-    
     const user = req.user as IUserDocument;
-    
+
     if (!user || !user._id) {
-      console.error("❌ User not authenticated or user._id missing");
       return res.status(401).json({ message: "User not authenticated" });
     }
-    
-    const { name, type, amount, date } = req.body;
-    
-    console.log("Authenticated user ID:", user._id);
-    console.log("Investment details:", { name, type, amount, date });
 
-    // Validate input
-    if (!name || !amount || amount <= 0) {
-      console.error("❌ Invalid investment data");
-      return res.status(400).json({ message: "Invalid investment data" });
-    }
-
-    console.log("Finding profile for userId:", user._id);
+    const { name, amount, date } = req.body;
     const profile = await FinancialProfileModel.findOne({ userId: user._id });
-    
+
     if (!profile) {
-      console.error("❌ Profile not found for userId:", user._id);
       return res.status(404).json({ message: "Profile not found" });
     }
-    
-    console.log("Profile found:", profile._id);
 
     const newTransaction: ITransaction = {
-      amount: -Math.abs(Number(amount)), // Negative for expense
-      category: "Investment", 
+      amount: -Math.abs(Number(amount)),
+      category: "Investment",
       description: name,
       date: date ? new Date(date) : new Date(),
-      type: "expense", // Keep consistent with existing data
+      type: "investment"
     };
-    
-    console.log("New transaction:", newTransaction);
 
-    // Add the new transaction and deduct the amount from savings
     profile.transactions.push(newTransaction);
     profile.savings = (profile.savings || 0) - Math.abs(Number(amount));
-    
-    console.log("Saving profile...");
+
     const updatedProfile = await profile.save();
-    
-    console.log("✅ Investment added successfully");
 
-    res.status(201).json({ 
-      message: "Investment added successfully", 
-      profile: updatedProfile 
+    res.status(201).json({
+      message: "Investment added successfully",
+      profile: updatedProfile
     });
-
   } catch (error: any) {
-    console.error("❌ ERROR in addInvestment:", error);
-    console.error("Error name:", error.name);
-    console.error("Error message:", error.message);
-    console.error("Error stack:", error.stack);
-    
-    res.status(500).json({ 
-      message: "Failed to add investment", 
-      error: error.message 
+    console.error(`[requestId=${req.requestId}] Error in addInvestment:`, error);
+    res.status(500).json({
+      message: "Failed to add investment",
+      error: error.message,
+      request_id: req.requestId
     });
   }
 };
@@ -340,12 +393,17 @@ export const getAgentOutputById = async (req: Request, res: Response) => {
       outputData: {
         title: outputData.title || "Financial Analysis",
         description: outputData.description || "Analysis completed",
-        response: outputData.response || outputData.description || "No further details available.", // <-- The full text
+        response: outputData.response || outputData.description || "No further details available.",
         action: outputData.actionType || outputData.action,
         actionType: outputData.actionType || outputData.action
       },
       timestamp: output.timestamp,
-      analysis_type: output.analysis_type
+      analysis_type: output.analysis_type,
+      workflow_trace: output.workflow_trace || [],
+      detailed_analysis: output.detailed_analysis || {},
+      fallback_used: output.fallback_used || false,
+      llm_call_count: output.llm_call_count || 0,
+      request_id: output.request_id
     };
 
     res.json(insight);
@@ -359,13 +417,15 @@ export const getAgentOutputById = async (req: Request, res: Response) => {
 export const getAgentOutputs = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
-    const { userId } = req.params; 
+    const { userId } = req.params;
 
-    if (user._id.toString() !== userId) {
-         return res.status(403).json({ message: "Forbidden" });
+    if (userId && userId !== user._id.toString()) {
+      console.warn(
+        `[requestId=${req.requestId}] /agent-outputs/user/:userId called with mismatched userId; serving authenticated user's outputs`
+      );
     }
 
-    const outputs = await AgentOutputModel.find({ userId: userId })
+    const outputs = await AgentOutputModel.find({ userId: user._id })
       .sort({ timestamp: -1 })
       .limit(20);
 
@@ -390,7 +450,9 @@ export const getAgentOutputs = async (req: Request, res: Response) => {
             actionType: outputData.actionType || outputData.action
           },
           timestamp: output.timestamp,
-          analysis_type: output.analysis_type
+          analysis_type: output.analysis_type,
+          fallback_used: output.fallback_used || false,
+          llm_call_count: output.llm_call_count || 0
         };
       });
 
@@ -401,3 +463,4 @@ export const getAgentOutputs = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Failed to fetch agent outputs" });
   }
 };
+

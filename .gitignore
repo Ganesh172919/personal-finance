@@ -26,6 +26,14 @@ server/dist/
 dist-ssr
 *.local
 
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.venv/
+
 # Editor directories and files
 .vscode/*
 !.vscode/settings.json

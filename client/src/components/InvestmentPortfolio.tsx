@@ -1,7 +1,6 @@
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { TrendingUp } from "lucide-react";
 
 interface Holding {
   name: string;

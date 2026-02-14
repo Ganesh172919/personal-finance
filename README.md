@@ -1,4 +1,4 @@
-# Personal Finance Management Platform
+﻿# Personal Finance Management Platform
 
 ### AI-Powered Financial Strategist (Mini Project)
 
@@ -11,7 +11,7 @@
 
 ---
 
-## 👥 Our Team
+## ðŸ‘¥ Our Team
 
 - **M. Jagadeeswar Reddy** - 23BDS033
 - **J. Ganesh Kumar Reddy** - 23BDS024
@@ -20,17 +20,17 @@
 
 ---
 
-## 📖 About The Project
+## ðŸ“– About The Project
 
-This **Personal Finance Management Platform** is a comprehensive mini-project designed to act as an intelligent financial co-pilot. Unlike traditional budgeting apps that merely track transactions, this platform utilizes advanced AI to provide personalized, actionable, and holistic financial advice. It empowers users to move beyond simple tracking and helps answer complex, context-aware questions such as, _"Based on my current spending and savings, can I afford a ₹50,000 vacation in 6 months?"_
+This **Personal Finance Management Platform** is a comprehensive mini-project designed to act as an intelligent financial co-pilot. Unlike traditional budgeting apps that merely track transactions, this platform utilizes advanced AI to provide personalized, actionable, and holistic financial advice. It empowers users to move beyond simple tracking and helps answer complex, context-aware questions such as, _"Based on my current spending and savings, can I afford a â‚¹50,000 vacation in 6 months?"_
 
-The core of this platform is a sophisticated **multi-agent AI system**. Rather than relying on a single, monolithic AI model, the system employs a team of specialized agents—expert in budgeting, investing, debt management, and more—all coordinated by a "Master Strategist" agent. This architecture allows the platform to deconstruct complex financial inquiries, delegate tasks to the appropriate domain expert, and synthesize the results into a single, cohesive, and actionable plan for the user.
+The core of this platform is a sophisticated **multi-agent AI system**. Rather than relying on a single, monolithic AI model, the system employs a team of specialized agentsâ€”expert in budgeting, investing, debt management, and moreâ€”all coordinated by a "Master Strategist" agent. This architecture allows the platform to deconstruct complex financial inquiries, delegate tasks to the appropriate domain expert, and synthesize the results into a single, cohesive, and actionable plan for the user.
 
-### ✨ Core Features
+### âœ¨ Core Features
 
 - **AI-Powered Dashboard:** A central "Strategist's Desk" that visualizes key financial vitals like cash flow, savings rate, and goal progress, all driven by live data.
 - **Actionable Insights:** AI-generated cards that continuously monitor your finances and highlight specific risks and opportunities (e.g., "High spending in 'Dining Out'", "Opportunity to optimize debt").
-- **Interactive Insight Details:** Deep-dive into AI analysis with clickable insight cards. Each card opens a detailed modal with full, markdown-rendered reports (e.g., "🎯 **YOUR COMPREHENSIVE FINANCIAL PLAN**").
+- **Interactive Insight Details:** Deep-dive into AI analysis with clickable insight cards. Each card opens a detailed modal with full, markdown-rendered reports (e.g., "ðŸŽ¯ **YOUR COMPREHENSIVE FINANCIAL PLAN**").
 - **Interactive AI Command Bar:** A natural language chat interface where users can ask complex financial questions and receive detailed, multi-step answers from the agent team.
 - **What-If Scenarios:** A powerful simulation engine to test the financial impact of major life decisions, such as buying a vehicle or receiving a salary hike, before making them.
 - **Dedicated Insight & Goal Tracking:** Comprehensive pages to review the history of AI recommendations and track progress towards diverse financial goals and portfolio growth.
@@ -39,24 +39,24 @@ The core of this platform is a sophisticated **multi-agent AI system**. Rather t
 
 ---
 
-## 🏗️ Project Architecture
+## ðŸ—ï¸ Project Architecture
 
-The platform follows a robust **modular 3-tier architecture**, ensuring scalability, maintainability, and security. Each layer—**Frontend**, **Backend**, and **AI Core**—is independently focused and communicates through secure APIs.
+The platform follows a robust **modular 3-tier architecture**, ensuring scalability, maintainability, and security. Each layerâ€”**Frontend**, **Backend**, and **AI Core**â€”is independently focused and communicates through secure APIs.
 
 ```text
-┌───────────────────────────┐      ┌───────────────────────────┐      ┌────────────────────────────┐
-│      Frontend Client      │      │       Backend Server      │      │         AI Core API        │
-│   (React + TypeScript)    │      │   (Node.js + Express)     │      │ (Python + FastAPI/LangGraph)│
-│   (Vite @ localhost:5173) │      │  (Express @ localhost:3000)│     │   (FastAPI @ localhost:8001)│
-└────────────┬──────────────┘      └────────────┬──────────────┘      └────────────┬───────────────┘
-             │                                   │                                 │
-             │  <─── UI / State Sync ───>        │                                 │
-             │  <─── API Calls (React Query) ───>│                                 │
-             │          (e.g. /api/agent-outputs/user/:id)                         │
-             │                                   │ <── Auth / DB Ops ───> [MongoDB]│
-             │                                   │ <── AI Request (user_profile) ─>│
-             │  <── Structured JSON ─────────────│ <── AI Plan + Metadata ─────────│
-             │  <── Final Response (Serves JSON Data) ─────────────────────────────│
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”      â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”      â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚      Frontend Client      â”‚      â”‚       Backend Server      â”‚      â”‚         AI Core API        â”‚
+â”‚   (React + TypeScript)    â”‚      â”‚   (Node.js + Express)     â”‚      â”‚ (Python + FastAPI/LangGraph)â”‚
+â”‚   (Vite @ localhost:5173) â”‚      â”‚  (Express @ localhost:3000)â”‚     â”‚   (FastAPI @ localhost:8001)â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜      â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜      â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+             â”‚                                   â”‚                                 â”‚
+             â”‚  <â”€â”€â”€ UI / State Sync â”€â”€â”€>        â”‚                                 â”‚
+             â”‚  <â”€â”€â”€ API Calls (React Query) â”€â”€â”€>â”‚                                 â”‚
+             â”‚          (e.g. /api/agent-outputs/user/:id)                         â”‚
+             â”‚                                   â”‚ <â”€â”€ Auth / DB Ops â”€â”€â”€> [MongoDB]â”‚
+             â”‚                                   â”‚ <â”€â”€ AI Request (user_profile) â”€>â”‚
+             â”‚  <â”€â”€ Structured JSON â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”‚ <â”€â”€ AI Plan + Metadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”‚
+             â”‚  <â”€â”€ Final Response (Serves JSON Data) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”‚
 ```
 
 ### 1. Frontend (Client)
@@ -98,30 +98,30 @@ The "brain" of the platform is a dedicated microservice (`api_service.py`) optim
 
 ---
 
-## 📁 Project Folder Structure
+## ðŸ“ Project Folder Structure
 
 ```bash
 PERSONAL-FINANCE-PLATFORM/
-├── client/          # React + TypeScript Frontend Application
-│   ├── src/
-│   │   ├── components/
-│   │   ├── features/
-│   │   └── services/
-│   └── ...
-└── server/          # Backend & AI Services
-    ├── AI_Core/     # Python FastAPI + LangGraph Microservice
-    │   ├── agents/
-    │   ├── workflow.py
-    │   └── api_service.py
-    └── src/         # Node.js + Express Backend
-        ├── models/
-        ├── routes/
-        └── middleware/
+â”œâ”€â”€ client/          # React + TypeScript Frontend Application
+â”‚   â”œâ”€â”€ src/
+â”‚   â”‚   â”œâ”€â”€ components/
+â”‚   â”‚   â”œâ”€â”€ features/
+â”‚   â”‚   â””â”€â”€ services/
+â”‚   â””â”€â”€ ...
+â””â”€â”€ server/          # Backend & AI Services
+    â”œâ”€â”€ AI_Core/     # Python FastAPI + LangGraph Microservice
+    â”‚   â”œâ”€â”€ agents/
+    â”‚   â”œâ”€â”€ workflow.py
+    â”‚   â””â”€â”€ api_service.py
+    â””â”€â”€ src/         # Node.js + Express Backend
+        â”œâ”€â”€ models/
+        â”œâ”€â”€ routes/
+        â””â”€â”€ middleware/
 ```
 
 ---
 
-## 🚀 Getting Started
+## ðŸš€ Getting Started
 
 Follow these instructions to get the complete project running locally. You will need **three separate terminal windows** open simultaneously.
 
@@ -129,11 +129,11 @@ Follow these instructions to get the complete project running locally. You will 
 
 - Node.js (v18 or later)
 - npm
-- Python (v3.10 or later)
+- Python (v3.11 recommended)
 - pip
 - MongoDB (local or Atlas connection string)
 
-### 1️⃣ Backend (Node.js Server)
+### 1ï¸âƒ£ Backend (Node.js Server)
 
 ```bash
 cd server
@@ -141,7 +141,7 @@ npm install
 npm run dev
 ```
 
-### 2️⃣ AI Core (Python Microservice)
+### 2ï¸âƒ£ AI Core (Python Microservice)
 
 ```bash
 cd server/AI_Core
@@ -149,7 +149,7 @@ pip install -r requirements.txt
 uvicorn api_service:app --reload --port 8001
 ```
 
-### 3️⃣ Frontend (React Client)
+### 3ï¸âƒ£ Frontend (React Client)
 
 ```bash
 cd client
@@ -161,7 +161,7 @@ Once all services are running, open [http://localhost:5173](http://localhost:517
 
 ---
 
-## 🚀 Demo Working App
+## ðŸš€ Demo Working App
 
 This project comes with a fully functional flow demonstrating the power of multi-agent intelligence in personal finance. The demo showcases:
 
@@ -174,4 +174,29 @@ _A video demonstration or live link may be available upon request._
 
 ---
 
-**Personal Finance Management Platform** — _Empowering smarter financial decisions through multi-agent intelligence_ 💡
+**Personal Finance Management Platform** â€” _Empowering smarter financial decisions through multi-agent intelligence_ ðŸ’¡
+
+## Docker Compose (One Command)
+
+```bash
+docker compose up --build
+```
+
+Services:
+- Client: http://localhost:5173
+- Server: http://localhost:3000
+- AI Core: http://localhost:8001
+- MongoDB: mongodb://localhost:27017
+
+Required environment variables:
+- `GEMINI_API_KEY` (optional for deterministic/fallback mode; recommended for full AI narrative)
+- `JWT_SECRET` (optional in local dev, default provided in compose)
+
+## CI
+
+GitHub Actions workflow (`.github/workflows/ci.yml`) runs:
+- Secret scanning with gitleaks
+- Server typecheck
+- Client build
+- AI Core lint (`ruff`) and tests (`pytest`)
+

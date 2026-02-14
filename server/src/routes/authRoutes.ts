@@ -9,16 +9,23 @@ import {
   getProfile,
   logout,
 } from "../controllers/authController";
+import { validate } from "../middleware/validate";
+import {
+  loginBodySchema,
+  registerBodySchema,
+  resendVerificationBodySchema,
+  verifyEmailBodySchema
+} from "../schemas/authSchemas";
 
 const router = Router();
 
-router.post("/register", register);
+router.post("/register", validate({ body: registerBodySchema }), register);
 
-router.post("/login", login);
+router.post("/login", validate({ body: loginBodySchema }), login);
 
-router.post("/verify-email", verifyEmail);
+router.post("/verify-email", validate({ body: verifyEmailBodySchema }), verifyEmail);
 
-router.post("/resend-verification", resendVerification);
+router.post("/resend-verification", validate({ body: resendVerificationBodySchema }), resendVerification);
 
 router.get(
   "/google",

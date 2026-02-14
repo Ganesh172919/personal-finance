@@ -70,8 +70,7 @@ export default function Portfolio() {
 
   // Query 1: Get the user's financial profile (for transactions)
   const { data: profile, isLoading: isLoadingProfile } = useQuery<IFinancialProfile>({
-    queryKey: [`/api/financial-profiles`, userId],
-    enabled: !!userId,
+    queryKey: ["/api/financial-profiles/me"],
   });
 
   // Query 2: Get AI insights for the 'Analysis' tab
@@ -105,7 +104,7 @@ export default function Portfolio() {
     });
     setIsAddDialogOpen(false);
     setNewInvestment({ name: "", type: "Equity", amount: 0, date: new Date().toISOString().split('T')[0] });
-    queryClient.invalidateQueries({ queryKey: [`/api/financial-profiles`, userId] });
+    queryClient.invalidateQueries({ queryKey: ["/api/financial-profiles/me"] });
   },
   onError: (error: any) => {
     console.error("Mutation error:", error); 

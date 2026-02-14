@@ -25,9 +25,20 @@ from .rate_limiter import (
 
 from .llm_wrapper import (
     RateLimitedLLM,
+    AIProviderError,
+    QuotaExceededError,
+    AccessDeniedError,
+    ModelNotFoundError,
     create_llm,
     get_fallback_response,
     FALLBACK_RESPONSES
+)
+
+from .request_metrics import (
+    begin_request_metrics,
+    record_llm_call,
+    get_llm_call_count,
+    get_request_id
 )
 
 __all__ = [
@@ -50,7 +61,16 @@ __all__ = [
     "reset_rate_limiter",
     # LLM Wrapper
     "RateLimitedLLM",
+    "AIProviderError",
+    "QuotaExceededError",
+    "AccessDeniedError",
+    "ModelNotFoundError",
     "create_llm",
     "get_fallback_response",
-    "FALLBACK_RESPONSES"
+    "FALLBACK_RESPONSES",
+    # Request metrics
+    "begin_request_metrics",
+    "record_llm_call",
+    "get_llm_call_count",
+    "get_request_id"
 ]

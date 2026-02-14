@@ -2,6 +2,13 @@
 // between your React frontend and your Node.js backend. It's a generic
 // wrapper around the native `fetch` API to standardize requests and error handling.
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "/api";
+
+const buildApiUrl = (endpoint: string) => {
+  const normalizedEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  return `${API_BASE_URL}${normalizedEndpoint}`;
+};
+
 export async function apiClient<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -27,7 +34,7 @@ export async function apiClient<T>(
   // Construct the full API URL. The '/api' prefix is a common convention.
   // In `vite.config.ts`, we've set up a proxy to forward any request
   // starting with '/api' to our backend server (e.g., http://localhost:3000).
-  const response = await fetch(`/api${endpoint}`, config);
+  const response = await fetch(buildApiUrl(endpoint), config);
 
   // This is our central error handling logic. It's crucial for a good user experience.
   // If the server responds with an error status (e.g., 401 Unauthorized, 404 Not Found),
@@ -70,10 +77,80 @@ export async function processScenario(parameters: any): Promise<any> {
   });
 }
 
-export async function getFinancialProfile(userId: string): Promise<any> {
-  return apiClient(`/financial-profiles/${userId}`);
+export async function getFinancialProfile(_userId?: string): Promise<any> {
+  return apiClient("/financial-profiles/me");
 }
 
 export async function getAgentOutputs(userId: string): Promise<any> {
-  return apiClient(`/agent-outputs/${userId}`);
+  return apiClient(`/agent-outputs/user/${userId}`);
+}
+
+export type TransactionType = "income" | "expense" | "investment";
+
+export interface TransactionPayload {
+  amount: number;
+  category: string;
+  description: string;
+  type: TransactionType;
+  date?: string;
+}
+
+export interface TransactionsQuery {
+  page?: number;
+  limit?: number;
+  from?: string;
+  to?: string;
+  type?: TransactionType;
+  category?: string;
+}
+
+export interface TransactionsResponse {
+  transactions: Array<{
+    id: string;
+    amount: number;
+    category: string;
+    description: string;
+    date: string;
+    type: TransactionType;
+  }>;
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export async function getTransactions(query: TransactionsQuery = {}): Promise<TransactionsResponse> {
+  const params = new URLSearchParams();
+
+  if (query.page !== undefined) params.set("page", String(query.page));
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  if (query.from) params.set("from", query.from);
+  if (query.to) params.set("to", query.to);
+  if (query.type) params.set("type", query.type);
+  if (query.category) params.set("category", query.category);
+
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return apiClient(`/transactions${suffix}`);
+}
+
+export async function createTransaction(payload: TransactionPayload): Promise<any> {
+  return apiClient("/transactions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateTransaction(id: string, payload: Partial<TransactionPayload>): Promise<any> {
+  return apiClient(`/transactions/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteTransaction(id: string): Promise<any> {
+  return apiClient(`/transactions/${id}`, {
+    method: "DELETE",
+  });
 }

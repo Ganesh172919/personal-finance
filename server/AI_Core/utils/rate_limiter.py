@@ -173,12 +173,14 @@ class RetryHandler:
         """
         error_str = str(exception).lower()
         
-        # Rate limit errors (429)
+        # Quota / rate limit errors (429): do not retry, fail fast to fallback
         if "429" in error_str or "resource_exhausted" in error_str or "too many requests" in error_str:
-            # Try to extract retry-after from error message
-            retry_after = self._extract_retry_after(str(exception))
-            return True, retry_after
-        
+            return False, None
+
+        # Model not found (404): caller should fail over model immediately, not retry
+        if "404" in error_str or "not found" in error_str:
+            return False, None
+
         # Transient errors that might succeed on retry
         if any(x in error_str for x in ["timeout", "connection", "temporary", "503", "502"]):
             return True, None

@@ -15,6 +15,8 @@ class AgentState(TypedDict):
     financial_education: Optional[str]
     next_agent: str
     final_output: Optional[str]
+    fallback_used: bool
+    workflow_trace: List[Dict[str, Any]]
     error: Optional[str]
 
 class AnalysisType(str, Enum):

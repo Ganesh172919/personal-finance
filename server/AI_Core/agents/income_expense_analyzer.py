@@ -1,44 +1,19 @@
-from langchain_core.messages import SystemMessage, HumanMessage
 from typing import Dict, Any, List
 import logging
 from datetime import datetime
 import pandas as pd
 
-from config import settings
 from tools import DataProcessor, FinancialCalculators
-from utils import format_currency, ColorFormatter, RateLimitedLLM
 
 logger = logging.getLogger(__name__)
 
+
 class IncomeExpenseAnalyzerAgent:
-    """Comprehensive income and expense analysis with trend detection and optimization insights"""
+    """Comprehensive income and expense analysis with trend detection and optimization insights."""
 
     def __init__(self):
-        # Use rate-limited LLM wrapper
-        self.llm = RateLimitedLLM(
-            model=settings.MODEL_NAME,
-            temperature=settings.get_agent_config("analyzer")["temperature"],
-        )
-
         self.data_processor = DataProcessor()
         self.calculators = FinancialCalculators()
-
-        self.system_prompt = SystemMessage(content="""
-        You are a financial analyst specializing in income and expense analysis.
-
-        Your expertise:
-        - Analyzing spending patterns and identifying trends
-        - Cash flow optimization and expense reduction strategies
-        - Income stream analysis and diversification opportunities
-        - Financial health assessment through ratio analysis
-        - Anomaly detection and fraud pattern identification
-
-        Provide data-driven insights with specific, actionable recommendations.
-        Highlight both financial strengths and areas for improvement.
-        Use concrete numbers and percentages to support your analysis.
-        Focus on practical steps the user can take immediately.
-        """)
-
     # ============================================================
     # === MAIN ENTRYPOINT ========================================
     # ============================================================
@@ -184,11 +159,11 @@ class IncomeExpenseAnalyzerAgent:
 
         sr = metrics.get("savings_rate", 0)
         if sr >= 20:
-            patterns["strengths"].append("Excellent savings rate (≥20%)")
+            patterns["strengths"].append("Excellent savings rate (â‰¥20%)")
         elif sr >= 10:
             patterns["strengths"].append("Good savings rate (10-20%)")
         elif sr < 0:
-            patterns["concerns"].append("Negative savings rate — spending exceeds income")
+            patterns["concerns"].append("Negative savings rate â€” spending exceeds income")
 
         fr = metrics.get("fixed_expense_ratio", 0)
         if fr > 50:
@@ -200,51 +175,83 @@ class IncomeExpenseAnalyzerAgent:
             if pct > 30:
                 patterns["concerns"].append(f"High spending in {cat} ({pct}% of expenses)")
             elif pct < 5:
-                patterns["opportunities"].append(f"Low spending in {cat} — optimization possible")
+                patterns["opportunities"].append(f"Low spending in {cat} â€” optimization possible")
 
         flow = metrics.get("net_cash_flow", 0)
         if flow > 0:
-            patterns["strengths"].append(f"Positive cash flow: ₹{flow:,.2f} monthly")
+            patterns["strengths"].append(f"Positive cash flow: â‚¹{flow:,.2f} monthly")
         else:
-            patterns["concerns"].append(f"Negative cash flow: ₹{abs(flow):,.2f} monthly deficit")
+            patterns["concerns"].append(f"Negative cash flow: â‚¹{abs(flow):,.2f} monthly deficit")
 
         return patterns
 
     def _generate_comprehensive_insights(self, categorized_data: Dict[str, Any],
                                          metrics: Dict[str, float],
                                          patterns: Dict[str, Any]) -> str:
-        """Generate rich text insights using Gemini"""
-        prompt = f"""
-        Provide detailed financial insights and recommendations:
+        """Generate deterministic insights without additional LLM calls."""
+        total_income = metrics.get("total_income", 0)
+        total_expenses = metrics.get("total_expenses", 0)
+        net_cash_flow = metrics.get("net_cash_flow", 0)
+        savings_rate = metrics.get("savings_rate", 0)
 
-        FINANCIAL SNAPSHOT:
-        - Total Monthly Income: ₹{metrics.get('total_income', 0):,.2f}
-        - Total Monthly Expenses: ₹{metrics.get('total_expenses', 0):,.2f}
-        - Net Cash Flow: ₹{metrics.get('net_cash_flow', 0):,.2f}
-        - Savings Rate: {metrics.get('savings_rate', 0)}%
-        - Fixed Expenses: ₹{metrics.get('fixed_expenses', 0):,.2f} ({metrics.get('fixed_expense_ratio', 0)}% of income)
+        top_categories = sorted(
+            categorized_data.get("category_analysis", {}).items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )[:3]
 
-        SPENDING BY CATEGORY:
-        {chr(10).join(f"  - {k}: {v}%" for k, v in categorized_data.get('category_analysis', {}).items())}
+        lines = [
+            "Executive Summary:",
+            (
+                f"- Monthly income INR {total_income:,.2f}, expenses INR {total_expenses:,.2f}, "
+                f"net cash flow INR {net_cash_flow:,.2f}."
+            ),
+            f"- Savings rate is {savings_rate:.1f}%.",
+            "",
+            "Cash Flow Analysis:",
+            (
+                "- Cash flow is healthy and positive."
+                if net_cash_flow >= 0
+                else "- Cash flow is negative; immediate expense correction is required."
+            ),
+            "",
+            "Spending Optimization:",
+        ]
 
-        PATTERNS DETECTED:
-        Strengths: {', '.join(patterns.get('strengths', ['None']))}
-        Concerns: {', '.join(patterns.get('concerns', ['None']))}
-        Opportunities: {', '.join(patterns.get('opportunities', ['None']))}
-        {f"Anomalies: {len(patterns.get('anomalies', []))} unusual transactions detected" if patterns.get('anomalies') else "No anomalies detected"}
+        if top_categories:
+            for category, percentage in top_categories:
+                lines.append(f"- {category}: {percentage:.1f}% of expense mix.")
+        else:
+            lines.append("- Not enough categorized expense data yet.")
 
-        Please provide:
-        1. EXECUTIVE SUMMARY
-        2. CASH FLOW ANALYSIS
-        3. SPENDING OPTIMIZATION
-        4. SAVINGS STRATEGY
-        5. IMMEDIATE ACTIONS
-        6. LONG-TERM RECOMMENDATIONS
-        """
+        concerns = patterns.get("concerns", [])
+        opportunities = patterns.get("opportunities", [])
 
-        response = self.llm.invoke([self.system_prompt, HumanMessage(content=prompt)])
-        return response.content
+        lines.extend(
+            [
+                "",
+                "Immediate Actions (30 days):",
+                "- Cap non-essential categories by 10-15%.",
+                "- Set automatic transfer to savings on income day.",
+            ]
+        )
 
+        if concerns:
+            lines.append("- Address highest-impact concern first: " + concerns[0])
+        if opportunities:
+            lines.append("- Fast optimization opportunity: " + opportunities[0])
+
+        lines.extend(
+            [
+                "",
+                "Long-term Recommendations:",
+                "- Keep fixed expenses below 50% of income.",
+                "- Target minimum 20% savings rate when feasible.",
+                "- Review anomaly alerts monthly.",
+            ]
+        )
+
+        return "\\n".join(lines)
     # ============================================================
     # === SUMMARIES & SCORING ===================================
     # ============================================================
@@ -327,3 +334,4 @@ class IncomeExpenseAnalyzerAgent:
             "summary_metrics": {"financial_health": "Analysis Failed", "key_strengths": 0, "key_concerns": 0},
             "health_score": 0
         }
+

@@ -1,17 +1,11 @@
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";
-import { Progress } from "@/components/ui/Progress";
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/useAuth";
 import { IFinancialProfile, IFinancialGoal } from "@/types";
 
 export function GoalProgress() {
- const { user } = useAuth();
-  const userId = user?.id || localStorage.getItem("userId");
-  
   const { data: profile } = useQuery<IFinancialProfile>({
-    queryKey: [`/api/financial-profiles`, userId],
-    enabled: !!userId,
+    queryKey: ["/api/financial-profiles/me"],
   });
 
   const goals = profile?.goals || [];

@@ -15,6 +15,17 @@ export interface IChatMessageMetadata {
   agentsInvolved?: string[];
   priority?: 'low' | 'medium' | 'high';
   actionable?: boolean;
+  detailedAnalysis?: Record<string, unknown>;
+  workflowTrace?: Array<{
+    agent: string;
+    startedAt: string;
+    endedAt: string;
+    status: string;
+    error?: string;
+  }>;
+  fallbackUsed?: boolean;
+  llmCallCount?: number;
+  requestId?: string;
 }
 
 export interface IChatMessage {

@@ -1,12 +1,29 @@
 import { Request, Response } from "express";
-import axios from "axios";
 import ChatSessionModel, { IChatSessionDocument } from "../models/chatSessionModel";
 import ChatMessageModel, { IChatMessageDocument } from "../models/chatMessageModel";
 import FinancialProfileModel from "../models/financialProfileModel";
 import { IUserDocument } from "../models/userModel";
 import mongoose from "mongoose";
+import { processAiCoreRequest } from "../services/aiCoreClient";
+const DEFAULT_GOAL_TIMELINE_MONTHS = 12;
 
-const PYTHON_API_URL = process.env.PYTHON_API_URL || "http://localhost:8001";
+const getTimelineMonths = (deadline?: string) => {
+  if (!deadline) {
+    return DEFAULT_GOAL_TIMELINE_MONTHS;
+  }
+
+  const deadlineDate = new Date(deadline);
+  if (Number.isNaN(deadlineDate.getTime())) {
+    return DEFAULT_GOAL_TIMELINE_MONTHS;
+  }
+
+  const now = new Date();
+  const months =
+    (deadlineDate.getFullYear() - now.getFullYear()) * 12 +
+    (deadlineDate.getMonth() - now.getMonth());
+
+  return Math.max(1, months);
+};
 
 /**
  * Create a new chat session
@@ -266,6 +283,7 @@ export async function getMessages(req: Request, res: Response) {
 export async function sendMessage(req: Request, res: Response) {
   try {
     const user = req.user as IUserDocument;
+    const { requestId } = req;
     if (!user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -319,9 +337,7 @@ export async function sendMessage(req: Request, res: Response) {
     let aiMetadata: any = {};
 
     try {
-      // Call the Python AI service - correct endpoint is /api/agents/process
-      const aiResponse = await axios.post(
-        `${PYTHON_API_URL}/api/agents/process`,
+      const aiResponse = await processAiCoreRequest(
         {
           user_input: content.trim(),
           user_profile: {
@@ -333,7 +349,7 @@ export async function sendMessage(req: Request, res: Response) {
             financial_goals: (userProfile.goals || []).map((g: any) => ({
               name: g.name || "Goal",
               target: g.target || 0,
-              timeline_months: g.timeline_months || 12,
+              timeline_months: getTimelineMonths(g.deadline),
               priority: g.priority || 1
             })),
             risk_tolerance: userProfile.risk_tolerance,
@@ -343,27 +359,30 @@ export async function sendMessage(req: Request, res: Response) {
               amount: t.amount || 0,
               category: t.category || "Other",
               description: t.description || "",
-              date: t.date || new Date().toISOString()
+              date: t.date || new Date().toISOString(),
+              type: t.type || "expense"
             }))
           }
         },
-        {
-          timeout: 60000,
-          headers: { "Content-Type": "application/json" }
-        }
+        requestId
       );
 
-      if (aiResponse.data && aiResponse.data.success) {
-        aiResponseContent = aiResponse.data.final_output || aiResponseContent;
+      if (aiResponse && aiResponse.success) {
+        aiResponseContent = aiResponse.final_output || aiResponseContent;
         aiMetadata = {
-          analysisType: aiResponse.data.analysis_type,
-          agentsInvolved: aiResponse.data.agents_involved,
-          priority: aiResponse.data.priority,
-          actionable: aiResponse.data.actionType ? true : false
+          analysisType: aiResponse.analysis_type,
+          agentsInvolved: aiResponse.agents_involved,
+          priority: aiResponse.priority,
+          actionable: aiResponse.actionType ? true : false,
+          detailedAnalysis: aiResponse.detailed_analysis || {},
+          workflowTrace: aiResponse.workflow_trace || [],
+          fallbackUsed: aiResponse.fallback_used || false,
+          llmCallCount: aiResponse.llm_call_count || 0,
+          requestId: aiResponse.request_id || requestId
         };
       }
     } catch (aiError: any) {
-      console.error("AI service error:", aiError.message);
+      console.error(`[requestId=${requestId}] AI service error:`, aiError.message);
       aiResponseContent = "I'm currently experiencing some difficulties connecting to the AI service. Please try again in a moment.";
     }
 
@@ -408,7 +427,7 @@ export async function sendMessage(req: Request, res: Response) {
       }
     });
   } catch (error) {
-    console.error("Error sending message:", error);
-    return res.status(500).json({ message: "Failed to send message" });
+    console.error(`[requestId=${req.requestId}] Error sending message:`, error);
+    return res.status(500).json({ message: "Failed to send message", request_id: req.requestId });
   }
 }

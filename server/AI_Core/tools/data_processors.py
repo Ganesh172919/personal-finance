@@ -22,15 +22,21 @@ class DataProcessor:
         for transaction in transactions:
             amount = float(transaction.get('amount', 0))
             description = str(transaction.get('description', '')).lower()
-            category = str(transaction.get('category', '')).lower()
+            explicit_type = str(transaction.get('type', '')).lower()
             
-            # Determine transaction type
-            if amount > 0 and any(keyword in description for keyword in ['salary', 'deposit', 'income', 'payment']):
+            # Prefer explicit transaction type when available.
+            if explicit_type == "income":
                 categorized["income"].append(transaction)
-            elif amount < 0 and any(keyword in description for keyword in ['investment', 'stock', 'etf', 'mutual']):
+            elif explicit_type == "expense":
+                categorized["expenses"].append(transaction)
+            elif explicit_type == "investment":
                 categorized["investments"].append(transaction)
             elif any(keyword in description for keyword in ['transfer', 'move']):
                 categorized["transfers"].append(transaction)
+            elif amount > 0 and any(keyword in description for keyword in ['salary', 'deposit', 'income', 'payment']):
+                categorized["income"].append(transaction)
+            elif amount < 0 and any(keyword in description for keyword in ['investment', 'stock', 'etf', 'mutual']):
+                categorized["investments"].append(transaction)
             else:
                 categorized["expenses"].append(transaction)
         
