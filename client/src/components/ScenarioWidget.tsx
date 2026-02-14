@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useMutation } from "@tanstack/react-query";
 import { processScenario } from "@/lib/apiClient";
+import { useLocation } from "wouter";
 
 interface ScenarioResults {
   originalBudget: number;
@@ -17,6 +18,7 @@ interface ScenarioResults {
 export function ScenarioWidget() {
   const [amount, setAmount] = useState("");
   const [results, setResults] = useState<ScenarioResults | null>(null);
+  const [, navigate] = useLocation();
 
   const scenarioMutation = useMutation({
     mutationFn: async (expense: number) => {
@@ -44,6 +46,7 @@ export function ScenarioWidget() {
         <Button
           variant="ghost"
           className="text-primary hover:text-primary/80 text-sm font-medium"
+          onClick={() => navigate("/scenarios")}
         >
           Full View
         </Button>

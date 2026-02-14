@@ -4,10 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { IFinancialProfile } from "@/types";
 import { ArrowUpRight, ArrowDownLeft, RefreshCcw } from "lucide-react";
+import { useLocation } from "wouter";
 
 export function RecentActivity() {
   const { user } = useAuth();
   const userId = user?.id || localStorage.getItem("userId");
+  const [, navigate] = useLocation();
 
   const { data: profile } = useQuery<IFinancialProfile>({
     queryKey: [`/api/financial-profiles/${userId}`],
@@ -39,7 +41,13 @@ export function RecentActivity() {
     <Card className="p-6 flex flex-col">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-foreground">Recent Activity</h3>
-        <span className="text-sm text-muted-foreground cursor-pointer hover:text-primary">View All</span>
+        <button
+          type="button"
+          className="text-sm text-muted-foreground cursor-pointer hover:text-primary"
+          onClick={() => navigate("/transactions")}
+        >
+          View All
+        </button>
       </div>
 
       <div className="flex-1 space-y-4">

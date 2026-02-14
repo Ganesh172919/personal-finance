@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/Select";
 import { Calculator, TrendingDown, TrendingUp, Target } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { processScenario } from "@/lib/apiClient";
 
 export default function Scenarios() {
   const [scenarioType, setScenarioType] = useState("expense");
@@ -23,11 +23,7 @@ export default function Scenarios() {
 
   const scenarioMutation = useMutation({
     mutationFn: async (params: any) => {
-      const res = await apiRequest("POST", "/api/scenarios/what-if", {
-        userId: "sample-user-1",
-        parameters: params,
-      });
-      return res.json();
+      return processScenario(params);
     },
     onSuccess: (data) => {
       setResults(data);

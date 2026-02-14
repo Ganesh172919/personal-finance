@@ -10,9 +10,12 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import VerifyEmail from "@/pages/VerifyEmail";
 import Dashboard from "@/pages/Dashboard";
-
+import Scenarios from "@/pages/Scenarios";
+import FinancialStory from "@/pages/FinancialStory";
 import Portfolio from "@/pages/Portfolio";
 import AllInsights from "@/pages/AllInsights"; 
+import Transactions from "@/pages/Transactions";
+import ComingSoon from "@/pages/ComingSoon";
 import ChatPage from "@/pages/ChatPage";
 import NotFound from "@/pages/NotFound";
 
@@ -60,9 +63,41 @@ function Router() {
 
       {/* Protected Routes - Dashboard Views */}
       <Route path="/dashboard"><ProtectedRoute><AppAuthenticatedLayout><Dashboard /></AppAuthenticatedLayout></ProtectedRoute></Route>
-
+      <Route path="/scenarios"><ProtectedRoute><AppAuthenticatedLayout><Scenarios /></AppAuthenticatedLayout></ProtectedRoute></Route>
+      <Route path="/financial-story"><ProtectedRoute><AppAuthenticatedLayout><FinancialStory /></AppAuthenticatedLayout></ProtectedRoute></Route>
       <Route path="/portfolio"><ProtectedRoute><AppAuthenticatedLayout><Portfolio /></AppAuthenticatedLayout></ProtectedRoute></Route>
       <Route path="/all-insights"><ProtectedRoute><AppAuthenticatedLayout><AllInsights /></AppAuthenticatedLayout></ProtectedRoute></Route>
+      <Route path="/transactions"><ProtectedRoute><AppAuthenticatedLayout><Transactions /></AppAuthenticatedLayout></ProtectedRoute></Route>
+      <Route path="/blogs">
+        <ProtectedRoute>
+          <AppAuthenticatedLayout>
+            <ComingSoon
+              title="Blogs"
+              description="Curated finance articles are being prepared for this release."
+            />
+          </AppAuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/growth-stories">
+        <ProtectedRoute>
+          <AppAuthenticatedLayout>
+            <ComingSoon
+              title="Growth Stories"
+              description="Personalized learning journeys will be available in the next milestone."
+            />
+          </AppAuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/notes">
+        <ProtectedRoute>
+          <AppAuthenticatedLayout>
+            <ComingSoon
+              title="Notes"
+              description="In-app note taking is planned and currently under implementation."
+            />
+          </AppAuthenticatedLayout>
+        </ProtectedRoute>
+      </Route>
 
       {/* Default redirect - Now goes to chat as primary interface */}
       <Route path="/">{user ? <Redirect to="/chat" /> : <Redirect to="/login" />}</Route>

@@ -1,29 +1,42 @@
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { PlusCircle, Target, FileText, Link } from "lucide-react";
+import { PlusCircle, Target, FileText, Link2, LucideIcon } from "lucide-react";
+import { useLocation } from "wouter";
+
+interface QuickAction {
+  label: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  disabled?: boolean;
+  title?: string;
+}
 
 export function QuickActions() {
-  const actions = [
+  const [, navigate] = useLocation();
+
+  const actions: QuickAction[] = [
     {
       label: "Add Transaction",
       icon: PlusCircle,
-      onClick: () => console.log("Add Transaction clicked"),
+      onClick: () => navigate("/transactions"),
     },
     {
       label: "New Goal",
       icon: Target,
-      onClick: () => console.log("New Goal clicked"),
+      onClick: () => navigate("/financial-story"),
     },
     {
       label: "View Reports",
       icon: FileText,
-      onClick: () => console.log("View Reports clicked"),
+      onClick: () => navigate("/all-insights"),
     },
     {
       label: "Connect Account",
-      icon: Link,
-      onClick: () => console.log("Connect Account clicked"),
+      icon: Link2,
+      onClick: () => undefined,
+      disabled: true,
+      title: "Coming soon",
     },
   ];
 
@@ -41,6 +54,8 @@ export function QuickActions() {
               variant="outline"
               className="w-full h-auto py-4 flex flex-col gap-2 items-center justify-center border-border hover:bg-accent hover:text-accent-foreground"
               onClick={action.onClick}
+              disabled={action.disabled}
+              title={action.title}
             >
               <action.icon className="h-6 w-6 mb-1" />
               <span className="text-sm font-medium">{action.label}</span>
