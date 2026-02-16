@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/Select";
 import { Utensils, Car, Film, ShoppingBag } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { IFinancialProfile } from "@/types";
+import { getTransactionsSummary, TransactionsSummaryResponse } from "@/lib/apiClient";
 
 interface SpendingCategory {
   name: string;
@@ -48,64 +48,55 @@ const getCategoryIcon = (categoryName: string) => {
 };
 
 export function SpendingAnalysis() {
-  const { data: profile } = useQuery<IFinancialProfile>({
-    queryKey: ["/api/financial-profiles/me"],
+  const now = new Date();
+  const fromDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const toDate = now;
+
+  const toYmd = (date: Date) => date.toISOString().slice(0, 10);
+  const fromYmd = toYmd(fromDate);
+  const toYmdValue = toYmd(toDate);
+
+  const { data } = useQuery<TransactionsSummaryResponse>({
+    queryKey: ["/api/transactions/summary", fromYmd, toYmdValue],
+    queryFn: () =>
+      getTransactionsSummary({
+        from: fromYmd,
+        to: toYmdValue,
+        groupBy: "month",
+        topCategories: 6,
+      }),
   });
 
-  const transactions = profile?.transactions || [];
-  const expenseTransactions = transactions.filter(t => t.type === "expense");
-
-  const now = new Date();
   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const previousMonthKey = `${previousMonthDate.getFullYear()}-${String(previousMonthDate.getMonth() + 1).padStart(2, "0")}`;
 
-  const monthlyTotals = new Map<string, number>();
-  expenseTransactions.forEach(transaction => {
-    const key = new Date(transaction.date).toISOString().slice(0, 7);
-    const current = monthlyTotals.get(key) || 0;
-    monthlyTotals.set(key, current + Math.abs(transaction.amount));
-  });
+  const currentMonthTotal = data?.monthly?.find(row => row.month === currentMonthKey)?.expense || 0;
+  const previousMonthTotal = data?.monthly?.find(row => row.month === previousMonthKey)?.expense || 0;
 
-  const currentMonthTotal = monthlyTotals.get(currentMonthKey) || 0;
-  const previousMonthTotal = monthlyTotals.get(previousMonthKey) || 0;
-
-  const sourceTransactions =
+  const totalSpending =
     currentMonthTotal > 0
-      ? expenseTransactions.filter(t => new Date(t.date).toISOString().slice(0, 7) === currentMonthKey)
-      : expenseTransactions;
-
-  const totalSpending = sourceTransactions.reduce((sum, transaction) => {
-    return sum + Math.abs(transaction.amount);
-  }, 0);
+      ? currentMonthTotal
+      : (data?.top_categories || []).reduce((sum, category) => sum + category.amount, 0);
 
   const spendingChange =
     previousMonthTotal > 0
       ? ((currentMonthTotal - previousMonthTotal) / previousMonthTotal) * 100
       : 0;
 
-  const categoryMap = new Map<string, number>();
-  sourceTransactions.forEach(transaction => {
-    const current = categoryMap.get(transaction.category) || 0;
-    categoryMap.set(transaction.category, current + Math.abs(transaction.amount));
-  });
-
-  const categories: SpendingCategory[] = Array.from(categoryMap.entries())
-    .map(([name, amount], index) => {
-      const percentage = totalSpending > 0 ? (amount / totalSpending) * 100 : 0;
+  const categories: SpendingCategory[] = (data?.top_categories || [])
+    .slice(0, 6)
+    .map((category, index) => {
       const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
-
       return {
-        name,
-        amount,
-        percentage,
-        icon: getCategoryIcon(name),
+        name: category.category,
+        amount: category.amount,
+        percentage: category.percentage,
+        icon: getCategoryIcon(category.category),
         color,
-        budgetUsed: Math.min(100, Math.round(percentage * 1.5)),
+        budgetUsed: Math.min(100, Math.round(category.percentage * 1.5)),
       };
-    })
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 6);
+    });
 
   return (
     <Card className="p-6" data-testid="spending-analysis">

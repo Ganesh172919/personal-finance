@@ -35,9 +35,11 @@ export interface IFinancialProfile {
   savings: number;
   goals: IFinancialGoal[];
   debts: IDebt[];
-  transactions: ITransaction[];
+  transactions?: ITransaction[];
   risk_tolerance: 'conservative' | 'moderate' | 'aggressive';
   investment_experience: 'beginner' | 'intermediate' | 'expert';
+  transactionsCount?: number;
+  transactionsUpdatedAt?: string;
 }
 
 export interface IWorkflowTraceEntry {

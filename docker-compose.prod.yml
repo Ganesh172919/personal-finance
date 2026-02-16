@@ -1,0 +1,32 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: finwise-nginx
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+      client:
+        condition: service_started
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+  # Serve the client behind the reverse proxy with same-origin `/api`
+  client:
+    build:
+      args:
+        VITE_API_BASE_URL: /api
+    ports: []
+
+  # Hide internal services; nginx is the only exposed entrypoint
+  server:
+    environment:
+      CLIENT_URL: ${CLIENT_URL:-http://localhost}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+    ports: []
+
+  ai_core:
+    ports: []
+

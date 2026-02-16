@@ -9,6 +9,7 @@ import {
   getAgentOutputById,
   addInvestment
 } from "../controllers/aiController";
+import { getAiCoreStatus } from "../controllers/aiStatusController";
 import { validate } from "../middleware/validate";
 import {
   addInvestmentBodySchema,
@@ -26,6 +27,7 @@ router.use(passport.authenticate("jwt", { session: false }));
 // AI processing routes
 router.post("/process-command", validate({ body: processCommandBodySchema }), processAICommand);
 router.post("/scenarios/what-if", validate({ body: whatIfScenarioBodySchema }), processWhatIfScenario);
+router.get("/ai-core/status", getAiCoreStatus);
 
 router.post("/financial-profiles/investments", validate({ body: addInvestmentBodySchema }), addInvestment);
 

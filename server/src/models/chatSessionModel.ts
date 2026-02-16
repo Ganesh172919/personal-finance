@@ -12,6 +12,8 @@ export interface IChatSession {
   lastMessageAt: Date;
   messageCount: number;
   isArchived: boolean;
+  summary?: string;
+  summaryUpdatedAt?: Date;
 }
 
 export interface IChatSessionDocument extends IChatSession, Document {
@@ -43,6 +45,13 @@ const chatSessionSchema = new Schema<IChatSessionDocument>(
     isArchived: {
       type: Boolean,
       default: false
+    },
+    summary: {
+      type: String,
+      default: ""
+    },
+    summaryUpdatedAt: {
+      type: Date
     }
   },
   {

@@ -18,6 +18,7 @@ import {
 } from "../schemas/authSchemas";
 
 const router = Router();
+const CLIENT_URL = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/$/, "");
 
 router.post("/register", validate({ body: registerBodySchema }), register);
 
@@ -35,7 +36,7 @@ router.get(
 router.get(
   "/google/callback",
   passport.authenticate("google", {
-    failureRedirect: "http://localhost:5173/login",
+    failureRedirect: `${CLIENT_URL}/login`,
     session: false,
   }),
   getGoogleCallback

@@ -1,22 +1,19 @@
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";
 import { useQuery } from "@tanstack/react-query";
-import { IFinancialProfile } from "@/types";
+import { getRecentTransactions } from "@/lib/apiClient";
 import { ArrowUpRight, ArrowDownLeft, RefreshCcw } from "lucide-react";
 import { useLocation } from "wouter";
 
 export function RecentActivity() {
   const [, navigate] = useLocation();
 
-  const { data: profile } = useQuery<IFinancialProfile>({
-    queryKey: ["/api/financial-profiles/me"],
+  const { data } = useQuery({
+    queryKey: ["/api/transactions/recent"],
+    queryFn: () => getRecentTransactions(5),
   });
 
-  const transactions = profile?.transactions || [];
-  // Sort by date descending and take top 5
-  const recentTransactions = [...transactions]
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 5);
+  const recentTransactions = data?.transactions || [];
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-IN", {

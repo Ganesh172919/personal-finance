@@ -14,20 +14,20 @@ export const connectDB = async () => {
 
     // This listener will log a confirmation message once the connection is successfully established.
     mongoose.connection.on("connected", () => {
-      console.log("✅ Mongoose connected to the database.");
+      console.log("Mongoose connected to the database.");
     });
 
     // This listener will log an error message if the connection encounters an error after the initial setup.
     mongoose.connection.on("error", (err) => {
-      console.error("❌ Mongoose connection error:", err);
+      console.error("Mongoose connection error:", err);
     });
 
     // This listener will log a message if the database connection is lost.
     mongoose.connection.on("disconnected", () => {
-      console.log(" Mongoose disconnected from the database.");
+      console.log("Mongoose disconnected from the database.");
     });
   } catch (err) {
-    console.error(" Initial MongoDB connection failed:", err);
+    console.error("Initial MongoDB connection failed:", err);
     process.exit(1);
   }
 };

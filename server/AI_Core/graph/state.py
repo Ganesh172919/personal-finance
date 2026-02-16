@@ -7,14 +7,16 @@ class AgentState(TypedDict):
     user_input: str
     user_profile: Dict[str, Any]
     conversation_history: List[Dict[str, str]]
+    session_summary: Optional[str]
+    options: Dict[str, Any]
     current_analysis: Dict[str, Any]
     income_analysis: Optional[Dict[str, Any]]
     budget_plan: Optional[Dict[str, Any]]
     investment_advice: Optional[Dict[str, Any]]
     debt_optimization: Optional[Dict[str, Any]]
-    financial_education: Optional[str]
+    financial_education: Optional[Dict[str, Any]]
     next_agent: str
-    final_output: Optional[str]
+    final_output: Optional[Any]
     fallback_used: bool
     workflow_trace: List[Dict[str, Any]]
     error: Optional[str]

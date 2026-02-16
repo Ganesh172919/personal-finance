@@ -11,6 +11,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AgentWorkflowVisualizer } from "@/components/AgentWorkflowVisualizer";
 import { IWorkflowTraceEntry } from "@/types";
+import type { Plan } from "@/types/ai.types";
+import { AiStatusDialog } from "@/components/AiStatusDialog";
 
 interface AICommandBarProps {
   onCommand?: (command: string) => void;
@@ -18,11 +20,14 @@ interface AICommandBarProps {
 
 interface AIResponse {
   response: string;
+  plan?: Plan;
   analysis_type?: string;
   agents_involved?: string[];
   workflow_trace?: IWorkflowTraceEntry[];
   fallback_used?: boolean;
   llm_call_count?: number;
+  request_id?: string;
+  cache_hit?: boolean;
   timestamp: Date;
 }
 
@@ -48,11 +53,14 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
     onSuccess: (data) => {
       setAiResponse({
         response: data.response || "Analysis complete",
+        plan: data.plan,
         analysis_type: data.analysis_type,
         agents_involved: data.agents_involved,
         workflow_trace: data.workflow_trace || [],
         fallback_used: data.fallback_used || false,
         llm_call_count: data.llm_call_count || 0,
+        request_id: data.request_id,
+        cache_hit: data.cache_hit || false,
         timestamp: new Date()
       });
       onCommand?.(command);
@@ -179,6 +187,18 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
     ),
   };
 
+  const formatCurrency = (value?: number | null) => {
+    if (value === null || value === undefined || Number.isNaN(value)) return "—";
+    const rounded = Math.round(value);
+    const sign = rounded < 0 ? "-" : "";
+    return `${sign}₹${Math.abs(rounded).toLocaleString("en-IN")}`;
+  };
+
+  const formatPercent = (value?: number | null) => {
+    if (value === null || value === undefined || Number.isNaN(value)) return "—";
+    return `${value.toFixed(1)}%`;
+  };
+
   return (
     <div className="relative">
       {/* Command Input Bar */}
@@ -284,9 +304,21 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
                             via {aiResponse.agents_involved.join(", ")}
                           </p>
                         )}
+                        {aiResponse.request_id && (
+                          <p className="text-xs text-muted-foreground">
+                            request {aiResponse.request_id.slice(0, 8)}
+                            {aiResponse.cache_hit ? " · cached" : ""}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
+                      <AiStatusDialog
+                        lastRequestId={aiResponse.request_id}
+                        fallbackUsed={aiResponse.fallback_used}
+                        llmCallCount={aiResponse.llm_call_count}
+                        cacheHit={aiResponse.cache_hit}
+                      />
                       <Button
                         variant="ghost"
                         size="sm"
@@ -311,6 +343,47 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
                       </Button>
                     </div>
                   </div>
+
+                  {/* Key Metrics + Warnings (if available) */}
+                  {aiResponse.plan?.key_metrics && (
+                    <div className="mb-4 grid grid-cols-2 md:grid-cols-5 gap-2">
+                      <div className="rounded-md border border-border bg-background/60 p-2">
+                        <p className="text-[11px] text-muted-foreground">Net cash flow</p>
+                        <p className="text-sm font-semibold">{formatCurrency(aiResponse.plan.key_metrics.monthly_net_cash_flow)}</p>
+                      </div>
+                      <div className="rounded-md border border-border bg-background/60 p-2">
+                        <p className="text-[11px] text-muted-foreground">Savings rate</p>
+                        <p className="text-sm font-semibold">{formatPercent(aiResponse.plan.key_metrics.savings_rate)}</p>
+                      </div>
+                      <div className="rounded-md border border-border bg-background/60 p-2">
+                        <p className="text-[11px] text-muted-foreground">Debt-to-income</p>
+                        <p className="text-sm font-semibold">{formatPercent(aiResponse.plan.key_metrics.debt_to_income)}</p>
+                      </div>
+                      <div className="rounded-md border border-border bg-background/60 p-2">
+                        <p className="text-[11px] text-muted-foreground">Emergency fund</p>
+                        <p className="text-sm font-semibold">
+                          {aiResponse.plan.key_metrics.emergency_fund_months === null || aiResponse.plan.key_metrics.emergency_fund_months === undefined
+                            ? "—"
+                            : `${aiResponse.plan.key_metrics.emergency_fund_months.toFixed(1)} mo`}
+                        </p>
+                      </div>
+                      <div className="rounded-md border border-border bg-background/60 p-2">
+                        <p className="text-[11px] text-muted-foreground">Total debt</p>
+                        <p className="text-sm font-semibold">{formatCurrency(aiResponse.plan.key_metrics.total_debt)}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {aiResponse.plan?.data_warnings?.length ? (
+                    <div className="mb-4 rounded-md border border-border bg-muted/30 p-3">
+                      <p className="text-xs font-semibold text-foreground mb-2">Data warnings</p>
+                      <ul className="list-disc list-inside space-y-1 text-xs text-muted-foreground">
+                        {aiResponse.plan.data_warnings.slice(0, 5).map((warning, idx) => (
+                          <li key={idx}>{warning}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
 
                   {/* Response Content with Markdown Rendering */}
                   <div className="prose prose-sm dark:prose-invert max-w-none 

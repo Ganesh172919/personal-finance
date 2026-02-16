@@ -1,10 +1,17 @@
 import { Request, Response } from "express";
-import FinancialProfileModel, { ITransaction } from "../models/financialProfileModel";
+import FinancialProfileModel from "../models/financialProfileModel";
 import AgentOutputModel from "../models/agentOutputModel";
+import AiResponseCacheModel from "../models/aiResponseCacheModel";
 import { IUserDocument } from "../models/userModel";
 import { v4 as uuidv4 } from "uuid";
 import mongoose from "mongoose";
 import { processAiCoreRequest, processAiCoreScenario } from "../services/aiCoreClient";
+import { buildProcessRequest } from "../services/aiRequestBuilder";
+import { buildProcessCommandCacheKey, ttlMs } from "../services/aiCache";
+import TransactionModel from "../models/transactionModel";
+import { ensureProfileTransactionsMigrated } from "../services/transactionMigration";
+import { fetchTransactionsForAi } from "../services/transactionService";
+import { normalizeAiPlan } from "../schemas/aiPlanSchema";
 const DEFAULT_GOAL_TIMELINE_MONTHS = 12;
 const PROFILE_UPDATABLE_FIELDS = [
   "age",
@@ -13,7 +20,6 @@ const PROFILE_UPDATABLE_FIELDS = [
   "savings",
   "goals",
   "debts",
-  "transactions",
   "risk_tolerance",
   "investment_experience"
 ] as const;
@@ -65,45 +71,52 @@ export const processAICommand = async (req: Request, res: Response) => {
       });
     }
 
-    // Prepare request for Python AI service
-    const aiRequest = {
-      user_input: command,
-      user_profile: {
-        age: profile.age,
-        annual_income: profile.annual_income,
-        monthly_expenses: profile.monthly_expenses,
-        savings: profile.savings,
-        debts: profile.debts.map(d => ({
-          name: d.name,
-          balance: d.balance,
-          interest_rate: d.interest_rate,
-          minimum_payment: d.minimum_payment,
-          type: d.type
-        })),
-        financial_goals: profile.goals.map(g => ({
-          name: g.name,
-          target: g.target,
-          timeline_months: getTimelineMonths(g.deadline),
-          priority: g.priority
-        })),
-        risk_tolerance: profile.risk_tolerance,
-        investment_experience: profile.investment_experience,
-        time_horizon: 10,
-        transactions: profile.transactions.map(t => ({
-          amount: Number(t.amount),
-          category: String(t.category),
-          description: String(t.description),
-          date: new Date(t.date).toISOString().split('T')[0],
-          type: t.type
-        }))
-      }
-    };
+    await ensureProfileTransactionsMigrated(profile);
+
+    const profileUpdatedAt = profile.updatedAt ? new Date(profile.updatedAt).toISOString() : "unknown";
+    const transactionsUpdatedAt = profile.transactionsUpdatedAt
+      ? new Date(profile.transactionsUpdatedAt as unknown as Date).toISOString()
+      : "unknown";
+    const cacheKey = buildProcessCommandCacheKey({
+      userId: user._id.toString(),
+      profileUpdatedAt,
+      transactionsUpdatedAt,
+      command: String(command || "")
+    });
+
+    const cached = await AiResponseCacheModel.findOne({ cacheKey }).lean();
+    if (cached?.responseData && typeof cached.responseData === "object") {
+      console.log(`[requestId=${requestId}] process-command cache_hit=true`);
+      return res.json({ ...(cached.responseData as any), cache_hit: true });
+    }
+
+    const txResult = await fetchTransactionsForAi({ userId: user._id });
+
+    const { request: aiRequest, stats } = buildProcessRequest({
+      userInput: command,
+      profile,
+      transactions: txResult.transactions,
+      totalTransactions: txResult.stats.totalTransactions,
+    });
 
     console.log(`[requestId=${requestId}] Sending command to Python AI Core`);
     console.log(`[requestId=${requestId}] userInputLength=${command?.length ?? 0}`);
-    console.log(`[requestId=${requestId}] profileAge=${profile.age} transactionCount=${profile.transactions.length}`);
+    console.log(
+      `[requestId=${requestId}] profileAge=${profile.age} transactionCountSent=${stats.sentTransactions} droppedTransactions=${stats.droppedTransactions}`
+    );
 
+    const aiStartedAt = Date.now();
     const aiResponse = await processAiCoreRequest(aiRequest, requestId);
+    const aiDurationMs = Date.now() - aiStartedAt;
+
+    const { plan: normalizedPlan, valid: planValid } = normalizeAiPlan(aiResponse.plan);
+    if (!planValid) {
+      console.warn(`[requestId=${requestId}] ai.plan_validation_failed=true`);
+    }
+    
+    console.log(
+      `[requestId=${requestId}] aiCore.durationMs=${aiDurationMs} fallback_used=${aiResponse.fallback_used} llm_call_count=${aiResponse.llm_call_count} analysis_type=${aiResponse.analysis_type}`
+    );
     
     console.log(
       `[requestId=${requestId}] Python response agent=${aiResponse.agent} analysisType=${aiResponse.analysis_type} responseLength=${aiResponse.final_output?.length || 0}`
@@ -128,6 +141,7 @@ export const processAICommand = async (req: Request, res: Response) => {
         actionType: aiResponse.actionType || "review",
         agent: aiResponse.agent || "master",
         insights: aiResponse.insights || [],
+        plan: normalizedPlan,
         fallback_used: aiResponse.fallback_used,
         llm_call_count: aiResponse.llm_call_count
       },
@@ -165,9 +179,10 @@ export const processAICommand = async (req: Request, res: Response) => {
       }
     }
 
-    res.json({
+    const responsePayload = {
       success: true,
       response: aiResponse.final_output,
+      plan: normalizedPlan,
       analysis_type: aiResponse.analysis_type,
       agents_involved: aiResponse.agents_involved,
       actionType: aiResponse.actionType,
@@ -178,7 +193,22 @@ export const processAICommand = async (req: Request, res: Response) => {
       fallback_used: aiResponse.fallback_used,
       llm_call_count: aiResponse.llm_call_count,
       request_id: aiResponse.request_id || requestId
-    });
+    };
+
+    await AiResponseCacheModel.findOneAndUpdate(
+      { cacheKey },
+      {
+        $set: {
+          userId: user._id,
+          endpoint: "process-command",
+          responseData: responsePayload,
+          expiresAt: new Date(Date.now() + ttlMs.processCommand)
+        }
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    res.json({ ...responsePayload, cache_hit: false });
 
   } catch (error: any) {
     console.error(`[requestId=${req.requestId}] AI processing error status=${error.response?.status ?? "unknown"}`);
@@ -230,7 +260,11 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
       description: parameters.description || ""
     };
 
+    const aiStartedAt = Date.now();
     const response = await processAiCoreScenario(scenarioRequest, requestId);
+    const aiDurationMs = Date.now() - aiStartedAt;
+
+    console.log(`[requestId=${requestId}] aiCore.scenario.durationMs=${aiDurationMs}`);
 
     res.json({
       ...response,
@@ -250,6 +284,9 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
 export const getFinancialProfile = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
+    const includeTransactions = String(req.query.includeTransactions || "").toLowerCase() === "true";
+    const txLimitRaw = Number(req.query.txLimit || 50);
+    const txLimit = Number.isFinite(txLimitRaw) ? Math.min(Math.max(1, txLimitRaw), 100) : 50;
 
     if (req.params.userId) {
       console.warn(
@@ -257,7 +294,7 @@ export const getFinancialProfile = async (req: Request, res: Response) => {
       );
     }
     
-    let profile = await FinancialProfileModel.findOne({ userId: user._id });
+    let profile = await FinancialProfileModel.findOne({ userId: user._id }, { transactions: 0 });
     
     if (!profile) {
       // Create default profile
@@ -275,7 +312,34 @@ export const getFinancialProfile = async (req: Request, res: Response) => {
       });
     }
 
-    res.json(profile);
+    if (!includeTransactions) {
+      const dto = profile.toObject();
+      delete (dto as any).transactions;
+      return res.json(dto);
+    }
+
+    const fullProfile = await FinancialProfileModel.findOne({ userId: user._id });
+    if (fullProfile) {
+      await ensureProfileTransactionsMigrated(fullProfile);
+    }
+
+    const recentTransactions = await TransactionModel.find({ userId: user._id })
+      .sort({ date: -1 })
+      .limit(txLimit)
+      .lean();
+
+    const dto = profile.toObject();
+    return res.json({
+      ...dto,
+      transactions: recentTransactions.map(tx => ({
+        id: tx._id.toString(),
+        amount: tx.amount,
+        category: tx.category,
+        description: tx.description,
+        date: tx.date,
+        type: tx.type
+      }))
+    });
 
   } catch (error: any) {
     console.error(`[requestId=${req.requestId}] Error fetching profile:`, error);
@@ -341,22 +405,35 @@ export const addInvestment = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Profile not found" });
     }
 
-    const newTransaction: ITransaction = {
-      amount: -Math.abs(Number(amount)),
+    await ensureProfileTransactionsMigrated(profile);
+
+    const normalizedAmount = Math.abs(Number(amount));
+    const now = new Date();
+
+    await TransactionModel.create({
+      userId: user._id,
+      amount: -normalizedAmount,
       category: "Investment",
-      description: name,
-      date: date ? new Date(date) : new Date(),
+      description: String(name || "Investment"),
+      date: date ? new Date(date) : now,
       type: "investment"
-    };
+    });
 
-    profile.transactions.push(newTransaction);
-    profile.savings = (profile.savings || 0) - Math.abs(Number(amount));
-
-    const updatedProfile = await profile.save();
+    const updatedProfile = await FinancialProfileModel.findOneAndUpdate(
+      { _id: profile._id },
+      {
+        $set: {
+          savings: (profile.savings || 0) - normalizedAmount,
+          transactionsUpdatedAt: now
+        },
+        $inc: { transactionsCount: 1 }
+      },
+      { new: true }
+    );
 
     res.status(201).json({
       message: "Investment added successfully",
-      profile: updatedProfile
+      profile: updatedProfile || profile
     });
   } catch (error: any) {
     console.error(`[requestId=${req.requestId}] Error in addInvestment:`, error);

@@ -26,6 +26,7 @@ class Settings:
 
     # Rate limiting / retry behavior
     LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
+    LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "0"))
 
     # Agent Configuration
     AGENT_CONFIG = {

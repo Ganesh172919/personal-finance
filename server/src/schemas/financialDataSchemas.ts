@@ -52,6 +52,25 @@ export const listTransactionsQuerySchema = z
     "from must be earlier than or equal to to"
   );
 
+export const recentTransactionsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().positive().max(50).optional()
+  })
+  .strict();
+
+export const transactionsSummaryQuerySchema = z
+  .object({
+    from: z.coerce.date(),
+    to: z.coerce.date(),
+    groupBy: z.enum(["month"]).optional(),
+    topCategories: z.coerce.number().int().positive().max(20).optional()
+  })
+  .strict()
+  .refine(
+    query => new Date(query.from).getTime() <= new Date(query.to).getTime(),
+    "from must be earlier than or equal to to"
+  );
+
 export const createGoalBodySchema = z
   .object({
     name: z.string().trim().min(1).max(120),

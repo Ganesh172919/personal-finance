@@ -15,7 +15,7 @@ from utils.rate_limiter import (
     get_rate_limiter_status,
     RateLimitError,
 )
-from utils.request_metrics import record_llm_call
+from utils.request_metrics import get_request_id, record_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +130,13 @@ class RateLimitedLLM:
         Returns:
             LLM response object
         """
+        if not self.api_key:
+            raise AccessDeniedError(
+                "GEMINI_API_KEY is not configured; skipping upstream LLM call.",
+                status_code=403,
+                model=self.active_model,
+            )
+
         last_error: Optional[AIProviderError] = None
 
         for idx, model_name in enumerate(self.model_candidates):
@@ -138,7 +145,40 @@ class RateLimitedLLM:
                 record_llm_call()
 
                 client = self._client_for_model(model_name)
-                response = client.invoke(messages)
+                timeout_seconds = getattr(settings, "LLM_TIMEOUT_SECONDS", None)
+                max_retries = getattr(settings, "LLM_MAX_RETRIES", None)
+                request_id = get_request_id()
+
+                if request_id:
+                    logger.info(
+                        "[requestId=%s] LLM invoke model=%s timeoutSeconds=%s maxRetries=%s",
+                        request_id,
+                        model_name,
+                        timeout_seconds,
+                        max_retries,
+                    )
+                else:
+                    logger.info(
+                        "LLM invoke model=%s timeoutSeconds=%s maxRetries=%s",
+                        model_name,
+                        timeout_seconds,
+                        max_retries,
+                    )
+
+                invoke_kwargs: Dict[str, Any] = {}
+                if timeout_seconds is not None:
+                    invoke_kwargs["timeout"] = timeout_seconds
+                if max_retries is not None:
+                    invoke_kwargs["max_retries"] = max_retries
+
+                response = client.invoke(messages, **invoke_kwargs)
+
+                usage_metadata = getattr(response, "usage_metadata", None)
+                if usage_metadata is not None:
+                    if request_id:
+                        logger.info("[requestId=%s] LLM usage_metadata=%s", request_id, usage_metadata)
+                    else:
+                        logger.info("LLM usage_metadata=%s", usage_metadata)
 
                 self.active_model = model_name
                 return response
@@ -178,6 +218,10 @@ class RateLimitedLLM:
         Returns:
             Tuple of (response_object, fallback_used)
         """
+        if not self.api_key:
+            logger.info("LLM disabled (missing GEMINI_API_KEY). Returning deterministic fallback response.")
+            return self._create_fallback_response(fallback_response), True
+
         try:
             response = self.invoke(messages)
             return response, False

@@ -22,7 +22,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   server-check:
-    name: Server Typecheck
+    name: Server Typecheck + Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -43,8 +43,12 @@ jobs:
         working-directory: server
         run: npm run check
 
+      - name: Tests
+        working-directory: server
+        run: npm run test:ci
+
   client-check:
-    name: Client Build
+    name: Client Lint + Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -60,6 +64,10 @@ jobs:
       - name: Install dependencies
         working-directory: client
         run: npm ci
+
+      - name: Lint
+        working-directory: client
+        run: npm run lint
 
       - name: Build
         working-directory: client

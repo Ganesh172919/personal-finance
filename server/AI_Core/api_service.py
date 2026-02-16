@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 import uvicorn
 import logging
@@ -25,6 +25,8 @@ load_dotenv()
 from config import settings
 from graph.workflow import create_financial_workflow
 from graph.state import UserProfile, FinancialGoal
+from contracts import Plan, ProcessResponse, WorkflowTraceEntry
+from tools import PlanInputs, build_plan, render_plan_markdown
 from utils import (
     setup_logging,
     get_rate_limiter_status,
@@ -147,9 +149,19 @@ class UserProfileRequest(BaseModel):
     time_horizon: int = 10
     transactions: List[TransactionRequest] = []
 
+class ConversationMessage(BaseModel):
+    role: str
+    content: str
+
+class ProcessOptions(BaseModel):
+    narrative: bool = True
+
 class ProcessRequest(BaseModel):
     user_input: str
-    user_profile: UserProfileRequest
+    user_profile: Optional[UserProfileRequest] = None
+    conversation_history: List[ConversationMessage] = Field(default_factory=list)
+    session_summary: Optional[str] = None
+    options: ProcessOptions = Field(default_factory=ProcessOptions)
 
 class WhatIfScenarioRequest(BaseModel):
     user_profile: UserProfileRequest
@@ -195,7 +207,7 @@ async def rate_limit_reset(request: Request):
         logger.error(f"[requestId={request.state.request_id}] Error resetting rate limiter: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/agents/process")
+@app.post("/api/agents/process", response_model=ProcessResponse)
 async def process_financial_request(request: ProcessRequest, http_request: Request):
     """Main endpoint to process financial requests through multi-agent system"""
     request_id = getattr(http_request.state, "request_id", str(uuid4()))
@@ -235,18 +247,34 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
         else:
             profile_data_for_workflow = None
 
+        conversation_history = [msg.model_dump() for msg in request.conversation_history] if request.conversation_history else []
+        options = request.options.model_dump() if request.options else {"narrative": True}
+
         # Process through workflow
-        result = workflow.process_request(request.user_input, profile_data_for_workflow)
+        result = workflow.process_request(
+            request.user_input,
+            profile_data_for_workflow,
+            conversation_history=conversation_history,
+            session_summary=request.session_summary,
+            options=options,
+        )
         final_output = result.get("final_output", "")
         workflow_trace = result.get("workflow_trace", []) or []
         llm_call_count = get_llm_call_count()
+
+        def normalize_priority(value: Any) -> str:
+            value_str = str(value or "medium").lower().strip()
+            return value_str if value_str in {"low", "medium", "high"} else "medium"
+
+        plan_dict: Optional[Dict[str, Any]] = None
         
         if isinstance(final_output, dict):
             response_text = final_output.get("response", str(final_output))
             agent = final_output.get("agent", "master")
             action_type = final_output.get("actionType")
-            priority = final_output.get("priority", "medium")
+            priority = normalize_priority(final_output.get("priority", "medium"))
             fallback_used = bool(final_output.get("fallback_used")) or bool(result.get("fallback_used"))
+            plan_dict = final_output.get("plan") if isinstance(final_output.get("plan"), dict) else None
             
             # Ensure insights is clean list of dicts
             raw_insights = final_output.get("insights", [])
@@ -311,48 +339,82 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
         analysis_raw = result.get("current_analysis", {}).get("type", "comprehensive")
         analysis_type = str(analysis_raw).split('.')[-1].lower() if hasattr(analysis_raw, 'name') else str(analysis_raw).lower()
         
-        response = {
-            "success": True,
-            "final_output": response_text,
-            "agent": agent,
-            "actionType": action_type,
-            "priority": priority,
-            "insights": insights,
-            "analysis_type": analysis_type,
-            "agents_involved": agents_involved,
-            "detailed_analysis": detailed_analysis,
-            "workflow_trace": _simplify_for_json(workflow_trace),
-            "fallback_used": fallback_used,
-            "llm_call_count": llm_call_count,
-            "request_id": request_id
-        }
-        
-        return response
+        # Build structured plan (always present)
+        if plan_dict is not None:
+            plan = Plan.model_validate(plan_dict)
+        else:
+            plan = build_plan(
+                PlanInputs(
+                    user_profile=profile_data_for_workflow,
+                    income_analysis=detailed_analysis.get("income_analysis"),
+                    budget_plan=detailed_analysis.get("budget_plan"),
+                    investment_advice=detailed_analysis.get("investment_advice"),
+                    debt_optimization=detailed_analysis.get("debt_optimization"),
+                    financial_education=detailed_analysis.get("financial_education"),
+                )
+            )
+
+        if not str(response_text).strip():
+            response_text = render_plan_markdown(plan)
+
+        trace_simplified = _simplify_for_json(workflow_trace)
+        trace_models: List[WorkflowTraceEntry] = []
+        if isinstance(trace_simplified, list):
+            for entry in trace_simplified:
+                try:
+                    trace_models.append(WorkflowTraceEntry.model_validate(entry))
+                except Exception:
+                    continue
+
+        return ProcessResponse(
+            success=True,
+            final_output=str(response_text),
+            agent=str(agent or "master"),
+            actionType=str(action_type) if action_type is not None else None,
+            priority=normalize_priority(priority),
+            insights=insights,
+            analysis_type=str(analysis_type or "comprehensive"),
+            agents_involved=agents_involved,
+            detailed_analysis=detailed_analysis,
+            workflow_trace=trace_models,
+            fallback_used=bool(fallback_used),
+            llm_call_count=int(llm_call_count or 0),
+            request_id=str(request_id),
+            plan=plan,
+        )
         
     except Exception as e:
         logger.error(
             f"[requestId={request_id}] Error processing request: {str(e)}",
             exc_info=True
         )
-        return {
-            "success": True,
-            "final_output": (
-                "AI processing is temporarily degraded. Here is a safe fallback: "
-                "stabilize cash flow, protect emergency savings, prioritize high-interest debt, "
-                "and keep investing consistently in diversified assets."
-            ),
-            "agent": "master",
-            "actionType": "review",
-            "priority": "medium",
-            "insights": [],
-            "analysis_type": "comprehensive",
-            "agents_involved": ["master"],
-            "detailed_analysis": {"error": str(e)},
-            "workflow_trace": [],
-            "fallback_used": True,
-            "llm_call_count": get_llm_call_count(),
-            "request_id": request_id
-        }
+        fallback_text = (
+            "AI processing is temporarily degraded. Here is a safe fallback: "
+            "stabilize cash flow, protect emergency savings, prioritize high-interest debt, "
+            "and keep investing consistently in diversified assets."
+        )
+
+        plan = Plan(
+            executive_summary=fallback_text,
+            data_warnings=[str(e)],
+        )
+
+        return ProcessResponse(
+            success=True,
+            final_output=fallback_text,
+            agent="master",
+            actionType="review",
+            priority="medium",
+            insights=[],
+            analysis_type="comprehensive",
+            agents_involved=["master"],
+            detailed_analysis={"error": str(e)},
+            workflow_trace=[],
+            fallback_used=True,
+            llm_call_count=int(get_llm_call_count() or 0),
+            request_id=str(request_id),
+            plan=plan,
+        )
 
 @app.post("/api/agents/what-if-scenario")
 async def process_what_if_scenario(request: WhatIfScenarioRequest, http_request: Request):

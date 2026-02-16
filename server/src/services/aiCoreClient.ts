@@ -1,7 +1,7 @@
 import axios, { AxiosError } from "axios";
 
 const AI_CORE_BASE_URL = process.env.PYTHON_API_URL || "http://localhost:8001";
-const AI_CORE_TIMEOUT_MS = Number(process.env.AI_CORE_TIMEOUT_MS || 15000);
+const AI_CORE_TIMEOUT_MS = Number(process.env.AI_CORE_TIMEOUT_MS || 45000);
 const AI_CORE_HEALTH_TIMEOUT_MS = Number(process.env.AI_CORE_HEALTH_TIMEOUT_MS || 2500);
 const CIRCUIT_FAILURE_THRESHOLD = Number(process.env.AI_CORE_CIRCUIT_FAILURE_THRESHOLD || 3);
 const CIRCUIT_OPEN_MS = Number(process.env.AI_CORE_CIRCUIT_OPEN_MS || 30000);
@@ -17,7 +17,10 @@ export interface WorkflowTraceEntry {
 
 export interface AiCoreProcessRequest {
   user_input: string;
-  user_profile: Record<string, unknown>;
+  user_profile: Record<string, unknown> | null;
+  conversation_history?: Array<{ role: "user" | "assistant"; content: string }>;
+  session_summary?: string;
+  options?: { narrative?: boolean };
 }
 
 export interface AiCoreProcessResponse {
@@ -26,6 +29,7 @@ export interface AiCoreProcessResponse {
   agent: string;
   actionType?: string;
   priority?: "low" | "medium" | "high";
+  plan?: Record<string, unknown>;
   insights: Array<{
     agent: string;
     title: string;
@@ -90,6 +94,7 @@ const normalizeProcessResponse = (data: any, requestId: string): AiCoreProcessRe
     priority: ["low", "medium", "high"].includes(String(data?.priority))
       ? (data.priority as "low" | "medium" | "high")
       : "medium",
+    plan: data?.plan && typeof data.plan === "object" && !Array.isArray(data.plan) ? (data.plan as Record<string, unknown>) : undefined,
     insights,
     analysis_type: String(data?.analysis_type || "comprehensive"),
     agents_involved: Array.isArray(data?.agents_involved)
@@ -116,6 +121,20 @@ const buildFallbackResponse = (requestId: string, reason: string): AiCoreProcess
     agent: "master",
     actionType: "review",
     priority: "medium",
+    plan: {
+      executive_summary:
+        "AI analysis is temporarily unavailable. Use a safe fallback plan focused on cash flow, emergency savings, debt, and consistent investing.",
+      key_metrics: {
+        monthly_net_cash_flow: null,
+        savings_rate: null,
+        debt_to_income: null,
+        emergency_fund_months: null,
+        total_debt: null,
+      },
+      actions: { next_7_days: [], next_30_days: [], next_12_months: [] },
+      assumptions: [],
+      data_warnings: [reason],
+    },
     insights: [],
     analysis_type: "comprehensive",
     agents_involved: ["master"],

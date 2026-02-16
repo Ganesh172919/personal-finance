@@ -1,11 +1,12 @@
 ﻿from langchain_core.messages import SystemMessage, HumanMessage
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 import re
 
 from config import settings
 from graph.state import AnalysisType
 from utils import RateLimitedLLM
+from tools import PlanInputs, build_plan, render_plan_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,28 @@ class MasterFinancialStrategistAgent:
             )
         )
 
-    def determine_analysis_type(self, user_input: str, user_profile: Dict[str, Any]) -> AnalysisType:
+    def determine_analysis_type(
+        self,
+        user_input: str,
+        user_profile: Dict[str, Any],
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        session_summary: Optional[str] = None,
+    ) -> AnalysisType:
         """Deterministic keyword/rule-based routing (no LLM call)."""
         text = (user_input or "").lower().strip()
         has_profile = bool(user_profile)
+
+        # Lightweight context enrichment for ambiguous follow-ups (keeps cost low).
+        context_parts: List[str] = []
+        if session_summary:
+            context_parts.append(str(session_summary))
+        if conversation_history:
+            for msg in reversed(conversation_history):
+                if str(msg.get("role", "")).lower() == "user" and msg.get("content"):
+                    context_parts.append(str(msg.get("content")))
+                    break
+
+        text_with_context = f"{text} {' '.join(context_parts)}".strip().lower() if context_parts else text
 
         # General educational intent detection
         education_patterns = [
@@ -61,7 +80,7 @@ class MasterFinancialStrategistAgent:
 
         for analysis_type, keywords in domain_keywords.items():
             for keyword in keywords:
-                if keyword in text:
+                if keyword in text_with_context:
                     scores[analysis_type] += 1
 
         # Personal intent and broad-plan intent
@@ -73,7 +92,7 @@ class MasterFinancialStrategistAgent:
             ]
         )
 
-        looks_educational = any(re.search(pattern, text) for pattern in education_patterns)
+        looks_educational = any(re.search(pattern, text_with_context) for pattern in education_patterns)
 
         non_zero_domains = [domain for domain, score in scores.items() if score > 0]
         best_domain = max(scores, key=lambda key: scores[key]) if scores else AnalysisType.COMPREHENSIVE
@@ -99,63 +118,97 @@ class MasterFinancialStrategistAgent:
 
         return best_domain if scores.get(best_domain, 0) > 0 else AnalysisType.COMPREHENSIVE
 
-    def synthesize_plan(self, user_profile: Dict[str, Any], analyses: Dict[str, Any]) -> Dict[str, Any]:
-        """Synthesize specialist outputs into one cohesive plan using one LLM call."""
+    def synthesize_plan(
+        self,
+        user_profile: Dict[str, Any],
+        analyses: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Tool-first synthesis: deterministic plan + optional narrative polish."""
         logger.info("Master agent synthesizing comprehensive financial plan")
 
         valid_analyses = {k: v for k, v in analyses.items() if v is not None and not v.get("error")}
 
-        if not valid_analyses:
-            return {
-                "response": "I could not assemble enough analysis to build a personalized plan right now.",
-                "agent": "master",
-                "actionType": "review",
-                "priority": "medium",
-                "insights": [],
-                "fallback_used": True,
-            }
+        inputs = PlanInputs(
+            user_profile=user_profile if user_profile else None,
+            income_analysis=valid_analyses.get("income_analysis"),
+            budget_plan=valid_analyses.get("budget_plan"),
+            investment_advice=valid_analyses.get("investment_advice"),
+            debt_optimization=valid_analyses.get("debt_optimization"),
+        )
+        plan = build_plan(inputs)
+        deterministic_markdown = render_plan_markdown(plan)
 
-        synthesis_data = self._prepare_synthesis_data(user_profile, valid_analyses)
+        narrative_enabled = True
+        if context and isinstance(context, dict):
+            options = context.get("options", {})
+            if isinstance(options, dict) and options.get("narrative") is False:
+                narrative_enabled = False
 
-        prompt = f"""
-Create a clear financial plan from the deterministic specialist outputs below.
+        final_markdown = deterministic_markdown
+        fallback_used = False
 
-USER PROFILE:
-{synthesis_data['user_profile']}
+        if narrative_enabled:
+            session_summary = ""
+            history = []
+            if context and isinstance(context, dict):
+                session_summary = str(context.get("session_summary") or "")
+                history = context.get("conversation_history") if isinstance(context.get("conversation_history"), list) else []
 
-SPECIALIST OUTPUT SUMMARY:
-{synthesis_data['analyses_summary']}
+            prompt = f"""
+Rewrite the following financial plan for clarity and readability.
 
-KEY METRICS:
-{synthesis_data['key_metrics']}
+Rules (critical):
+- Do NOT introduce any new numbers. Keep every numeric value exactly as provided.
+- Do NOT change currency/percent values or add extra numeric examples.
+- Keep the same structure and meaning; you may improve wording and formatting only.
 
-Return sections:
-1. Executive summary
-2. Immediate actions (next 30 days)
-3. 3-6 month priorities
-4. 12-month roadmap
-5. Risks and safeguards
-6. Tracking metrics
+Optional chat context (for relevance; do not add new facts):
+Session summary: {session_summary[:800]}
+Recent messages: {history[-6:]}
 
-Use practical language and specific numbers when available.
+PLAN (do not change numbers):
+{deterministic_markdown}
 """
 
-        fallback_plan = self._create_fallback_plan(valid_analyses)
-        llm_response, fallback_used = self.llm.invoke_with_fallback(
-            [self.system_prompt, HumanMessage(content=prompt)],
-            fallback_plan,
-        )
+            llm_response, llm_fallback_used = self.llm.invoke_with_fallback(
+                [self.system_prompt, HumanMessage(content=prompt)],
+                deterministic_markdown,
+            )
 
-        synthesized_text = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
+            candidate = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
+            candidate = candidate.strip() + "\n"
+
+            if llm_fallback_used or not self._numbers_are_subset(candidate, deterministic_markdown):
+                if not llm_fallback_used:
+                    logger.warning("LLM output introduced new numbers; falling back to deterministic markdown.")
+                final_markdown = deterministic_markdown
+                fallback_used = True
+            else:
+                final_markdown = candidate
+                fallback_used = False
 
         return {
-            "response": self._format_final_output(synthesized_text, valid_analyses),
+            "response": final_markdown,
             "agent": "master",
             "actionType": self._determine_action_type(valid_analyses),
             "priority": self._determine_priority(valid_analyses),
             "insights": self._extract_key_insights(valid_analyses),
             "fallback_used": fallback_used,
+            "plan": plan.model_dump(),
         }
+
+    def _numbers_are_subset(self, candidate: str, reference: str) -> bool:
+        reference_nums = self._extract_numbers(reference)
+        candidate_nums = self._extract_numbers(candidate)
+        return candidate_nums.issubset(reference_nums)
+
+    def _extract_numbers(self, text: str) -> set[str]:
+        tokens = re.findall(r"₹?\d[\d,]*(?:\.\d+)?%?", text)
+        normalized = set()
+        for token in tokens:
+            normalized.add(token.replace("₹", "").replace(",", ""))
+        return normalized
 
     def _determine_action_type(self, analyses: Dict[str, Any]) -> str:
         if "debt_optimization" in analyses:

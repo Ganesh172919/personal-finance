@@ -42,9 +42,9 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/useToast";
-import { apiClient } from "@/lib/apiClient";
+import { apiClient, getTransactions } from "@/lib/apiClient";
 import { queryClient } from "@/lib/queryClient";
-import { IFinancialProfile, IAgentOutput } from "@/types";
+import { IAgentOutput, IFinancialProfile } from "@/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -68,9 +68,10 @@ export default function Portfolio() {
     date: new Date().toISOString().split('T')[0], 
   });
 
-  // Query 1: Get the user's financial profile (for transactions)
-  const { data: profile, isLoading: isLoadingProfile } = useQuery<IFinancialProfile>({
-    queryKey: ["/api/financial-profiles/me"],
+  // Query 1: Get investment transactions (for holdings and performance)
+  const { data: investmentTxData, isLoading: isLoadingTransactions } = useQuery({
+    queryKey: ["/api/transactions", "investment"],
+    queryFn: () => getTransactions({ page: 1, limit: 100, type: "investment" }),
   });
 
   // Query 2: Get AI insights for the 'Analysis' tab
@@ -105,6 +106,7 @@ export default function Portfolio() {
     setIsAddDialogOpen(false);
     setNewInvestment({ name: "", type: "Equity", amount: 0, date: new Date().toISOString().split('T')[0] });
     queryClient.invalidateQueries({ queryKey: ["/api/financial-profiles/me"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/transactions", "investment"] });
   },
   onError: (error: any) => {
     console.error("Mutation error:", error); 
@@ -123,13 +125,7 @@ export default function Portfolio() {
   };
 
   const portfolioData = useMemo(() => {
-  if (!profile?.transactions) {
-    return { totalValue: 0, dynamicHoldings: [], dynamicAllocations: [] };
-  }
-
-  const investmentTransactions = profile.transactions.filter(
-    (t) => t.category === "Investment"
-  );
+  const investmentTransactions = investmentTxData?.transactions || [];
 
   // Since amounts are negative, take absolute value for display
   const totalValue = Math.abs(
@@ -178,14 +174,12 @@ export default function Portfolio() {
    : [];
 
   return { totalValue, dynamicHoldings, dynamicAllocations };
-}, [profile]);
+}, [investmentTxData?.transactions]);
   
   const performanceData = useMemo(() => {
-  if (!profile?.transactions) return [];
-
-  const investmentTx = profile.transactions
-    .filter(t => t.category === "Investment") 
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const investmentTx = [...(investmentTxData?.transactions || [])].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
 
   if (investmentTx.length === 0) return [];
 
@@ -222,7 +216,7 @@ export default function Portfolio() {
   }
   
   return filledData.slice(-12);
-}, [profile]);
+}, [investmentTxData?.transactions]);
 
   const investmentInsights = useMemo(() => {
     if (!insights) return [];
@@ -235,7 +229,7 @@ export default function Portfolio() {
   }, [insights]);
 
 
-  if (isLoadingProfile) {
+  if (isLoadingTransactions) {
     return (
       <main className="flex-1 p-6 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />

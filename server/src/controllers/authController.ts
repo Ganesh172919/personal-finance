@@ -132,7 +132,8 @@ export const login = async (req: Request, res: Response) => {
 export const getGoogleCallback = (req: Request, res: Response) => {
   const user = req.user as IUserDocument; 
   generateAndSetToken(res, user._id.toString());
-  res.redirect("http://localhost:5173/dashboard");
+  const clientUrl = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/$/, "");
+  res.redirect(`${clientUrl}/dashboard`);
 };
 
 // --- Get Current User's Profile ---
@@ -146,4 +147,3 @@ export const logout = (req: Request, res: Response) => {
   res.clearCookie("jwt");
   res.status(200).json({ message: "Logged out successfully" });
 };
-

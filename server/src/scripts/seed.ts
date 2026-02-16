@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import FinancialProfileModel from "../models/financialProfileModel";
 import AgentOutputModel from "../models/agentOutputModel";
+import TransactionModel from "../models/transactionModel";
 
 dotenv.config();
 
@@ -16,6 +17,7 @@ async function seedProfile() {
     // Check and delete existing profile if needed
     await FinancialProfileModel.deleteOne({ userId });
     await AgentOutputModel.deleteMany({ userId });
+    await TransactionModel.deleteMany({ userId });
 
     // Create financial profile for your existing user
     const profile = await FinancialProfileModel.create({
@@ -33,19 +35,26 @@ async function seedProfile() {
         { name: "Student Loan", balance: 25000, interest_rate: 4.5, minimum_payment: 300, type: "student" },
         { name: "Credit Card", balance: 5000, interest_rate: 18.9, minimum_payment: 150, type: "credit_card" }
       ],
-      transactions: [
-        { amount: 5000, category: "Salary", description: "Monthly salary", date: new Date(), type: "income" },
-        { amount: -1500, category: "Rent", description: "Monthly rent", date: new Date(), type: "expense" },
-        { amount: -400, category: "Groceries", description: "Grocery shopping", date: new Date(), type: "expense" },
-        { amount: -200, category: "Utilities", description: "Electric bill", date: new Date(), type: "expense" },
-        { amount: -300, category: "Entertainment", description: "Dining out", date: new Date(), type: "expense" },
-        { amount: -100, category: "Transportation", description: "Gas", date: new Date(), type: "expense" }
-      ],
       risk_tolerance: "moderate",
       investment_experience: "beginner"
     });
 
     console.log("✅ Financial profile created for user");
+
+    const now = new Date();
+    await TransactionModel.insertMany([
+      { userId, amount: 5000, category: "Salary", description: "Monthly salary", date: now, type: "income" },
+      { userId, amount: -1500, category: "Rent", description: "Monthly rent", date: now, type: "expense" },
+      { userId, amount: -400, category: "Groceries", description: "Grocery shopping", date: now, type: "expense" },
+      { userId, amount: -200, category: "Utilities", description: "Electric bill", date: now, type: "expense" },
+      { userId, amount: -300, category: "Entertainment", description: "Dining out", date: now, type: "expense" },
+      { userId, amount: -100, category: "Transportation", description: "Gas", date: now, type: "expense" }
+    ]);
+
+    await FinancialProfileModel.updateOne(
+      { _id: profile._id },
+      { $set: { transactionsCount: 6, transactionsUpdatedAt: now } }
+    );
 
     // Create sample agent outputs for display
     const sampleOutputs = [

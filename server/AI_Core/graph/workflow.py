@@ -117,7 +117,14 @@ class FinancialWorkflow:
     def _run_master(self, state: AgentState) -> Dict[str, Any]:
         user_input = state.get("user_input", "")
         user_profile = state.get("user_profile")
-        analysis_type = self.master_agent.determine_analysis_type(user_input, user_profile)
+        conversation_history = state.get("conversation_history") or []
+        session_summary = state.get("session_summary")
+        analysis_type = self.master_agent.determine_analysis_type(
+            user_input,
+            user_profile,
+            conversation_history=conversation_history,
+            session_summary=session_summary,
+        )
         analysis_value = analysis_type.value if hasattr(analysis_type, "value") else str(analysis_type).lower()
         return {"current_analysis": {"type": analysis_value}, "next_agent": analysis_value}
 
@@ -266,7 +273,12 @@ class FinancialWorkflow:
             "debt_optimization": state.get("debt_optimization"),
         }
         valid_analyses = {key: value for key, value in analyses.items() if value}
-        final_plan = self.master_agent.synthesize_plan(user_profile, valid_analyses)
+        context = {
+            "conversation_history": state.get("conversation_history") or [],
+            "session_summary": state.get("session_summary"),
+            "options": state.get("options") or {},
+        }
+        final_plan = self.master_agent.synthesize_plan(user_profile, valid_analyses, context=context)
         return {
             "final_output": final_plan,
             "next_agent": "end",
@@ -277,11 +289,20 @@ class FinancialWorkflow:
         logger.info("Synthesizing final financial plan")
         return self._execute_with_trace(state, "master_synthesis", lambda: self._run_synthesis(state))
 
-    def process_request(self, user_input: str, user_profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    def process_request(
+        self,
+        user_input: str,
+        user_profile: Optional[Dict[str, Any]],
+        conversation_history: Optional[list[Dict[str, str]]] = None,
+        session_summary: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         initial_state = AgentState(
             user_input=user_input,
             user_profile=user_profile,
-            conversation_history=[],
+            conversation_history=conversation_history or [],
+            session_summary=session_summary,
+            options=options or {"narrative": True},
             current_analysis={},
             income_analysis=None,
             budget_plan=None,

@@ -36,7 +36,7 @@ export default function Transactions() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/transactions"],
-    queryFn: () => getTransactions({ page: 1, limit: 200 }),
+    queryFn: () => getTransactions({ page: 1, limit: 100 }),
   });
 
   const createMutation = useMutation({

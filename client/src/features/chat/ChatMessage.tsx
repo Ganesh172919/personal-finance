@@ -18,6 +18,18 @@ export function ChatMessage({ message }: ChatMessageProps) {
   const { user } = useAuth();
   const isUser = message.role === "user";
 
+  const formatCurrency = (value?: number | null) => {
+    if (value === null || value === undefined || Number.isNaN(value)) return "—";
+    const rounded = Math.round(value);
+    const sign = rounded < 0 ? "-" : "";
+    return `${sign}₹${Math.abs(rounded).toLocaleString("en-IN")}`;
+  };
+
+  const formatPercent = (value?: number | null) => {
+    if (value === null || value === undefined || Number.isNaN(value)) return "—";
+    return `${value.toFixed(1)}%`;
+  };
+
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content);
     setCopied(true);
@@ -125,6 +137,55 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </div>
           )}
         </div>
+
+        {!isUser && message.metadata?.plan?.key_metrics && (
+          <div className="mt-2 w-full grid grid-cols-2 md:grid-cols-5 gap-2">
+            <div className="rounded-md border border-border bg-background/60 p-2">
+              <p className="text-[11px] text-muted-foreground">Net cash flow</p>
+              <p className="text-sm font-semibold">
+                {formatCurrency(message.metadata.plan.key_metrics.monthly_net_cash_flow)}
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-background/60 p-2">
+              <p className="text-[11px] text-muted-foreground">Savings rate</p>
+              <p className="text-sm font-semibold">
+                {formatPercent(message.metadata.plan.key_metrics.savings_rate)}
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-background/60 p-2">
+              <p className="text-[11px] text-muted-foreground">Debt-to-income</p>
+              <p className="text-sm font-semibold">
+                {formatPercent(message.metadata.plan.key_metrics.debt_to_income)}
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-background/60 p-2">
+              <p className="text-[11px] text-muted-foreground">Emergency fund</p>
+              <p className="text-sm font-semibold">
+                {message.metadata.plan.key_metrics.emergency_fund_months === null ||
+                message.metadata.plan.key_metrics.emergency_fund_months === undefined
+                  ? "—"
+                  : `${message.metadata.plan.key_metrics.emergency_fund_months.toFixed(1)} mo`}
+              </p>
+            </div>
+            <div className="rounded-md border border-border bg-background/60 p-2">
+              <p className="text-[11px] text-muted-foreground">Total debt</p>
+              <p className="text-sm font-semibold">
+                {formatCurrency(message.metadata.plan.key_metrics.total_debt)}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!isUser && message.metadata?.plan?.data_warnings?.length ? (
+          <div className="mt-2 w-full rounded-md border border-border bg-muted/30 p-3">
+            <p className="text-xs font-semibold text-foreground mb-2">Data warnings</p>
+            <ul className="list-disc list-inside space-y-1 text-xs text-muted-foreground">
+              {message.metadata.plan.data_warnings.slice(0, 5).map((warning, idx) => (
+                <li key={idx}>{warning}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         {!isUser &&
           ((message.metadata?.workflowTrace && message.metadata.workflowTrace.length > 0) ||

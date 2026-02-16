@@ -38,10 +38,15 @@ export interface IFinancialProfile {
   transactions: ITransaction[];
   risk_tolerance: 'conservative' | 'moderate' | 'aggressive';
   investment_experience: 'beginner' | 'intermediate' | 'expert';
+  transactionsCount?: number;
+  transactionsUpdatedAt?: Date;
+  transactionsMigratedAt?: Date;
 }
 
 export interface IFinancialProfileDocument extends IFinancialProfile, Document {
   _id: Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const financialProfileSchema = new Schema<IFinancialProfileDocument>(
@@ -79,6 +84,12 @@ const financialProfileSchema = new Schema<IFinancialProfileDocument>(
         required: true 
       }
     }],
+
+    // New: transaction metadata used for cache invalidation and migration tracking.
+    // Transactions are stored in the dedicated Transaction collection; this embedded array is legacy-only.
+    transactionsCount: { type: Number, default: 0 },
+    transactionsUpdatedAt: { type: Date, default: Date.now },
+    transactionsMigratedAt: { type: Date },
     risk_tolerance: { 
       type: String, 
       enum: ['conservative', 'moderate', 'aggressive'],

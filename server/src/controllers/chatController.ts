@@ -2,28 +2,16 @@ import { Request, Response } from "express";
 import ChatSessionModel, { IChatSessionDocument } from "../models/chatSessionModel";
 import ChatMessageModel, { IChatMessageDocument } from "../models/chatMessageModel";
 import FinancialProfileModel from "../models/financialProfileModel";
+import AiResponseCacheModel from "../models/aiResponseCacheModel";
 import { IUserDocument } from "../models/userModel";
 import mongoose from "mongoose";
 import { processAiCoreRequest } from "../services/aiCoreClient";
-const DEFAULT_GOAL_TIMELINE_MONTHS = 12;
-
-const getTimelineMonths = (deadline?: string) => {
-  if (!deadline) {
-    return DEFAULT_GOAL_TIMELINE_MONTHS;
-  }
-
-  const deadlineDate = new Date(deadline);
-  if (Number.isNaN(deadlineDate.getTime())) {
-    return DEFAULT_GOAL_TIMELINE_MONTHS;
-  }
-
-  const now = new Date();
-  const months =
-    (deadlineDate.getFullYear() - now.getFullYear()) * 12 +
-    (deadlineDate.getMonth() - now.getMonth());
-
-  return Math.max(1, months);
-};
+import { buildProcessRequest } from "../services/aiRequestBuilder";
+import { buildChatMessageCacheKey, ttlMs } from "../services/aiCache";
+import { buildDeterministicChatSummary } from "../services/chatSummary";
+import { ensureProfileTransactionsMigrated } from "../services/transactionMigration";
+import { fetchTransactionsForAi } from "../services/transactionService";
+import { normalizeAiPlan } from "../schemas/aiPlanSchema";
 
 /**
  * Create a new chat session
@@ -309,6 +297,18 @@ export async function sendMessage(req: Request, res: Response) {
       return res.status(404).json({ message: "Session not found" });
     }
 
+    const historyDocs = await ChatMessageModel.find({ sessionId: session._id })
+      .sort({ createdAt: -1 })
+      .limit(6)
+      .lean();
+
+    const conversationHistory = historyDocs
+      .reverse()
+      .map(message => ({
+        role: message.role as "user" | "assistant",
+        content: String(message.content)
+      }));
+
     // Create user message
     const userMessage = await ChatMessageModel.create({
       sessionId: session._id,
@@ -320,66 +320,94 @@ export async function sendMessage(req: Request, res: Response) {
     // Get the user's financial profile for AI context
     const financialProfile = await FinancialProfileModel.findOne({ userId: user._id });
 
-    // Build user profile for AI
-    const userProfile = {
-      age: financialProfile?.age || 30,
-      annual_income: financialProfile?.annual_income || 0,
-      monthly_expenses: financialProfile?.monthly_expenses || 0,
-      savings: financialProfile?.savings || 0,
-      goals: financialProfile?.goals || [],
-      debts: financialProfile?.debts || [],
-      transactions: financialProfile?.transactions?.slice(-50) || [],
-      risk_tolerance: financialProfile?.risk_tolerance || "moderate",
-      investment_experience: financialProfile?.investment_experience || "beginner"
-    };
-
     let aiResponseContent = "I apologize, but I'm having trouble processing your request right now. Please try again.";
     let aiMetadata: any = {};
 
     try {
-      const aiResponse = await processAiCoreRequest(
-        {
-          user_input: content.trim(),
-          user_profile: {
-            age: userProfile.age,
-            annual_income: userProfile.annual_income,
-            monthly_expenses: userProfile.monthly_expenses,
-            savings: userProfile.savings,
-            debts: userProfile.debts || [],
-            financial_goals: (userProfile.goals || []).map((g: any) => ({
-              name: g.name || "Goal",
-              target: g.target || 0,
-              timeline_months: getTimelineMonths(g.deadline),
-              priority: g.priority || 1
-            })),
-            risk_tolerance: userProfile.risk_tolerance,
-            investment_experience: userProfile.investment_experience,
-            time_horizon: 10,
-            transactions: (userProfile.transactions || []).map((t: any) => ({
-              amount: t.amount || 0,
-              category: t.category || "Other",
-              description: t.description || "",
-              date: t.date || new Date().toISOString(),
-              type: t.type || "expense"
-            }))
-          }
-        },
-        requestId
-      );
+      const aiStartedAt = Date.now();
 
-      if (aiResponse && aiResponse.success) {
-        aiResponseContent = aiResponse.final_output || aiResponseContent;
-        aiMetadata = {
-          analysisType: aiResponse.analysis_type,
-          agentsInvolved: aiResponse.agents_involved,
-          priority: aiResponse.priority,
-          actionable: aiResponse.actionType ? true : false,
-          detailedAnalysis: aiResponse.detailed_analysis || {},
-          workflowTrace: aiResponse.workflow_trace || [],
-          fallbackUsed: aiResponse.fallback_used || false,
-          llmCallCount: aiResponse.llm_call_count || 0,
-          requestId: aiResponse.request_id || requestId
-        };
+      const profileUpdatedAt = financialProfile?.updatedAt ? new Date(financialProfile.updatedAt).toISOString() : "unknown";
+      if (financialProfile) {
+        await ensureProfileTransactionsMigrated(financialProfile as any);
+      }
+
+      const transactionsUpdatedAt = financialProfile?.transactionsUpdatedAt
+        ? new Date(financialProfile.transactionsUpdatedAt as unknown as Date).toISOString()
+        : undefined;
+      const sessionSummaryUpdatedAt = session.summaryUpdatedAt
+        ? new Date(session.summaryUpdatedAt as unknown as Date).toISOString()
+        : undefined;
+
+      const cacheKey = buildChatMessageCacheKey({
+        userId: user._id.toString(),
+        profileUpdatedAt,
+        transactionsUpdatedAt,
+        sessionId: session._id.toString(),
+        sessionMessageCount: session.messageCount,
+        sessionSummaryUpdatedAt,
+        content: content.trim()
+      });
+
+      const cached = await AiResponseCacheModel.findOne({ cacheKey }).lean();
+      if (cached?.responseData && typeof cached.responseData === "object") {
+        const cachedData = cached.responseData as any;
+        aiResponseContent = String(cachedData.content || aiResponseContent);
+        aiMetadata = { ...(cachedData.metadata || {}), cacheHit: true, aiCoreDurationMs: 0 };
+        console.log(`[requestId=${requestId}] chat-message cache_hit=true`);
+      } else {
+        const txResult = financialProfile ? await fetchTransactionsForAi({ userId: user._id }) : null;
+
+        const { request: aiRequest, stats } = buildProcessRequest({
+          userInput: content.trim(),
+          profile: financialProfile,
+          transactions: txResult?.transactions,
+          totalTransactions: txResult?.stats.totalTransactions,
+          conversationHistory,
+          sessionSummary: session.summary
+        });
+
+        console.log(
+          `[requestId=${requestId}] chat.aiRequest transactionCountSent=${stats.sentTransactions} droppedTransactions=${stats.droppedTransactions}`
+        );
+
+        const aiResponse = await processAiCoreRequest(aiRequest, requestId);
+        const aiDurationMs = Date.now() - aiStartedAt;
+
+        if (aiResponse && aiResponse.success) {
+          const { plan: normalizedPlan, valid: planValid } = normalizeAiPlan(aiResponse.plan);
+          if (!planValid) {
+            console.warn(`[requestId=${requestId}] chat.ai.plan_validation_failed=true`);
+          }
+
+          aiResponseContent = aiResponse.final_output || aiResponseContent;
+          aiMetadata = {
+            analysisType: aiResponse.analysis_type,
+            agentsInvolved: aiResponse.agents_involved,
+            priority: aiResponse.priority,
+            actionable: aiResponse.actionType ? true : false,
+            plan: normalizedPlan,
+            detailedAnalysis: aiResponse.detailed_analysis || {},
+            workflowTrace: aiResponse.workflow_trace || [],
+            fallbackUsed: aiResponse.fallback_used || false,
+            llmCallCount: aiResponse.llm_call_count || 0,
+            requestId: aiResponse.request_id || requestId,
+            aiCoreDurationMs: aiDurationMs,
+            cacheHit: false
+          };
+        }
+
+        await AiResponseCacheModel.findOneAndUpdate(
+          { cacheKey },
+          {
+            $set: {
+              userId: user._id,
+              endpoint: "chat-message",
+              responseData: { content: aiResponseContent, metadata: aiMetadata },
+              expiresAt: new Date(Date.now() + ttlMs.chatMessage)
+            }
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
       }
     } catch (aiError: any) {
       console.error(`[requestId=${requestId}] AI service error:`, aiError.message);
@@ -407,7 +435,32 @@ export async function sendMessage(req: Request, res: Response) {
       updateData.title = content.trim().substring(0, 50) + (content.length > 50 ? "..." : "");
     }
 
-    await ChatSessionModel.findByIdAndUpdate(session._id, updateData);
+    const updatedSession = await ChatSessionModel.findByIdAndUpdate(session._id, updateData, { new: true });
+
+    const nextMessageCount = (updatedSession?.messageCount ?? session.messageCount + 2) as number;
+    const nextUserMessageCount = Math.floor(nextMessageCount / 2);
+    const shouldUpdateSummary =
+      !session.summary ||
+      session.summary.trim().length === 0 ||
+      nextUserMessageCount % 8 === 0;
+
+    if (shouldUpdateSummary) {
+      const summaryDocs = await ChatMessageModel.find({ sessionId: session._id })
+        .sort({ createdAt: -1 })
+        .limit(20)
+        .lean();
+
+      const summary = buildDeterministicChatSummary(
+        summaryDocs
+          .reverse()
+          .map(message => ({ role: message.role as "user" | "assistant", content: String(message.content) }))
+      );
+
+      await ChatSessionModel.findByIdAndUpdate(session._id, {
+        summary,
+        summaryUpdatedAt: new Date()
+      });
+    }
 
     return res.json({
       userMessage: {

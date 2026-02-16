@@ -2,6 +2,8 @@
 // between your React frontend and your Node.js backend. It's a generic
 // wrapper around the native `fetch` API to standardize requests and error handling.
 
+import type { AiCoreStatusResponse, ProcessAICommandResponse } from "@/types/ai.types";
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "/api";
 
 const buildApiUrl = (endpoint: string) => {
@@ -63,11 +65,15 @@ export async function apiClient<T>(
 
 // Add these helper functions to your existing apiClient.ts
 
-export async function processAICommand(command: string): Promise<any> {
+export async function processAICommand(command: string): Promise<ProcessAICommandResponse> {
   return apiClient("/process-command", {
     method: "POST",
     body: JSON.stringify({ command }),
   });
+}
+
+export async function getAiCoreStatus(): Promise<AiCoreStatusResponse> {
+  return apiClient("/ai-core/status");
 }
 
 export async function processScenario(parameters: any): Promise<any> {
@@ -133,6 +139,53 @@ export async function getTransactions(query: TransactionsQuery = {}): Promise<Tr
 
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return apiClient(`/transactions${suffix}`);
+}
+
+export interface RecentTransactionsResponse {
+  transactions: TransactionsResponse["transactions"];
+}
+
+export async function getRecentTransactions(limit = 5): Promise<RecentTransactionsResponse> {
+  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 5));
+  return apiClient(`/transactions/recent?limit=${safeLimit}`);
+}
+
+export interface TransactionsSummaryResponse {
+  period: {
+    from: string; // YYYY-MM-DD
+    to: string; // YYYY-MM-DD
+    groupBy: string;
+  };
+  monthly: Array<{
+    month: string; // YYYY-MM
+    income: number;
+    expense: number;
+    net: number;
+  }>;
+  top_categories: Array<{
+    category: string;
+    amount: number;
+    percentage: number;
+  }>;
+  top_categories_month: string; // YYYY-MM
+  cache_hit?: boolean;
+}
+
+export async function getTransactionsSummary(params: {
+  from: string;
+  to: string;
+  groupBy?: "month";
+  topCategories?: number;
+}): Promise<TransactionsSummaryResponse> {
+  const groupBy = params.groupBy || "month";
+  const top = Math.max(1, Math.min(20, Number(params.topCategories) || 6));
+  const qs = new URLSearchParams({
+    from: params.from,
+    to: params.to,
+    groupBy,
+    topCategories: String(top)
+  });
+  return apiClient(`/transactions/summary?${qs.toString()}`);
 }
 
 export async function createTransaction(payload: TransactionPayload): Promise<any> {

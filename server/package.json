@@ -7,7 +7,11 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "migrate:transactions": "tsx src/scripts/migrateTransactions.ts",
+    "test": "vitest",
+    "test:watch": "vitest",
+    "test:ci": "vitest run"
   },
   "dependencies": {
     "axios": "^1.13.2",
@@ -38,7 +42,11 @@
     "@types/passport": "^1.0.17",
     "@types/passport-google-oauth20": "^2.0.16",
     "@types/passport-jwt": "^4.0.1",
+    "@types/supertest": "^6.0.3",
+    "mongodb-memory-server": "^10.2.0",
+    "supertest": "^7.1.4",
     "tsx": "^4.7.1",
-    "typescript": "^5.4.3"
+    "typescript": "^5.4.3",
+    "vitest": "^2.1.9"
   }
 }

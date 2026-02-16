@@ -7,6 +7,8 @@ import {
   deleteDebt,
   deleteGoal,
   deleteTransaction,
+  getTransactionsSummary,
+  listRecentTransactions,
   listTransactions,
   updateDebt,
   updateGoal,
@@ -19,7 +21,9 @@ import {
   createTransactionBodySchema,
   debtIdParamSchema,
   goalIdParamSchema,
+  recentTransactionsQuerySchema,
   listTransactionsQuerySchema,
+  transactionsSummaryQuerySchema,
   transactionIdParamSchema,
   updateDebtBodySchema,
   updateGoalBodySchema,
@@ -31,6 +35,8 @@ const router = Router();
 router.use(passport.authenticate("jwt", { session: false }));
 
 router.post("/transactions", validate({ body: createTransactionBodySchema }), createTransaction);
+router.get("/transactions/recent", validate({ query: recentTransactionsQuerySchema }), listRecentTransactions);
+router.get("/transactions/summary", validate({ query: transactionsSummaryQuerySchema }), getTransactionsSummary);
 router.get("/transactions", validate({ query: listTransactionsQuerySchema }), listTransactions);
 router.patch(
   "/transactions/:id",

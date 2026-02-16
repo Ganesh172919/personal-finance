@@ -2,6 +2,8 @@
  * Chat-related TypeScript interfaces
  */
 
+import type { Plan } from "@/types/ai.types";
+
 export interface IChatSession {
   id: string;
   title: string;
@@ -15,6 +17,7 @@ export interface IChatMessageMetadata {
   agentsInvolved?: string[];
   priority?: 'low' | 'medium' | 'high';
   actionable?: boolean;
+  plan?: Plan;
   detailedAnalysis?: Record<string, unknown>;
   workflowTrace?: Array<{
     agent: string;
@@ -26,6 +29,8 @@ export interface IChatMessageMetadata {
   fallbackUsed?: boolean;
   llmCallCount?: number;
   requestId?: string;
+  aiCoreDurationMs?: number;
+  cacheHit?: boolean;
 }
 
 export interface IChatMessage {

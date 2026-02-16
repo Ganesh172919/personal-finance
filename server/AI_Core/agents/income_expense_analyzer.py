@@ -2,6 +2,7 @@ from typing import Dict, Any, List
 import logging
 from datetime import datetime
 import pandas as pd
+from dateutil.parser import parse as parse_date
 
 from tools import DataProcessor, FinancialCalculators
 
@@ -106,7 +107,7 @@ class IncomeExpenseAnalyzerAgent:
         monthly_data = {}
         for t in transactions:
             try:
-                date = datetime.strptime(t.get('date', ''), "%Y-%m-%d")
+                date = parse_date(str(t.get('date', '')))
                 key = date.strftime("%Y-%m")
                 amt = float(t.get('amount', 0))
                 monthly_data.setdefault(key, {"income": 0.0, "expenses": 0.0})
