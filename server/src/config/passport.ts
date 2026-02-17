@@ -2,33 +2,20 @@ import passport from "passport";
 import { Strategy as JwtStrategy } from "passport-jwt";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import UserModel from "../models/userModel";
+import { getEnv } from "./env";
 
 export const configurePassport = () => {
-  console.log("🔧 Configuring Passport strategies...");
-  
-  console.log("JWT_SECRET available:", !!process.env.JWT_SECRET);
-  console.log("GOOGLE_CLIENT_ID available:", !!process.env.GOOGLE_CLIENT_ID);
-  
-  if (!process.env.JWT_SECRET) {
-    throw new Error(" JWT_SECRET environment variable is required");
-  }
-  
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-    console.warn(" Google OAuth credentials not found, Google authentication will not work");
-  }
+  const env = getEnv();
 
   passport.use(
-    'jwt',
+    "jwt",
     new JwtStrategy(
       {
-        jwtFromRequest: (req) => {
-          let token = null;
-          if (req && req.cookies && req.cookies.jwt) {
-            token = req.cookies.jwt;
-          }
-          return token;
+        jwtFromRequest: req => {
+          const token = (req as any)?.cookies?.jwt;
+          return token || null;
         },
-        secretOrKey: process.env.JWT_SECRET,
+        secretOrKey: env.JWT_SECRET,
       },
       async (jwtPayload, done) => {
         try {
@@ -38,32 +25,31 @@ export const configurePassport = () => {
           }
           return done(null, false);
         } catch (error) {
-          console.error("JWT Strategy error:", error);
-          return done(error, false);
+          return done(error as any, false);
         }
       }
     )
   );
 
-  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
     passport.use(
-      'google',
+      "google",
       new GoogleStrategy(
         {
-          clientID: process.env.GOOGLE_CLIENT_ID,
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-          callbackURL: "/api/auth/google/callback",
+          clientID: env.GOOGLE_CLIENT_ID,
+          clientSecret: env.GOOGLE_CLIENT_SECRET,
+          callbackURL: env.GOOGLE_CALLBACK_URL || "/api/auth/google/callback",
         },
-        async (accessToken, refreshToken, profile, done) => {
+        async (_accessToken, _refreshToken, profile, done) => {
           try {
             let user = await UserModel.findOne({ googleId: profile.id });
-            
+
             if (user) {
               return done(null, user);
             }
 
             user = await UserModel.findOne({ email: profile.emails?.[0]?.value });
-            
+
             if (user) {
               user.googleId = profile.id;
               user.photoURL = profile.photos?.[0]?.value;
@@ -83,15 +69,14 @@ export const configurePassport = () => {
 
             return done(null, user);
           } catch (error) {
-            console.error("Google Strategy error:", error);
-            return done(error, false);
+            return done(error as any, false);
           }
         }
       )
     );
+  } else if (env.NODE_ENV !== "test") {
+    console.warn("Google OAuth credentials not found; Google authentication will not work");
   }
-
-  console.log("✅ Passport strategies configured successfully");
 };
 
 export default passport;

@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/Label";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { apiClient } from "@/lib/apiClient";
+import { ApiError, apiClient } from "@/lib/apiClient";
 import { useToast } from "@/hooks/useToast";
 import { Link, useLocation } from "wouter";
 
@@ -36,22 +36,30 @@ export default function Register() {
 
   const onSubmit = async (data: z.infer<typeof registerSchema>) => {
     try {
-      await apiClient("/auth/register", {
+      const response = await apiClient<{ message?: string; dev_otp?: string }>("/auth/register", {
         method: "POST",
         body: JSON.stringify(data),
       });
+
+      if (response?.dev_otp) {
+        sessionStorage.setItem("devOtpForVerification", response.dev_otp);
+      }
       toast({
         title: "Registration Successful",
-        description: "We've sent a 6-digit verification code to your email.",
+        description: response?.dev_otp
+          ? `Dev mode OTP: ${response.dev_otp}`
+          : "We've sent a 6-digit verification code to your email.",
       });
 
       // Store the email in sessionStorage and navigate to VerifyEmail
       sessionStorage.setItem("emailForVerification", data.email);
       navigate("/verify-email");
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const requestId = error instanceof ApiError ? error.requestId : undefined;
+      const message = error instanceof Error ? error.message : "An unexpected error occurred.";
       toast({
         title: "Registration Failed",
-        description: error.message || "An unexpected error occurred.",
+        description: requestId ? `${message} (Request ID: ${requestId})` : message,
         variant: "destructive",
       });
     }

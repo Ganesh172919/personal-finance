@@ -17,6 +17,7 @@ import {
   sendMessageBodySchema,
   sessionListQuerySchema
 } from "../schemas/chatSchemas";
+import { asyncRoute } from "../utils/asyncRoute";
 
 const router = Router();
 
@@ -24,15 +25,15 @@ const router = Router();
 const requireAuth = passport.authenticate("jwt", { session: false });
 
 // Session routes
-router.post("/sessions", requireAuth, createSession);
-router.get("/sessions", requireAuth, validate({ query: sessionListQuerySchema }), getSessions);
-router.get("/sessions/:sessionId", requireAuth, validate({ params: sessionIdParamSchema }), getSession);
-router.delete("/sessions/:sessionId", requireAuth, validate({ params: sessionIdParamSchema }), deleteSession);
+router.post("/sessions", requireAuth, asyncRoute(createSession));
+router.get("/sessions", requireAuth, validate({ query: sessionListQuerySchema }), asyncRoute(getSessions));
+router.get("/sessions/:sessionId", requireAuth, validate({ params: sessionIdParamSchema }), asyncRoute(getSession));
+router.delete("/sessions/:sessionId", requireAuth, validate({ params: sessionIdParamSchema }), asyncRoute(deleteSession));
 router.patch(
   "/sessions/:sessionId",
   requireAuth,
   validate({ params: sessionIdParamSchema, body: renameSessionBodySchema }),
-  renameSession
+  asyncRoute(renameSession)
 );
 
 // Message routes
@@ -40,13 +41,13 @@ router.get(
   "/sessions/:sessionId/messages",
   requireAuth,
   validate({ params: sessionIdParamSchema, query: getMessagesQuerySchema }),
-  getMessages
+  asyncRoute(getMessages)
 );
 router.post(
   "/sessions/:sessionId/messages",
   requireAuth,
   validate({ params: sessionIdParamSchema, body: sendMessageBodySchema }),
-  sendMessage
+  asyncRoute(sendMessage)
 );
 
 export default router;

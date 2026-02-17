@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -185,7 +186,30 @@ def _build_actions(
     buckets = ActionBuckets()
     has_profile = bool(user_profile)
 
-    def add(bucket: List[ActionItem], item: ActionItem) -> None:
+    def infer_kind(item: ActionItem) -> str:
+        text = f"{item.title} {item.why}".lower()
+        if "debt" in text or "loan" in text or "credit" in text:
+            return "debt"
+        if "invest" in text or "sip" in text or "portfolio" in text:
+            return "invest"
+        if "budget" in text or "spend" in text:
+            return "budget"
+        if "goal" in text:
+            return "goal"
+        if "learn" in text or "education" in text:
+            return "education"
+        if "cash flow" in text or "emergency" in text:
+            return "cashflow"
+        return "generic"
+
+    def add(bucket: List[ActionItem], item: ActionItem, *, bucket_days: int) -> None:
+        if item.due_days is None:
+            item.due_days = bucket_days
+        if not item.id:
+            digest = hashlib.sha256(f"{bucket_days}|{item.title}".encode("utf-8")).hexdigest()
+            item.id = digest[:12]
+        if not item.kind or item.kind == "generic":
+            item.kind = infer_kind(item)
         bucket.append(item)
 
     if not has_profile:
@@ -203,6 +227,7 @@ def _build_actions(
                 priority="high",
                 expected_impact="Enables a personalized plan instead of generic guidance.",
             ),
+            bucket_days=7,
         )
         return buckets
 
@@ -224,6 +249,7 @@ def _build_actions(
                 priority="high",
                 expected_impact="Moves you toward consistent monthly surplus.",
             ),
+            bucket_days=7,
         )
 
     if fund_months is None and user_profile and user_profile.get("monthly_expenses") in (None, 0, "0"):
@@ -243,6 +269,7 @@ def _build_actions(
                 priority="high",
                 expected_impact="Reduces financial fragility and protects long-term goals.",
             ),
+            bucket_days=30,
         )
 
     if total_debt is not None and total_debt > 0:
@@ -266,6 +293,7 @@ def _build_actions(
                 priority="high",
                 expected_impact="Lowers interest burden and improves cash flow over time.",
             ),
+            bucket_days=30,
         )
 
     # Investing actions (only once cash flow is not clearly negative)
@@ -283,6 +311,7 @@ def _build_actions(
                 priority="medium",
                 expected_impact="Builds disciplined, repeatable progress toward long-term goals.",
             ),
+            bucket_days=365,
         )
 
     # Budget plan-specific action (if available)
@@ -303,6 +332,7 @@ def _build_actions(
                     priority="medium",
                     expected_impact="Improves consistency of goal progress.",
                 ),
+                bucket_days=7,
             )
 
     return buckets
@@ -362,4 +392,3 @@ def _render_action_bucket(title: str, items: List[ActionItem]) -> List[str]:
         lines.append(f"  - Impact: {item.expected_impact}")
     lines.append("")
     return lines
-

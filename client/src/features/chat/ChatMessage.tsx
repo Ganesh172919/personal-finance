@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { User, Wand2, Copy, CheckCircle } from "lucide-react";
+import { User, Wand2, Copy, CheckCircle, ListTodo, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -8,15 +8,73 @@ import { Avatar, AvatarFallback } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
 import { AgentWorkflowVisualizer } from "@/components/AgentWorkflowVisualizer";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ApiError, createTasksFromPlan, submitAgentOutputFeedback } from "@/lib/apiClient";
+import { useToast } from "@/hooks/useToast";
+import { useAppConfig } from "@/hooks/useAppConfig";
 
 interface ChatMessageProps {
   message: IChatMessage;
 }
 
 export function ChatMessage({ message }: ChatMessageProps) {
-  const [copied, setCopied] = useState(false);
-  const { user } = useAuth();
   const isUser = message.role === "user";
+  const [copied, setCopied] = useState(false);
+  const [feedbackRating, setFeedbackRating] = useState<"up" | "down" | null>(null);
+  const [tasksAdded, setTasksAdded] = useState(false);
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const configQuery = useAppConfig({ enabled: !isUser });
+  const tasksEnabled = configQuery.data?.features.tasks_enabled;
+
+  const formatError = (error: unknown, fallback: string) => {
+    const requestId = error instanceof ApiError ? error.requestId : undefined;
+    const msg = error instanceof Error ? error.message : fallback;
+    return requestId ? `${msg} (Request ID: ${requestId})` : msg;
+  };
+
+  const createTasksMutation = useMutation({
+    mutationFn: (payload: { plan: any; source?: { agentOutputId?: string; chatMessageId?: string; requestId?: string } }) =>
+      createTasksFromPlan({ source: payload.source, plan: payload.plan }),
+    onSuccess: async (data) => {
+      setTasksAdded(true);
+      await queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      const created = Number((data as any)?.created || 0);
+      toast({
+        title: "Tasks updated",
+        description: created > 0 ? `Added ${created} tasks.` : "No new tasks — already added.",
+      });
+    },
+    onError: (error: unknown) => {
+      const fallback =
+        error instanceof ApiError && error.status === 404
+          ? "Tasks are disabled on this server."
+          : "Couldn't add tasks from this plan.";
+
+      toast({
+        title: "Failed to add tasks",
+        description: formatError(error, fallback),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const feedbackMutation = useMutation({
+    mutationFn: (payload: { agentOutputId: string; rating: "up" | "down" }) =>
+      submitAgentOutputFeedback(payload.agentOutputId, { rating: payload.rating }),
+    onSuccess: (_data, variables) => {
+      setFeedbackRating(variables.rating);
+      toast({ title: "Thanks for the feedback!" });
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: "Feedback failed",
+        description: formatError(error, "Couldn't submit feedback."),
+        variant: "destructive",
+      });
+    },
+  });
 
   const formatCurrency = (value?: number | null) => {
     if (value === null || value === undefined || Number.isNaN(value)) return "—";
@@ -34,6 +92,27 @@ export function ChatMessage({ message }: ChatMessageProps) {
     navigator.clipboard.writeText(message.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleAddToTasks = () => {
+    const plan = message.metadata?.plan;
+    if (!plan) return;
+    if (tasksEnabled === false) return;
+
+    createTasksMutation.mutate({
+      plan,
+      source: {
+        chatMessageId: message.id,
+        agentOutputId: message.metadata?.agentOutputId,
+        requestId: message.metadata?.requestId,
+      },
+    });
+  };
+
+  const handleFeedback = (rating: "up" | "down") => {
+    const agentOutputId = message.metadata?.agentOutputId;
+    if (!agentOutputId) return;
+    feedbackMutation.mutate({ agentOutputId, rating });
   };
 
   const formatTime = (dateStr: string | Date) => {
@@ -104,7 +183,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className={`flex gap-4 p-4 ${isUser ? "justify-end" : "justify-start"}`}
+      className={`group flex gap-4 p-4 ${isUser ? "justify-end" : "justify-start"}`}
     >
       {!isUser && (
         <Avatar className="w-8 h-8 flex-shrink-0">
@@ -218,6 +297,45 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 <Copy className="w-3 h-3" />
               )}
             </Button>
+          )}
+
+          {!isUser && message.metadata?.plan && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleAddToTasks}
+              disabled={createTasksMutation.isPending || tasksEnabled === false}
+              className="h-6 px-2 text-xs"
+              title={tasksEnabled === false ? "Tasks are disabled on this server." : "Convert this plan into trackable tasks"}
+            >
+              <ListTodo className="w-3 h-3" />
+              <span>{tasksAdded ? "Added" : "Tasks"}</span>
+            </Button>
+          )}
+
+          {!isUser && message.metadata?.agentOutputId && (
+            <div className="flex items-center gap-1">
+              <Button
+                variant={feedbackRating === "up" ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => handleFeedback("up")}
+                disabled={feedbackMutation.isPending}
+                className="h-6 w-6 p-0"
+                title="Thumbs up"
+              >
+                <ThumbsUp className="w-3 h-3" />
+              </Button>
+              <Button
+                variant={feedbackRating === "down" ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => handleFeedback("down")}
+                disabled={feedbackMutation.isPending}
+                className="h-6 w-6 p-0"
+                title="Thumbs down"
+              >
+                <ThumbsDown className="w-3 h-3" />
+              </Button>
+            </div>
           )}
           
           {!isUser && message.metadata?.agentsInvolved && message.metadata.agentsInvolved.length > 0 && (

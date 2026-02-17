@@ -1,11 +1,10 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { buildApiUrl, resolveApiUrl } from "./apiBase";
+import { parseApiError } from "./apiError";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const errorData = await res.json().catch(() => ({
-      message: res.statusText,
-    }));
-    throw new Error(errorData.message || `${res.status}: ${res.statusText}`);
+    throw await parseApiError(res);
   }
 }
 
@@ -14,8 +13,7 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined
 ): Promise<Response> {
-  // (Assuming your vite.config.ts proxies /api)
-  const res = await fetch(`/api${url}`, {
+  const res = await fetch(buildApiUrl(url), {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
@@ -38,7 +36,7 @@ export const getQueryFn: <T>(options: {
     // into '/api/financial-profiles/user123'
     const url = queryKey.join("/");
 
-    const res = await fetch(url, {
+    const res = await fetch(resolveApiUrl(url), {
       credentials: "include",
     });
 
@@ -57,7 +55,7 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false,
-      staleTime: Infinity,
+      staleTime: 30_000,
       retry: false,
     },
     mutations: {

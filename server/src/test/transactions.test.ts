@@ -9,6 +9,8 @@ import { clearTestDb, startTestDb, stopTestDb } from "./testDb";
 describe("transactions API", () => {
   const app = createApp();
   let cookie = "";
+  let csrfCookie = "";
+  let csrfToken = "";
 
   beforeAll(async () => {
     await startTestDb();
@@ -23,12 +25,30 @@ describe("transactions API", () => {
     await clearTestDb();
     const auth = await createAuthedUser();
     cookie = auth.cookie;
+
+    const csrf = await request(app).get("/api/auth/csrf").expect(200);
+    csrfCookie = (csrf.headers["set-cookie"]?.[0] || "").split(";")[0] || "";
+    csrfToken = csrf.body.csrf_token as string;
   });
 
   it("creates, lists, updates, deletes, and paginates transactions", async () => {
+    // CSRF is required for state-changing requests (POST/PATCH/DELETE)
+    await request(app)
+      .post("/api/transactions")
+      .set("Cookie", [cookie, csrfCookie])
+      .send({
+        amount: 1000,
+        category: "Food",
+        description: "CSRF missing header should fail",
+        type: "expense",
+        date: "2026-02-01",
+      })
+      .expect(403);
+
     const create1 = await request(app)
       .post("/api/transactions")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
       .send({
         amount: 1000,
         category: "Food",
@@ -43,19 +63,21 @@ describe("transactions API", () => {
       description: "Lunch",
       type: "expense",
       amount: -1000,
+      source: { origin: "manual" },
     });
 
     const id = create1.body.transaction.id as string;
 
     await request(app)
       .patch(`/api/transactions/${id}`)
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
       .send({ amount: 2000 })
       .expect(200);
 
     const list1 = await request(app)
       .get("/api/transactions?page=1&limit=50")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 
     expect(list1.body.pagination.total).toBe(1);
@@ -64,7 +86,8 @@ describe("transactions API", () => {
     // Create two more with later dates to validate pagination + ordering
     await request(app)
       .post("/api/transactions")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
       .send({
         amount: 10,
         category: "Food",
@@ -76,7 +99,8 @@ describe("transactions API", () => {
 
     await request(app)
       .post("/api/transactions")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
       .send({
         amount: 5000,
         category: "Salary",
@@ -88,7 +112,7 @@ describe("transactions API", () => {
 
     const page1 = await request(app)
       .get("/api/transactions?page=1&limit=2")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 
     expect(page1.body.transactions).toHaveLength(2);
@@ -98,19 +122,20 @@ describe("transactions API", () => {
 
     const page2 = await request(app)
       .get("/api/transactions?page=2&limit=2")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 
     expect(page2.body.transactions).toHaveLength(1);
 
     await request(app)
       .delete(`/api/transactions/${id}`)
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
       .expect(200);
 
     const listAfterDelete = await request(app)
       .get("/api/transactions?page=1&limit=50")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 
     expect(listAfterDelete.body.pagination.total).toBe(2);
@@ -120,7 +145,8 @@ describe("transactions API", () => {
     // Jan expense
     await request(app)
       .post("/api/transactions")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
       .send({
         amount: 100,
         category: "Food",
@@ -133,7 +159,8 @@ describe("transactions API", () => {
     // Feb income + expenses
     await request(app)
       .post("/api/transactions")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
       .send({
         amount: 2000,
         category: "Salary",
@@ -145,7 +172,8 @@ describe("transactions API", () => {
 
     await request(app)
       .post("/api/transactions")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
       .send({
         amount: 500,
         category: "Rent",
@@ -157,7 +185,8 @@ describe("transactions API", () => {
 
     await request(app)
       .post("/api/transactions")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
       .send({
         amount: 50,
         category: "Food",
@@ -169,7 +198,7 @@ describe("transactions API", () => {
 
     const summary1 = await request(app)
       .get("/api/transactions/summary?from=2026-01-01&to=2026-02-15&groupBy=month&topCategories=6")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 
     expect(summary1.body.cache_hit).toBe(false);
@@ -185,7 +214,7 @@ describe("transactions API", () => {
 
     const summary2 = await request(app)
       .get("/api/transactions/summary?from=2026-01-01&to=2026-02-15&groupBy=month&topCategories=6")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 
     expect(summary2.body.cache_hit).toBe(true);
@@ -193,7 +222,8 @@ describe("transactions API", () => {
     // Change transactions → should invalidate cache key (transactionsUpdatedAt changes)
     await request(app)
       .post("/api/transactions")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
       .send({
         amount: 25,
         category: "Food",
@@ -205,10 +235,9 @@ describe("transactions API", () => {
 
     const summary3 = await request(app)
       .get("/api/transactions/summary?from=2026-01-01&to=2026-02-15&groupBy=month&topCategories=6")
-      .set("Cookie", cookie)
+      .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 
     expect(summary3.body.cache_hit).toBe(false);
   });
 });
-

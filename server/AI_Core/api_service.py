@@ -1,22 +1,30 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Literal
 import uvicorn
 import logging
 import os
 from datetime import datetime
 from dotenv import load_dotenv
 import sys
-import io
 from contextlib import asynccontextmanager
 import pandas as pd  # For serializer
 from uuid import uuid4
+from time import perf_counter
 
-# Set UTF-8 encoding for Windows console to handle emojis
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+# Ensure UTF-8 output on Windows without breaking pytest capture.
 if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 # Load environment variables
 load_dotenv()
@@ -34,6 +42,11 @@ from utils import (
     begin_request_metrics,
     get_llm_call_count,
 )
+from utils.prometheus_metrics import FALLBACK_TOTAL, LLM_CALLS_TOTAL, REQUEST_DURATION_MS
+from vision.engine import get_vision_dependency_status, ocr_image_to_lines
+from vision.errors import VisionDependencyError
+from vision.receipt_parser import extract_receipt
+from vision.handwriting_parser import extract_handwriting
 
 # Setup logging
 logger = setup_logging()
@@ -72,21 +85,54 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/metrics")
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 @app.middleware("http")
 async def attach_request_id(request: Request, call_next):
     request_id = request.headers.get("x-request-id") or str(uuid4())
     request.state.request_id = request_id
+    begin_request_metrics(request_id)
 
-    started_at = datetime.utcnow()
-    logger.info(f"[requestId={request_id}] {request.method} {request.url.path} started")
-
-    response = await call_next(request)
-
-    elapsed_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
-    response.headers["X-Request-Id"] = request_id
+    started_at = perf_counter()
     logger.info(
-        f"[requestId={request_id}] {request.method} {request.url.path} completed "
-        f"status={response.status_code} durationMs={elapsed_ms}"
+        "request_started",
+        extra={"event": "request_started", "method": request.method, "path": request.url.path},
+    )
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed_ms = int((perf_counter() - started_at) * 1000)
+        REQUEST_DURATION_MS.labels(request.method, request.url.path, "500").observe(elapsed_ms)
+        LLM_CALLS_TOTAL.inc(get_llm_call_count())
+        logger.exception(
+            "request_failed",
+            extra={
+                "event": "request_failed",
+                "method": request.method,
+                "path": request.url.path,
+                "status": 500,
+                "duration_ms": elapsed_ms,
+            },
+        )
+        raise
+
+    elapsed_ms = int((perf_counter() - started_at) * 1000)
+    response.headers["X-Request-Id"] = request_id
+    REQUEST_DURATION_MS.labels(request.method, request.url.path, str(response.status_code)).observe(elapsed_ms)
+    LLM_CALLS_TOTAL.inc(get_llm_call_count())
+
+    logger.info(
+        "request_completed",
+        extra={
+            "event": "request_completed",
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "duration_ms": elapsed_ms,
+        },
     )
 
     return response
@@ -154,7 +200,7 @@ class ConversationMessage(BaseModel):
     content: str
 
 class ProcessOptions(BaseModel):
-    narrative: bool = True
+    narrative: bool = False
 
 class ProcessRequest(BaseModel):
     user_input: str
@@ -163,20 +209,106 @@ class ProcessRequest(BaseModel):
     session_summary: Optional[str] = None
     options: ProcessOptions = Field(default_factory=ProcessOptions)
 
+class ScenarioAssumptions(BaseModel):
+    months: int = Field(default=12, ge=1, le=120)
+    expected_return_pct: Optional[float] = Field(default=None, ge=-100, le=100)
+    inflation_pct: Optional[float] = Field(default=None, ge=-50, le=100)
+
 class WhatIfScenarioRequest(BaseModel):
     user_profile: UserProfileRequest
-    scenario_type: str  # 'expense', 'income', 'investment'
-    amount: float
+    scenario_type: Literal["expense", "income", "investment"]
+    amount: float = Field(gt=0)
     description: Optional[str] = ""
+    assumptions: ScenarioAssumptions = Field(default_factory=ScenarioAssumptions)
 
 @app.get("/health")
 async def health_check(request: Request):
     """Health check endpoint"""
+    vision_status = get_vision_dependency_status()
     return {
         "status": "healthy",
         "service": "FinWise AI Core",
+        "vision": vision_status,
         "request_id": request.state.request_id
     }
+
+
+def _normalize_vision_lang(lang: Optional[str]) -> tuple[str, List[str]]:
+    warnings: List[str] = []
+    requested = (lang or "").strip() or settings.VISION_LANG_DEFAULT
+    allowed = set(settings.VISION_LANG_ALLOWED or [settings.VISION_LANG_DEFAULT])
+    if requested not in allowed:
+        warnings.append(f"Unsupported lang '{requested}', falling back to '{settings.VISION_LANG_DEFAULT}'.")
+        return settings.VISION_LANG_DEFAULT, warnings
+    return requested, warnings
+
+
+async def _read_image_payload(request: Request) -> bytes:
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="Missing image payload")
+    if len(body) > settings.VISION_MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image payload too large")
+    return body
+
+
+@app.post("/api/vision/receipts/parse")
+async def parse_receipt_image(request: Request, lang: Optional[str] = None, currencyHint: str = "INR"):
+    """OCR + receipt field extraction from an uploaded image."""
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+
+    try:
+        image_bytes = await _read_image_payload(request)
+        resolved_lang, warnings = _normalize_vision_lang(lang)
+
+        lines = ocr_image_to_lines(image_bytes, lang=resolved_lang)
+        parsed = extract_receipt(lines, currency_hint=(currencyHint or "INR"))
+
+        return {
+            "success": True,
+            "extracted": parsed.get("extracted", {}),
+            "confidence": parsed.get("confidence", {}),
+            "warnings": warnings + (parsed.get("warnings", []) or []),
+            "request_id": request_id,
+        }
+    except HTTPException:
+        raise
+    except VisionDependencyError as e:
+        logger.warning(f"[requestId={request_id}] Receipt OCR dependencies unavailable: {str(e)}")
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error(f"[requestId={request_id}] Receipt OCR failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/vision/handwriting/recognize")
+async def recognize_handwriting_image(request: Request, lang: Optional[str] = None):
+    """Handwriting recognition + intent extraction from an uploaded image."""
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+
+    try:
+        image_bytes = await _read_image_payload(request)
+        resolved_lang, warnings = _normalize_vision_lang(lang)
+
+        lines = ocr_image_to_lines(image_bytes, lang=resolved_lang)
+        parsed = extract_handwriting(lines)
+
+        return {
+            "success": True,
+            "recognized_text": parsed.get("recognized_text", ""),
+            "confidence": parsed.get("confidence", {}),
+            "detected_values": parsed.get("detected_values", {}),
+            "warnings": warnings + (parsed.get("warnings", []) or []),
+            "request_id": request_id,
+        }
+    except HTTPException:
+        raise
+    except VisionDependencyError as e:
+        logger.warning(f"[requestId={request_id}] Handwriting dependencies unavailable: {str(e)}")
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error(f"[requestId={request_id}] Handwriting recognition failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/rate-limit/status")
 async def rate_limit_status(request: Request):
@@ -211,7 +343,6 @@ async def rate_limit_reset(request: Request):
 async def process_financial_request(request: ProcessRequest, http_request: Request):
     """Main endpoint to process financial requests through multi-agent system"""
     request_id = getattr(http_request.state, "request_id", str(uuid4()))
-    begin_request_metrics(request_id)
 
     try:
         logger.info(f"[requestId={request_id}] Processing request: {request.user_input[:100]}...")
@@ -248,7 +379,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             profile_data_for_workflow = None
 
         conversation_history = [msg.model_dump() for msg in request.conversation_history] if request.conversation_history else []
-        options = request.options.model_dump() if request.options else {"narrative": True}
+        options = request.options.model_dump() if request.options else {"narrative": False}
 
         # Process through workflow
         result = workflow.process_request(
@@ -366,6 +497,9 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                 except Exception:
                     continue
 
+        if fallback_used:
+            FALLBACK_TOTAL.labels(endpoint="process").inc()
+
         return ProcessResponse(
             success=True,
             final_output=str(response_text),
@@ -388,6 +522,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             f"[requestId={request_id}] Error processing request: {str(e)}",
             exc_info=True
         )
+        FALLBACK_TOTAL.labels(endpoint="process").inc()
         fallback_text = (
             "AI processing is temporarily degraded. Here is a safe fallback: "
             "stabilize cash flow, protect emergency savings, prioritize high-interest debt, "
@@ -422,39 +557,116 @@ async def process_what_if_scenario(request: WhatIfScenarioRequest, http_request:
     try:
         request_id = http_request.state.request_id
         user_profile_dict = request.user_profile.model_dump()
-        
-        original_budget = user_profile_dict['annual_income'] / 12 - user_profile_dict['monthly_expenses']
-        
-        impact = {
-            "originalBudget": original_budget,
-            "newBudget": original_budget,
-            "savingsImpact": 0,
-            "goalDelay": 0,
-            "adjustments": []
-        }
-        
+
+        monthly_income = float(user_profile_dict.get("annual_income", 0.0)) / 12.0
+        monthly_expenses = float(user_profile_dict.get("monthly_expenses", 0.0))
+        monthly_surplus = monthly_income - monthly_expenses
+        savings = float(user_profile_dict.get("savings", 0.0))
+        debts = user_profile_dict.get("debts", []) or []
+        total_debt = sum(float(debt.get("balance", 0.0)) for debt in debts if isinstance(debt, dict))
+
+        assumptions = request.assumptions.model_dump()
+        months = int(assumptions.get("months", 12))
+        expected_return_pct = assumptions.get("expected_return_pct")
+        inflation_pct = assumptions.get("inflation_pct")
+
+        if expected_return_pct is None:
+            expected_return_pct = 10.0 if request.scenario_type == "investment" else 0.0
+        if inflation_pct is None:
+            inflation_pct = 6.0
+
+        amount = float(request.amount)
+        monthly_surplus_change = 0.0
+        savings_change_horizon = 0.0
+        projected_investment_value = None
+        recommendations: List[str] = []
+        adjustments: List[Dict[str, float]] = []
+
         if request.scenario_type == "expense":
-            impact["newBudget"] = original_budget - request.amount
-            impact["savingsImpact"] = -request.amount
-            impact["goalDelay"] = round(request.amount / (original_budget * 0.3)) if original_budget > 0 else 0
-            
-            if request.amount > 1000:
-                impact["adjustments"] = [
-                    {"category": "Entertainment", "reduction": request.amount * 0.3},
-                    {"category": "Dining Out", "reduction": request.amount * 0.2},
-                    {"category": "Shopping", "reduction": request.amount * 0.5}
+            monthly_surplus_change = -amount
+            savings_change_horizon = -amount * months
+            recommendations = [
+                "Reduce discretionary spend in the top 2-3 categories to offset the new expense.",
+                "Preserve emergency-fund contributions before discretionary purchases.",
+                "Revisit this scenario if the expense is one-time versus recurring.",
+            ]
+            if amount > 1000:
+                adjustments = [
+                    {"category": "Entertainment", "reduction": round(amount * 0.3, 2)},
+                    {"category": "Dining Out", "reduction": round(amount * 0.2, 2)},
+                    {"category": "Shopping", "reduction": round(amount * 0.5, 2)},
                 ]
-        
+
         elif request.scenario_type == "income":
-            impact["newBudget"] = original_budget + request.amount
-            impact["savingsImpact"] = request.amount * 0.7
-            impact["goalDelay"] = -round(request.amount / (original_budget * 0.3)) if original_budget > 0 else 0
-        
+            monthly_surplus_change = amount
+            savings_change_horizon = amount * months
+            recommendations = [
+                "Automate at least 50-70% of the income increase toward goals and debt reduction.",
+                "Keep lifestyle inflation controlled for the first 3 months.",
+                "Rebalance debt-payoff and investing allocations after 1 quarter.",
+            ]
+
+        elif request.scenario_type == "investment":
+            monthly_surplus_change = -amount
+            savings_change_horizon = -amount * months
+            monthly_rate = (float(expected_return_pct) / 100.0) / 12.0
+            if abs(monthly_rate) < 1e-9:
+                projected_investment_value = amount * months
+            else:
+                projected_investment_value = amount * (((1 + monthly_rate) ** months - 1) / monthly_rate)
+            recommendations = [
+                "Ensure emergency-fund runway remains adequate before increasing monthly investments.",
+                "Increase allocation gradually if monthly surplus turns negative.",
+                "Prefer diversified instruments for recurring long-term investing.",
+            ]
+
+        new_monthly_surplus = monthly_surplus + monthly_surplus_change
+        emergency_before = savings / monthly_expenses if monthly_expenses > 0 else None
+        savings_after_horizon = savings + savings_change_horizon
+        emergency_after = savings_after_horizon / monthly_expenses if monthly_expenses > 0 else None
+
+        planning_buffer = max(abs(monthly_surplus) * 0.3, 1.0)
+        if request.scenario_type == "income":
+            goal_timeline_delta_months = -max(0, int(round(amount / planning_buffer)))
+        elif request.scenario_type == "investment":
+            goal_timeline_delta_months = max(0, int(round(amount / planning_buffer))) if new_monthly_surplus < 0 else 0
+        else:
+            goal_timeline_delta_months = max(0, int(round(amount / planning_buffer)))
+
         return {
-            **impact,
-            "request_id": request_id
+            "scenario_type": request.scenario_type,
+            "amount": amount,
+            "description": request.description or "",
+            "baseline": {
+                "monthly_income": monthly_income,
+                "monthly_expenses": monthly_expenses,
+                "monthly_surplus": monthly_surplus,
+                "savings": savings,
+                "total_debt": total_debt,
+            },
+            "delta": {
+                "monthly_surplus_change": monthly_surplus_change,
+                "new_monthly_surplus": new_monthly_surplus,
+                "savings_change_horizon": savings_change_horizon,
+                "projected_investment_value": projected_investment_value,
+                "emergency_fund_months_before": emergency_before,
+                "emergency_fund_months_after": emergency_after,
+                "goal_timeline_delta_months": goal_timeline_delta_months,
+            },
+            "assumptions": {
+                "months": months,
+                "expected_return_pct": float(expected_return_pct),
+                "inflation_pct": float(inflation_pct),
+            },
+            "recommendations": recommendations,
+            "originalBudget": monthly_surplus,
+            "newBudget": new_monthly_surplus,
+            "savingsImpact": monthly_surplus_change,
+            "goalDelay": goal_timeline_delta_months,
+            "adjustments": adjustments,
+            "request_id": request_id,
         }
-        
+
     except Exception as e:
         logger.error(
             f"[requestId={getattr(http_request.state, 'request_id', 'unknown')}] Error processing scenario: {str(e)}"

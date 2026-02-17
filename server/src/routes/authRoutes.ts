@@ -1,11 +1,13 @@
 import { Router } from "express";
 import passport from "passport";
+import rateLimit from "express-rate-limit";
 import {
   register,
   login,
   verifyEmail,
   getGoogleCallback,
-   resendVerification,
+  resendVerification,
+  getCsrfToken,
   getProfile,
   logout,
 } from "../controllers/authController";
@@ -16,38 +18,78 @@ import {
   resendVerificationBodySchema,
   verifyEmailBodySchema
 } from "../schemas/authSchemas";
+import { getEnv } from "../config/env";
+import { asyncRoute } from "../utils/asyncRoute";
 
 const router = Router();
-const CLIENT_URL = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/$/, "");
+const env = getEnv();
+const CLIENT_URL = env.CLIENT_URL.replace(/\/$/, "");
+const googleEnabled = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
 
-router.post("/register", validate({ body: registerBodySchema }), register);
+const authRateLimiter = rateLimit({
+  windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
+  max: env.AUTH_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: "Too many authentication attempts, please try again shortly.",
+    code: "AUTH_RATE_LIMITED",
+  },
+});
 
-router.post("/login", validate({ body: loginBodySchema }), login);
+router.get("/providers", (req, res) => {
+  res.json({ email: true, google: googleEnabled, request_id: req.requestId });
+});
 
-router.post("/verify-email", validate({ body: verifyEmailBodySchema }), verifyEmail);
+router.get("/csrf", asyncRoute(getCsrfToken));
 
-router.post("/resend-verification", validate({ body: resendVerificationBodySchema }), resendVerification);
+router.post("/register", authRateLimiter, validate({ body: registerBodySchema }), asyncRoute(register));
 
-router.get(
-  "/google",
-  passport.authenticate("google", { scope: ["profile", "email"] })
+router.post("/login", authRateLimiter, validate({ body: loginBodySchema }), asyncRoute(login));
+
+router.post("/verify-email", authRateLimiter, validate({ body: verifyEmailBodySchema }), asyncRoute(verifyEmail));
+
+router.post(
+  "/resend-verification",
+  authRateLimiter,
+  validate({ body: resendVerificationBodySchema }),
+  asyncRoute(resendVerification)
 );
 
-router.get(
-  "/google/callback",
-  passport.authenticate("google", {
-    failureRedirect: `${CLIENT_URL}/login`,
-    session: false,
-  }),
-  getGoogleCallback
-);
+if (googleEnabled) {
+  router.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+
+  router.get(
+    "/google/callback",
+    passport.authenticate("google", {
+      failureRedirect: `${CLIENT_URL}/login`,
+      session: false,
+    }),
+    asyncRoute(getGoogleCallback)
+  );
+} else {
+  router.get("/google", (req, res) => {
+    res.status(501).json({
+      message: "Google OAuth is not configured on this server.",
+      code: "OAUTH_NOT_CONFIGURED",
+      request_id: req.requestId,
+    });
+  });
+  router.get("/google/callback", (req, res) => {
+    res.status(501).json({
+      message: "Google OAuth is not configured on this server.",
+      code: "OAUTH_NOT_CONFIGURED",
+      request_id: req.requestId,
+    });
+  });
+}
 
 router.get(
   "/profile",
   passport.authenticate("jwt", { session: false }),
-  getProfile
+  asyncRoute(getProfile)
 );
 
-router.post("/logout", logout);
+router.post("/logout", asyncRoute(logout));
 
 export default router;

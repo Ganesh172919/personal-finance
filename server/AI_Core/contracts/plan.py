@@ -17,6 +17,9 @@ class ActionItem(BaseModel):
     steps: List[str] = Field(default_factory=list)
     priority: Literal["low", "medium", "high"] = "medium"
     expected_impact: str
+    kind: Literal["cashflow", "budget", "debt", "invest", "goal", "education", "generic"] = "generic"
+    due_days: Optional[int] = None
+    id: Optional[str] = None
 
 
 class ActionBuckets(BaseModel):
@@ -31,4 +34,3 @@ class Plan(BaseModel):
     actions: ActionBuckets = Field(default_factory=ActionBuckets)
     assumptions: List[str] = Field(default_factory=list)
     data_warnings: List[str] = Field(default_factory=list)
-

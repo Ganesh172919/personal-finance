@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/useToast";
-import { apiClient } from "@/lib/apiClient";
+import { ApiError, apiClient } from "@/lib/apiClient";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { SimpleOTPInput } from "@/components/ui/InputOtp";
@@ -15,12 +15,19 @@ export default function VerifyEmail() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const email = sessionStorage.getItem("emailForVerification");
+  const devOtp = sessionStorage.getItem("devOtpForVerification");
 
   useEffect(() => {
     if (!email) {
       navigate("/register");
     }
   }, [email, navigate]);
+
+  useEffect(() => {
+    if (!otp && devOtp && devOtp.length === 6) {
+      setOtp(devOtp);
+    }
+  }, [devOtp, otp]);
 
   if (!email) {
     return null;
@@ -50,11 +57,14 @@ export default function VerifyEmail() {
         title: "Email Verified!",
         description: "Welcome to Personal Finance. You are now logged in.",
       });
+      sessionStorage.removeItem("devOtpForVerification");
       navigate("/dashboard");
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const requestId = error instanceof ApiError ? error.requestId : undefined;
+      const message = error instanceof Error ? error.message : "An unexpected error occurred.";
       toast({
         title: "Verification Failed",
-        description: error.message || "An unexpected error occurred.",
+        description: requestId ? `${message} (Request ID: ${requestId})` : message,
         variant: "destructive",
       });
     } finally {
@@ -64,18 +74,27 @@ export default function VerifyEmail() {
 
   const handleResendCode = async () => {
     try {
-      await apiClient("/auth/resend-verification", {
+      const response = await apiClient<{ message?: string; dev_otp?: string }>("/auth/resend-verification", {
         method: "POST",
         body: JSON.stringify({ email }),
       });
+
+      if (response?.dev_otp) {
+        sessionStorage.setItem("devOtpForVerification", response.dev_otp);
+        setOtp(response.dev_otp);
+      }
       toast({
         title: "Code Resent",
-        description: "A new verification code has been sent to your email.",
+        description: response?.dev_otp
+          ? `Dev mode OTP: ${response.dev_otp}`
+          : "A new verification code has been sent to your email.",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const requestId = error instanceof ApiError ? error.requestId : undefined;
+      const message = error instanceof Error ? error.message : "Failed to resend verification code.";
       toast({
         title: "Resend Failed",
-        description: error.message || "Failed to resend verification code.",
+        description: requestId ? `${message} (Request ID: ${requestId})` : message,
         variant: "destructive",
       });
     }

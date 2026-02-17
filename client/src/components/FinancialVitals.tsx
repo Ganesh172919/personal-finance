@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { Wallet, TrendingUp, PiggyBank, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { useQuery } from "@tanstack/react-query";
-import { IFinancialProfile } from "@/types";
+import { DashboardSummaryResponse, getDashboardSummary } from "@/lib/apiClient";
 
 interface Metric {
   icon: typeof Wallet;
@@ -13,19 +13,26 @@ interface Metric {
   isPositive: boolean;
 }
 
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(value || 0);
+
 export function FinancialVitals() {
-  const { data: profile } = useQuery<IFinancialProfile>({
-    queryKey: ["/api/financial-profiles/me"],
+  const { data: summary } = useQuery<DashboardSummaryResponse>({
+    queryKey: ["/api/dashboard/summary"],
+    queryFn: getDashboardSummary,
   });
 
-  // Calculate metrics from profile data
   const calculateMetrics = (): Metric[] => {
-    if (!profile) {
+    if (!summary) {
       return [
         {
           icon: Wallet,
           label: "Cash Flow",
-          value: "₹0",
+          value: formatCurrency(0),
           change: "No data",
           color: "hsl(158 64% 52%)",
           isPositive: true,
@@ -41,7 +48,7 @@ export function FinancialVitals() {
         {
           icon: PiggyBank,
           label: "Total Savings",
-          value: "₹0",
+          value: formatCurrency(0),
           change: "No data",
           color: "hsl(46 95% 53%)",
           isPositive: true,
@@ -57,25 +64,16 @@ export function FinancialVitals() {
       ];
     }
 
-    const monthlyIncome = profile.annual_income / 12;
-    const monthlyExpenses = profile.monthly_expenses;
-    const cashFlow = monthlyIncome - monthlyExpenses;
-    const savingsRate = monthlyIncome > 0 ? ((cashFlow / monthlyIncome) * 100).toFixed(1) : "0";
-    
-    // Calculate goals progress
-    let totalGoalTarget = 0;
-    let totalGoalCurrent = 0;
-    profile.goals?.forEach((goal) => {
-      totalGoalTarget += goal.target || 0;
-      totalGoalCurrent += goal.current || 0;
-    });
-    const goalsProgress = totalGoalTarget > 0 ? ((totalGoalCurrent / totalGoalTarget) * 100).toFixed(0) : "0";
+    const cashFlow = Number(summary.cash_flow.net || 0);
+    const savingsRate = Number(summary.cash_flow.savings_rate_pct || 0);
+    const goalsProgress = Number(summary.goals.progress_pct || 0);
+    const goalsOnTrack = Number(summary.goals.on_track || 0);
 
     return [
       {
         icon: Wallet,
         label: "Cash Flow",
-        value: `₹${cashFlow.toLocaleString('en-IN')}`,
+        value: formatCurrency(cashFlow),
         change: cashFlow > 0 ? "Positive cash flow" : "Negative cash flow",
         color: "hsl(158 64% 52%)",
         isPositive: cashFlow > 0,
@@ -83,26 +81,29 @@ export function FinancialVitals() {
       {
         icon: TrendingUp,
         label: "Savings Rate",
-        value: `${savingsRate}%`,
-        change: parseFloat(savingsRate) > 20 ? "Above target" : "Below target",
+        value: `${savingsRate.toFixed(1)}%`,
+        change: savingsRate > 20 ? "Above target" : "Below target",
         color: "hsl(221 83% 53%)",
-        isPositive: parseFloat(savingsRate) > 20,
+        isPositive: savingsRate > 20,
       },
       {
         icon: PiggyBank,
         label: "Total Savings",
-        value: `₹${(profile.savings || 0).toLocaleString('en-IN')}`,
-        change: "Current balance",
+        value: formatCurrency(Number(summary.savings.balance || 0)),
+        change:
+          summary.savings.emergency_fund_months === null
+            ? "Emergency runway unavailable"
+            : `${summary.savings.emergency_fund_months.toFixed(1)} months runway`,
         color: "hsl(46 95% 53%)",
         isPositive: true,
       },
       {
         icon: Trophy,
         label: "Goals Progress",
-        value: `${goalsProgress}%`,
-        change: `${profile.goals?.filter((g) => (g.current / g.target) > 0.5).length || 0} goals on track`,
+        value: `${goalsProgress.toFixed(0)}%`,
+        change: `${goalsOnTrack} goals on track`,
         color: "hsl(271 81% 56%)",
-        isPositive: parseFloat(goalsProgress) > 50,
+        isPositive: goalsProgress > 50,
       },
     ];
   };
@@ -130,9 +131,7 @@ export function FinancialVitals() {
                   style={{ color: metric.color }}
                 />
               </div>
-              <span className="text-xs text-muted-foreground">
-                {metric.label}
-              </span>
+              <span className="text-xs text-muted-foreground">{metric.label}</span>
             </div>
             <div className="space-y-1">
               <motion.div
@@ -145,9 +144,7 @@ export function FinancialVitals() {
               >
                 {metric.value}
               </motion.div>
-              <div className="text-xs text-muted-foreground">
-                {metric.change}
-              </div>
+              <div className="text-xs text-muted-foreground">{metric.change}</div>
             </div>
           </Card>
         </motion.div>

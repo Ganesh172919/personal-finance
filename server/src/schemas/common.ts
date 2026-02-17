@@ -4,6 +4,10 @@ export const objectIdSchema = z.object({
   id: z.string().regex(/^[a-f\d]{24}$/i, "Invalid id format")
 });
 
+export const fileIdParamSchema = z.object({
+  fileId: z.string().regex(/^[a-f\d]{24}$/i, "Invalid fileId format")
+});
+
 export const userIdParamSchema = z.object({
   userId: z.string().regex(/^[a-f\d]{24}$/i, "Invalid userId format")
 });

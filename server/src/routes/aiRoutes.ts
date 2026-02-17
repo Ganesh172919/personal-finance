@@ -6,14 +6,18 @@ import {
   getFinancialProfile,
   updateFinancialProfile,
   getAgentOutputs,
+  getRecentAgentOutputs,
   getAgentOutputById,
+  submitAgentOutputFeedback,
   addInvestment
 } from "../controllers/aiController";
 import { getAiCoreStatus } from "../controllers/aiStatusController";
 import { validate } from "../middleware/validate";
 import {
   addInvestmentBodySchema,
+  agentOutputFeedbackBodySchema,
   processCommandBodySchema,
+  recentAgentOutputsQuerySchema,
   updateFinancialProfileBodySchema,
   whatIfScenarioBodySchema
 } from "../schemas/aiSchemas";
@@ -44,7 +48,13 @@ router.put(
 );
 
 // Agent outputs
+router.get("/agent-outputs/recent", validate({ query: recentAgentOutputsQuerySchema }), getRecentAgentOutputs);
 router.get("/agent-outputs/:id", validate({ params: objectIdSchema }), getAgentOutputById);
+router.post(
+  "/agent-outputs/:id/feedback",
+  validate({ params: objectIdSchema, body: agentOutputFeedbackBodySchema }),
+  submitAgentOutputFeedback
+);
 router.get("/agent-outputs/user/:userId", validate({ params: userIdParamSchema }), getAgentOutputs);
 
 export default router;

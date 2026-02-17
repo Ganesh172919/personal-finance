@@ -21,6 +21,8 @@ export interface IChatMessageMetadata {
   fallbackUsed?: boolean;
   llmCallCount?: number;
   requestId?: string;
+  actionLinkId?: string;
+  linkedTaskIds?: string[];
   aiCoreDurationMs?: number;
   cacheHit?: boolean;
 }
@@ -83,6 +85,8 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
       fallbackUsed: Boolean,
       llmCallCount: Number,
       requestId: String,
+      actionLinkId: String,
+      linkedTaskIds: [String],
       aiCoreDurationMs: Number,
       cacheHit: Boolean
     }

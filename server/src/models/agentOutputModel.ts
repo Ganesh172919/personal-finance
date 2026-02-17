@@ -34,6 +34,11 @@ export interface IAgentOutput {
   fallback_used?: boolean;
   llm_call_count?: number;
   request_id?: string;
+  feedback?: {
+    rating: "up" | "down";
+    note?: string;
+    createdAt?: Date;
+  };
   timestamp: Date;
   priority?: 'low' | 'medium' | 'high';
   actionable?: boolean;
@@ -67,6 +72,11 @@ const agentOutputSchema = new Schema<IAgentOutputDocument>(
     fallback_used: { type: Boolean, default: false },
     llm_call_count: { type: Number, default: 0 },
     request_id: { type: String },
+    feedback: {
+      rating: { type: String, enum: ["up", "down"] },
+      note: { type: String },
+      createdAt: { type: Date, default: Date.now }
+    },
     timestamp: { type: Date, default: Date.now },
     priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
     actionable: { type: Boolean, default: false }
@@ -76,6 +86,11 @@ const agentOutputSchema = new Schema<IAgentOutputDocument>(
     strict: false // Allow any fields inside outputData
   }
 );
+
+agentOutputSchema.index({ userId: 1, timestamp: -1 });
+agentOutputSchema.index({ userId: 1, createdAt: -1 });
+agentOutputSchema.index({ userId: 1, request_id: 1, timestamp: -1 });
+agentOutputSchema.index({ userId: 1, actionable: 1, timestamp: -1 });
 
 const AgentOutputModel = model<IAgentOutputDocument>("AgentOutput", agentOutputSchema);
 export default AgentOutputModel;

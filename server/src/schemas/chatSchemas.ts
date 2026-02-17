@@ -13,6 +13,12 @@ export const getMessagesQuerySchema = paginationQuerySchema.strict();
 
 export const sendMessageBodySchema = z
   .object({
-    content: z.string().trim().min(1, "Message content is required").max(4000)
+    content: z.string().trim().min(1, "Message content is required").max(4000),
+    options: z
+      .object({
+        narrative: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();

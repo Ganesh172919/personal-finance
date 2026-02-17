@@ -15,6 +15,7 @@ import { SpendingAnalysis } from "@/components/SpendingAnalysis";
 import { GoalProgress } from "@/components/GoalProgress";
 import { QuickActions } from "@/components/QuickActions";
 import { RecentActivity } from "@/components/RecentActivity";
+import { TasksWidget } from "@/components/TasksWidget";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -105,6 +106,7 @@ export default function Dashboard() {
                 {/* Right Sidebar Column */}
                 <div className="space-y-8">
                     <QuickActions />
+                    <TasksWidget />
                     <GoalProgress />
                     <RecentActivity />
                 </div>

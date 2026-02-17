@@ -1,5 +1,5 @@
 from typing import TypedDict, List, Dict, Any, Optional, Annotated
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from enum import Enum
 
 class AgentState(TypedDict):
@@ -49,8 +49,8 @@ class UserProfile(BaseModel):
     time_horizon: int
     transactions: List[Dict[str, Any]] = []
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "age": 30,
                 "annual_income": 75000,
@@ -58,17 +58,18 @@ class UserProfile(BaseModel):
                 "savings": 15000,
                 "debts": [
                     {"type": "student_loan", "balance": 25000, "interest_rate": 4.5},
-                    {"type": "credit_card", "balance": 5000, "interest_rate": 18.9}
+                    {"type": "credit_card", "balance": 5000, "interest_rate": 18.9},
                 ],
                 "financial_goals": [
                     {"name": "emergency_fund", "target": 15000, "timeline_months": 12},
-                    {"name": "down_payment", "target": 50000, "timeline_months": 36}
+                    {"name": "down_payment", "target": 50000, "timeline_months": 36},
                 ],
                 "risk_tolerance": "moderate",
                 "investment_experience": "beginner",
-                "time_horizon": 10
+                "time_horizon": 10,
             }
         }
+    )
 
 class FinancialPlan(BaseModel):
     """Comprehensive financial plan model"""
@@ -79,29 +80,30 @@ class FinancialPlan(BaseModel):
     timeline: Dict[str, Any]
     metrics: Dict[str, float]
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "summary": "Comprehensive financial plan focusing on debt reduction and savings growth",
                 "recommendations": [
                     "Build 3-month emergency fund",
                     "Pay down high-interest credit card debt",
-                    "Start retirement investing with 70/30 stock/bond allocation"
+                    "Start retirement investing with 70/30 stock/bond allocation",
                 ],
                 "action_items": [
                     {"action": "Set up automatic savings", "priority": "high", "timeline": "immediate"},
-                    {"action": "Create debt repayment plan", "priority": "high", "timeline": "1 week"}
+                    {"action": "Create debt repayment plan", "priority": "high", "timeline": "1 week"},
                 ],
                 "risk_assessment": "Moderate risk tolerance suitable for balanced portfolio",
                 "timeline": {
                     "short_term": "3-6 months",
-                    "medium_term": "1-3 years", 
-                    "long_term": "5+ years"
+                    "medium_term": "1-3 years",
+                    "long_term": "5+ years",
                 },
                 "metrics": {
                     "savings_rate": 20.0,
                     "debt_free_date": "2026-12-01",
-                    "retirement_projection": 850000
-                }
+                    "retirement_projection": 850000,
+                },
             }
         }
+    )

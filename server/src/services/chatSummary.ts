@@ -1,11 +1,11 @@
-export type ChatSummaryMessage = { role: "user" | "assistant"; content: string };
+﻿export type ChatSummaryMessage = { role: "user" | "assistant"; content: string };
 
 const normalizeWhitespace = (value: string) => value.replace(/\s+/g, " ").trim();
 
 const snippet = (value: string, maxLen: number) => {
   const normalized = normalizeWhitespace(value);
   if (normalized.length <= maxLen) return normalized;
-  return `${normalized.slice(0, maxLen - 1)}…`;
+  return `${normalized.slice(0, Math.max(0, maxLen - 3))}...`;
 };
 
 export const buildDeterministicChatSummary = (messages: ChatSummaryMessage[], maxChars = 800) => {
@@ -28,6 +28,5 @@ export const buildDeterministicChatSummary = (messages: ChatSummaryMessage[], ma
   }
 
   const summary = parts.join(" | ");
-  return summary.length <= maxChars ? summary : summary.slice(0, maxChars - 1) + "…";
+  return summary.length <= maxChars ? summary : `${summary.slice(0, Math.max(0, maxChars - 3))}...`;
 };
-

@@ -22,7 +22,7 @@ interface ChatState {
   selectSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, options?: { narrative?: boolean }) => Promise<void>;
   clearCurrentSession: () => void;
 }
 
@@ -114,7 +114,7 @@ export const useChatStore = create<ChatState>()(
       },
 
       // Send a message in the current session
-      sendMessage: async (content: string) => {
+      sendMessage: async (content: string, options?: { narrative?: boolean }) => {
         const { currentSessionId } = get();
         
         if (!currentSessionId) {
@@ -142,7 +142,7 @@ export const useChatStore = create<ChatState>()(
         }));
         
         try {
-          const response = await chatApi.sendMessage(sessionId, content);
+          const response = await chatApi.sendMessage(sessionId, content, options);
           
           // Replace temp message with real one and add AI response
           set((state) => ({

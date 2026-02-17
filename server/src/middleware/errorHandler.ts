@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import mongoose from "mongoose";
 import { ZodError } from "zod";
 import { HttpError } from "./httpError";
+import { logger } from "../config/logger";
 
 export const notFoundHandler = (req: Request, res: Response) => {
   res.status(404).json({
@@ -56,7 +57,7 @@ export const errorHandler = (err: unknown, req: Request, res: Response, _next: N
     return;
   }
 
-  console.error(`[requestId=${req.requestId}] Unhandled error:`, err);
+  logger.error({ err, requestId: req.requestId }, "Unhandled error");
   res.status(500).json({
     message: "Internal server error",
     code: "INTERNAL_SERVER_ERROR",

@@ -43,6 +43,14 @@ class Settings:
     DEFAULT_SAVINGS_RATE = 0.2
     MAX_DEBT_TO_INCOME_RATIO = 0.36
 
+    # Vision configuration (OCR + handwriting)
+    VISION_LANG_DEFAULT = os.getenv("VISION_LANG_DEFAULT", "en").strip() or "en"
+    _vision_lang_allowed_env = os.getenv("VISION_LANG_ALLOWED", VISION_LANG_DEFAULT)
+    VISION_LANG_ALLOWED: List[str] = [
+        lang.strip() for lang in _vision_lang_allowed_env.split(",") if lang.strip()
+    ]
+    VISION_MAX_IMAGE_BYTES = int(os.getenv("VISION_MAX_IMAGE_BYTES", str(10 * 1024 * 1024)))
+
     @classmethod
     def get_agent_config(cls, agent_type: str) -> Dict[str, Any]:
         """Get configuration for specific agent type."""

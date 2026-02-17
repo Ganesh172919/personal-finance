@@ -11,6 +11,9 @@ export interface KeyMetrics {
 }
 
 export interface ActionItem {
+  id?: string;
+  kind?: "cashflow" | "budget" | "debt" | "invest" | "goal" | "education" | "generic";
+  due_days?: number;
   title: string;
   why: string;
   steps: string[];
@@ -36,6 +39,7 @@ export interface ProcessAICommandResponse {
   success: boolean;
   response: string;
   plan?: Plan;
+  agent_output_id?: string;
   analysis_type?: string;
   agents_involved?: string[];
   actionType?: string;
@@ -66,4 +70,3 @@ export interface AiCoreStatusResponse {
     ai_core_client: unknown;
   };
 }
-

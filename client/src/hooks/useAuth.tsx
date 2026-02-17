@@ -7,7 +7,7 @@ import {
   ReactNode,
 } from "react";
 
-import { apiClient } from "@/lib/apiClient";
+import { apiClient, fetchCsrfToken } from "@/lib/apiClient";
 
 interface User {
   id: string;
@@ -52,7 +52,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    checkAuthStatus();
+    (async () => {
+      try {
+        await fetchCsrfToken();
+      } catch (error) {
+        console.warn("Failed to fetch CSRF token:", error);
+      }
+
+      await checkAuthStatus();
+    })();
   }, [checkAuthStatus]);
 
   // Logout the user by clearing the session on the backend

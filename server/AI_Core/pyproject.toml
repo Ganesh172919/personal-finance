@@ -8,3 +8,6 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore:Failing to pass a value to the 'type_params' parameter of 'typing.ForwardRef._evaluate' is deprecated:DeprecationWarning:pydantic\\.v1\\.typing",
+]

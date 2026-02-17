@@ -18,6 +18,9 @@ export interface IChatMessageMetadata {
   priority?: 'low' | 'medium' | 'high';
   actionable?: boolean;
   plan?: Plan;
+  agentOutputId?: string;
+  taskIds?: string[];
+  appliedTaskIds?: string[];
   detailedAnalysis?: Record<string, unknown>;
   workflowTrace?: Array<{
     agent: string;
@@ -29,6 +32,9 @@ export interface IChatMessageMetadata {
   fallbackUsed?: boolean;
   llmCallCount?: number;
   requestId?: string;
+  actionLinkId?: string;
+  linkedTaskIds?: string[];
+  taskApplyRequestId?: string;
   aiCoreDurationMs?: number;
   cacheHit?: boolean;
 }

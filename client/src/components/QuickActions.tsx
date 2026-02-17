@@ -24,7 +24,7 @@ export function QuickActions() {
     {
       label: "New Goal",
       icon: Target,
-      onClick: () => navigate("/financial-story"),
+      onClick: () => navigate("/goals-debts"),
     },
     {
       label: "View Reports",

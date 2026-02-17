@@ -1,12 +1,15 @@
 import { Suspense, lazy } from "react";
-import { Switch, Route, Redirect } from "wouter";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { Switch, Route, Redirect, useLocation } from "wouter";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { Toaster } from "@/components/ui/Toaster";
 import { TooltipProvider } from "@/components/ui/ToolTip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Sidebar } from "@/components/Sidebar";
+import { FeatureLimitDialog } from "@/components/FeatureLimitDialog";
+import { PlanAndUsageDialog } from "@/components/PlanAndUsageDialog";
+import type { IFinancialProfile } from "@/types";
 
 const Login = lazy(() => import("@/pages/Login"));
 const Register = lazy(() => import("@/pages/Register"));
@@ -17,14 +20,41 @@ const FinancialStory = lazy(() => import("@/pages/FinancialStory"));
 const Portfolio = lazy(() => import("@/pages/Portfolio"));
 const AllInsights = lazy(() => import("@/pages/AllInsights"));
 const Transactions = lazy(() => import("@/pages/Transactions"));
+const GoalsAndDebts = lazy(() => import("@/pages/GoalsAndDebts"));
+const Onboarding = lazy(() => import("@/pages/Onboarding"));
 const ComingSoon = lazy(() => import("@/pages/ComingSoon"));
+const Notes = lazy(() => import("@/pages/Notes"));
+const Tasks = lazy(() => import("@/pages/Tasks"));
+const Receipts = lazy(() => import("@/pages/Receipts"));
 const ChatPage = lazy(() => import("@/pages/ChatPage"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  const [location] = useLocation();
+
+  const { data: profile, isLoading: profileLoading } = useQuery<IFinancialProfile | null>({
+    queryKey: ["/api/financial-profiles/me"],
+    enabled: !!user,
+  });
+
+  if (loading || profileLoading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
   if (!user) return <Redirect to="/login" />;
+
+  const localOnboardingCompleted = localStorage.getItem("onboarding_completed") === "true";
+  const hasServerOnboardingField =
+    !!profile && Object.prototype.hasOwnProperty.call(profile, "onboardingCompletedAt");
+  const onboardingCompleted = hasServerOnboardingField
+    ? Boolean(profile?.onboardingCompletedAt)
+    : localOnboardingCompleted;
+
+  if (!onboardingCompleted && location !== "/onboarding") {
+    return <Redirect to="/onboarding" />;
+  }
+
   return <>{children}</>;
 }
 
@@ -72,7 +102,11 @@ function Router() {
         <Route path="/financial-story"><ProtectedRoute><AppAuthenticatedLayout><FinancialStory /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/portfolio"><ProtectedRoute><AppAuthenticatedLayout><Portfolio /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/all-insights"><ProtectedRoute><AppAuthenticatedLayout><AllInsights /></AppAuthenticatedLayout></ProtectedRoute></Route>
+        <Route path="/goals-debts"><ProtectedRoute><AppAuthenticatedLayout><GoalsAndDebts /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/transactions"><ProtectedRoute><AppAuthenticatedLayout><Transactions /></AppAuthenticatedLayout></ProtectedRoute></Route>
+        <Route path="/tasks"><ProtectedRoute><AppAuthenticatedLayout><Tasks /></AppAuthenticatedLayout></ProtectedRoute></Route>
+        <Route path="/receipts"><ProtectedRoute><AppAuthenticatedLayout><Receipts /></AppAuthenticatedLayout></ProtectedRoute></Route>
+        <Route path="/onboarding"><ProtectedRoute><AppAuthenticatedLayout><Onboarding /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/blogs">
           <ProtectedRoute>
             <AppAuthenticatedLayout>
@@ -96,10 +130,7 @@ function Router() {
         <Route path="/notes">
           <ProtectedRoute>
             <AppAuthenticatedLayout>
-              <ComingSoon
-                title="Notes"
-                description="In-app note taking is planned and currently under implementation."
-              />
+              <Notes />
             </AppAuthenticatedLayout>
           </ProtectedRoute>
         </Route>
@@ -120,6 +151,8 @@ function App() {
         <AuthProvider>
           <TooltipProvider>
             <Toaster />
+            <FeatureLimitDialog />
+            <PlanAndUsageDialog />
             <Router />
           </TooltipProvider>
         </AuthProvider>

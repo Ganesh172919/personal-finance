@@ -4,9 +4,12 @@ import {
   createDebt,
   createGoal,
   createTransaction,
+  importTransactions,
   deleteDebt,
   deleteGoal,
   deleteTransaction,
+  getDashboardSummary,
+  getPortfolioSummary,
   getTransactionsSummary,
   listRecentTransactions,
   listTransactions,
@@ -19,9 +22,12 @@ import {
   createDebtBodySchema,
   createGoalBodySchema,
   createTransactionBodySchema,
+  dashboardSummaryQuerySchema,
   debtIdParamSchema,
   goalIdParamSchema,
+  importTransactionsBodySchema,
   recentTransactionsQuerySchema,
+  portfolioSummaryQuerySchema,
   listTransactionsQuerySchema,
   transactionsSummaryQuerySchema,
   transactionIdParamSchema,
@@ -35,8 +41,11 @@ const router = Router();
 router.use(passport.authenticate("jwt", { session: false }));
 
 router.post("/transactions", validate({ body: createTransactionBodySchema }), createTransaction);
+router.post("/transactions/import", validate({ body: importTransactionsBodySchema }), importTransactions);
 router.get("/transactions/recent", validate({ query: recentTransactionsQuerySchema }), listRecentTransactions);
 router.get("/transactions/summary", validate({ query: transactionsSummaryQuerySchema }), getTransactionsSummary);
+router.get("/dashboard/summary", validate({ query: dashboardSummaryQuerySchema }), getDashboardSummary);
+router.get("/portfolio/summary", validate({ query: portfolioSummaryQuerySchema }), getPortfolioSummary);
 router.get("/transactions", validate({ query: listTransactionsQuerySchema }), listTransactions);
 router.patch(
   "/transactions/:id",

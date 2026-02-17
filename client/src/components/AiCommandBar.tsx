@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Wand2, Send, X, Copy, CheckCircle } from "lucide-react";
+import { Wand2, Send, X, Copy, CheckCircle, ListTodo, ThumbsDown, ThumbsUp } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { useMutation } from "@tanstack/react-query";
-import { processAICommand } from "@/lib/apiClient";
+import { Switch as ToggleSwitch } from "@/components/ui/Switch";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ApiError, createTasksFromPlan, processAICommand, submitAgentOutputFeedback } from "@/lib/apiClient";
 import { useToast } from "@/hooks/useToast";
+import { useAppConfig } from "@/hooks/useAppConfig";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AgentWorkflowVisualizer } from "@/components/AgentWorkflowVisualizer";
@@ -21,6 +23,7 @@ interface AICommandBarProps {
 interface AIResponse {
   response: string;
   plan?: Plan;
+  agent_output_id?: string;
   analysis_type?: string;
   agents_involved?: string[];
   workflow_trace?: IWorkflowTraceEntry[];
@@ -36,7 +39,19 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [aiResponse, setAiResponse] = useState<AIResponse | null>(null);
   const [copied, setCopied] = useState(false);
+  const [narrative, setNarrative] = useState(false);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [feedbackRating, setFeedbackRating] = useState<"up" | "down" | null>(null);
+  const [tasksAdded, setTasksAdded] = useState(false);
+  const configQuery = useAppConfig();
+  const tasksEnabled = configQuery.data?.features.tasks_enabled;
+
+  const formatError = (error: unknown, fallback: string) => {
+    const requestId = error instanceof ApiError ? error.requestId : undefined;
+    const message = error instanceof Error ? error.message : fallback;
+    return requestId ? `${message} (Request ID: ${requestId})` : message;
+  };
 
   const suggestions = [
     "Show me my spending pattern this month",
@@ -48,12 +63,13 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
 
   const processCommandMutation = useMutation({
     mutationFn: async (command: string) => {
-      return await processAICommand(command);
+      return await processAICommand(command, { narrative });
     },
     onSuccess: (data) => {
       setAiResponse({
         response: data.response || "Analysis complete",
         plan: data.plan,
+        agent_output_id: data.agent_output_id,
         analysis_type: data.analysis_type,
         agents_involved: data.agents_involved,
         workflow_trace: data.workflow_trace || [],
@@ -63,12 +79,56 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
         cache_hit: data.cache_hit || false,
         timestamp: new Date()
       });
+      setFeedbackRating(null);
+      setTasksAdded(false);
       onCommand?.(command);
     },
-    onError: () => {
+    onError: (error: unknown) => {
       toast({
         title: "Error",
-        description: "Failed to process command. Please try again.",
+        description: formatError(error, "Failed to process command. Please try again."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createTasksMutation = useMutation({
+    mutationFn: (payload: { plan: Plan; source?: { agentOutputId?: string; requestId?: string } }) =>
+      createTasksFromPlan({ source: payload.source, plan: payload.plan }),
+    onSuccess: async (data) => {
+      setTasksAdded(true);
+      await queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      const created = Number((data as any)?.created || 0);
+      toast({
+        title: "Tasks updated",
+        description: created > 0 ? `Added ${created} tasks.` : "No new tasks — already added.",
+      });
+    },
+    onError: (error: unknown) => {
+      const fallback =
+        error instanceof ApiError && error.status === 404
+          ? "Tasks are disabled on this server."
+          : "Couldn't add tasks from this plan.";
+
+      toast({
+        title: "Failed to add tasks",
+        description: formatError(error, fallback),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const feedbackMutation = useMutation({
+    mutationFn: (payload: { agentOutputId: string; rating: "up" | "down" }) =>
+      submitAgentOutputFeedback(payload.agentOutputId, { rating: payload.rating }),
+    onSuccess: (_data, variables) => {
+      setFeedbackRating(variables.rating);
+      toast({ title: "Thanks for the feedback!" });
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: "Feedback failed",
+        description: formatError(error, "Couldn't submit feedback."),
         variant: "destructive",
       });
     },
@@ -92,6 +152,8 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
 
   const handleClearResponse = () => {
     setAiResponse(null);
+    setFeedbackRating(null);
+    setTasksAdded(false);
   };
 
   const handleCopyResponse = () => {
@@ -100,6 +162,23 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
+  };
+
+  const handleAddToTasks = () => {
+    if (!aiResponse?.plan) return;
+    if (tasksEnabled === false) return;
+    createTasksMutation.mutate({
+      plan: aiResponse.plan,
+      source: {
+        agentOutputId: aiResponse.agent_output_id,
+        requestId: aiResponse.request_id,
+      },
+    });
+  };
+
+  const handleFeedback = (rating: "up" | "down") => {
+    if (!aiResponse?.agent_output_id) return;
+    feedbackMutation.mutate({ agentOutputId: aiResponse.agent_output_id, rating });
   };
 
   // Custom components for ReactMarkdown to ensure consistent styling
@@ -234,6 +313,10 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
                 className="flex-1 bg-transparent border-none outline-none focus-visible:ring-0"
                 data-testid="input-ai-command"
               />
+              <label className="flex items-center gap-2 pr-1" title="Enable slower, more narrative responses">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">Narrative</span>
+                <ToggleSwitch checked={narrative} onCheckedChange={setNarrative} />
+              </label>
               <Button
                 type="submit"
                 className="bg-primary text-primary-foreground hover:opacity-90"
@@ -343,6 +426,54 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
                       </Button>
                     </div>
                   </div>
+
+                  {(aiResponse.plan || aiResponse.agent_output_id) && (
+                    <div className="flex flex-wrap items-center gap-2 mb-4">
+                      {aiResponse.plan && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleAddToTasks}
+                          disabled={createTasksMutation.isPending || tasksEnabled === false}
+                          title={
+                            tasksEnabled === false
+                              ? "Tasks are disabled on this server."
+                              : "Convert this plan into trackable tasks"
+                          }
+                        >
+                          <ListTodo className="w-4 h-4 mr-2" />
+                          {createTasksMutation.isPending
+                            ? "Adding..."
+                            : tasksAdded
+                              ? "Added to tasks"
+                              : "Add to tasks"}
+                        </Button>
+                      )}
+
+                      {aiResponse.agent_output_id && (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant={feedbackRating === "up" ? "secondary" : "ghost"}
+                            size="sm"
+                            onClick={() => handleFeedback("up")}
+                            disabled={feedbackMutation.isPending}
+                            title="Thumbs up"
+                          >
+                            <ThumbsUp className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant={feedbackRating === "down" ? "secondary" : "ghost"}
+                            size="sm"
+                            onClick={() => handleFeedback("down")}
+                            disabled={feedbackMutation.isPending}
+                            title="Thumbs down"
+                          >
+                            <ThumbsDown className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Key Metrics + Warnings (if available) */}
                   {aiResponse.plan?.key_metrics && (

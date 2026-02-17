@@ -9,12 +9,15 @@ import {
 } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge"; 
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IAgentOutput } from "@/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Loader2 } from "lucide-react";
+import { ListTodo, Loader2, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useLocation } from "wouter";
+import { ApiError, createTasksFromPlan, submitAgentOutputFeedback } from "@/lib/apiClient";
+import { useToast } from "@/hooks/useToast";
 
 // Re-using the markdown styles from AICommandBar for consistency
 const markdownComponents = {
@@ -37,11 +40,79 @@ interface InsightDetailModalProps {
 
 export function InsightDetailModal({ insightId, isOpen, onClose }: InsightDetailModalProps) {
   const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [feedbackRating, setFeedbackRating] = useState<"up" | "down" | null>(null);
+  const [tasksAdded, setTasksAdded] = useState(false);
+
+  useEffect(() => {
+    setFeedbackRating(null);
+    setTasksAdded(false);
+  }, [insightId, isOpen]);
+
+  const formatError = (error: unknown, fallback: string) => {
+    const requestId = error instanceof ApiError ? error.requestId : undefined;
+    const message = error instanceof Error ? error.message : fallback;
+    return requestId ? `${message} (Request ID: ${requestId})` : message;
+  };
 
   const { data: insight, isLoading } = useQuery<IAgentOutput>({
     queryKey: [`/api/agent-outputs`, insightId], // Fetches /api/agent-outputs/:id
     enabled: !!insightId && isOpen,
   });
+
+  const createTasksMutation = useMutation({
+    mutationFn: (payload: { agentOutputId: string; plan: any }) =>
+      createTasksFromPlan({ source: { agentOutputId: payload.agentOutputId }, plan: payload.plan }),
+    onSuccess: async (data) => {
+      setTasksAdded(true);
+      await queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      const created = Number((data as any)?.created || 0);
+      toast({
+        title: "Tasks updated",
+        description: created > 0 ? `Added ${created} tasks.` : "No new tasks — already added.",
+      });
+    },
+    onError: (error: unknown) => {
+      const fallback =
+        error instanceof ApiError && error.status === 404
+          ? "Tasks are disabled on this server."
+          : "Couldn't add tasks from this plan.";
+
+      toast({
+        title: "Failed to add tasks",
+        description: formatError(error, fallback),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const feedbackMutation = useMutation({
+    mutationFn: (payload: { agentOutputId: string; rating: "up" | "down" }) =>
+      submitAgentOutputFeedback(payload.agentOutputId, { rating: payload.rating }),
+    onSuccess: (_data, variables) => {
+      setFeedbackRating(variables.rating);
+      toast({ title: "Thanks for the feedback!" });
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: "Feedback failed",
+        description: formatError(error, "Couldn't submit feedback."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleAddToTasks = () => {
+    const plan = (insight as any)?.outputData?.plan;
+    if (!insight?.id || !plan) return;
+    createTasksMutation.mutate({ agentOutputId: insight.id, plan });
+  };
+
+  const handleFeedback = (rating: "up" | "down") => {
+    if (!insight?.id) return;
+    feedbackMutation.mutate({ agentOutputId: insight.id, rating });
+  };
 
   const handleAction = () => {
     if (!insight?.outputData?.actionType) return;
@@ -104,15 +175,56 @@ export function InsightDetailModal({ insightId, isOpen, onClose }: InsightDetail
               </ReactMarkdown>
             </div>
 
-            <DialogFooter className="pt-4 border-t">
-              <DialogClose asChild>
-                <Button variant="outline">Close</Button>
-              </DialogClose>
-              {insight.actionable && insight.outputData.actionType && (
-                <Button onClick={handleAction}>
-                  {getActionText(insight.outputData.actionType)}
-                </Button>
-              )}
+            <DialogFooter className="pt-4 border-t flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:space-x-0">
+              <div className="flex flex-wrap items-center gap-2">
+                {(insight.outputData as any)?.plan && (
+                  <Button
+                    variant="outline"
+                    onClick={handleAddToTasks}
+                    disabled={createTasksMutation.isPending}
+                    title="Convert this plan into trackable tasks"
+                  >
+                    <ListTodo className="w-4 h-4 mr-2" />
+                    {createTasksMutation.isPending
+                      ? "Adding..."
+                      : tasksAdded
+                        ? "Added to tasks"
+                        : "Add to tasks"}
+                  </Button>
+                )}
+
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant={feedbackRating === "up" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => handleFeedback("up")}
+                    disabled={feedbackMutation.isPending}
+                    title="Thumbs up"
+                  >
+                    <ThumbsUp className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant={feedbackRating === "down" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => handleFeedback("down")}
+                    disabled={feedbackMutation.isPending}
+                    title="Thumbs down"
+                  >
+                    <ThumbsDown className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <DialogClose asChild>
+                  <Button variant="outline">Close</Button>
+                </DialogClose>
+                {insight.actionable && insight.outputData.actionType && (
+                  <Button onClick={handleAction}>
+                    {getActionText(insight.outputData.actionType)}
+                  </Button>
+                )}
+              </div>
             </DialogFooter>
           </>
         )}

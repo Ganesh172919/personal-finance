@@ -12,11 +12,11 @@ import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { useAuth } from "@/hooks/useAuth";
 import { useLocation, Link } from "wouter";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { apiClient } from "@/lib/apiClient";
+import { ApiError, apiClient } from "@/lib/apiClient";
 import { useToast } from "@/hooks/useToast";
 
 const loginSchema = z.object({
@@ -28,6 +28,7 @@ export default function Login() {
   const { user, loading, checkAuthStatus } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const [googleEnabled, setGoogleEnabled] = useState(false);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
@@ -38,6 +39,17 @@ export default function Login() {
       navigate("/dashboard");
     }
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const providers = await apiClient<{ email: boolean; google: boolean }>("/auth/providers", { method: "GET" });
+        setGoogleEnabled(Boolean(providers.google));
+      } catch {
+        setGoogleEnabled(false);
+      }
+    })();
+  }, []);
 
   const handleGoogleSignIn = () => {
     window.location.href = "/api/auth/google";
@@ -52,10 +64,12 @@ export default function Login() {
       await checkAuthStatus();
       toast({ title: "Login Successful", description: "Welcome back!" });
       // The navigate logic is now inside the useEffect, which is more reliable
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const requestId = error instanceof ApiError ? error.requestId : undefined;
+      const message = error instanceof Error ? error.message : "An unexpected error occurred.";
       toast({
         title: "Login Failed",
-        description: error.message || "An unexpected error occurred.",
+        description: requestId ? `${message} (Request ID: ${requestId})` : message,
         variant: "destructive",
       });
     }
@@ -128,11 +142,15 @@ export default function Login() {
                   {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
                 </div>
                 <Button type="submit" className="w-full" disabled={isSubmitting}>{isSubmitting ? "Logging In..." : "Login"}</Button>
-                <div className="relative my-2">
-                  <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
-                  <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">Or continue with</span></div>
-                </div>
-                <Button variant="outline" className="w-full" type="button" onClick={handleGoogleSignIn}>Continue with Google</Button>
+                {googleEnabled ? (
+                  <>
+                    <div className="relative my-2">
+                      <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                      <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">Or continue with</span></div>
+                    </div>
+                    <Button variant="outline" className="w-full" type="button" onClick={handleGoogleSignIn}>Continue with Google</Button>
+                  </>
+                ) : null}
               </form>
               <div className="mt-4 text-center text-sm">
                 Don&apos;t have an account? <Link href="/register" className="underline text-primary">Sign up</Link>
@@ -144,4 +162,3 @@ export default function Login() {
     </div>
   );
 }
-

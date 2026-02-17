@@ -28,15 +28,15 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
     }
   }, [sessionId, currentSessionId, selectSession]);
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, options?: { narrative?: boolean }) => {
     // If no current session, create one first
     if (!currentSessionId) {
       const newSession = await createSession();
       if (newSession) {
-        await sendMessage(content);
+        await sendMessage(content, options);
       }
     } else {
-      await sendMessage(content);
+      await sendMessage(content, options);
     }
   };
 

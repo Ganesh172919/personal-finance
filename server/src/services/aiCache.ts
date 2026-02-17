@@ -8,27 +8,37 @@ export const buildProcessCommandCacheKey = (params: {
   userId: string;
   profileUpdatedAt: string;
   transactionsUpdatedAt?: string;
+  journalUpdatedAt?: string;
   command: string;
+  narrative?: boolean;
 }) => {
   const normalized = normalizeUserText(params.command);
   const txUpdatedAt = params.transactionsUpdatedAt || "";
-  return sha256(`process-command|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${normalized}`);
+  const journalUpdatedAt = params.journalUpdatedAt || "";
+  const narrative = params.narrative === undefined ? "" : params.narrative ? "1" : "0";
+  return sha256(
+    `process-command|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${journalUpdatedAt}|${narrative}|${normalized}`
+  );
 };
 
 export const buildChatMessageCacheKey = (params: {
   userId: string;
   profileUpdatedAt: string;
   transactionsUpdatedAt?: string;
+  journalUpdatedAt?: string;
   sessionId: string;
   sessionMessageCount: number;
   sessionSummaryUpdatedAt?: string;
   content: string;
+  narrative?: boolean;
 }) => {
   const normalized = normalizeUserText(params.content);
   const summaryUpdatedAt = params.sessionSummaryUpdatedAt || "";
   const txUpdatedAt = params.transactionsUpdatedAt || "";
+  const journalUpdatedAt = params.journalUpdatedAt || "";
+  const narrative = params.narrative === undefined ? "" : params.narrative ? "1" : "0";
   return sha256(
-    `chat-message|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${params.sessionId}|${params.sessionMessageCount}|${summaryUpdatedAt}|${normalized}`
+    `chat-message|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${journalUpdatedAt}|${narrative}|${params.sessionId}|${params.sessionMessageCount}|${summaryUpdatedAt}|${normalized}`
   );
 };
 

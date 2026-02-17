@@ -1,11 +1,7 @@
-import axios, { AxiosError } from "axios";
-
-const AI_CORE_BASE_URL = process.env.PYTHON_API_URL || "http://localhost:8001";
-const AI_CORE_TIMEOUT_MS = Number(process.env.AI_CORE_TIMEOUT_MS || 45000);
-const AI_CORE_HEALTH_TIMEOUT_MS = Number(process.env.AI_CORE_HEALTH_TIMEOUT_MS || 2500);
-const CIRCUIT_FAILURE_THRESHOLD = Number(process.env.AI_CORE_CIRCUIT_FAILURE_THRESHOLD || 3);
-const CIRCUIT_OPEN_MS = Number(process.env.AI_CORE_CIRCUIT_OPEN_MS || 30000);
-const HEALTH_CACHE_MS = Number(process.env.AI_CORE_HEALTH_CACHE_MS || 5000);
+import axios, { AxiosError, type AxiosInstance } from "axios";
+import { getEnv, type Env } from "../config/env";
+import { recordAiCoreRequest, setAiCircuitBreakerState } from "../observability/metrics";
+import { runWithAiCoreConcurrency } from "./aiConcurrency";
 
 export interface WorkflowTraceEntry {
   agent: string;
@@ -51,13 +47,32 @@ let circuitOpenUntil = 0;
 let lastHealthCheckAt = 0;
 let lastHealthHealthy = true;
 
-const http = axios.create({
-  baseURL: AI_CORE_BASE_URL,
-  timeout: AI_CORE_TIMEOUT_MS,
-  headers: {
-    "Content-Type": "application/json",
-  },
-});
+let http: AxiosInstance | null = null;
+let httpBaseUrl = "";
+let httpTimeoutMs = 0;
+
+const getHttpClient = () => {
+  const env = getEnv();
+  if (!http || httpBaseUrl !== env.PYTHON_API_URL) {
+    httpBaseUrl = env.PYTHON_API_URL;
+    httpTimeoutMs = env.AI_CORE_TIMEOUT_MS;
+    http = axios.create({
+      baseURL: httpBaseUrl,
+      timeout: httpTimeoutMs,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    return http;
+  }
+
+  if (httpTimeoutMs !== env.AI_CORE_TIMEOUT_MS) {
+    httpTimeoutMs = env.AI_CORE_TIMEOUT_MS;
+    http.defaults.timeout = httpTimeoutMs;
+  }
+
+  return http;
+};
 
 const nowIso = () => new Date().toISOString();
 
@@ -173,26 +188,28 @@ const isCircuitOpen = () => Date.now() < circuitOpenUntil;
 const markSuccess = () => {
   consecutiveFailures = 0;
   circuitOpenUntil = 0;
+  setAiCircuitBreakerState({ circuitOpen: false, consecutiveFailures });
 };
 
-const markFailure = () => {
+const markFailure = (env: Env) => {
   consecutiveFailures += 1;
-  if (consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD) {
-    circuitOpenUntil = Date.now() + CIRCUIT_OPEN_MS;
+  if (consecutiveFailures >= env.AI_CORE_CIRCUIT_FAILURE_THRESHOLD) {
+    circuitOpenUntil = Date.now() + env.AI_CORE_CIRCUIT_OPEN_MS;
   }
+  setAiCircuitBreakerState({ circuitOpen: isCircuitOpen(), consecutiveFailures });
 };
 
-const checkAiCoreHealth = async (requestId: string): Promise<boolean> => {
+const checkAiCoreHealth = async (env: Env, requestId: string): Promise<boolean> => {
   const now = Date.now();
-  if (now - lastHealthCheckAt < HEALTH_CACHE_MS) {
+  if (now - lastHealthCheckAt < env.AI_CORE_HEALTH_CACHE_MS) {
     return lastHealthHealthy;
   }
 
   lastHealthCheckAt = now;
 
   try {
-    await axios.get(`${AI_CORE_BASE_URL}/health`, {
-      timeout: AI_CORE_HEALTH_TIMEOUT_MS,
+    await axios.get(`${env.PYTHON_API_URL}/health`, {
+      timeout: env.AI_CORE_HEALTH_TIMEOUT_MS,
       headers: {
         "X-Request-Id": requestId,
       },
@@ -207,80 +224,308 @@ const checkAiCoreHealth = async (requestId: string): Promise<boolean> => {
 
 export const processAiCoreRequest = async (
   payload: AiCoreProcessRequest,
-  requestId: string
+  requestId: string,
+  options?: { userId?: string }
 ): Promise<AiCoreProcessResponse> => {
-  if (isCircuitOpen()) {
-    return buildFallbackResponse(requestId, "AI core circuit breaker open");
-  }
+  const startedAt = Date.now();
 
-  const healthy = await checkAiCoreHealth(requestId);
-  if (!healthy) {
-    markFailure();
-    return buildFallbackResponse(requestId, "AI core health check failed");
-  }
+  return runWithAiCoreConcurrency({
+    userId: options?.userId,
+    task: async () => {
+      const env = getEnv();
 
-  try {
-    const { data } = await http.post("/api/agents/process", payload, {
-      headers: {
-        "X-Request-Id": requestId,
-      },
-    });
+      if (isCircuitOpen()) {
+        recordAiCoreRequest({ endpoint: "process", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return buildFallbackResponse(requestId, "AI core circuit breaker open");
+      }
 
-    markSuccess();
-    return normalizeProcessResponse(data, requestId);
-  } catch (error) {
-    markFailure();
-    return buildFallbackResponse(requestId, extractErrorReason(error));
-  }
+      const healthy = await checkAiCoreHealth(env, requestId);
+      if (!healthy) {
+        markFailure(env);
+        recordAiCoreRequest({ endpoint: "process", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return buildFallbackResponse(requestId, "AI core health check failed");
+      }
+
+      try {
+        const http = getHttpClient();
+        const { data } = await http.post("/api/agents/process", payload, {
+          headers: {
+            "X-Request-Id": requestId,
+          },
+        });
+
+        markSuccess();
+        recordAiCoreRequest({ endpoint: "process", durationMs: Date.now() - startedAt, fallbackUsed: false });
+        return normalizeProcessResponse(data, requestId);
+      } catch (error) {
+        markFailure(env);
+        recordAiCoreRequest({ endpoint: "process", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return buildFallbackResponse(requestId, extractErrorReason(error));
+      }
+    },
+  });
 };
 
 export const processAiCoreScenario = async (
   payload: Record<string, unknown>,
-  requestId: string
+  requestId: string,
+  options?: { userId?: string }
 ): Promise<Record<string, unknown>> => {
-  if (isCircuitOpen()) {
-    return {
-      originalBudget: 0,
-      newBudget: 0,
-      savingsImpact: 0,
-      goalDelay: 0,
-      adjustments: [],
-      request_id: requestId,
-      fallback_used: true,
-      message: "AI core temporarily unavailable",
-    };
-  }
+  const buildScenarioFallback = (message: string) => ({
+    scenario_type: String((payload as any)?.scenario_type || "expense"),
+    amount: Number((payload as any)?.amount || 0),
+    baseline: {
+      monthly_income: 0,
+      monthly_expenses: 0,
+      monthly_surplus: 0,
+      savings: 0,
+      total_debt: 0,
+    },
+    delta: {
+      monthly_surplus_change: 0,
+      new_monthly_surplus: 0,
+      savings_change_horizon: 0,
+      projected_investment_value: null,
+      emergency_fund_months_before: null,
+      emergency_fund_months_after: null,
+      goal_timeline_delta_months: 0,
+    },
+    assumptions: {
+      months: Number((payload as any)?.assumptions?.months || 12),
+      expected_return_pct: Number((payload as any)?.assumptions?.expected_return_pct || 0),
+      inflation_pct: Number((payload as any)?.assumptions?.inflation_pct || 0),
+    },
+    recommendations: [],
+    originalBudget: 0,
+    newBudget: 0,
+    savingsImpact: 0,
+    goalDelay: 0,
+    adjustments: [],
+    request_id: requestId,
+    fallback_used: true,
+    message,
+  });
 
-  try {
-    const { data } = await http.post("/api/agents/what-if-scenario", payload, {
-      headers: {
-        "X-Request-Id": requestId,
-      },
-    });
-    markSuccess();
-    return {
-      ...data,
-      request_id: data?.request_id || requestId,
-      fallback_used: Boolean(data?.fallback_used),
-    };
-  } catch (error) {
-    markFailure();
-    return {
-      originalBudget: 0,
-      newBudget: 0,
-      savingsImpact: 0,
-      goalDelay: 0,
-      adjustments: [],
-      request_id: requestId,
-      fallback_used: true,
-      message: extractErrorReason(error),
-    };
-  }
+  const startedAt = Date.now();
+
+  return runWithAiCoreConcurrency({
+    userId: options?.userId,
+    task: async () => {
+      const env = getEnv();
+      if (isCircuitOpen()) {
+        recordAiCoreRequest({ endpoint: "what-if", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return buildScenarioFallback("AI core temporarily unavailable");
+      }
+
+      try {
+        const http = getHttpClient();
+        const { data } = await http.post("/api/agents/what-if-scenario", payload, {
+          headers: {
+            "X-Request-Id": requestId,
+          },
+        });
+        markSuccess();
+        recordAiCoreRequest({ endpoint: "what-if", durationMs: Date.now() - startedAt, fallbackUsed: false });
+        return {
+          ...data,
+          request_id: data?.request_id || requestId,
+          fallback_used: Boolean(data?.fallback_used),
+        };
+      } catch (error) {
+        markFailure(env);
+        recordAiCoreRequest({ endpoint: "what-if", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return buildScenarioFallback(extractErrorReason(error));
+      }
+    },
+  });
 };
 
 export const getAiCoreClientStatus = () => ({
   consecutiveFailures,
   circuitOpenUntil,
   circuitOpen: isCircuitOpen(),
-  aiCoreBaseUrl: AI_CORE_BASE_URL,
+  aiCoreBaseUrl: getEnv().PYTHON_API_URL,
 });
+
+export type AiCoreReceiptOcrResponse = {
+  success: boolean;
+  extracted: Record<string, unknown>;
+  confidence: Record<string, unknown>;
+  warnings: string[];
+  request_id: string;
+};
+
+export const processAiCoreReceiptOcr = async (
+  payload: {
+    image: Buffer;
+    contentType: string;
+    lang?: string;
+    currencyHint?: string;
+  },
+  requestId: string,
+  options?: { userId?: string }
+): Promise<AiCoreReceiptOcrResponse> => {
+  const startedAt = Date.now();
+
+  return runWithAiCoreConcurrency({
+    userId: options?.userId,
+    task: async () => {
+      const env = getEnv();
+
+      if (isCircuitOpen()) {
+        recordAiCoreRequest({ endpoint: "receipt_ocr", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return {
+          success: false,
+          extracted: {},
+          confidence: {},
+          warnings: ["AI core circuit breaker open"],
+          request_id: requestId,
+        };
+      }
+
+      const healthy = await checkAiCoreHealth(env, requestId);
+      if (!healthy) {
+        markFailure(env);
+        recordAiCoreRequest({ endpoint: "receipt_ocr", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return {
+          success: false,
+          extracted: {},
+          confidence: {},
+          warnings: ["AI core health check failed"],
+          request_id: requestId,
+        };
+      }
+
+      try {
+        const http = getHttpClient();
+        const { data } = await http.post("/api/vision/receipts/parse", payload.image, {
+          params: {
+            lang: payload.lang || "en",
+            currencyHint: payload.currencyHint || "INR",
+          },
+          headers: {
+            "X-Request-Id": requestId,
+            "Content-Type": payload.contentType || "application/octet-stream",
+          },
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+          transformRequest: [(body) => body],
+        });
+
+        markSuccess();
+        recordAiCoreRequest({ endpoint: "receipt_ocr", durationMs: Date.now() - startedAt, fallbackUsed: false });
+
+        return {
+          success: data?.success !== false,
+          extracted: data?.extracted && typeof data.extracted === "object" ? data.extracted : {},
+          confidence: data?.confidence && typeof data.confidence === "object" ? data.confidence : {},
+          warnings: Array.isArray(data?.warnings) ? data.warnings.map((w: unknown) => String(w)) : [],
+          request_id: String(data?.request_id || requestId),
+        };
+      } catch (error) {
+        markFailure(env);
+        recordAiCoreRequest({ endpoint: "receipt_ocr", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return {
+          success: false,
+          extracted: {},
+          confidence: {},
+          warnings: [extractErrorReason(error)],
+          request_id: requestId,
+        };
+      }
+    },
+  });
+};
+
+export type AiCoreHandwritingResponse = {
+  success: boolean;
+  recognized_text: string;
+  confidence: Record<string, unknown>;
+  detected_values: Record<string, unknown>;
+  warnings: string[];
+  request_id: string;
+};
+
+export const processAiCoreHandwriting = async (
+  payload: {
+    image: Buffer;
+    contentType: string;
+    lang?: string;
+  },
+  requestId: string,
+  options?: { userId?: string }
+): Promise<AiCoreHandwritingResponse> => {
+  const startedAt = Date.now();
+
+  return runWithAiCoreConcurrency({
+    userId: options?.userId,
+    task: async () => {
+      const env = getEnv();
+
+      if (isCircuitOpen()) {
+        recordAiCoreRequest({ endpoint: "handwriting", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return {
+          success: false,
+          recognized_text: "",
+          confidence: {},
+          detected_values: {},
+          warnings: ["AI core circuit breaker open"],
+          request_id: requestId,
+        };
+      }
+
+      const healthy = await checkAiCoreHealth(env, requestId);
+      if (!healthy) {
+        markFailure(env);
+        recordAiCoreRequest({ endpoint: "handwriting", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return {
+          success: false,
+          recognized_text: "",
+          confidence: {},
+          detected_values: {},
+          warnings: ["AI core health check failed"],
+          request_id: requestId,
+        };
+      }
+
+      try {
+        const http = getHttpClient();
+        const { data } = await http.post("/api/vision/handwriting/recognize", payload.image, {
+          params: {
+            lang: payload.lang || "en",
+          },
+          headers: {
+            "X-Request-Id": requestId,
+            "Content-Type": payload.contentType || "application/octet-stream",
+          },
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+          transformRequest: [(body) => body],
+        });
+
+        markSuccess();
+        recordAiCoreRequest({ endpoint: "handwriting", durationMs: Date.now() - startedAt, fallbackUsed: false });
+
+        return {
+          success: data?.success !== false,
+          recognized_text: String(data?.recognized_text || ""),
+          confidence: data?.confidence && typeof data.confidence === "object" ? data.confidence : {},
+          detected_values: data?.detected_values && typeof data.detected_values === "object" ? data.detected_values : {},
+          warnings: Array.isArray(data?.warnings) ? data.warnings.map((w: unknown) => String(w)) : [],
+          request_id: String(data?.request_id || requestId),
+        };
+      } catch (error) {
+        markFailure(env);
+        recordAiCoreRequest({ endpoint: "handwriting", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return {
+          success: false,
+          recognized_text: "",
+          confidence: {},
+          detected_values: {},
+          warnings: [extractErrorReason(error)],
+          request_id: requestId,
+        };
+      }
+    },
+  });
+};

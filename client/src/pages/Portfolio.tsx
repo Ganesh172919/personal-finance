@@ -42,7 +42,13 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/useToast";
-import { apiClient, getTransactions } from "@/lib/apiClient";
+import {
+  ApiError,
+  apiClient,
+  getPortfolioSummary,
+  getTransactions,
+  PortfolioSummaryResponse,
+} from "@/lib/apiClient";
 import { queryClient } from "@/lib/queryClient";
 import { IAgentOutput, IFinancialProfile } from "@/types";
 import ReactMarkdown from "react-markdown";
@@ -72,6 +78,11 @@ export default function Portfolio() {
   const { data: investmentTxData, isLoading: isLoadingTransactions } = useQuery({
     queryKey: ["/api/transactions", "investment"],
     queryFn: () => getTransactions({ page: 1, limit: 100, type: "investment" }),
+  });
+
+  const { data: portfolioSummaryData } = useQuery<PortfolioSummaryResponse>({
+    queryKey: ["/api/portfolio/summary", 12],
+    queryFn: () => getPortfolioSummary({ months: 12 }),
   });
 
   // Query 2: Get AI insights for the 'Analysis' tab
@@ -108,11 +119,14 @@ export default function Portfolio() {
     queryClient.invalidateQueries({ queryKey: ["/api/financial-profiles/me"] });
     queryClient.invalidateQueries({ queryKey: ["/api/transactions", "investment"] });
   },
-  onError: (error: any) => {
-    console.error("Mutation error:", error); 
+  onError: (error: unknown) => {
+    console.error("Mutation error:", error);
+    const requestId = error instanceof ApiError ? error.requestId : undefined;
+    const message =
+      error instanceof Error ? error.message : "Failed to add investment. Please try again.";
     toast({
       title: "Error",
-      description: error.message || "Failed to add investment. Please try again.",
+      description: requestId ? `${message} (Request ID: ${requestId})` : message,
       variant: "destructive",
     });
   },
@@ -125,6 +139,31 @@ export default function Portfolio() {
   };
 
   const portfolioData = useMemo(() => {
+  if (portfolioSummaryData) {
+    return {
+      totalValue: Number(portfolioSummaryData.summary.total_invested || 0),
+      dynamicHoldings: (portfolioSummaryData.holdings || []).map(holding => ({
+        name: holding.name,
+        type: holding.asset_class,
+        amount: Number(holding.invested_amount || 0),
+      })),
+      dynamicAllocations: (portfolioSummaryData.allocations || [])
+        .map(alloc => ({
+          name: alloc.name,
+          value: Number(alloc.percentage || 0),
+          color:
+            alloc.name.toLowerCase().includes("equity")
+              ? "hsl(158 64% 52%)"
+              : alloc.name.toLowerCase().includes("debt")
+              ? "hsl(221 83% 53%)"
+              : alloc.name.toLowerCase().includes("gold")
+              ? "hsl(46 95% 53%)"
+              : "hsl(0 84% 60%)",
+        }))
+        .filter(alloc => alloc.value > 0),
+    };
+  }
+
   const investmentTransactions = investmentTxData?.transactions || [];
 
   // Since amounts are negative, take absolute value for display
@@ -174,9 +213,16 @@ export default function Portfolio() {
    : [];
 
   return { totalValue, dynamicHoldings, dynamicAllocations };
-}, [investmentTxData?.transactions]);
+}, [investmentTxData?.transactions, portfolioSummaryData]);
   
   const performanceData = useMemo(() => {
+  if (portfolioSummaryData?.performance?.length) {
+    return portfolioSummaryData.performance.map(row => ({
+      month: row.month,
+      value: Number(row.cumulative || 0),
+    }));
+  }
+
   const investmentTx = [...(investmentTxData?.transactions || [])].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
@@ -216,7 +262,7 @@ export default function Portfolio() {
   }
   
   return filledData.slice(-12);
-}, [investmentTxData?.transactions]);
+}, [investmentTxData?.transactions, portfolioSummaryData]);
 
   const investmentInsights = useMemo(() => {
     if (!insights) return [];
@@ -227,6 +273,10 @@ export default function Portfolio() {
       )
       .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
   }, [insights]);
+
+  const summaryTotalValue = Number(portfolioSummaryData?.summary?.total_invested ?? portfolioData.totalValue ?? 0);
+  const summaryMoMChange = Number(portfolioSummaryData?.summary?.month_over_month_change_pct ?? 0);
+  const summaryMonthlySip = Number(portfolioSummaryData?.summary?.monthly_sip_estimate ?? 0);
 
 
   if (isLoadingTransactions) {
@@ -339,7 +389,7 @@ export default function Portfolio() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3 }}
             >
-              {formatCurrency(portfolioData.totalValue)}
+              {formatCurrency(summaryTotalValue)}
             </motion.div>
             <div className="text-sm text-muted-foreground mt-1">
               Total invested capital
@@ -354,14 +404,15 @@ export default function Portfolio() {
               <TrendingUp className="w-4 h-4 text-chart-1" />
             </div>
             <motion.div
-              className="text-3xl font-bold text-chart-1"
+              className={`text-3xl font-bold ${summaryMoMChange >= 0 ? "text-chart-1" : "text-chart-4"}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5 }}
             >
-              +12.5%
+              {summaryMoMChange >= 0 ? "+" : ""}
+              {summaryMoMChange.toFixed(1)}%
             </motion.div>
-            <div className="text-sm text-muted-foreground mt-1">This year (mock)</div>
+            <div className="text-sm text-muted-foreground mt-1">Month-over-month invested change</div>
           </Card>
 
           <Card className="p-6">
@@ -375,10 +426,10 @@ export default function Portfolio() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.7 }}
             >
-              {formatCurrency(15000)}
+              {formatCurrency(summaryMonthlySip)}
             </motion.div>
             <div className="text-sm text-muted-foreground mt-1">
-              Auto-invested (mock)
+              Recent monthly contribution average
             </div>
           </Card>
         </div>
@@ -499,11 +550,12 @@ export default function Portfolio() {
                           </div>
                           <div className="text-right">
                             <div className="font-medium text-chart-1">
-                              +8.2%
+                              {summaryTotalValue > 0
+                                ? `${((holding.amount / summaryTotalValue) * 100).toFixed(1)}%`
+                                : "0.0%"}
                             </div>
-                            <div className="text-sm flex items-center text-chart-1">
-                              <TrendingUp className="w-3 h-3 mr-1" />
-                              +1.2%
+                            <div className="text-sm flex items-center text-muted-foreground">
+                              Allocation share
                             </div>
                           </div>
                         </div>

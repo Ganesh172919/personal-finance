@@ -1,4 +1,5 @@
 import { Schema, model, Document, Types } from "mongoose";
+import type { MutationSource } from "../types/provenance";
 
 export interface IFinancialGoal {
   _id?: Types.ObjectId;
@@ -41,6 +42,9 @@ export interface IFinancialProfile {
   transactionsCount?: number;
   transactionsUpdatedAt?: Date;
   transactionsMigratedAt?: Date;
+  onboardingCompletedAt?: Date;
+  onboardingVersion?: string;
+  lastMutation?: MutationSource & { at?: Date };
 }
 
 export interface IFinancialProfileDocument extends IFinancialProfile, Document {
@@ -90,6 +94,24 @@ const financialProfileSchema = new Schema<IFinancialProfileDocument>(
     transactionsCount: { type: Number, default: 0 },
     transactionsUpdatedAt: { type: Date, default: Date.now },
     transactionsMigratedAt: { type: Date },
+    onboardingCompletedAt: { type: Date },
+    onboardingVersion: { type: String },
+    lastMutation: {
+      origin: {
+        type: String,
+        enum: ["manual", "csv_import", "receipt_ocr", "journal", "task_completion", "ai_plan"],
+      },
+      request_id: { type: String },
+      task_id: { type: String },
+      agent_output_id: { type: String },
+      receipt_id: { type: String },
+      journal_entry_id: { type: String },
+      action_link_id: { type: String },
+      actor_type: { type: String, enum: ["user", "system", "agent"] },
+      source_ref: { type: String },
+      note: { type: String },
+      at: { type: Date },
+    },
     risk_tolerance: { 
       type: String, 
       enum: ['conservative', 'moderate', 'aggressive'],

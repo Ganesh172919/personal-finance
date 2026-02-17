@@ -1,27 +1,23 @@
 import { Request, Response } from "express";
-import mongoose from "mongoose";
-import FinancialProfileModel, {
+import {
   IDebt,
   IFinancialGoal,
   IFinancialProfileDocument
 } from "../models/financialProfileModel";
 import AiResponseCacheModel from "../models/aiResponseCacheModel";
+import TaskModel from "../models/taskModel";
 import TransactionModel, { TransactionType } from "../models/transactionModel";
 import { IUserDocument } from "../models/userModel";
-import { ensureProfileTransactionsMigrated } from "../services/transactionMigration";
 import { buildTransactionsSummaryCacheKey, ttlMs } from "../services/aiCache";
-
-const DEFAULT_PROFILE = {
-  age: 30,
-  annual_income: 0,
-  monthly_expenses: 0,
-  savings: 0,
-  goals: [],
-  debts: [],
-  transactions: [],
-  risk_tolerance: "moderate" as const,
-  investment_experience: "beginner" as const
-};
+import { recordAiCache } from "../observability/metrics";
+import { publishDomainEvent } from "../services/domainEvents";
+import {
+  bumpTransactionMetadata,
+  ensureProfile,
+  ensureProfileWithMigration,
+  setProfileMutationSource
+} from "../services/profileService";
+import type { MutationSource } from "../types/provenance";
 
 type TransactionInput = {
   amount: number;
@@ -41,19 +37,6 @@ const normalizeTransactionAmount = (
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const ensureProfile = async (userId: mongoose.Types.ObjectId) => {
-  let profile = await FinancialProfileModel.findOne({ userId });
-
-  if (!profile) {
-    profile = await FinancialProfileModel.create({
-      userId,
-      ...DEFAULT_PROFILE
-    });
-  }
-
-  return profile;
-};
-
 const mapTransactionRecord = (transaction: {
   _id: unknown;
   amount: number;
@@ -61,13 +44,15 @@ const mapTransactionRecord = (transaction: {
   description: string;
   date: Date;
   type: TransactionType;
+  source?: unknown;
 }) => ({
   id: String(transaction._id),
   amount: transaction.amount,
   category: transaction.category,
   description: transaction.description,
   date: transaction.date,
-  type: transaction.type
+  type: transaction.type,
+  source: transaction.source || undefined
 });
 
 const mapGoal = (goal: IFinancialGoal) => ({
@@ -87,6 +72,9 @@ const mapDebt = (debt: IDebt) => ({
   minimum_payment: debt.minimum_payment,
   type: debt.type
 });
+
+const getSingleParam = (value: string | string[] | undefined) =>
+  Array.isArray(value) ? value[0] : value;
 
 const findGoal = (profile: IFinancialProfileDocument, goalId: string) => {
   const goals = profile.goals as IFinancialGoal[];
@@ -110,13 +98,34 @@ const findDebt = (profile: IFinancialProfileDocument, debtId: string) => {
   return { debt: debts[debtIndex], debtIndex };
 };
 
+const buildMutationSource = (
+  requestId: string | undefined,
+  origin: MutationSource["origin"],
+  extra: Partial<MutationSource> = {}
+): MutationSource => ({
+  origin,
+  request_id: requestId,
+  actor_type: "user",
+  ...extra
+});
+
+const inferAssetClass = (value: string) => {
+  const lower = String(value || "").toLowerCase();
+  if (lower.includes("debt") || lower.includes("bond")) return "Debt";
+  if (lower.includes("gold") || lower.includes("commodity")) return "Gold";
+  if (lower.includes("liquid") || lower.includes("cash")) return "Cash";
+  return "Equity";
+};
+
+const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
 export const createTransaction = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
     const body = req.body as TransactionInput;
 
-    const profile = await ensureProfile(user._id);
-    await ensureProfileTransactionsMigrated(profile);
+    const profile = await ensureProfileWithMigration(user._id);
+    const source = buildMutationSource(req.requestId, "manual");
 
     const created = await TransactionModel.create({
       userId: user._id,
@@ -124,24 +133,90 @@ export const createTransaction = async (req: Request, res: Response) => {
       category: body.category,
       description: body.description,
       type: body.type,
-      date: body.date ? new Date(body.date) : new Date()
+      date: body.date ? new Date(body.date) : new Date(),
+      source
     });
 
-    await FinancialProfileModel.updateOne(
-      { _id: profile._id },
-      {
-        $inc: { transactionsCount: 1 },
-        $set: { transactionsUpdatedAt: new Date() }
-      }
-    );
+    await publishDomainEvent({
+      userId: user._id,
+      eventType: "TransactionCreated",
+      aggregateType: "transaction",
+      aggregateId: created._id.toString(),
+      actionLinkId: source.action_link_id,
+      requestId: req.requestId,
+      payload: {
+        source,
+        transaction_type: created.type,
+        category: created.category,
+        amount: created.amount,
+      },
+    });
+
+    bumpTransactionMetadata(profile, { deltaCount: 1 });
+    setProfileMutationSource(profile, source);
+    await profile.save();
 
     res.status(201).json({
       message: "Transaction created",
+      source,
       transaction: mapTransactionRecord(created)
     });
   } catch (error: any) {
     console.error(`[requestId=${req.requestId}] Error creating transaction:`, error);
     res.status(500).json({ message: "Failed to create transaction", request_id: req.requestId });
+  }
+};
+
+export const importTransactions = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as IUserDocument;
+    const body = req.body as { rows: TransactionInput[] };
+    const rows = Array.isArray(body.rows) ? body.rows : [];
+
+    const profile = await ensureProfileWithMigration(user._id);
+    const source = buildMutationSource(req.requestId, "csv_import");
+
+    const now = new Date();
+    const docs = rows.map(row => ({
+      userId: user._id,
+      amount: normalizeTransactionAmount(row.amount, row.type),
+      category: row.category,
+      description: row.description,
+      type: row.type,
+      date: row.date ? new Date(row.date) : now,
+      source
+    }));
+
+    const inserted = docs.length > 0 ? await TransactionModel.insertMany(docs, { ordered: true }) : [];
+    const insertedCount = Array.isArray(inserted) ? inserted.length : 0;
+
+    bumpTransactionMetadata(profile, { deltaCount: insertedCount, at: now });
+    setProfileMutationSource(profile, source);
+    await profile.save();
+
+    if (insertedCount > 0) {
+      await publishDomainEvent({
+        userId: user._id,
+        eventType: "TransactionImported",
+        aggregateType: "transaction_batch",
+        aggregateId: `${user._id.toString()}:${now.getTime()}`,
+        actionLinkId: source.action_link_id,
+        requestId: req.requestId,
+        payload: {
+          source,
+          count: insertedCount,
+        },
+      });
+    }
+
+    res.status(201).json({
+      message: "Transactions imported",
+      source,
+      inserted: insertedCount
+    });
+  } catch (error: any) {
+    console.error(`[requestId=${req.requestId}] Error importing transactions:`, error);
+    res.status(500).json({ message: "Failed to import transactions", request_id: req.requestId });
   }
 };
 
@@ -164,8 +239,7 @@ export const listTransactions = async (req: Request, res: Response) => {
       category?: string;
     };
 
-    const profile = await ensureProfile(user._id);
-    await ensureProfileTransactionsMigrated(profile);
+    await ensureProfileWithMigration(user._id);
 
     const filter: Record<string, unknown> = { userId: user._id };
 
@@ -223,8 +297,7 @@ export const updateTransaction = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
     const { id } = req.params;
-    const profile = await ensureProfile(user._id);
-    await ensureProfileTransactionsMigrated(profile);
+    const profile = await ensureProfileWithMigration(user._id);
 
     const existing = await TransactionModel.findOne({ _id: id, userId: user._id });
     if (!existing) {
@@ -235,11 +308,15 @@ export const updateTransaction = async (req: Request, res: Response) => {
     const nextType = (updates.type || existing.type) as TransactionType;
     const amountForNormalization =
       updates.amount !== undefined ? updates.amount : Math.abs(existing.amount);
+    const source = buildMutationSource(req.requestId, "manual", {
+      note: "transaction_update"
+    });
 
     const nextAmount = normalizeTransactionAmount(amountForNormalization, nextType);
     const updateDoc: Record<string, unknown> = {
       type: nextType,
-      amount: nextAmount
+      amount: nextAmount,
+      source
     };
 
     if (updates.category !== undefined) {
@@ -258,13 +335,13 @@ export const updateTransaction = async (req: Request, res: Response) => {
       { new: true }
     );
 
-    await FinancialProfileModel.updateOne(
-      { _id: profile._id },
-      { $set: { transactionsUpdatedAt: new Date() } }
-    );
+    bumpTransactionMetadata(profile, { deltaCount: 0 });
+    setProfileMutationSource(profile, source);
+    await profile.save();
 
     return res.json({
       message: "Transaction updated",
+      source,
       transaction: updated ? mapTransactionRecord(updated) : mapTransactionRecord(existing)
     });
   } catch (error: any) {
@@ -277,8 +354,7 @@ export const deleteTransaction = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
     const { id } = req.params;
-    const profile = await ensureProfile(user._id);
-    await ensureProfileTransactionsMigrated(profile);
+    const profile = await ensureProfileWithMigration(user._id);
 
     const deleted = await TransactionModel.findOneAndDelete({ _id: id, userId: user._id });
     if (!deleted) {
@@ -287,13 +363,16 @@ export const deleteTransaction = async (req: Request, res: Response) => {
 
     const now = new Date();
     const newCount = await TransactionModel.countDocuments({ userId: user._id });
-    await FinancialProfileModel.updateOne(
-      { _id: profile._id },
-      { $set: { transactionsCount: newCount, transactionsUpdatedAt: now } }
-    );
+    const source = buildMutationSource(req.requestId, "manual", {
+      note: "transaction_delete"
+    });
+    bumpTransactionMetadata(profile, { setCount: newCount, at: now });
+    setProfileMutationSource(profile, source);
+    await profile.save();
 
     return res.json({
       message: "Transaction deleted",
+      source,
       transaction_id: id
     });
   } catch (error: any) {
@@ -308,8 +387,7 @@ export const listRecentTransactions = async (req: Request, res: Response) => {
     const limitRaw = Number((req.query as any)?.limit ?? 5);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, limitRaw), 50) : 5;
 
-    const profile = await ensureProfile(user._id);
-    await ensureProfileTransactionsMigrated(profile);
+    await ensureProfileWithMigration(user._id);
 
     const docs = await TransactionModel.find({ userId: user._id }).sort({ date: -1 }).limit(limit).lean();
 
@@ -332,8 +410,7 @@ export const getTransactionsSummary = async (req: Request, res: Response) => {
     const topCategoriesRaw = Number(query.topCategories ?? 6);
     const topCategories = Number.isFinite(topCategoriesRaw) ? Math.min(Math.max(1, topCategoriesRaw), 20) : 6;
 
-    const profile = await ensureProfile(user._id);
-    await ensureProfileTransactionsMigrated(profile);
+    const profile = await ensureProfileWithMigration(user._id);
 
     const profileTxUpdatedAt = profile.transactionsUpdatedAt
       ? new Date(profile.transactionsUpdatedAt as unknown as Date).toISOString()
@@ -353,8 +430,11 @@ export const getTransactionsSummary = async (req: Request, res: Response) => {
 
     const cached = await AiResponseCacheModel.findOne({ cacheKey }).lean();
     if (cached?.responseData && typeof cached.responseData === "object") {
+      recordAiCache({ endpoint: "transactions-summary", hit: true });
       return res.json({ ...(cached.responseData as any), cache_hit: true });
     }
+
+    recordAiCache({ endpoint: "transactions-summary", hit: false });
 
     const fromDate = new Date(from);
     fromDate.setHours(0, 0, 0, 0);
@@ -469,14 +549,17 @@ export const createGoal = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
     const profile = await ensureProfile(user._id);
+    const source = buildMutationSource(req.requestId, "manual", { note: "goal_create" });
 
     profile.goals.push(req.body);
+    setProfileMutationSource(profile, source);
     await profile.save();
 
     const createdGoal = profile.goals[profile.goals.length - 1];
 
     res.status(201).json({
       message: "Goal created",
+      source,
       goal: mapGoal(createdGoal)
     });
   } catch (error: any) {
@@ -488,12 +571,12 @@ export const createGoal = async (req: Request, res: Response) => {
 export const updateGoal = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
-    const { goalId } = req.params;
-    const profile = await FinancialProfileModel.findOne({ userId: user._id });
-
-    if (!profile) {
-      return res.status(404).json({ message: "Financial profile not found", request_id: req.requestId });
+    const goalId = getSingleParam(req.params.goalId);
+    if (!goalId) {
+      return res.status(400).json({ message: "Invalid goal ID", request_id: req.requestId });
     }
+    const profile = await ensureProfile(user._id);
+    const source = buildMutationSource(req.requestId, "manual", { note: "goal_update" });
 
     const { goal } = findGoal(profile, goalId);
     if (!goal) {
@@ -517,10 +600,12 @@ export const updateGoal = async (req: Request, res: Response) => {
       goal.priority = updates.priority;
     }
 
+    setProfileMutationSource(profile, source);
     await profile.save();
 
     return res.json({
       message: "Goal updated",
+      source,
       goal: mapGoal(goal)
     });
   } catch (error: any) {
@@ -532,12 +617,12 @@ export const updateGoal = async (req: Request, res: Response) => {
 export const deleteGoal = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
-    const { goalId } = req.params;
-    const profile = await FinancialProfileModel.findOne({ userId: user._id });
-
-    if (!profile) {
-      return res.status(404).json({ message: "Financial profile not found", request_id: req.requestId });
+    const goalId = getSingleParam(req.params.goalId);
+    if (!goalId) {
+      return res.status(400).json({ message: "Invalid goal ID", request_id: req.requestId });
     }
+    const profile = await ensureProfile(user._id);
+    const source = buildMutationSource(req.requestId, "manual", { note: "goal_delete" });
 
     const { goalIndex } = findGoal(profile, goalId);
     if (goalIndex === -1) {
@@ -545,10 +630,12 @@ export const deleteGoal = async (req: Request, res: Response) => {
     }
 
     profile.goals.splice(goalIndex, 1);
+    setProfileMutationSource(profile, source);
     await profile.save();
 
     return res.json({
       message: "Goal deleted",
+      source,
       goal_id: goalId
     });
   } catch (error: any) {
@@ -561,14 +648,17 @@ export const createDebt = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
     const profile = await ensureProfile(user._id);
+    const source = buildMutationSource(req.requestId, "manual", { note: "debt_create" });
 
     profile.debts.push(req.body);
+    setProfileMutationSource(profile, source);
     await profile.save();
 
     const createdDebt = profile.debts[profile.debts.length - 1];
 
     res.status(201).json({
       message: "Debt created",
+      source,
       debt: mapDebt(createdDebt)
     });
   } catch (error: any) {
@@ -580,12 +670,12 @@ export const createDebt = async (req: Request, res: Response) => {
 export const updateDebt = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
-    const { debtId } = req.params;
-    const profile = await FinancialProfileModel.findOne({ userId: user._id });
-
-    if (!profile) {
-      return res.status(404).json({ message: "Financial profile not found", request_id: req.requestId });
+    const debtId = getSingleParam(req.params.debtId);
+    if (!debtId) {
+      return res.status(400).json({ message: "Invalid debt ID", request_id: req.requestId });
     }
+    const profile = await ensureProfile(user._id);
+    const source = buildMutationSource(req.requestId, "manual", { note: "debt_update" });
 
     const { debt } = findDebt(profile, debtId);
     if (!debt) {
@@ -609,10 +699,12 @@ export const updateDebt = async (req: Request, res: Response) => {
       debt.type = updates.type;
     }
 
+    setProfileMutationSource(profile, source);
     await profile.save();
 
     return res.json({
       message: "Debt updated",
+      source,
       debt: mapDebt(debt)
     });
   } catch (error: any) {
@@ -624,12 +716,12 @@ export const updateDebt = async (req: Request, res: Response) => {
 export const deleteDebt = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
-    const { debtId } = req.params;
-    const profile = await FinancialProfileModel.findOne({ userId: user._id });
-
-    if (!profile) {
-      return res.status(404).json({ message: "Financial profile not found", request_id: req.requestId });
+    const debtId = getSingleParam(req.params.debtId);
+    if (!debtId) {
+      return res.status(400).json({ message: "Invalid debt ID", request_id: req.requestId });
     }
+    const profile = await ensureProfile(user._id);
+    const source = buildMutationSource(req.requestId, "manual", { note: "debt_delete" });
 
     const { debtIndex } = findDebt(profile, debtId);
     if (debtIndex === -1) {
@@ -637,14 +729,260 @@ export const deleteDebt = async (req: Request, res: Response) => {
     }
 
     profile.debts.splice(debtIndex, 1);
+    setProfileMutationSource(profile, source);
     await profile.save();
 
     return res.json({
       message: "Debt deleted",
+      source,
       debt_id: debtId
     });
   } catch (error: any) {
     console.error(`[requestId=${req.requestId}] Error deleting debt:`, error);
     return res.status(500).json({ message: "Failed to delete debt", request_id: req.requestId });
+  }
+};
+
+export const getDashboardSummary = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as IUserDocument;
+    const profile = await ensureProfileWithMigration(user._id);
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    const [monthlyRows, topCategoriesRows, taskOpen, taskCompleted, taskDismissed, nextTasks] = await Promise.all([
+      TransactionModel.aggregate([
+        {
+          $match: {
+            userId: user._id,
+            date: { $gte: prevMonthStart, $lte: now }
+          }
+        },
+        {
+          $addFields: {
+            month: { $dateToString: { format: "%Y-%m", date: "$date" } }
+          }
+        },
+        {
+          $group: {
+            _id: "$month",
+            income: { $sum: { $cond: [{ $eq: ["$type", "income"] }, "$amount", 0] } },
+            expense: { $sum: { $cond: [{ $eq: ["$type", "expense"] }, { $abs: "$amount" }, 0] } }
+          }
+        }
+      ]),
+      TransactionModel.aggregate([
+        {
+          $match: {
+            userId: user._id,
+            type: "expense",
+            date: { $gte: monthStart, $lte: now }
+          }
+        },
+        { $group: { _id: "$category", amount: { $sum: { $abs: "$amount" } } } },
+        { $sort: { amount: -1 } },
+        { $limit: 6 }
+      ]),
+      TaskModel.countDocuments({ userId: user._id, status: "open" }),
+      TaskModel.countDocuments({ userId: user._id, status: "completed" }),
+      TaskModel.countDocuments({ userId: user._id, status: "dismissed" }),
+      TaskModel.find({ userId: user._id, status: "open" })
+        .sort({ dueDate: 1, createdAt: -1 })
+        .limit(5)
+        .lean()
+    ]);
+
+    const currentKey = monthKey(now);
+    const previousKey = monthKey(prevMonthStart);
+
+    const currentExpense = Number(monthlyRows.find((row: any) => row._id === currentKey)?.expense || 0);
+    const previousExpense = Number(monthlyRows.find((row: any) => row._id === previousKey)?.expense || 0);
+    const spendingChangePct =
+      previousExpense > 0 ? ((currentExpense - previousExpense) / previousExpense) * 100 : 0;
+
+    const monthlyIncome = Number(profile.annual_income || 0) / 12;
+    const monthlyExpenses = Number(profile.monthly_expenses || 0);
+    const netCashFlow = monthlyIncome - monthlyExpenses;
+    const savingsRate = monthlyIncome > 0 ? (netCashFlow / monthlyIncome) * 100 : 0;
+    const emergencyFundMonths =
+      monthlyExpenses > 0 ? Number(profile.savings || 0) / monthlyExpenses : null;
+
+    const goals = Array.isArray(profile.goals) ? (profile.goals as IFinancialGoal[]) : [];
+    const totalGoalTarget = goals.reduce((sum, goal) => sum + Number(goal.target || 0), 0);
+    const totalGoalCurrent = goals.reduce((sum, goal) => sum + Number(goal.current || 0), 0);
+    const goalsProgressPct = totalGoalTarget > 0 ? (totalGoalCurrent / totalGoalTarget) * 100 : 0;
+    const goalsOnTrack = goals.filter(goal => Number(goal.target || 0) > 0 && Number(goal.current || 0) / Number(goal.target) >= 0.5).length;
+
+    const completeness = {
+      has_income: Number(profile.annual_income) > 0,
+      has_expenses: Number(profile.monthly_expenses) > 0,
+      has_goals: goals.length > 0,
+      has_debts: Array.isArray(profile.debts) && profile.debts.length > 0,
+      has_transactions: Number(profile.transactionsCount || 0) > 0
+    };
+
+    return res.json({
+      generated_at: now.toISOString(),
+      cash_flow: {
+        monthly_income: monthlyIncome,
+        monthly_expenses: monthlyExpenses,
+        net: netCashFlow,
+        savings_rate_pct: savingsRate
+      },
+      savings: {
+        balance: Number(profile.savings || 0),
+        emergency_fund_months: emergencyFundMonths
+      },
+      goals: {
+        total_count: goals.length,
+        on_track: goalsOnTrack,
+        total_target: totalGoalTarget,
+        total_current: totalGoalCurrent,
+        progress_pct: goalsProgressPct
+      },
+      spending: {
+        current_month_total: currentExpense,
+        previous_month_total: previousExpense,
+        change_pct: spendingChangePct,
+        top_categories: topCategoriesRows.map((row: any) => ({
+          category: String(row?._id || "Other"),
+          amount: Number(row?.amount || 0)
+        }))
+      },
+      tasks: {
+        open: taskOpen,
+        completed: taskCompleted,
+        dismissed: taskDismissed,
+        upcoming: nextTasks.map(task => ({
+          id: task._id,
+          title: task.title,
+          dueDate: task.dueDate,
+          priority: task.priority
+        }))
+      },
+      completeness
+    });
+  } catch (error: any) {
+    console.error(`[requestId=${req.requestId}] Error building dashboard summary:`, error);
+    return res.status(500).json({ message: "Failed to build dashboard summary", request_id: req.requestId });
+  }
+};
+
+export const getPortfolioSummary = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as IUserDocument;
+    const monthsRaw = Number((req.query as any)?.months ?? 12);
+    const months = Number.isFinite(monthsRaw) ? Math.min(Math.max(1, monthsRaw), 36) : 12;
+
+    await ensureProfileWithMigration(user._id);
+
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const previousMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+    const investmentTx = await TransactionModel.find({ userId: user._id, type: "investment" })
+      .sort({ date: 1 })
+      .lean();
+
+    const holdingsMap = new Map<string, { name: string; asset_class: string; invested_amount: number }>();
+    const monthlyContributionMap = new Map<string, number>();
+
+    for (const tx of investmentTx) {
+      const amount = Math.abs(Number(tx.amount || 0));
+      const key = String(tx.description || "Investment");
+      const existing = holdingsMap.get(key);
+      if (existing) {
+        existing.invested_amount += amount;
+      } else {
+        holdingsMap.set(key, {
+          name: key,
+          asset_class: inferAssetClass(key),
+          invested_amount: amount
+        });
+      }
+
+      const keyMonth = monthKey(new Date(tx.date));
+      monthlyContributionMap.set(keyMonth, Number(monthlyContributionMap.get(keyMonth) || 0) + amount);
+    }
+
+    const totalInvested = Array.from(holdingsMap.values()).reduce((sum, item) => sum + item.invested_amount, 0);
+    const currentMonthInvested = investmentTx
+      .filter(tx => new Date(tx.date) >= currentMonthStart)
+      .reduce((sum, tx) => sum + Math.abs(Number(tx.amount || 0)), 0);
+    const previousMonthInvested = investmentTx
+      .filter(tx => {
+        const date = new Date(tx.date);
+        return date >= previousMonthStart && date <= previousMonthEnd;
+      })
+      .reduce((sum, tx) => sum + Math.abs(Number(tx.amount || 0)), 0);
+
+    const monthOverMonthChangePct =
+      previousMonthInvested > 0
+        ? ((currentMonthInvested - previousMonthInvested) / previousMonthInvested) * 100
+        : 0;
+
+    const cursor = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+    let cumulative = 0;
+    const performance: Array<{ month: string; invested: number; cumulative: number }> = [];
+    for (let index = 0; index < months; index += 1) {
+      const key = monthKey(cursor);
+      const invested = Number(monthlyContributionMap.get(key) || 0);
+      cumulative += invested;
+      performance.push({ month: key, invested, cumulative });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    const assetTotals = new Map<string, number>();
+    for (const holding of holdingsMap.values()) {
+      assetTotals.set(
+        holding.asset_class,
+        Number(assetTotals.get(holding.asset_class) || 0) + Number(holding.invested_amount || 0)
+      );
+    }
+
+    const allocations = Array.from(assetTotals.entries()).map(([name, amount]) => ({
+      name,
+      amount,
+      percentage: totalInvested > 0 ? (amount / totalInvested) * 100 : 0
+    }));
+
+    const holdings = Array.from(holdingsMap.values())
+      .map(holding => ({
+        ...holding,
+        weight_percentage: totalInvested > 0 ? (holding.invested_amount / totalInvested) * 100 : 0
+      }))
+      .sort((left, right) => right.invested_amount - left.invested_amount);
+
+    const recentContributions = performance.slice(-3);
+    const monthlySip =
+      recentContributions.length > 0
+        ? recentContributions.reduce((sum, row) => sum + row.invested, 0) / recentContributions.length
+        : 0;
+
+    return res.json({
+      generated_at: now.toISOString(),
+      summary: {
+        total_invested: totalInvested,
+        monthly_sip_estimate: monthlySip,
+        current_month_invested: currentMonthInvested,
+        previous_month_invested: previousMonthInvested,
+        month_over_month_change_pct: monthOverMonthChangePct,
+        total_return_pct: null,
+        returns_basis: "not_available_without_live_market_values"
+      },
+      allocations,
+      holdings,
+      performance,
+      assumptions: [
+        "Portfolio values use recorded investment transactions as invested capital.",
+        "Return percentage is unavailable until live/mark-to-market valuations are integrated."
+      ]
+    });
+  } catch (error: any) {
+    console.error(`[requestId=${req.requestId}] Error building portfolio summary:`, error);
+    return res.status(500).json({ message: "Failed to build portfolio summary", request_id: req.requestId });
   }
 };

@@ -6,7 +6,11 @@ export const registerBodySchema = z
   .object({
     name: z.string().trim().min(1, "Name is required").max(100),
     email: z.string().trim().email("Invalid email"),
-    password: z.string().min(8, "Password must be at least 8 characters").max(128),
+    password: z
+      .string()
+      .min(8, "Password must be at least 8 characters")
+      .max(128)
+      .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, "Password must include upper, lower, and numeric characters"),
     phoneNumber: z.string().trim().regex(phoneRegex, "Invalid phone number").optional()
   })
   .strict();

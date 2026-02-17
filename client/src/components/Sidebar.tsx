@@ -8,32 +8,58 @@ import {
   Moon,
   Sun,
   ListChecks,
+  ListTodo,
   MessageSquare,
   FileText,
+  ReceiptText,
+  ScanLine,
+  Target,
   TrendingUp,
   StickyNote 
 } 
 from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useAppConfig } from "@/hooks/useAppConfig";
 import { useTheme } from "./ThemeProvider";
 import { Button } from "@/components/ui/Button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
 
+type NavigationItem = {
+  href: string;
+  icon: any;
+  label: string;
+  requiresFeature?: "tasks_enabled" | "receipts_ocr_enabled" | "journal_enabled";
+};
+
 // Navigation items including new features
-const navigationItems = [
+const navigationItems: NavigationItem[] = [
   { href: "/chat", icon: MessageSquare, label: "AI Chat" },
   { href: "/dashboard", icon: Gauge, label: "Strategist's Desk" },
+  { href: "/tasks", icon: ListTodo, label: "Tasks", requiresFeature: "tasks_enabled" },
+  { href: "/onboarding", icon: Brain, label: "Onboarding" },
+  { href: "/goals-debts", icon: Target, label: "Goals & Debts" },
+  { href: "/transactions", icon: ReceiptText, label: "Transactions" },
+  { href: "/receipts", icon: ScanLine, label: "Receipts", requiresFeature: "receipts_ocr_enabled" },
   { href: "/portfolio", icon: PieChart, label: "Investment Portfolio" },
   { href: "/all-insights", icon: ListChecks, label: "All Insights" },
   { href: "/blogs", icon: FileText, label: "Blogs" },
   { href: "/growth-stories", icon: TrendingUp, label: "Growth Stories" },
-  { href: "/notes", icon: StickyNote, label: "Note Taking" },
+  { href: "/notes", icon: StickyNote, label: "Note Taking", requiresFeature: "journal_enabled" },
 ];
 
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const configQuery = useAppConfig({ enabled: !!user });
+  const features = configQuery.data?.features;
+  const planTier = configQuery.data?.entitlements?.plan || "free";
+  const planLabel =
+    configQuery.isLoading ? "Loading plan…" : configQuery.data?.entitlements ? `${planTier} plan` : "free plan";
+  const visibleNavItems = navigationItems.filter((item) => {
+    if (!item.requiresFeature) return true;
+    return features ? Boolean((features as any)[item.requiresFeature]) : true;
+  });
 
   const handleLogout = async () => {
     try {
@@ -74,7 +100,7 @@ export function Sidebar() {
 
       {/* Navigation Menu */}
       <nav className="flex-1 p-6 space-y-2" data-testid="navigation">
-        {navigationItems.map((item, index) => { 
+        {visibleNavItems.map((item, index) => { 
           const isActive = location === item.href;
 
           return (
@@ -135,7 +161,7 @@ export function Sidebar() {
           </Avatar>
           <div className="flex-1">
             <div className="font-medium text-sm text-foreground">{user?.name || "User"}</div>
-            <div className="text-xs text-muted-foreground">Premium Member</div>
+            <div className="text-xs text-muted-foreground">{planLabel}</div>
           </div>
           <Button
             variant="ghost"

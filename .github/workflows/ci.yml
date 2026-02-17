@@ -43,6 +43,10 @@ jobs:
         working-directory: server
         run: npm run check
 
+      - name: Security Audit (Prod Dependencies)
+        working-directory: server
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Tests
         working-directory: server
         run: npm run test:ci
@@ -68,6 +72,10 @@ jobs:
       - name: Lint
         working-directory: client
         run: npm run lint
+
+      - name: Security Audit (Prod Dependencies)
+        working-directory: client
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Build
         working-directory: client
@@ -96,3 +104,19 @@ jobs:
       - name: Pytest
         working-directory: server/AI_Core
         run: pytest -q
+
+  container-build:
+    name: Container Build Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Server Image
+        run: docker build -t finwise-server:ci ./server
+
+      - name: Build AI Core Image
+        run: docker build -t finwise-ai-core:ci ./server/AI_Core
+
+      - name: Build Client Image
+        run: docker build -t finwise-client:ci ./client

@@ -1,0 +1,51 @@
+{
+  "executive_summary": "Sample plan fixture used to validate the Plan contract across services.",
+  "key_metrics": {
+    "monthly_net_cash_flow": 25000,
+    "savings_rate": 0.25,
+    "debt_to_income": 0.18,
+    "emergency_fund_months": 4.5,
+    "total_debt": 150000
+  },
+  "actions": {
+    "next_7_days": [
+      {
+        "id": "act-1",
+        "title": "Track expenses for 7 days",
+        "why": "Build awareness of spending leaks.",
+        "steps": ["Export last month statement", "Tag top 20 transactions", "Set a weekly spending cap"],
+        "priority": "high",
+        "expected_impact": "Improves budgeting accuracy.",
+        "kind": "budget",
+        "due_days": 7
+      }
+    ],
+    "next_30_days": [
+      {
+        "id": "act-2",
+        "title": "Increase emergency fund",
+        "why": "Reduce financial risk from unexpected expenses.",
+        "steps": ["Auto-transfer INR 5,000 weekly", "Review subscriptions to fund transfers"],
+        "priority": "medium",
+        "expected_impact": "Builds a 1-month buffer over time.",
+        "kind": "cashflow",
+        "due_days": 30
+      }
+    ],
+    "next_12_months": [
+      {
+        "id": "act-3",
+        "title": "Optimize debt repayment",
+        "why": "Lower interest costs and shorten payoff timeline.",
+        "steps": ["Pay extra toward highest APR debt", "Consider refinancing if APR is very high"],
+        "priority": "high",
+        "expected_impact": "Reduces interest and improves monthly surplus.",
+        "kind": "debt",
+        "due_days": 90
+      }
+    ]
+  },
+  "assumptions": ["INR-first", "No major income shocks"],
+  "data_warnings": []
+}
+

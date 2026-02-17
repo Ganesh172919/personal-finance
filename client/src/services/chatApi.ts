@@ -50,10 +50,16 @@ export async function fetchMessages(
 
 export async function sendMessage(
   sessionId: string,
-  content: string
+  content: string,
+  options?: { narrative?: boolean }
 ): Promise<ISendMessageResponse> {
+  const payload: { content: string; options?: { narrative?: boolean } } = { content };
+  if (typeof options?.narrative === "boolean") {
+    payload.options = { narrative: options.narrative };
+  }
+
   return apiClient<ISendMessageResponse>(`/chat/sessions/${sessionId}/messages`, {
     method: "POST",
-    body: JSON.stringify({ content })
+    body: JSON.stringify(payload)
   });
 }

@@ -1,11 +1,12 @@
 import { Request, Response } from "express";
 import axios from "axios";
 import { getAiCoreClientStatus } from "../services/aiCoreClient";
-
-const AI_CORE_BASE_URL = process.env.PYTHON_API_URL || "http://localhost:8001";
-const STATUS_TIMEOUT_MS = Number(process.env.AI_CORE_STATUS_TIMEOUT_MS || 2500);
+import { getEnv } from "../config/env";
 
 export const getAiCoreStatus = async (req: Request, res: Response) => {
+  const env = getEnv();
+  const AI_CORE_BASE_URL = env.PYTHON_API_URL;
+  const STATUS_TIMEOUT_MS = env.AI_CORE_STATUS_TIMEOUT_MS;
   const requestId = req.requestId;
 
   const [healthResult, rateLimitResult] = await Promise.allSettled([
@@ -36,4 +37,3 @@ export const getAiCoreStatus = async (req: Request, res: Response) => {
     }
   });
 };
-

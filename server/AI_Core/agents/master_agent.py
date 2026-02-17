@@ -60,6 +60,39 @@ class MasterFinancialStrategistAgent:
             r"\bwhy\b",
         ]
 
+        def _is_personal_or_action_seeking(prompt: str) -> bool:
+            patterns = [
+                r"\bmy\b",
+                r"\bi\b",
+                r"\bi'm\b",
+                r"\bim\b",
+                r"\bshould i\b",
+                r"\bhelp me\b",
+                r"\boptimi[sz]e\b",
+                r"\bfor me\b",
+                r"\bwhat should i\b",
+                r"\bcan i\b",
+            ]
+            return any(re.search(pattern, prompt) for pattern in patterns)
+
+        def _has_amounts_or_timelines(prompt: str) -> bool:
+            if re.search(r"(₹|rs\.?|inr)\s*\d", prompt):
+                return True
+
+            if re.search(r"\b\d+(?:\.\d+)?\s*%\b", prompt):
+                return True
+
+            if re.search(r"\b\d+(?:\.\d+)?\s*(?:k|l|lac|lakh|lakhs|cr|crore|crores)\b", prompt):
+                return True
+
+            if re.search(r"\b\d+\s*(?:day|days|week|weeks|month|months|year|years)\b", prompt):
+                return True
+
+            if re.search(r"\b(19|20)\d{2}\b", prompt):
+                return True
+
+            return False
+
         # Domain scoring
         domain_keywords = {
             AnalysisType.INCOME_EXPENSE: [
@@ -93,12 +126,14 @@ class MasterFinancialStrategistAgent:
         )
 
         looks_educational = any(re.search(pattern, text_with_context) for pattern in education_patterns)
+        personal_or_action_seeking = _is_personal_or_action_seeking(text)
+        has_amounts_or_timelines = _has_amounts_or_timelines(text)
 
         non_zero_domains = [domain for domain, score in scores.items() if score > 0]
         best_domain = max(scores, key=lambda key: scores[key]) if scores else AnalysisType.COMPREHENSIVE
 
         # Rules
-        if looks_educational and not has_profile and not non_zero_domains:
+        if looks_educational and not personal_or_action_seeking and not has_amounts_or_timelines:
             return AnalysisType.FINANCIAL_EDUCATION
 
         if looks_educational and len(non_zero_domains) == 0:

@@ -4,27 +4,26 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useMutation } from "@tanstack/react-query";
-import { processScenario } from "@/lib/apiClient";
+import { processScenario, ScenarioResponse } from "@/lib/apiClient";
 import { useLocation } from "wouter";
 
-interface ScenarioResults {
-  originalBudget: number;
-  newBudget: number;
-  savingsImpact: number;
-  goalDelay: number;
-  adjustments: Array<{ category: string; reduction: number }>;
-}
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(value || 0);
 
 export function ScenarioWidget() {
   const [amount, setAmount] = useState("");
-  const [results, setResults] = useState<ScenarioResults | null>(null);
+  const [results, setResults] = useState<ScenarioResponse | null>(null);
   const [, navigate] = useLocation();
 
   const scenarioMutation = useMutation({
     mutationFn: async (expense: number) => {
-      return await processScenario({
-        type: "expense",
-        expense: expense,
+      return processScenario({
+        scenario_type: "expense",
+        amount: expense,
       });
     },
     onSuccess: (data) => {
@@ -33,7 +32,7 @@ export function ScenarioWidget() {
   });
 
   const handleCalculate = () => {
-    const expense = parseInt(amount);
+    const expense = Number(amount);
     if (expense > 0) {
       scenarioMutation.mutate(expense);
     }
@@ -56,9 +55,9 @@ export function ScenarioWidget() {
         <div className="flex space-x-2">
           <Input
             type="number"
-            placeholder="Enter amount (₹)"
+            placeholder="Enter amount (INR)"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={event => setAmount(event.target.value)}
             className="flex-1"
             data-testid="input-scenario-amount"
           />
@@ -88,9 +87,7 @@ export function ScenarioWidget() {
             className="space-y-3"
             data-testid="scenario-results"
           >
-            <div className="text-sm text-muted-foreground">
-              If I spend ₹{amount}:
-            </div>
+            <div className="text-sm text-muted-foreground">If I spend {formatCurrency(Number(amount))}:</div>
 
             <div className="space-y-3">
               <motion.div
@@ -98,35 +95,27 @@ export function ScenarioWidget() {
                 whileHover={{ scale: 1.02 }}
               >
                 <span className="text-sm text-foreground">Remaining Budget</span>
-                <span className="font-medium text-chart-3">
-                  ₹{results.newBudget.toLocaleString()}
-                </span>
+                <span className="font-medium text-chart-3">{formatCurrency(results.newBudget)}</span>
               </motion.div>
               <motion.div
                 className="flex justify-between items-center p-3 bg-accent rounded-lg"
                 whileHover={{ scale: 1.02 }}
               >
                 <span className="text-sm text-foreground">Savings Impact</span>
-                <span className="font-medium text-chart-4">
-                  ₹{results.savingsImpact.toLocaleString()}
-                </span>
+                <span className="font-medium text-chart-4">{formatCurrency(results.savingsImpact)}</span>
               </motion.div>
               <motion.div
                 className="flex justify-between items-center p-3 bg-accent rounded-lg"
                 whileHover={{ scale: 1.02 }}
               >
                 <span className="text-sm">Goal Delay</span>
-                <span className="font-medium text-chart-4">
-                  +{results.goalDelay} months
-                </span>
+                <span className="font-medium text-chart-4">+{results.goalDelay} months</span>
               </motion.div>
             </div>
 
             {results.adjustments.length > 0 && (
               <div className="border-t border-border pt-4">
-                <div className="text-xs text-muted-foreground mb-2">
-                  Suggested adjustments:
-                </div>
+                <div className="text-xs text-muted-foreground mb-2">Suggested adjustments:</div>
                 <div className="space-y-2">
                   {results.adjustments.map((adjustment, index) => (
                     <div
@@ -135,8 +124,7 @@ export function ScenarioWidget() {
                     >
                       <span className="text-chart-4">−</span>
                       <span>
-                        {adjustment.category}: -₹
-                        {adjustment.reduction.toLocaleString()}
+                        {adjustment.category}: -{formatCurrency(adjustment.reduction)}
                       </span>
                     </div>
                   ))}

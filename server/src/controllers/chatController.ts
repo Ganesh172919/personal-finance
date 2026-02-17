@@ -1,17 +1,24 @@
 import { Request, Response } from "express";
 import ChatSessionModel, { IChatSessionDocument } from "../models/chatSessionModel";
 import ChatMessageModel, { IChatMessageDocument } from "../models/chatMessageModel";
-import FinancialProfileModel from "../models/financialProfileModel";
 import AiResponseCacheModel from "../models/aiResponseCacheModel";
+import AgentOutputModel from "../models/agentOutputModel";
 import { IUserDocument } from "../models/userModel";
 import mongoose from "mongoose";
 import { processAiCoreRequest } from "../services/aiCoreClient";
 import { buildProcessRequest } from "../services/aiRequestBuilder";
 import { buildChatMessageCacheKey, ttlMs } from "../services/aiCache";
 import { buildDeterministicChatSummary } from "../services/chatSummary";
-import { ensureProfileTransactionsMigrated } from "../services/transactionMigration";
+import { ensureProfileWithMigration } from "../services/profileService";
 import { fetchTransactionsForAi } from "../services/transactionService";
+import { getJournalContextForAi } from "../services/journalContext";
 import { normalizeAiPlan } from "../schemas/aiPlanSchema";
+import { recordAiCache, recordAiFallback } from "../observability/metrics";
+import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements";
+import { HttpError } from "../middleware/httpError";
+
+const getSingleParam = (value: string | string[] | undefined) =>
+  Array.isArray(value) ? value[0] : value;
 
 /**
  * Create a new chat session
@@ -102,7 +109,10 @@ export async function getSession(req: Request, res: Response) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { sessionId } = req.params;
+    const sessionId = getSingleParam(req.params.sessionId);
+    if (!sessionId) {
+      return res.status(400).json({ message: "Invalid session ID" });
+    }
     if (!mongoose.Types.ObjectId.isValid(sessionId)) {
       return res.status(400).json({ message: "Invalid session ID" });
     }
@@ -139,7 +149,10 @@ export async function deleteSession(req: Request, res: Response) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { sessionId } = req.params;
+    const sessionId = getSingleParam(req.params.sessionId);
+    if (!sessionId) {
+      return res.status(400).json({ message: "Invalid session ID" });
+    }
     if (!mongoose.Types.ObjectId.isValid(sessionId)) {
       return res.status(400).json({ message: "Invalid session ID" });
     }
@@ -173,7 +186,10 @@ export async function renameSession(req: Request, res: Response) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { sessionId } = req.params;
+    const sessionId = getSingleParam(req.params.sessionId);
+    if (!sessionId) {
+      return res.status(400).json({ message: "Invalid session ID" });
+    }
     const { title } = req.body;
 
     if (!title || typeof title !== "string" || title.trim().length === 0) {
@@ -216,7 +232,10 @@ export async function getMessages(req: Request, res: Response) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { sessionId } = req.params;
+    const sessionId = getSingleParam(req.params.sessionId);
+    if (!sessionId) {
+      return res.status(400).json({ message: "Invalid session ID" });
+    }
     if (!mongoose.Types.ObjectId.isValid(sessionId)) {
       return res.status(400).json({ message: "Invalid session ID" });
     }
@@ -276,8 +295,12 @@ export async function sendMessage(req: Request, res: Response) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { sessionId } = req.params;
-    const { content } = req.body;
+    const sessionId = getSingleParam(req.params.sessionId);
+    if (!sessionId) {
+      return res.status(400).json({ message: "Invalid session ID" });
+    }
+    const { content, options } = req.body as any;
+    const narrative = typeof options?.narrative === "boolean" ? options.narrative : false;
 
     if (!content || typeof content !== "string" || content.trim().length === 0) {
       return res.status(400).json({ message: "Message content is required" });
@@ -286,6 +309,13 @@ export async function sendMessage(req: Request, res: Response) {
     if (!mongoose.Types.ObjectId.isValid(sessionId)) {
       return res.status(400).json({ message: "Invalid session ID" });
     }
+
+    await enforceFeatureLimit({
+      userId: user._id,
+      feature: "monthly_ai_calls",
+      units: 1,
+      requestId,
+    });
 
     // Verify session belongs to user
     const session = await ChatSessionModel.findOne({
@@ -318,7 +348,7 @@ export async function sendMessage(req: Request, res: Response) {
     });
 
     // Get the user's financial profile for AI context
-    const financialProfile = await FinancialProfileModel.findOne({ userId: user._id });
+    const financialProfile = await ensureProfileWithMigration(user._id);
 
     let aiResponseContent = "I apologize, but I'm having trouble processing your request right now. Please try again.";
     let aiMetadata: any = {};
@@ -327,10 +357,6 @@ export async function sendMessage(req: Request, res: Response) {
       const aiStartedAt = Date.now();
 
       const profileUpdatedAt = financialProfile?.updatedAt ? new Date(financialProfile.updatedAt).toISOString() : "unknown";
-      if (financialProfile) {
-        await ensureProfileTransactionsMigrated(financialProfile as any);
-      }
-
       const transactionsUpdatedAt = financialProfile?.transactionsUpdatedAt
         ? new Date(financialProfile.transactionsUpdatedAt as unknown as Date).toISOString()
         : undefined;
@@ -338,10 +364,14 @@ export async function sendMessage(req: Request, res: Response) {
         ? new Date(session.summaryUpdatedAt as unknown as Date).toISOString()
         : undefined;
 
+      const journalContext = await getJournalContextForAi({ userId: user._id });
+
       const cacheKey = buildChatMessageCacheKey({
         userId: user._id.toString(),
         profileUpdatedAt,
         transactionsUpdatedAt,
+        journalUpdatedAt: journalContext.updatedAt,
+        narrative,
         sessionId: session._id.toString(),
         sessionMessageCount: session.messageCount,
         sessionSummaryUpdatedAt,
@@ -354,23 +384,26 @@ export async function sendMessage(req: Request, res: Response) {
         aiResponseContent = String(cachedData.content || aiResponseContent);
         aiMetadata = { ...(cachedData.metadata || {}), cacheHit: true, aiCoreDurationMs: 0 };
         console.log(`[requestId=${requestId}] chat-message cache_hit=true`);
+        recordAiCache({ endpoint: "chat-message", hit: true });
       } else {
-        const txResult = financialProfile ? await fetchTransactionsForAi({ userId: user._id }) : null;
+        recordAiCache({ endpoint: "chat-message", hit: false });
+        const txResult = await fetchTransactionsForAi({ userId: user._id });
 
         const { request: aiRequest, stats } = buildProcessRequest({
           userInput: content.trim(),
           profile: financialProfile,
-          transactions: txResult?.transactions,
-          totalTransactions: txResult?.stats.totalTransactions,
+          transactions: txResult.transactions,
+          totalTransactions: txResult.stats.totalTransactions,
           conversationHistory,
-          sessionSummary: session.summary
+          sessionSummary: [session.summary, journalContext.summary].filter(Boolean).join("\n\n") || undefined,
+          narrative,
         });
 
         console.log(
           `[requestId=${requestId}] chat.aiRequest transactionCountSent=${stats.sentTransactions} droppedTransactions=${stats.droppedTransactions}`
         );
 
-        const aiResponse = await processAiCoreRequest(aiRequest, requestId);
+        const aiResponse = await processAiCoreRequest(aiRequest, requestId, { userId: user._id.toString() });
         const aiDurationMs = Date.now() - aiStartedAt;
 
         if (aiResponse && aiResponse.success) {
@@ -391,9 +424,14 @@ export async function sendMessage(req: Request, res: Response) {
             fallbackUsed: aiResponse.fallback_used || false,
             llmCallCount: aiResponse.llm_call_count || 0,
             requestId: aiResponse.request_id || requestId,
+            actionLinkId: aiResponse.request_id || requestId,
+            linkedTaskIds: [],
             aiCoreDurationMs: aiDurationMs,
             cacheHit: false
           };
+          if (aiResponse.fallback_used) {
+            recordAiFallback({ endpoint: "chat-message" });
+          }
         }
 
         await AiResponseCacheModel.findOneAndUpdate(
@@ -412,6 +450,38 @@ export async function sendMessage(req: Request, res: Response) {
     } catch (aiError: any) {
       console.error(`[requestId=${requestId}] AI service error:`, aiError.message);
       aiResponseContent = "I'm currently experiencing some difficulties connecting to the AI service. Please try again in a moment.";
+    }
+
+    // Persist assistant response as an agent output (enables feedback + task creation by id)
+    try {
+      const agentOutput = await AgentOutputModel.create({
+        userId: user._id,
+        sessionId: session._id.toString(),
+        userInput: content.trim(),
+        agentType: String(aiMetadata?.agentsInvolved?.[0] || "master"),
+        outputData: {
+          response: aiResponseContent,
+          title: "Chat Response",
+          description: aiResponseContent?.substring(0, 200) || "Chat response",
+          actionType: aiMetadata?.actionType || "review",
+          agent: String(aiMetadata?.agentsInvolved?.[0] || "master"),
+          plan: aiMetadata?.plan,
+        },
+        analysis_type: String(aiMetadata?.analysisType || "comprehensive"),
+        agents_involved: Array.isArray(aiMetadata?.agentsInvolved) ? aiMetadata.agentsInvolved : [],
+        workflow_trace: Array.isArray(aiMetadata?.workflowTrace) ? aiMetadata.workflowTrace : [],
+        detailed_analysis: aiMetadata?.detailedAnalysis || {},
+        fallback_used: Boolean(aiMetadata?.fallbackUsed),
+        llm_call_count: Number(aiMetadata?.llmCallCount || 0),
+        request_id: String(aiMetadata?.requestId || requestId),
+        priority: aiMetadata?.priority || "medium",
+        actionable: Boolean(aiMetadata?.actionable),
+        timestamp: new Date(),
+      });
+
+      aiMetadata.agentOutputId = agentOutput._id.toString();
+    } catch (persistError: any) {
+      console.warn(`[requestId=${requestId}] Failed to persist chat agent output:`, persistError?.message || persistError);
     }
 
     // Create AI response message
@@ -462,6 +532,17 @@ export async function sendMessage(req: Request, res: Response) {
       });
     }
 
+    await recordFeatureUsage({
+      userId: user._id,
+      feature: "monthly_ai_calls",
+      units: 1,
+      requestId,
+      context: {
+        endpoint: "chat/send-message",
+        session_id: session._id.toString(),
+      },
+    });
+
     return res.json({
       userMessage: {
         id: userMessage._id.toString(),
@@ -480,6 +561,13 @@ export async function sendMessage(req: Request, res: Response) {
       }
     });
   } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+        code: error.code,
+        request_id: req.requestId,
+      });
+    }
     console.error(`[requestId=${req.requestId}] Error sending message:`, error);
     return res.status(500).json({ message: "Failed to send message", request_id: req.requestId });
   }

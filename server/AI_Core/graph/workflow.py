@@ -302,7 +302,7 @@ class FinancialWorkflow:
             user_profile=user_profile,
             conversation_history=conversation_history or [],
             session_summary=session_summary,
-            options=options or {"narrative": True},
+            options=options or {"narrative": False},
             current_analysis={},
             income_analysis=None,
             budget_plan=None,

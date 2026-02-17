@@ -17,6 +17,9 @@ server/.env
 client/.env
 .env.local
 
+# Local helper scripts
+.tmp/
+
 node_modules
 client/node_modules/
 server/node_modules/

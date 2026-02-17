@@ -121,19 +121,16 @@ PERSONAL-FINANCE-PLATFORM/
 
 ---
 
-## ðŸš€ Getting Started
+## ðŸš€ Getting Started (Localhost)
 
-Follow these instructions to get the complete project running locally. You will need **three separate terminal windows** open simultaneously.
+### Native dev (3 terminals)
 
-### Prerequisites
+Prerequisites:
+- Node.js (v20+ recommended)
+- Python (3.11+; 3.11 recommended for full OCR support)
+- MongoDB (local or Atlas)
 
-- Node.js (v18 or later)
-- npm
-- Python (v3.11 recommended)
-- pip
-- MongoDB (local or Atlas connection string)
-
-### 1ï¸âƒ£ Backend (Node.js Server)
+1) Backend (Node.js Server)
 
 ```bash
 cd server
@@ -141,7 +138,7 @@ npm install
 npm run dev
 ```
 
-### 2ï¸âƒ£ AI Core (Python Microservice)
+2) AI Core (Python Microservice)
 
 ```bash
 cd server/AI_Core
@@ -149,7 +146,11 @@ pip install -r requirements.txt
 uvicorn api_service:app --reload --port 8001
 ```
 
-### 3ï¸âƒ£ Frontend (React Client)
+Notes:
+- On Python 3.13+, core AI endpoints work normally; OCR endpoints run in graceful-degraded mode unless Paddle OCR dependencies are available.
+- Check `GET /health` on AI Core for `vision.ready` and `vision.missing` dependency status.
+
+3) Frontend (React Client)
 
 ```bash
 cd client
@@ -157,7 +158,66 @@ npm install
 npm run dev
 ```
 
-Once all services are running, open [http://localhost:5173](http://localhost:5173) in your browser to access the application.
+Then open http://localhost:5173
+
+### Helper scripts (Windows / PowerShell)
+
+Start all services (writes PIDs + logs to `.tmp/`):
+
+```powershell
+./scripts/start-local.ps1
+```
+
+`start-local.ps1` now:
+- auto-creates missing `.env` files from `.env.example` and backfills missing keys in existing env files
+- installs Node/Python dependencies if they are missing
+- auto-selects a Python launcher (`py -3.11`, then `py -3`, then `python`) unless `AI_CORE_PYTHON` is set
+- creates and uses `server/AI_Core/.venv` for isolated AI Core dependencies/runtime
+- defaults to dev OTP mode by clearing `EMAIL_*` at runtime (set `ALLOW_SMTP_IN_LOCAL=true` to keep SMTP)
+
+Stop all services:
+
+```powershell
+./scripts/stop-local.ps1
+```
+
+Smoke test (assumes services already running):
+
+```powershell
+./scripts/smoke-running.ps1
+```
+
+`smoke-running.ps1` validates backend + AI workflows directly through `http://127.0.0.1:3000` and treats `http://127.0.0.1:5173` frontend reachability as a non-blocking probe.
+
+#### Dev email verification (no SMTP required)
+
+If `EMAIL_USER` / `EMAIL_PASSWORD` / `EMAIL_FROM` are not set and `NODE_ENV` is **not** `production`, the server runs in **console OTP** mode:
+- `POST /api/auth/register` and `POST /api/auth/resend-verification` include `dev_otp` in the JSON response.
+
+#### Google OAuth auto-detect
+
+The client calls `GET /api/auth/providers` and only shows “Continue with Google” when:
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set.
+
+### Containerized Run (Cloud-Like)
+
+Build and run the full stack with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+Services:
+- Client: `http://localhost:8080`
+- Server API: `http://localhost:3000`
+- AI Core: `http://localhost:8001`
+- MongoDB: `mongodb://localhost:27017`
+
+Production-oriented compose file (expects production-grade env secrets):
+
+```bash
+docker compose -f docker-compose.prod.yml up --build -d
+```
 
 ---
 
@@ -176,21 +236,27 @@ _A video demonstration or live link may be available upon request._
 
 **Personal Finance Management Platform** â€” _Empowering smarter financial decisions through multi-agent intelligence_ ðŸ’¡
 
-## Docker Compose (One Command)
+## Environment Variables (high level)
 
-```bash
-docker compose up --build
-```
+Templates:
+- `server/.env.example` -> copy to `server/.env`
+- `server/AI_Core/.env.example` -> copy to `server/AI_Core/.env`
+- `client/.env.example` -> copy to `client/.env`
 
-Services:
-- Client: http://localhost:5173
-- Server: http://localhost:3000
-- AI Core: http://localhost:8001
-- MongoDB: mongodb://localhost:27017
+Server (`server/.env`):
+- `JWT_SECRET` (required)
+- `MONGO_URI` (required in production; non-production falls back to in-memory MongoDB if absent/unreachable)
+- `PYTHON_API_URL` (defaults to `http://localhost:8001`)
+- `CLIENT_URL` / `CORS_ORIGINS` (defaults to `http://localhost:5173`)
+- `TRUST_PROXY` (`true|false|N`; enable for reverse proxies/load balancers)
+- `COOKIE_SECURE`, `COOKIE_SAME_SITE`, `COOKIE_DOMAIN` (cookie policy controls)
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_CALLBACK_URL` (optional OAuth config)
+- `EMAIL_USER` / `EMAIL_PASSWORD` / `EMAIL_FROM` (required together for SMTP mode)
+- `EMAIL_SERVICE` (optional; default `gmail` when `EMAIL_HOST` is not provided)
+- `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_SECURE` / `EMAIL_REQUIRE_TLS` (optional explicit SMTP transport)
 
-Required environment variables:
-- `GEMINI_API_KEY` (optional for deterministic/fallback mode; recommended for full AI narrative)
-- `JWT_SECRET` (optional in local dev, default provided in compose)
+AI Core (`server/AI_Core/.env`):
+- `GEMINI_API_KEY` (optional; AI Core runs in deterministic/fallback mode if missing)
 
 ## CI
 
@@ -199,4 +265,3 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs:
 - Server typecheck
 - Client build
 - AI Core lint (`ruff`) and tests (`pytest`)
-

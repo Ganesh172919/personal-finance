@@ -1,5 +1,8 @@
 ﻿import logging
-from typing import Dict, Any, Optional
+from collections import OrderedDict
+from time import time
+from typing import Any, Dict, Optional, Tuple
+
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from config import settings
@@ -10,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 class FinancialEducatorAgent:
     """Explains financial concepts clearly with optional request-context relevance."""
+
+    _CACHE_MAX_SIZE = 256
+    _CACHE_TTL_SECONDS = 30 * 60
 
     def __init__(self):
         self.llm = RateLimitedLLM(
@@ -24,11 +30,19 @@ class FinancialEducatorAgent:
             )
         )
 
+        # In-memory (process-local) cache keyed by extracted concept.
+        # Value: (inserted_at_epoch_seconds, response_payload)
+        self._concept_cache: "OrderedDict[str, Tuple[float, Dict[str, Any]]]" = OrderedDict()
+
     def explain_concept(self, user_input: str, user_profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Explain a concept with one LLM call and guaranteed fallback."""
         logger.info("Explaining financial concept: %s...", user_input[:100])
 
         concept = self._simple_concept_extraction(user_input)
+        cached = self._cache_get(concept)
+        if cached is not None:
+            return cached
+
         profile_context = self._get_profile_context(user_profile)
 
         prompt = f"""
@@ -54,11 +68,34 @@ Return a short response with:
 
         explanation = response.content.strip() if hasattr(response, "content") else str(response)
 
-        return {
+        payload = {
             "concept_explained": concept,
             "explanation": explanation,
             "fallback_used": fallback_used,
         }
+
+        self._cache_set(concept, payload)
+        return payload
+
+    def _cache_get(self, concept: str) -> Optional[Dict[str, Any]]:
+        entry = self._concept_cache.get(concept)
+        if entry is None:
+            return None
+
+        inserted_at, payload = entry
+        if time() - inserted_at > self._CACHE_TTL_SECONDS:
+            del self._concept_cache[concept]
+            return None
+
+        self._concept_cache.move_to_end(concept)
+        return dict(payload)
+
+    def _cache_set(self, concept: str, payload: Dict[str, Any]) -> None:
+        self._concept_cache[concept] = (time(), dict(payload))
+        self._concept_cache.move_to_end(concept)
+
+        while len(self._concept_cache) > self._CACHE_MAX_SIZE:
+            self._concept_cache.popitem(last=False)
 
     def _simple_concept_extraction(self, user_input: str) -> str:
         """Simple deterministic concept extraction without LLM fan-out."""

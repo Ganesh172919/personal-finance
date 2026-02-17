@@ -2,9 +2,10 @@ import { useState, useRef, useEffect, KeyboardEvent } from "react";
 import { motion } from "framer-motion";
 import { Send, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Switch as ToggleSwitch } from "@/components/ui/Switch";
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, options?: { narrative?: boolean }) => void;
   isSending: boolean;
   placeholder?: string;
 }
@@ -15,6 +16,7 @@ export function ChatInput({
   placeholder = "Ask me anything about your finances..." 
 }: ChatInputProps) {
   const [message, setMessage] = useState("");
+  const [narrative, setNarrative] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-resize textarea
@@ -28,7 +30,7 @@ export function ChatInput({
 
   const handleSend = () => {
     if (message.trim() && !isSending) {
-      onSend(message.trim());
+      onSend(message.trim(), { narrative });
       setMessage("");
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
@@ -75,6 +77,11 @@ export function ChatInput({
               )}
             </Button>
           </div>
+        </div>
+        <div className="flex items-center justify-center gap-2 mt-2">
+          <span className="text-xs text-muted-foreground">Narrative</span>
+          <ToggleSwitch checked={narrative} onCheckedChange={setNarrative} />
+          <span className="text-xs text-muted-foreground">faster is off</span>
         </div>
         <p className="text-xs text-muted-foreground text-center mt-2">
           Press Enter to send, Shift+Enter for new line

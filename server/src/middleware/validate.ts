@@ -37,11 +37,15 @@ export const validate = (schemas: ValidationSchemas): RequestHandler => {
       }
 
       if (parsedParams) {
-        (req as any).params = parsedParams;
+        Object.assign(req.params as Record<string, unknown>, parsedParams as Record<string, unknown>);
       }
 
       if (parsedQuery) {
-        (req as any).query = parsedQuery;
+        const currentQuery = req.query as Record<string, unknown>;
+        for (const key of Object.keys(currentQuery)) {
+          delete currentQuery[key];
+        }
+        Object.assign(currentQuery, parsedQuery as Record<string, unknown>);
       }
 
       next();

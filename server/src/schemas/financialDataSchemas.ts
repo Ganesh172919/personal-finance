@@ -25,6 +25,22 @@ export const createTransactionBodySchema = z
   })
   .strict();
 
+const importTransactionRowSchema = z
+  .object({
+    amount: z.number().positive(),
+    category: z.string().trim().min(1).max(100),
+    description: z.string().trim().min(1).max(250),
+    date: z.coerce.date(),
+    type: transactionTypeSchema
+  })
+  .strict();
+
+export const importTransactionsBodySchema = z
+  .object({
+    rows: z.array(importTransactionRowSchema).min(1).max(5000)
+  })
+  .strict();
+
 export const updateTransactionBodySchema = z
   .object({
     amount: z.number().positive().optional(),
@@ -55,6 +71,14 @@ export const listTransactionsQuerySchema = z
 export const recentTransactionsQuerySchema = z
   .object({
     limit: z.coerce.number().int().positive().max(50).optional()
+  })
+  .strict();
+
+export const dashboardSummaryQuerySchema = z.object({}).strict();
+
+export const portfolioSummaryQuerySchema = z
+  .object({
+    months: z.coerce.number().int().positive().max(36).optional()
   })
   .strict();
 

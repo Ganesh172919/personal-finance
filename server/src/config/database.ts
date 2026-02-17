@@ -1,35 +1,80 @@
 import mongoose from "mongoose";
+import type { MongoMemoryServer } from "mongodb-memory-server";
+import { getEnv } from "./env";
+
+let listenersBound = false;
+let memoryServer: MongoMemoryServer | null = null;
+
+const bindConnectionListeners = () => {
+  if (listenersBound) {
+    return;
+  }
+
+  listenersBound = true;
+
+  mongoose.connection.on("connected", () => {
+    console.log("Mongoose connected to the database.");
+  });
+
+  mongoose.connection.on("error", (error) => {
+    console.error("Mongoose connection error:", error);
+  });
+
+  mongoose.connection.on("disconnected", () => {
+    console.log("Mongoose disconnected from the database.");
+  });
+};
 
 export const connectDB = async () => {
-  try {
-    // Check for the MONGO_URI, which is a critical part of the setup.
-    if (!process.env.MONGO_URI) {
-      throw new Error("MONGO_URI is not defined in the .env file");
+  const env = getEnv();
+  bindConnectionListeners();
+  const connectWithUri = async (uri: string) => {
+    await mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 10_000,
+      maxPoolSize: 20,
+    });
+  };
+
+  const connectWithInMemory = async (reason: string) => {
+    console.warn(`${reason} Falling back to in-memory MongoDB.`);
+
+    const { MongoMemoryServer } = await import("mongodb-memory-server");
+    memoryServer = await MongoMemoryServer.create({
+      instance: {
+        dbName: "finwise-local",
+      },
+    });
+
+    const memoryUri = memoryServer.getUri();
+    await connectWithUri(memoryUri);
+
+    console.warn(`Using in-memory MongoDB at ${memoryUri}`);
+  };
+
+  if (!env.MONGO_URI) {
+    if (env.NODE_ENV === "production") {
+      throw new Error("MONGO_URI is not defined in the environment configuration.");
     }
 
-    // Attempt to connect to the MongoDB database.
-    await mongoose.connect(process.env.MONGO_URI);
+    await connectWithInMemory("MONGO_URI is not configured in non-production mode.");
+    return;
+  }
 
-    // --- NEW: Event Listeners for the Database Connection ---
-
-    // This listener will log a confirmation message once the connection is successfully established.
-    mongoose.connection.on("connected", () => {
-      console.log("Mongoose connected to the database.");
-    });
-
-    // This listener will log an error message if the connection encounters an error after the initial setup.
-    mongoose.connection.on("error", (err) => {
-      console.error("Mongoose connection error:", err);
-    });
-
-    // This listener will log a message if the database connection is lost.
-    mongoose.connection.on("disconnected", () => {
-      console.log("Mongoose disconnected from the database.");
-    });
-  } catch (err) {
-    console.error("Initial MongoDB connection failed:", err);
-    process.exit(1);
+  try {
+    await connectWithUri(env.MONGO_URI);
+  } catch (error) {
+    if (env.NODE_ENV === "production") {
+      throw error;
+    }
+    await connectWithInMemory("Primary MongoDB connection failed in non-production mode.");
   }
 };
 
-// Note: The event listeners will help monitor the connection status throughout the application's lifecycle.
+export const closeDB = async () => {
+  await mongoose.disconnect();
+
+  if (memoryServer) {
+    await memoryServer.stop();
+    memoryServer = null;
+  }
+};
