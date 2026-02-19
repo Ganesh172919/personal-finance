@@ -19,6 +19,7 @@ import {
   verifyEmailBodySchema
 } from "../schemas/authSchemas";
 import { getEnv } from "../config/env";
+import { createRedisRateLimitStore } from "../config/rateLimitStore";
 import { asyncRoute } from "../utils/asyncRoute";
 
 const router = Router();
@@ -31,6 +32,8 @@ const authRateLimiter = rateLimit({
   max: env.AUTH_RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
+  passOnStoreError: true,
+  store: createRedisRateLimitStore("rl_auth:"),
   message: {
     message: "Too many authentication attempts, please try again shortly.",
     code: "AUTH_RATE_LIMITED",

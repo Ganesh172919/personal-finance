@@ -39,10 +39,10 @@ const confidenceLabel = (value: unknown) => {
 };
 
 export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint?: string }) {
-  const currencyHint = props.currencyHint || "INR";
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const configQuery = useAppConfig();
+  const currencyHint = props.currencyHint || configQuery.data?.org?.currency || "USD";
   const receiptsEnabled = configQuery.data?.features.receipts_ocr_enabled;
 
   const [open, setOpen] = useState(false);
@@ -286,7 +286,7 @@ export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint
                     value={form.currency || ""}
                     onChange={(e) => setForm((prev) => ({ ...prev, currency: e.target.value }))}
                     className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
-                    placeholder="INR"
+                    placeholder={currencyHint}
                   />
                 </div>
 

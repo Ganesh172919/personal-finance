@@ -8,12 +8,6 @@ import { useAppDialogStore } from "@/stores/appDialogStore";
 
 const formatBoolean = (value: boolean) => (value ? "Yes" : "No");
 
-const formatNumber = (value: unknown) => {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return "—";
-  return num.toLocaleString("en-IN");
-};
-
 export function PlanAndUsageDialog() {
   const { user } = useAuth();
   const open = useAppDialogStore((s) => s.planAndUsageOpen);
@@ -22,19 +16,86 @@ export function PlanAndUsageDialog() {
   const configQuery = useAppConfig({ enabled: open && !!user });
   const config = configQuery.data;
 
+  const locale = config?.org?.locale || "en-US";
+  const numberFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
+  const formatNumber = (value: unknown) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return "—";
+    return numberFormatter.format(num);
+  };
+
   const plan = config?.entitlements?.plan || "free";
   const status = config?.entitlements?.status;
 
-  const rows = useMemo(() => {
-    const entitlements = config?.entitlements;
-    if (!entitlements) return [];
-    return [
-      ["Monthly AI calls", formatNumber(entitlements.usage.monthly_ai_calls), formatNumber(entitlements.limits.monthly_ai_calls), formatNumber(entitlements.remaining.monthly_ai_calls)],
-      ["Scenario depth", formatNumber(entitlements.usage.scenario_depth), formatNumber(entitlements.limits.scenario_depth), formatNumber(entitlements.remaining.scenario_depth)],
-      ["Receipt OCR quota", formatNumber(entitlements.usage.ocr_quota), formatNumber(entitlements.limits.ocr_quota), formatNumber(entitlements.remaining.ocr_quota)],
-      ["Export access", formatNumber(entitlements.usage.export_access), formatBoolean(entitlements.limits.export_access), formatBoolean(entitlements.remaining.export_access)],
-    ] as const;
-  }, [config?.entitlements]);
+  const entitlements = config?.entitlements;
+  const rows = entitlements
+    ? ([
+        [
+          "Monthly AI calls",
+          formatNumber(entitlements.usage.monthly_ai_calls),
+          formatNumber(entitlements.base_limits.monthly_ai_calls),
+          formatNumber(entitlements.credits.monthly_ai_calls),
+          formatNumber(entitlements.limits.monthly_ai_calls),
+          formatNumber(entitlements.remaining.monthly_ai_calls),
+        ],
+        [
+          "Scenario depth",
+          formatNumber(entitlements.usage.scenario_depth),
+          formatNumber(entitlements.base_limits.scenario_depth),
+          formatNumber(entitlements.credits.scenario_depth),
+          formatNumber(entitlements.limits.scenario_depth),
+          formatNumber(entitlements.remaining.scenario_depth),
+        ],
+        [
+          "Receipt OCR quota",
+          formatNumber(entitlements.usage.ocr_quota),
+          formatNumber(entitlements.base_limits.ocr_quota),
+          formatNumber(entitlements.credits.ocr_quota),
+          formatNumber(entitlements.limits.ocr_quota),
+          formatNumber(entitlements.remaining.ocr_quota),
+        ],
+        [
+          "Export access",
+          "—",
+          formatBoolean(entitlements.base_limits.export_access),
+          "—",
+          formatBoolean(entitlements.limits.export_access),
+          formatBoolean(entitlements.remaining.export_access),
+        ],
+        [
+          "API requests",
+          formatNumber(entitlements.usage.api_requests),
+          formatNumber(entitlements.base_limits.api_requests),
+          formatNumber(entitlements.credits.api_requests),
+          formatNumber(entitlements.limits.api_requests),
+          formatNumber(entitlements.remaining.api_requests),
+        ],
+        [
+          "Workflow runs",
+          formatNumber(entitlements.usage.workflow_runs),
+          formatNumber(entitlements.base_limits.workflow_runs),
+          formatNumber(entitlements.credits.workflow_runs),
+          formatNumber(entitlements.limits.workflow_runs),
+          formatNumber(entitlements.remaining.workflow_runs),
+        ],
+        [
+          "Connector sync records",
+          formatNumber(entitlements.usage.connector_sync_records),
+          formatNumber(entitlements.base_limits.connector_sync_records),
+          formatNumber(entitlements.credits.connector_sync_records),
+          formatNumber(entitlements.limits.connector_sync_records),
+          formatNumber(entitlements.remaining.connector_sync_records),
+        ],
+        [
+          "Marketplace installs",
+          formatNumber(entitlements.usage.marketplace_installs),
+          formatNumber(entitlements.base_limits.marketplace_installs),
+          formatNumber(entitlements.credits.marketplace_installs),
+          formatNumber(entitlements.limits.marketplace_installs),
+          formatNumber(entitlements.remaining.marketplace_installs),
+        ],
+      ] as const)
+    : ([] as const);
 
   return (
     <Dialog
@@ -46,7 +107,7 @@ export function PlanAndUsageDialog() {
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Plan & usage</DialogTitle>
-          <DialogDescription>Limits and current usage for this billing period.</DialogDescription>
+          <DialogDescription>Limits and current usage for this billing period (base plan + credits).</DialogDescription>
         </DialogHeader>
 
         {configQuery.isLoading ? (
@@ -70,6 +131,8 @@ export function PlanAndUsageDialog() {
                   <tr>
                     <th className="px-3 py-2 text-left">Feature</th>
                     <th className="px-3 py-2 text-left">Used</th>
+                    <th className="px-3 py-2 text-left">Base</th>
+                    <th className="px-3 py-2 text-left">Credits</th>
                     <th className="px-3 py-2 text-left">Limit</th>
                     <th className="px-3 py-2 text-left">Remaining</th>
                   </tr>
@@ -81,6 +144,8 @@ export function PlanAndUsageDialog() {
                       <td className="px-3 py-2">{row[1]}</td>
                       <td className="px-3 py-2">{row[2]}</td>
                       <td className="px-3 py-2">{row[3]}</td>
+                      <td className="px-3 py-2">{row[4]}</td>
+                      <td className="px-3 py-2">{row[5]}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -98,4 +163,3 @@ export function PlanAndUsageDialog() {
     </Dialog>
   );
 }
-

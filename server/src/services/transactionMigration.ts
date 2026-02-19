@@ -19,8 +19,9 @@ const toTransactionType = (value: unknown): TransactionType => {
   return "expense";
 };
 
-const mapLegacyTransaction = (userId: Types.ObjectId, tx: ITransaction) => ({
-  userId,
+const mapLegacyTransaction = (params: { orgId: Types.ObjectId; userId: Types.ObjectId }, tx: ITransaction) => ({
+  orgId: params.orgId,
+  userId: params.userId,
   amount: Number(tx.amount) || 0,
   category: String(tx.category || "Other"),
   description: String(tx.description || ""),
@@ -46,7 +47,7 @@ export const ensureProfileTransactionsMigrated = async (
 
   // Consider "migrated" if the embedded array is empty OR explicit marker exists.
   if (profile.transactionsMigratedAt || embeddedCount === 0) {
-    const totalTransactions = await TransactionModel.countDocuments({ userId: profile.userId });
+    const totalTransactions = await TransactionModel.countDocuments({ orgId: profile.orgId, userId: profile.userId });
     if (profile.transactionsCount !== totalTransactions) {
       profile.transactionsCount = totalTransactions;
       if (!profile.transactionsUpdatedAt) {
@@ -63,7 +64,7 @@ export const ensureProfileTransactionsMigrated = async (
   }
 
   const now = new Date();
-  const docs = embedded.map(tx => mapLegacyTransaction(profile.userId, tx));
+  const docs = embedded.map(tx => mapLegacyTransaction({ orgId: profile.orgId, userId: profile.userId }, tx));
 
   try {
     if (docs.length > 0) {
@@ -75,7 +76,7 @@ export const ensureProfileTransactionsMigrated = async (
     }
   }
 
-  const totalTransactions = await TransactionModel.countDocuments({ userId: profile.userId });
+  const totalTransactions = await TransactionModel.countDocuments({ orgId: profile.orgId, userId: profile.userId });
   profile.transactions = [];
   profile.transactionsCount = totalTransactions;
   profile.transactionsUpdatedAt = now;
@@ -90,11 +91,13 @@ export const ensureProfileTransactionsMigrated = async (
   };
 };
 
-export const ensureUserTransactionsMigrated = async (userId: Types.ObjectId): Promise<MigrationResult | null> => {
-  const profile = await FinancialProfileModel.findOne({ userId });
+export const ensureUserTransactionsMigrated = async (params: {
+  orgId: Types.ObjectId;
+  userId: Types.ObjectId;
+}): Promise<MigrationResult | null> => {
+  const profile = await FinancialProfileModel.findOne({ orgId: params.orgId, userId: params.userId });
   if (!profile) {
     return null;
   }
   return ensureProfileTransactionsMigrated(profile);
 };
-

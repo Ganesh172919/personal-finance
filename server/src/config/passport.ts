@@ -3,6 +3,7 @@ import { Strategy as JwtStrategy } from "passport-jwt";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import UserModel from "../models/userModel";
 import { getEnv } from "./env";
+import { logger } from "./logger";
 
 export const configurePassport = () => {
   const env = getEnv();
@@ -38,7 +39,7 @@ export const configurePassport = () => {
         {
           clientID: env.GOOGLE_CLIENT_ID,
           clientSecret: env.GOOGLE_CLIENT_SECRET,
-          callbackURL: env.GOOGLE_CALLBACK_URL || "/api/auth/google/callback",
+          callbackURL: env.GOOGLE_CALLBACK_URL || "/api/v1/auth/google/callback",
         },
         async (_accessToken, _refreshToken, profile, done) => {
           try {
@@ -75,7 +76,7 @@ export const configurePassport = () => {
       )
     );
   } else if (env.NODE_ENV !== "test") {
-    console.warn("Google OAuth credentials not found; Google authentication will not work");
+    logger.warn("Google OAuth credentials not found; Google authentication will not work");
   }
 };
 

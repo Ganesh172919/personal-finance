@@ -6,7 +6,9 @@ export type TransactionType = "income" | "expense" | "investment";
 export interface ITransactionSource extends MutationSource {}
 
 export interface ITransactionRecord {
+  orgId: Types.ObjectId;
   userId: Types.ObjectId;
+  externalId?: string;
   amount: number;
   category: string;
   description: string;
@@ -24,7 +26,9 @@ export interface ITransactionRecordDocument extends ITransactionRecord, Document
 
 const transactionSchema = new Schema<ITransactionRecordDocument>(
   {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    externalId: { type: String, required: false, trim: true, maxlength: 120 },
     amount: { type: Number, required: true },
     category: { type: String, required: true, trim: true, maxlength: 100 },
     description: { type: String, required: true, trim: true, maxlength: 250 },
@@ -33,7 +37,7 @@ const transactionSchema = new Schema<ITransactionRecordDocument>(
     source: {
       origin: {
         type: String,
-        enum: ["manual", "csv_import", "receipt_ocr", "journal", "task_completion", "ai_plan"],
+        enum: ["manual", "csv_import", "receipt_ocr", "journal", "task_completion", "ai_plan", "connector"],
       },
       request_id: { type: String },
       task_id: { type: String },
@@ -50,10 +54,11 @@ const transactionSchema = new Schema<ITransactionRecordDocument>(
   { timestamps: true }
 );
 
-transactionSchema.index({ userId: 1, date: -1 });
-transactionSchema.index({ userId: 1, type: 1, date: -1 });
-transactionSchema.index({ userId: 1, category: 1, date: -1 });
-transactionSchema.index({ userId: 1, "source.origin": 1, date: -1 });
+transactionSchema.index({ orgId: 1, userId: 1, date: -1 });
+transactionSchema.index({ orgId: 1, userId: 1, type: 1, date: -1 });
+transactionSchema.index({ orgId: 1, userId: 1, category: 1, date: -1 });
+transactionSchema.index({ orgId: 1, userId: 1, "source.origin": 1, date: -1 });
+transactionSchema.index({ orgId: 1, externalId: 1 }, { unique: true, sparse: true });
 transactionSchema.index({ legacyId: 1 }, { unique: true, sparse: true });
 
 const TransactionModel = model<ITransactionRecordDocument>("Transaction", transactionSchema);

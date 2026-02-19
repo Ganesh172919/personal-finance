@@ -395,7 +395,7 @@ export default function Onboarding() {
     <div className="flex-1 p-6 overflow-auto" data-testid="onboarding-page">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-3xl font-bold text-foreground mb-2">Welcome to FinWise</h1>
-        <p className="text-muted-foreground mb-6">Letâ€™s set up your profile so insights and plans are accurate.</p>
+        <p className="text-muted-foreground mb-6">Let's set up your profile so insights and plans are accurate.</p>
 
         <StepIndicator step={step} />
 
@@ -570,7 +570,7 @@ export default function Onboarding() {
                       <div>
                         <div className="font-medium">{goal.name}</div>
                         <div className="text-xs text-muted-foreground">
-                          Target: {goal.target} â€¢ Current: {goal.current} â€¢ Deadline: {goal.deadline}
+                          Target: {goal.target} • Current: {goal.current} • Deadline: {goal.deadline}
                         </div>
                       </div>
                       <Button
@@ -679,7 +679,7 @@ export default function Onboarding() {
                       <div>
                         <div className="font-medium">{debt.name}</div>
                         <div className="text-xs text-muted-foreground">
-                          Balance: {debt.balance} â€¢ APR: {debt.interest_rate}% â€¢ Min: {debt.minimum_payment}
+                          Balance: {debt.balance} • APR: {debt.interest_rate}% • Min: {debt.minimum_payment}
                         </div>
                       </div>
                       <Button

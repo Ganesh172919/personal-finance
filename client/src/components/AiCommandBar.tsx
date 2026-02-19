@@ -6,14 +6,14 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Switch as ToggleSwitch } from "@/components/ui/Switch";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ApiError, createTasksFromPlan, processAICommand, submitAgentOutputFeedback } from "@/lib/apiClient";
+import { ApiError, createTasksFromPlan, executeToolCall, processAICommand, simulateToolCall, submitAgentOutputFeedback } from "@/lib/apiClient";
 import { useToast } from "@/hooks/useToast";
-import { useAppConfig } from "@/hooks/useAppConfig";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AgentWorkflowVisualizer } from "@/components/AgentWorkflowVisualizer";
 import { IWorkflowTraceEntry } from "@/types";
-import type { Plan } from "@/types/ai.types";
+import type { Plan, ToolCall } from "@/types/ai.types";
 import { AiStatusDialog } from "@/components/AiStatusDialog";
 
 interface AICommandBarProps {
@@ -23,6 +23,7 @@ interface AICommandBarProps {
 interface AIResponse {
   response: string;
   plan?: Plan;
+  tool_calls?: ToolCall[];
   agent_output_id?: string;
   analysis_type?: string;
   agents_involved?: string[];
@@ -44,7 +45,7 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
   const queryClient = useQueryClient();
   const [feedbackRating, setFeedbackRating] = useState<"up" | "down" | null>(null);
   const [tasksAdded, setTasksAdded] = useState(false);
-  const configQuery = useAppConfig();
+  const { configQuery, formatMoney } = useOrgFormatters();
   const tasksEnabled = configQuery.data?.features.tasks_enabled;
 
   const formatError = (error: unknown, fallback: string) => {
@@ -53,11 +54,14 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
     return requestId ? `${message} (Request ID: ${requestId})` : message;
   };
 
+  const vacation = formatMoney(100000, { maximumFractionDigits: 0 });
+  const phone = formatMoney(50000, { maximumFractionDigits: 0 });
+
   const suggestions = [
     "Show me my spending pattern this month",
-    "Can I afford a vacation worth ₹1,00,000?",
+    `Can I afford a vacation worth ${vacation}?`,
     "Optimize my investment portfolio",
-    "What if I buy a new phone for ₹50,000?",
+    `What if I buy a new phone for ${phone}?`,
     "How can I reduce my monthly expenses?",
   ];
 
@@ -69,6 +73,7 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
       setAiResponse({
         response: data.response || "Analysis complete",
         plan: data.plan,
+        tool_calls: data.tool_calls || [],
         agent_output_id: data.agent_output_id,
         analysis_type: data.analysis_type,
         agents_involved: data.agents_involved,
@@ -113,6 +118,48 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
       toast({
         title: "Failed to add tasks",
         description: formatError(error, fallback),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const simulateToolMutation = useMutation({
+    mutationFn: (toolCall: ToolCall) => simulateToolCall(toolCall),
+    onSuccess: (data) => {
+      const operation =
+        typeof (data as any)?.preview?.operation === "string"
+          ? String((data as any).preview.operation)
+          : data.tool;
+
+      toast({
+        title: "Preview ready",
+        description: operation,
+      });
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: "Preview failed",
+        description: formatError(error, "Couldn't simulate this action."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const executeToolMutation = useMutation({
+    mutationFn: (toolCall: ToolCall) =>
+      executeToolCall(toolCall, { confirm: true, idempotency_key: toolCall.id }),
+    onSuccess: (data) => {
+      toast({
+        title: "Action applied",
+        description: data.idempotent_replay
+          ? "Already applied (idempotent replay)."
+          : "Applied successfully.",
+      });
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: "Action failed",
+        description: formatError(error, "Couldn't execute this action."),
         variant: "destructive",
       });
     },
@@ -174,6 +221,16 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
         requestId: aiResponse.request_id,
       },
     });
+  };
+
+  const handlePreviewToolCall = (toolCall: ToolCall) => {
+    simulateToolMutation.mutate(toolCall);
+  };
+
+  const handleExecuteToolCall = (toolCall: ToolCall) => {
+    const ok = window.confirm(`Apply: ${toolCall.title}?`);
+    if (!ok) return;
+    executeToolMutation.mutate(toolCall);
   };
 
   const handleFeedback = (rating: "up" | "down") => {
@@ -268,9 +325,8 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
 
   const formatCurrency = (value?: number | null) => {
     if (value === null || value === undefined || Number.isNaN(value)) return "—";
-    const rounded = Math.round(value);
-    const sign = rounded < 0 ? "-" : "";
-    return `${sign}₹${Math.abs(rounded).toLocaleString("en-IN")}`;
+    const rounded = Math.round(Number(value));
+    return formatMoney(rounded, { maximumFractionDigits: 0 });
   };
 
   const formatPercent = (value?: number | null) => {
@@ -305,7 +361,7 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
               </motion.div>
               <Input
                 type="text"
-                placeholder="Ask me anything about your finances... (e.g., 'What if I buy a new phone for ₹50,000?')"
+                placeholder={`Ask me anything about your finances... (e.g., "What if I buy a new phone for ${phone}?")`}
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
                 onFocus={() => setShowSuggestions(true)}
@@ -513,6 +569,45 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
                           <li key={idx}>{warning}</li>
                         ))}
                       </ul>
+                    </div>
+                  ) : null}
+
+                  {aiResponse.tool_calls && aiResponse.tool_calls.length > 0 ? (
+                    <div className="mb-4 rounded-md border border-border bg-background/60 p-3">
+                      <p className="text-xs font-semibold text-foreground mb-2">Autopilot actions</p>
+                      <div className="space-y-2">
+                        {aiResponse.tool_calls.slice(0, 5).map((toolCall) => (
+                          <div
+                            key={toolCall.id}
+                            className="flex items-start justify-between gap-3 rounded-md border border-border bg-background p-3"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">{toolCall.title}</p>
+                              <p className="text-xs text-muted-foreground mt-1">{toolCall.description}</p>
+                              <p className="text-[11px] text-muted-foreground mt-2">
+                                Tool: {toolCall.tool} Â· Risk: {toolCall.risk}
+                              </p>
+                            </div>
+                            <div className="flex flex-col gap-2 flex-shrink-0">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handlePreviewToolCall(toolCall)}
+                                disabled={simulateToolMutation.isPending}
+                              >
+                                Preview
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleExecuteToolCall(toolCall)}
+                                disabled={executeToolMutation.isPending}
+                              >
+                                Apply
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
 

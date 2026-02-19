@@ -4,6 +4,15 @@ from pydantic import BaseModel, Field
 
 from .plan import Plan
 from .trace import WorkflowTraceEntry
+from .tool_calls import ToolCall
+
+
+class UsageMetadata(BaseModel):
+    tokens_in: int = 0
+    tokens_out: int = 0
+    total_tokens: int = 0
+    cost_usd: float = 0.0
+    models: List[str] = Field(default_factory=list)
 
 
 class ProcessResponse(BaseModel):
@@ -21,4 +30,5 @@ class ProcessResponse(BaseModel):
     llm_call_count: int = 0
     request_id: str
     plan: Plan
-
+    usage: UsageMetadata = Field(default_factory=UsageMetadata)
+    tool_calls: List[ToolCall] = Field(default_factory=list)

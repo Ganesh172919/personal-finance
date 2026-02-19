@@ -2,8 +2,10 @@ import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
 import type { IUserDocument } from "../models/userModel";
+import type { UsageFeature } from "../models/usageEventModel";
 import { getEnv } from "../config/env";
 import { PLAN_CATALOG, getResolvedEntitlements, recordFeatureUsage } from "../services/entitlements";
+import OrgMemberModel from "../models/orgMemberModel";
 
 export const getPlans = async (req: Request, res: Response) => {
   return res.json({
@@ -18,11 +20,15 @@ export const getPlans = async (req: Request, res: Response) => {
 
 export const getMyEntitlements = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
-  const resolved = await getResolvedEntitlements(user._id);
+  const orgId = req.org?.orgId ? new mongoose.Types.ObjectId(req.org.orgId) : undefined;
+  const resolved = await getResolvedEntitlements({ orgId, userId: user._id });
 
   return res.json({
+    org_id: orgId ? orgId.toString() : undefined,
     plan: resolved.entitlement.plan,
     status: resolved.entitlement.status,
+    base_limits: resolved.base_limits,
+    credits: resolved.credits,
     limits: resolved.limits,
     usage: resolved.usage,
     remaining: resolved.remaining,
@@ -39,8 +45,9 @@ export const ingestUsageEvent = async (req: Request, res: Response) => {
   }
 
   const body = req.body as {
+    org_id?: string;
     user_id: string;
-    feature: "monthly_ai_calls" | "scenario_depth" | "ocr_quota" | "export_access";
+    feature: UsageFeature;
     units: number;
     idempotency_key?: string;
     context?: Record<string, unknown>;
@@ -51,7 +58,17 @@ export const ingestUsageEvent = async (req: Request, res: Response) => {
     return res.status(400).json({ message: "Invalid user_id", code: "INVALID_USER_ID", request_id: req.requestId });
   }
 
+  const orgId =
+    body.org_id && mongoose.Types.ObjectId.isValid(body.org_id)
+      ? new mongoose.Types.ObjectId(body.org_id)
+      : await OrgMemberModel.findOne({ userId: new mongoose.Types.ObjectId(userId), status: "active" })
+          .sort({ isDefault: -1, createdAt: 1 })
+          .select({ orgId: 1 })
+          .lean()
+          .then(member => (member?.orgId ? (member.orgId as unknown as mongoose.Types.ObjectId) : undefined));
+
   await recordFeatureUsage({
+    orgId,
     userId: new mongoose.Types.ObjectId(userId),
     feature: body.feature,
     units: Number(body.units),

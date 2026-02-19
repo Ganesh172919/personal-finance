@@ -1,35 +1,40 @@
 import { motion } from "framer-motion";
 import { Sparkles, PiggyBank, TrendingUp, Calculator } from "lucide-react";
 import { Card } from "@/components/ui/Card";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
 interface ChatSuggestionsProps {
   onSelect: (suggestion: string) => void;
 }
 
-const suggestions = [
-  {
-    icon: TrendingUp,
-    text: "Analyze my spending patterns this month",
-    gradient: "from-blue-500 to-cyan-500"
-  },
-  {
-    icon: PiggyBank,
-    text: "Can I afford a ₹1,00,000 vacation in 6 months?",
-    gradient: "from-green-500 to-emerald-500"
-  },
-  {
-    icon: Calculator,
-    text: "Optimize my investment portfolio",
-    gradient: "from-purple-500 to-pink-500"
-  },
-  {
-    icon: Sparkles,
-    text: "What if I buy a new phone for ₹50,000?",
-    gradient: "from-orange-500 to-red-500"
-  }
-];
-
 export function ChatSuggestions({ onSelect }: ChatSuggestionsProps) {
+  const { formatMoney } = useOrgFormatters();
+  const vacation = formatMoney(100000, { maximumFractionDigits: 0 });
+  const phone = formatMoney(50000, { maximumFractionDigits: 0 });
+
+  const suggestions = [
+    {
+      icon: TrendingUp,
+      text: "Analyze my spending patterns this month",
+      gradient: "from-blue-500 to-cyan-500",
+    },
+    {
+      icon: PiggyBank,
+      text: `Can I afford a ${vacation} vacation in 6 months?`,
+      gradient: "from-green-500 to-emerald-500",
+    },
+    {
+      icon: Calculator,
+      text: "Optimize my investment portfolio",
+      gradient: "from-purple-500 to-pink-500",
+    },
+    {
+      icon: Sparkles,
+      text: `What if I buy a new phone for ${phone}?`,
+      gradient: "from-orange-500 to-red-500",
+    },
+  ];
+
   return (
     <div className="flex flex-col items-center justify-center h-full p-8">
       <motion.div

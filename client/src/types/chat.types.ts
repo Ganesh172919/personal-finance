@@ -2,7 +2,7 @@
  * Chat-related TypeScript interfaces
  */
 
-import type { Plan } from "@/types/ai.types";
+import type { Plan, ToolCall } from "@/types/ai.types";
 
 export interface IChatSession {
   id: string;
@@ -18,6 +18,7 @@ export interface IChatMessageMetadata {
   priority?: 'low' | 'medium' | 'high';
   actionable?: boolean;
   plan?: Plan;
+  toolCalls?: ToolCall[];
   agentOutputId?: string;
   taskIds?: string[];
   appliedTaskIds?: string[];

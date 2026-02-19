@@ -6,15 +6,10 @@ import { Input } from "@/components/ui/Input";
 import { useMutation } from "@tanstack/react-query";
 import { processScenario, ScenarioResponse } from "@/lib/apiClient";
 import { useLocation } from "wouter";
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value || 0);
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
 export function ScenarioWidget() {
+  const { formatMoney, currency } = useOrgFormatters();
   const [amount, setAmount] = useState("");
   const [results, setResults] = useState<ScenarioResponse | null>(null);
   const [, navigate] = useLocation();
@@ -55,7 +50,7 @@ export function ScenarioWidget() {
         <div className="flex space-x-2">
           <Input
             type="number"
-            placeholder="Enter amount (INR)"
+            placeholder={`Enter amount (${currency})`}
             value={amount}
             onChange={event => setAmount(event.target.value)}
             className="flex-1"
@@ -87,7 +82,7 @@ export function ScenarioWidget() {
             className="space-y-3"
             data-testid="scenario-results"
           >
-            <div className="text-sm text-muted-foreground">If I spend {formatCurrency(Number(amount))}:</div>
+            <div className="text-sm text-muted-foreground">If I spend {formatMoney(Number(amount), { maximumFractionDigits: 0 })}:</div>
 
             <div className="space-y-3">
               <motion.div
@@ -95,14 +90,14 @@ export function ScenarioWidget() {
                 whileHover={{ scale: 1.02 }}
               >
                 <span className="text-sm text-foreground">Remaining Budget</span>
-                <span className="font-medium text-chart-3">{formatCurrency(results.newBudget)}</span>
+                <span className="font-medium text-chart-3">{formatMoney(results.newBudget, { maximumFractionDigits: 0 })}</span>
               </motion.div>
               <motion.div
                 className="flex justify-between items-center p-3 bg-accent rounded-lg"
                 whileHover={{ scale: 1.02 }}
               >
                 <span className="text-sm text-foreground">Savings Impact</span>
-                <span className="font-medium text-chart-4">{formatCurrency(results.savingsImpact)}</span>
+                <span className="font-medium text-chart-4">{formatMoney(results.savingsImpact, { maximumFractionDigits: 0 })}</span>
               </motion.div>
               <motion.div
                 className="flex justify-between items-center p-3 bg-accent rounded-lg"
@@ -124,7 +119,7 @@ export function ScenarioWidget() {
                     >
                       <span className="text-chart-4">−</span>
                       <span>
-                        {adjustment.category}: -{formatCurrency(adjustment.reduction)}
+                        {adjustment.category}: -{formatMoney(adjustment.reduction, { maximumFractionDigits: 0 })}
                       </span>
                     </div>
                   ))}

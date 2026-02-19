@@ -2,7 +2,15 @@ import { useAppDialogStore } from "@/stores/appDialogStore";
 
 import { buildApiUrl } from "../apiBase";
 import { ApiError, parseApiError } from "../apiError";
+import { clearActiveOrgId, getActiveOrgId } from "../orgContext";
 
+/**
+ * Networking rules:
+ * - Always route API calls through `apiClient`.
+ * - Automatically inject `X-Org-Id` from active org storage.
+ * - Automatically inject `X-CSRF-Token` for unsafe methods when available.
+ * - Normalize API errors into `ApiError` and trigger feature-limit dialog on 402.
+ */
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 let csrfToken: string | null = null;
@@ -22,13 +30,13 @@ export async function fetchCsrfToken(): Promise<string> {
 }
 
 export async function apiClient<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  return apiClientInternal(endpoint, options, { retriedCsrf: false });
+  return apiClientInternal(endpoint, options, { retriedCsrf: false, retriedOrg: false });
 }
 
 const apiClientInternal = async <T>(
   endpoint: string,
   options: RequestInit,
-  state: { retriedCsrf: boolean }
+  state: { retriedCsrf: boolean; retriedOrg: boolean }
 ): Promise<T> => {
   const method = String(options.method || "GET").toUpperCase();
   const isFormDataBody = typeof FormData !== "undefined" && options.body instanceof FormData;
@@ -40,6 +48,12 @@ const apiClientInternal = async <T>(
 
   if (!SAFE_METHODS.has(method) && csrfToken) {
     headers.set("X-CSRF-Token", csrfToken);
+  }
+
+  const activeOrgId = getActiveOrgId();
+  const orgHeaderInjected = Boolean(activeOrgId && !headers.has("X-Org-Id"));
+  if (activeOrgId && orgHeaderInjected) {
+    headers.set("X-Org-Id", activeOrgId);
   }
 
   const config: RequestInit = {
@@ -66,10 +80,26 @@ const apiClientInternal = async <T>(
       apiError.status === 403 &&
       apiError.code === "CSRF_FAILED";
 
+    const shouldRetryOrg =
+      !state.retriedOrg &&
+      SAFE_METHODS.has(method) &&
+      apiError.status === 403 &&
+      apiError.code === "ORG_ACCESS_DENIED" &&
+      orgHeaderInjected;
+
+    if (apiError.status === 403 && apiError.code === "ORG_ACCESS_DENIED" && orgHeaderInjected && !SAFE_METHODS.has(method)) {
+      clearActiveOrgId();
+    }
+
+    if (shouldRetryOrg) {
+      clearActiveOrgId();
+      return apiClientInternal(endpoint, options, { ...state, retriedOrg: true });
+    }
+
     if (shouldRetryCsrf) {
       const refreshed = await fetchCsrfToken().catch(() => null);
       if (refreshed) {
-        return apiClientInternal(endpoint, options, { retriedCsrf: true });
+        return apiClientInternal(endpoint, options, { ...state, retriedCsrf: true });
       }
     }
 
@@ -78,4 +108,3 @@ const apiClientInternal = async <T>(
 
   return response.json();
 };
-

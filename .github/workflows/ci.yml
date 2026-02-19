@@ -7,6 +7,35 @@ on:
       - main
 
 jobs:
+  provider-policy:
+    name: Provider Policy (Gemini-only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure no OpenAI references
+        run: |
+          if grep -R -nEi \
+            --exclude-dir=.git \
+            --exclude-dir=node_modules \
+            --exclude-dir=.venv \
+            --exclude-dir=.pytest_cache \
+            --exclude-dir=.ruff_cache \
+            --exclude-dir=__pycache__ \
+            --exclude-dir=dist \
+            --exclude=package-lock.json \
+            --exclude=pnpm-lock.yaml \
+            --exclude=yarn.lock \
+            --exclude=poetry.lock \
+            --exclude=.github/workflows/ci.yml \
+            --exclude=scripts/quality-gate.ps1 \
+            --exclude='*.log' \
+            "(openai|OPENAI_)" .; then
+            echo "Gemini-only provider policy failed."
+            exit 1
+          fi
+
   secret-scan:
     name: Secret Scan (gitleaks)
     runs-on: ubuntu-latest
@@ -81,6 +110,37 @@ jobs:
         working-directory: client
         run: npm run build
 
+  sdk-ts-check:
+    name: TS SDK (OpenAPI) Generate + Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: packages/sdk-ts/package-lock.json
+
+      - name: Install dependencies
+        working-directory: packages/sdk-ts
+        run: npm ci
+
+      - name: Generate SDK
+        working-directory: packages/sdk-ts
+        run: npm run generate
+
+      - name: Typecheck
+        working-directory: packages/sdk-ts
+        run: npm run check
+
+      - name: Ensure generated files are committed
+        run: |
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+
   ai-core-check:
     name: AI Core Tests + Lint
     runs-on: ubuntu-latest
@@ -101,6 +161,14 @@ jobs:
         working-directory: server/AI_Core
         run: ruff check tests
 
+      - name: Guard prompt logging patterns
+        working-directory: server/AI_Core
+        run: |
+          if grep -R -nE "Processing request:|Explaining financial concept:" api_service.py agents; then
+            echo "Sensitive prompt logging pattern detected."
+            exit 1
+          fi
+
       - name: Pytest
         working-directory: server/AI_Core
         run: pytest -q
@@ -119,4 +187,4 @@ jobs:
         run: docker build -t finwise-ai-core:ci ./server/AI_Core
 
       - name: Build Client Image
-        run: docker build -t finwise-client:ci ./client
+        run: docker build -t finwise-client:ci -f client/Dockerfile .

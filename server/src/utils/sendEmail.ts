@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { getEnv } from "../config/env";
+import { logger } from "../config/logger";
 
 interface EmailOptions {
   to: string;
@@ -29,9 +30,32 @@ const getOrCreateTransporter = async (
   return transporter;
 };
 
+const emailDomainOf = (email: string) => {
+  const at = email.lastIndexOf("@");
+  if (at <= 0 || at >= email.length - 1) {
+    return "unknown";
+  }
+  return email.slice(at + 1).toLowerCase();
+};
+
 export const sendEmail = async (options: EmailOptions): Promise<EmailSendResult> => {
   const env = getEnv();
   const { EMAIL_USER, EMAIL_PASSWORD, EMAIL_FROM } = env;
+
+  if (env.NODE_ENV === "test") {
+    logger.info(
+      {
+        event: "email_console_mode",
+        to_domain: emailDomainOf(options.to),
+        subject_length: options.subject.length,
+        text_length: options.text.length,
+        has_html: Boolean(options.html),
+      },
+      "Email routed to console mode"
+    );
+
+    return { mode: "console" };
+  }
 
   const isConfigured = Boolean(EMAIL_USER && EMAIL_PASSWORD && EMAIL_FROM);
   if (!isConfigured) {
@@ -39,14 +63,15 @@ export const sendEmail = async (options: EmailOptions): Promise<EmailSendResult>
       throw new Error("Email is not configured. Set EMAIL_USER, EMAIL_PASSWORD, and EMAIL_FROM.");
     }
 
-    console.log(
-      JSON.stringify({
+    logger.info(
+      {
         event: "email_console_mode",
-        to: options.to,
-        subject: options.subject,
-        text: options.text,
-        html: options.html,
-      })
+        to_domain: emailDomainOf(options.to),
+        subject_length: options.subject.length,
+        text_length: options.text.length,
+        has_html: Boolean(options.html),
+      },
+      "Email routed to console mode"
     );
 
     return { mode: "console" };
@@ -99,6 +124,6 @@ export const sendEmail = async (options: EmailOptions): Promise<EmailSendResult>
     );
   }
   
-  console.log(`Email sent successfully to: ${options.to}`);
+  logger.info({ to_domain: emailDomainOf(options.to) }, "Email sent successfully");
   return { mode: "smtp" };
 };

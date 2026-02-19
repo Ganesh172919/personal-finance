@@ -20,8 +20,14 @@ describe("csrf protection", () => {
     expect(String(response.headers["set-cookie"]?.[0] || "")).toContain("csrf_token=");
   });
 
-  it("blocks unsafe methods without a matching csrf header", async () => {
-    await request(app).post("/api/auth/logout").expect(403);
+  it("allows unsafe requests without CSRF when JWT cookie is absent", async () => {
+    await request(app).post("/api/auth/logout").expect(200);
+  });
+
+  it("blocks unsafe cookie-authenticated requests without a matching csrf header", async () => {
+    const jwtCookie = "jwt=invalid-token";
+
+    await request(app).post("/api/auth/logout").set("Cookie", [jwtCookie]).expect(403);
 
     const csrf = await request(app).get("/api/auth/csrf").expect(200);
     const csrfCookie = (csrf.headers["set-cookie"]?.[0] || "").split(";")[0] || "";
@@ -29,9 +35,8 @@ describe("csrf protection", () => {
 
     await request(app)
       .post("/api/auth/logout")
-      .set("Cookie", csrfCookie)
+      .set("Cookie", [jwtCookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .expect(200);
   });
 });
-

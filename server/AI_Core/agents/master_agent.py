@@ -2,6 +2,7 @@
 from typing import Dict, Any, List, Optional
 import logging
 import re
+import hashlib
 
 from config import settings
 from graph.state import AnalysisType
@@ -172,7 +173,11 @@ class MasterFinancialStrategistAgent:
             debt_optimization=valid_analyses.get("debt_optimization"),
         )
         plan = build_plan(inputs)
-        deterministic_markdown = render_plan_markdown(plan)
+        currency_code = "USD"
+        candidate_currency = str((user_profile or {}).get("currency") or "").strip().upper()
+        if len(candidate_currency) == 3 and candidate_currency.isalpha():
+            currency_code = candidate_currency
+        deterministic_markdown = render_plan_markdown(plan, currency_code=currency_code)
 
         narrative_enabled = True
         if context and isinstance(context, dict):
@@ -231,7 +236,190 @@ PLAN (do not change numbers):
             "insights": self._extract_key_insights(valid_analyses),
             "fallback_used": fallback_used,
             "plan": plan.model_dump(),
+            "tool_calls": self._build_tool_calls(plan.model_dump(), user_profile),
         }
+
+    def _tool_id(self, seed: str) -> str:
+        digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+        return digest[:12]
+
+    def _build_tool_calls(self, plan: Dict[str, Any], user_profile: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Build deterministic, low-risk tool calls that improve retention and execution.
+
+        Notes:
+        - These are suggestions only; execution is always server-side and requires explicit user confirmation.
+        - All generated calls must be safe-by-default (no money movement, no destructive actions).
+        """
+        tool_calls: List[Dict[str, Any]] = []
+
+        if not user_profile or not isinstance(user_profile, dict):
+            return tool_calls
+
+        key_metrics = plan.get("key_metrics") if isinstance(plan, dict) else {}
+        monthly_net_cash_flow = None
+        emergency_fund_months = None
+        total_debt = None
+
+        if isinstance(key_metrics, dict):
+            monthly_net_cash_flow = key_metrics.get("monthly_net_cash_flow")
+            emergency_fund_months = key_metrics.get("emergency_fund_months")
+            total_debt = key_metrics.get("total_debt")
+
+        # 1) Weekly review workflow (always valuable)
+        tool_calls.append(
+            {
+                "id": self._tool_id("workflow:weekly-review:v1"),
+                "title": "Enable weekly money check-in",
+                "description": "Creates a weekly automation that adds a short review task so you stay on track.",
+                "tool": "workflows.create",
+                "requires_confirmation": True,
+                "risk": "low",
+                "args": {
+                    "name": "Weekly money check-in",
+                    "enabled": True,
+                    "trigger": {"type": "cron", "cron": "0 9 * * 1"},
+                    "actions": [
+                        {
+                            "type": "create_task",
+                            "bucket": 7,
+                            "title": "Weekly money check-in",
+                            "why": "A short weekly review improves follow-through and prevents drift.",
+                            "steps": [
+                                "Review your last 7 days of transactions and top spending categories",
+                                "Check your cash flow vs. plan and adjust one category cap",
+                                "Apply or dismiss one high-impact task",
+                            ],
+                            "priority": "medium",
+                            "expected_impact": "Improves consistency and reduces overspending via a lightweight habit loop.",
+                            "kind": "cashflow",
+                            "due_days": 7,
+                        }
+                    ],
+                },
+            }
+        )
+
+        # 2) Emergency fund top-up reminder (only when runway is low)
+        try:
+            fund_months = float(emergency_fund_months) if emergency_fund_months is not None else None
+        except Exception:
+            fund_months = None
+
+        if fund_months is not None and fund_months < 3:
+            tool_calls.append(
+                {
+                    "id": self._tool_id("workflow:emergency-fund-topup:v1"),
+                    "title": "Enable emergency fund top-up reminder",
+                    "description": "Creates a monthly automation that reminds you to build your emergency fund runway.",
+                    "tool": "workflows.create",
+                    "requires_confirmation": True,
+                    "risk": "low",
+                    "args": {
+                        "name": "Emergency fund top-up",
+                        "enabled": True,
+                        "trigger": {"type": "cron", "cron": "0 9 1 * *"},
+                        "actions": [
+                            {
+                                "type": "create_task",
+                                "bucket": 30,
+                                "title": "Emergency fund top-up",
+                                "why": "A stronger buffer reduces the chance of needing new debt for surprises.",
+                                "steps": [
+                                    "Set a realistic monthly top-up amount",
+                                    "Automate a transfer to your emergency fund",
+                                    "Re-evaluate runway after any income/expense change",
+                                ],
+                                "priority": "high",
+                                "expected_impact": "Improves resilience and prevents high-cost debt.",
+                                "kind": "cashflow",
+                                "due_days": 30,
+                            }
+                        ],
+                    },
+                }
+            )
+
+        # 3) Debt payoff cadence check (only when debt exists)
+        try:
+            debt_total = float(total_debt) if total_debt is not None else None
+        except Exception:
+            debt_total = None
+
+        if debt_total is not None and debt_total > 0:
+            tool_calls.append(
+                {
+                    "id": self._tool_id("workflow:debt-payoff-checkin:v1"),
+                    "title": "Enable monthly debt payoff check-in",
+                    "description": "Creates a monthly automation that keeps your debt payoff plan moving forward.",
+                    "tool": "workflows.create",
+                    "requires_confirmation": True,
+                    "risk": "low",
+                    "args": {
+                        "name": "Debt payoff check-in",
+                        "enabled": True,
+                        "trigger": {"type": "cron", "cron": "0 9 1 * *"},
+                        "actions": [
+                            {
+                                "type": "create_task",
+                                "bucket": 30,
+                                "title": "Debt payoff check-in",
+                                "why": "Small monthly adjustments compound into faster payoff.",
+                                "steps": [
+                                    "Confirm minimum payments are scheduled",
+                                    "Direct extra money to the highest-interest debt (avalanche) or smallest balance (snowball)",
+                                    "Update balances in Goals & Debts after payment",
+                                ],
+                                "priority": "high",
+                                "expected_impact": "Reduces interest and accelerates payoff timeline.",
+                                "kind": "debt",
+                                "due_days": 30,
+                            }
+                        ],
+                    },
+                }
+            )
+
+        # 4) Transaction review loop (only when cash flow is negative)
+        try:
+            net_flow = float(monthly_net_cash_flow) if monthly_net_cash_flow is not None else None
+        except Exception:
+            net_flow = None
+
+        if net_flow is not None and net_flow < 0:
+            tool_calls.append(
+                {
+                    "id": self._tool_id("workflow:transaction-created-review:v1"),
+                    "title": "Enable new-transaction review (event trigger)",
+                    "description": "Creates an automation that adds a short review task when you add a new transaction.",
+                    "tool": "workflows.create",
+                    "requires_confirmation": True,
+                    "risk": "low",
+                    "args": {
+                        "name": "New transaction review",
+                        "enabled": True,
+                        "trigger": {"type": "event", "event_type": "TransactionCreated"},
+                        "actions": [
+                            {
+                                "type": "create_task",
+                                "bucket": 7,
+                                "title": "Review your latest transaction",
+                                "why": "Frequent quick reviews help stabilize cash flow during recovery.",
+                                "steps": [
+                                    "Confirm the category and amount are correct",
+                                    "If it was avoidable, set a cap for that category this week",
+                                ],
+                                "priority": "medium",
+                                "expected_impact": "Creates a fast feedback loop to reduce overspending.",
+                                "kind": "budget",
+                                "due_days": 2,
+                            }
+                        ],
+                    },
+                }
+            )
+
+        return tool_calls[:5]
 
     def _numbers_are_subset(self, candidate: str, reference: str) -> bool:
         reference_nums = self._extract_numbers(reference)

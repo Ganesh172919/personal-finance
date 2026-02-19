@@ -12,12 +12,28 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   ai-core:
     build:
       context: ./server/AI_Core
     restart: unless-stopped
     env_file:
       - ./server/AI_Core/.env
+    environment:
+      FINWISE_SERVER_URL: http://server:3000
     ports:
       - "8001:8001"
     healthcheck:
@@ -33,6 +49,8 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       ai-core:
         condition: service_healthy
     env_file:
@@ -44,20 +62,44 @@ services:
       PYTHON_API_URL: http://ai-core:8001
       CLIENT_URL: http://localhost:8080
       CORS_ORIGINS: http://localhost:8080
+      REDIS_URL: redis://redis:6379
       TRUST_PROXY: "1"
       COOKIE_SECURE: "false"
       COOKIE_SAME_SITE: "lax"
     ports:
       - "3000:3000"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/test').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1));"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1));"]
       interval: 10s
       timeout: 5s
       retries: 10
 
+  worker:
+    build:
+      context: ./server
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ai-core:
+        condition: service_healthy
+    env_file:
+      - ./server/.env
+    environment:
+      NODE_ENV: production
+      MONGO_URI: mongodb://mongodb:27017/finwise
+      PYTHON_API_URL: http://ai-core:8001
+      REDIS_URL: redis://redis:6379
+      WORKER_ENABLED: "true"
+      TRUST_PROXY: "1"
+    command: ["node", "dist/worker.js"]
+
   client:
     build:
-      context: ./client
+      context: .
+      dockerfile: client/Dockerfile
     restart: unless-stopped
     depends_on:
       server:
@@ -72,3 +114,4 @@ services:
 
 volumes:
   mongo_data:
+  redis_data:

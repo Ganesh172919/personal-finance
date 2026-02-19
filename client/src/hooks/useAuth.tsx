@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { apiClient, fetchCsrfToken } from "@/lib/apiClient";
+import { reportClientError, reportClientWarning } from "@/lib/runtimeLogger";
 
 interface User {
   id: string;
@@ -43,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("userId", profile.id);
       }
     } catch (error) {
-      console.error("Failed to fetch user profile:", error);
+      reportClientError("Failed to fetch user profile", error);
       setUser(null);
       localStorage.removeItem("userId");
     } finally {
@@ -56,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await fetchCsrfToken();
       } catch (error) {
-        console.warn("Failed to fetch CSRF token:", error);
+        reportClientWarning("Failed to fetch CSRF token", error);
       }
 
       await checkAuthStatus();
@@ -71,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
       });
     } catch (error) {
-      console.error("Logout failed:", error);
+      reportClientError("Logout failed", error);
     } finally {
       setUser(null);
       localStorage.removeItem("userId");

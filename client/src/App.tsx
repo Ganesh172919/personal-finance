@@ -17,6 +17,7 @@ const VerifyEmail = lazy(() => import("@/pages/VerifyEmail"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Scenarios = lazy(() => import("@/pages/Scenarios"));
 const FinancialStory = lazy(() => import("@/pages/FinancialStory"));
+const SharedFinancialStory = lazy(() => import("@/pages/SharedFinancialStory"));
 const Portfolio = lazy(() => import("@/pages/Portfolio"));
 const AllInsights = lazy(() => import("@/pages/AllInsights"));
 const Transactions = lazy(() => import("@/pages/Transactions"));
@@ -27,6 +28,11 @@ const Notes = lazy(() => import("@/pages/Notes"));
 const Tasks = lazy(() => import("@/pages/Tasks"));
 const Receipts = lazy(() => import("@/pages/Receipts"));
 const ChatPage = lazy(() => import("@/pages/ChatPage"));
+const Billing = lazy(() => import("@/pages/Billing"));
+const Organization = lazy(() => import("@/pages/Organization"));
+const Exports = lazy(() => import("@/pages/Exports"));
+const Workflows = lazy(() => import("@/pages/Workflows"));
+const AcceptInvite = lazy(() => import("@/pages/AcceptInvite"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -91,6 +97,8 @@ function Router() {
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
         <Route path="/verify-email" component={VerifyEmail} />
+        <Route path="/accept-invite" component={AcceptInvite} />
+        <Route path="/share/financial-story/:token" component={SharedFinancialStory} />
 
         {/* Chat Routes - Primary Interface */}
         <Route path="/chat"><ProtectedRoute><ChatLayout><ChatPage /></ChatLayout></ProtectedRoute></Route>
@@ -104,6 +112,8 @@ function Router() {
         <Route path="/all-insights"><ProtectedRoute><AppAuthenticatedLayout><AllInsights /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/goals-debts"><ProtectedRoute><AppAuthenticatedLayout><GoalsAndDebts /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/transactions"><ProtectedRoute><AppAuthenticatedLayout><Transactions /></AppAuthenticatedLayout></ProtectedRoute></Route>
+        <Route path="/exports"><ProtectedRoute><AppAuthenticatedLayout><Exports /></AppAuthenticatedLayout></ProtectedRoute></Route>
+        <Route path="/workflows"><ProtectedRoute><AppAuthenticatedLayout><Workflows /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/tasks"><ProtectedRoute><AppAuthenticatedLayout><Tasks /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/receipts"><ProtectedRoute><AppAuthenticatedLayout><Receipts /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/onboarding"><ProtectedRoute><AppAuthenticatedLayout><Onboarding /></AppAuthenticatedLayout></ProtectedRoute></Route>
@@ -131,6 +141,20 @@ function Router() {
           <ProtectedRoute>
             <AppAuthenticatedLayout>
               <Notes />
+            </AppAuthenticatedLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/billing">
+          <ProtectedRoute>
+            <AppAuthenticatedLayout>
+              <Billing />
+            </AppAuthenticatedLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/org">
+          <ProtectedRoute>
+            <AppAuthenticatedLayout>
+              <Organization />
             </AppAuthenticatedLayout>
           </ProtectedRoute>
         </Route>

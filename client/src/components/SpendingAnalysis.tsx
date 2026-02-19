@@ -10,6 +10,7 @@ import {
 import { Utensils, Car, Film, ShoppingBag } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getTransactionsSummary, TransactionsSummaryResponse } from "@/lib/apiClient";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
 interface SpendingCategory {
   name: string;
@@ -48,6 +49,7 @@ const getCategoryIcon = (categoryName: string) => {
 };
 
 export function SpendingAnalysis() {
+  const { formatMoney } = useOrgFormatters();
   const now = new Date();
   const fromDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const toDate = now;
@@ -121,7 +123,7 @@ export function SpendingAnalysis() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3 }}
             >
-              â‚¹{Math.round(totalSpending).toLocaleString("en-IN")}
+              {formatMoney(Math.round(totalSpending), { maximumFractionDigits: 0 })}
             </motion.div>
             <div className="text-sm text-muted-foreground">Total Spending</div>
           </div>
@@ -164,7 +166,7 @@ export function SpendingAnalysis() {
                 <div>
                   <div className="font-medium text-sm text-foreground">{category.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    â‚¹{Math.round(category.amount).toLocaleString("en-IN")} â€¢ {category.percentage.toFixed(1)}%
+                    {formatMoney(Math.round(category.amount), { maximumFractionDigits: 0 })} • {category.percentage.toFixed(1)}%
                   </div>
                 </div>
               </div>

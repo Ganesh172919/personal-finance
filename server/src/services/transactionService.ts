@@ -20,6 +20,7 @@ export type AiTransactionFetchResult = {
 };
 
 export const fetchTransactionsForAi = async (params: {
+  orgId: Types.ObjectId;
   userId: Types.ObjectId;
   maxAgeDays?: number;
   maxItems?: number;
@@ -27,12 +28,12 @@ export const fetchTransactionsForAi = async (params: {
   const maxAgeDays = params.maxAgeDays ?? 365;
   const maxItems = params.maxItems ?? 300;
 
-  await ensureUserTransactionsMigrated(params.userId);
+  await ensureUserTransactionsMigrated({ orgId: params.orgId, userId: params.userId });
 
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - maxAgeDays);
 
-  const filter = { userId: params.userId, date: { $gte: cutoff } };
+  const filter = { orgId: params.orgId, userId: params.userId, date: { $gte: cutoff } };
 
   const [totalTransactions, docs] = await Promise.all([
     TransactionModel.countDocuments(filter),
@@ -60,4 +61,3 @@ export const fetchTransactionsForAi = async (params: {
     }
   };
 };
-

@@ -1,0 +1,1889 @@
+securitySchemes:
+  CookieAuth:
+    type: apiKey
+    in: cookie
+    name: jwt
+  ApiKeyAuth:
+    type: apiKey
+    in: header
+    name: X-API-Key
+  InternalUsageTokenAuth:
+    type: apiKey
+    in: header
+    name: X-Internal-Usage-Token
+    description: Internal token required to ingest usage events.
+parameters:
+  XOrgId:
+    name: X-Org-Id
+    in: header
+    required: false
+    schema:
+      type: string
+      pattern: "^[a-f\\d]{24}$"
+    description: Optional organization id to select tenant context.
+  XCsrfToken:
+    name: X-CSRF-Token
+    in: header
+    required: false
+    schema:
+      type: string
+    description: Required for state-changing requests when CSRF is enabled.
+  OrgIdPath:
+    name: orgId
+    in: path
+    required: true
+    schema:
+      type: string
+      pattern: "^[a-f\\d]{24}$"
+  WorkflowIdPath:
+    name: id
+    in: path
+    required: true
+    schema:
+      type: string
+      pattern: "^[a-f\\d]{24}$"
+  ObjectIdPath:
+    name: id
+    in: path
+    required: true
+    schema:
+      type: string
+      pattern: "^[a-f\\d]{24}$"
+  GoalIdPath:
+    name: goalId
+    in: path
+    required: true
+    schema:
+      type: string
+      pattern: "^[a-f\\d]{24}$"
+  DebtIdPath:
+    name: debtId
+    in: path
+    required: true
+    schema:
+      type: string
+      pattern: "^[a-f\\d]{24}$"
+  SessionIdPath:
+    name: sessionId
+    in: path
+    required: true
+    schema:
+      type: string
+      pattern: "^[a-f\\d]{24}$"
+  FileIdPath:
+    name: fileId
+    in: path
+    required: true
+    schema:
+      type: string
+      pattern: "^[a-f\\d]{24}$"
+  UserIdPath:
+    name: userId
+    in: path
+    required: true
+    schema:
+      type: string
+      pattern: "^[a-f\\d]{24}$"
+responses:
+  BadRequest:
+    description: Bad request
+    content:
+      application/json:
+        schema:
+          $ref: "#/schemas/ErrorResponse"
+  Unauthorized:
+    description: Unauthorized
+    content:
+      application/json:
+        schema:
+          $ref: "#/schemas/ErrorResponse"
+  PaymentRequired:
+    description: Payment required
+    content:
+      application/json:
+        schema:
+          $ref: "#/schemas/ErrorResponse"
+  Forbidden:
+    description: Forbidden
+    content:
+      application/json:
+        schema:
+          $ref: "#/schemas/ErrorResponse"
+  NotFound:
+    description: Not found
+    content:
+      application/json:
+        schema:
+          $ref: "#/schemas/ErrorResponse"
+  Conflict:
+    description: Conflict
+    content:
+      application/json:
+        schema:
+          $ref: "#/schemas/ErrorResponse"
+schemas:
+  ErrorResponse:
+    type: object
+    additionalProperties: true
+    properties:
+      message:
+        type: string
+      code:
+        type: string
+      details:
+        description: Optional error details (shape is endpoint-specific).
+        anyOf:
+          - type: object
+            additionalProperties: true
+          - type: array
+            items: {}
+          - type: string
+          - type: number
+          - type: boolean
+          - type: "null"
+      request_id:
+        type: string
+    required: [message, code, request_id]
+  Pagination:
+    type: object
+    additionalProperties: false
+    properties:
+      page:
+        type: integer
+        minimum: 1
+      limit:
+        type: integer
+        minimum: 1
+      total:
+        type: integer
+        minimum: 0
+      totalPages:
+        type: integer
+        minimum: 0
+    required: [page, limit, total, totalPages]
+  LooseSuccessResponse:
+    type: object
+    additionalProperties: true
+    properties:
+      request_id:
+        type: string
+      org_id:
+        type: string
+    required: [request_id]
+  PaginatedLooseSuccessResponse:
+    allOf:
+      - $ref: "#/schemas/LooseSuccessResponse"
+      - type: object
+        additionalProperties: true
+        properties:
+          pagination:
+            $ref: "#/schemas/Pagination"
+        required: [pagination]
+  OrgRole:
+    type: string
+    enum: [owner, admin, member]
+  OrgMemberStatus:
+    type: string
+    enum: [active, invited, removed]
+  OrgInviteStatus:
+    type: string
+    enum: [pending, accepted, revoked, expired]
+  OrgMember:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      user_id: { type: string }
+      role: { $ref: "#/schemas/OrgRole" }
+      status: { $ref: "#/schemas/OrgMemberStatus" }
+    required: [id, user_id, role, status]
+  OrgInviteCreated:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      email: { type: string, format: email }
+      role: { $ref: "#/schemas/OrgRole" }
+      status: { $ref: "#/schemas/OrgInviteStatus" }
+      expires_at: { type: string, format: date-time }
+      token_prefix: { type: string }
+      token: { type: string }
+    required: [id, email, role, status, expires_at, token_prefix]
+  OrgInviteAccepted:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      org_id: { type: string }
+      email: { type: string, format: email }
+      role: { $ref: "#/schemas/OrgRole" }
+      status: { $ref: "#/schemas/OrgInviteStatus" }
+      accepted_at: { type: string, format: date-time }
+    required: [id, org_id, email, role, status]
+  OrgsMeResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      active_org:
+        anyOf:
+          - type: "null"
+          - type: object
+            additionalProperties: false
+            properties:
+              id: { type: string }
+              role: { $ref: "#/schemas/OrgRole" }
+              member_id: { type: string }
+            required: [id, role, member_id]
+      orgs:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            id: { type: string }
+            name: { type: string }
+            slug: { type: string }
+            type: { type: string, enum: [personal, team] }
+            currency: { type: string }
+            locale: { type: string }
+            timezone: { type: string }
+            role: { $ref: "#/schemas/OrgRole" }
+            is_default: { type: boolean }
+          required: [id, name, slug, type, currency, locale, timezone, role, is_default]
+      request_id:
+        type: string
+    required: [active_org, orgs, request_id]
+  CreateOrgRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      name:
+        type: string
+        minLength: 2
+        maxLength: 120
+      slug:
+        type: string
+        pattern: "^[a-z0-9][a-z0-9-]{1,78}[a-z0-9]$"
+    required: [name]
+  CreateOrgResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org:
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: string }
+          slug: { type: string }
+          name: { type: string }
+          type: { type: string, enum: [team] }
+          currency: { type: string }
+          locale: { type: string }
+          timezone: { type: string }
+          role: { $ref: "#/schemas/OrgRole" }
+        required: [id, slug, name, type, currency, locale, timezone, role]
+      request_id:
+        type: string
+    required: [org, request_id]
+  AddOrgMemberRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      email:
+        type: string
+        format: email
+        maxLength: 200
+      role:
+        $ref: "#/schemas/OrgRole"
+    required: [email]
+  AddOrgMemberResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org:
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: string }
+          name: { type: string }
+          slug: { type: string }
+        required: [id, name, slug]
+      member:
+        anyOf:
+          - type: "null"
+          - $ref: "#/schemas/OrgMember"
+      invite:
+        anyOf:
+          - type: "null"
+          - $ref: "#/schemas/OrgInviteCreated"
+      request_id:
+        type: string
+    required: [org, member, invite, request_id]
+  UpdateOrgSettingsRequest:
+    type: object
+    additionalProperties: false
+    minProperties: 1
+    properties:
+      currency:
+        type: string
+        pattern: "^[A-Z]{3}$"
+      locale:
+        type: string
+        minLength: 2
+        maxLength: 50
+      timezone:
+        type: string
+        minLength: 1
+        maxLength: 80
+  UpdateOrgSettingsResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org:
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: string }
+          name: { type: string }
+          slug: { type: string }
+          type: { type: string, enum: [personal, team] }
+          currency: { type: string }
+          locale: { type: string }
+          timezone: { type: string }
+        required: [id, name, slug, type, currency, locale, timezone]
+      request_id: { type: string }
+    required: [org, request_id]
+  AcceptOrgInviteRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      token:
+        type: string
+        minLength: 20
+        maxLength: 256
+    required: [token]
+  AcceptOrgInviteResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      invite:
+        $ref: "#/schemas/OrgInviteAccepted"
+      member:
+        anyOf:
+          - type: "null"
+          - type: object
+            additionalProperties: false
+            properties:
+              id: { type: string }
+              org_id: { type: string }
+              user_id: { type: string }
+              role: { $ref: "#/schemas/OrgRole" }
+              status: { $ref: "#/schemas/OrgMemberStatus" }
+            required: [id, org_id, user_id, role, status]
+      request_id: { type: string }
+    required: [invite, member, request_id]
+  ExportJobStatus:
+    type: string
+    enum: [queued, running, succeeded, failed]
+  ExportJobType:
+    type: string
+    enum: [transactions_csv, monthly_summary_pdf]
+  TransactionType:
+    type: string
+    enum: [income, expense, investment]
+  TransactionsCsvExportParams:
+    type: object
+    additionalProperties: false
+    properties:
+      date_from:
+        type: string
+        minLength: 8
+        maxLength: 40
+        description: ISO date or datetime string.
+      date_to:
+        type: string
+        minLength: 8
+        maxLength: 40
+        description: ISO date or datetime string.
+      tx_type:
+        $ref: "#/schemas/TransactionType"
+      category:
+        type: string
+        maxLength: 100
+  MonthlySummaryPdfExportParams:
+    type: object
+    additionalProperties: false
+    properties:
+      period_key:
+        type: string
+        pattern: "^\\d{4}-\\d{2}$"
+    required: [period_key]
+  CreateTransactionsCsvExportRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      type:
+        type: string
+        enum: [transactions_csv]
+      params:
+        $ref: "#/schemas/TransactionsCsvExportParams"
+      idempotency_key:
+        type: string
+        minLength: 8
+        maxLength: 128
+    required: [type]
+  CreateMonthlySummaryPdfExportRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      type:
+        type: string
+        enum: [monthly_summary_pdf]
+      params:
+        $ref: "#/schemas/MonthlySummaryPdfExportParams"
+      idempotency_key:
+        type: string
+        minLength: 8
+        maxLength: 128
+    required: [type, params]
+  CreateExportRequest:
+    anyOf:
+      - $ref: "#/schemas/CreateTransactionsCsvExportRequest"
+      - $ref: "#/schemas/CreateMonthlySummaryPdfExportRequest"
+  ExportJob:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      type: { $ref: "#/schemas/ExportJobType" }
+      status: { $ref: "#/schemas/ExportJobStatus" }
+      params:
+        type: object
+        additionalProperties: true
+      filename: { type: string }
+      content_type: { type: string }
+      bytes: { type: integer }
+      started_at: { type: string, format: date-time }
+      finished_at: { type: string, format: date-time }
+      error: { type: string }
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+    required: [id, type, status, params]
+  ListExportsResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      exports:
+        type: array
+        items:
+          $ref: "#/schemas/ExportJob"
+      request_id: { type: string }
+    required: [exports, request_id]
+  GetExportResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      export:
+        $ref: "#/schemas/ExportJob"
+      request_id: { type: string }
+    required: [export, request_id]
+  CreateExportResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      export:
+        $ref: "#/schemas/ExportJob"
+      queued: { type: boolean }
+      request_id: { type: string }
+    required: [export, queued, request_id]
+  AuditActorType:
+    type: string
+    enum: [user, system, api_key]
+  AuditEvent:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      actor_type: { $ref: "#/schemas/AuditActorType" }
+      actor_user_id: { type: string }
+      actor_api_key_id: { type: string }
+      action: { type: string }
+      target_type: { type: string }
+      target_id: { type: string }
+      request_id: { type: string }
+      metadata:
+        type: object
+        additionalProperties: true
+      created_at: { type: string, format: date-time }
+    required: [id, actor_type, action, target_type, metadata, created_at]
+  AuditEventsResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      events:
+        type: array
+        items:
+          $ref: "#/schemas/AuditEvent"
+      request_id: { type: string }
+    required: [events, request_id]
+  EntitlementStatus:
+    type: string
+    enum: [active, trialing, past_due, canceled]
+  EntitlementSnapshot:
+    type: object
+    additionalProperties: false
+    properties:
+      plan: { $ref: "#/schemas/PlanTier" }
+      status: { $ref: "#/schemas/EntitlementStatus" }
+      base_limits: { $ref: "#/schemas/PlanLimit" }
+      credits: { $ref: "#/schemas/EntitlementCredits" }
+      limits: { $ref: "#/schemas/PlanLimit" }
+      usage:
+        type: object
+        additionalProperties: false
+        properties:
+          monthly_ai_calls: { type: integer }
+          scenario_depth: { type: integer }
+          ocr_quota: { type: integer }
+          export_access: { type: integer }
+          api_requests: { type: integer }
+          workflow_runs: { type: integer }
+          connector_sync_records: { type: integer }
+          marketplace_installs: { type: integer }
+        required:
+          [
+            monthly_ai_calls,
+            scenario_depth,
+            ocr_quota,
+            export_access,
+            api_requests,
+            workflow_runs,
+            connector_sync_records,
+            marketplace_installs,
+          ]
+      remaining: { $ref: "#/schemas/PlanLimit" }
+      period_key: { type: string }
+    required: [plan, status, base_limits, credits, limits, usage, remaining, period_key]
+  EntitlementsMeResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      plan: { $ref: "#/schemas/PlanTier" }
+      status: { $ref: "#/schemas/EntitlementStatus" }
+      base_limits: { $ref: "#/schemas/PlanLimit" }
+      credits: { $ref: "#/schemas/EntitlementCredits" }
+      limits: { $ref: "#/schemas/PlanLimit" }
+      usage:
+        type: object
+        additionalProperties: false
+        properties:
+          monthly_ai_calls: { type: integer }
+          scenario_depth: { type: integer }
+          ocr_quota: { type: integer }
+          export_access: { type: integer }
+          api_requests: { type: integer }
+          workflow_runs: { type: integer }
+          connector_sync_records: { type: integer }
+          marketplace_installs: { type: integer }
+        required:
+          [
+            monthly_ai_calls,
+            scenario_depth,
+            ocr_quota,
+            export_access,
+            api_requests,
+            workflow_runs,
+            connector_sync_records,
+            marketplace_installs,
+          ]
+      remaining: { $ref: "#/schemas/PlanLimit" }
+      period_key: { type: string }
+      request_id: { type: string }
+    required: [plan, status, base_limits, credits, limits, usage, remaining, period_key, request_id]
+  AppConfigResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org:
+        anyOf:
+          - type: "null"
+          - type: object
+            additionalProperties: false
+            properties:
+              id: { type: string }
+              role: { $ref: "#/schemas/OrgRole" }
+              member_id: { type: string }
+              name: { type: string }
+              slug: { type: string }
+              type: { type: string, enum: [personal, team] }
+              currency: { type: string }
+              locale: { type: string }
+              timezone: { type: string }
+            required: [id, role, member_id]
+      features:
+        type: object
+        additionalProperties: false
+        properties:
+          tasks_enabled: { type: boolean }
+          receipts_ocr_enabled: { type: boolean }
+          journal_enabled: { type: boolean }
+          monetization_enabled: { type: boolean }
+          csrf_enabled: { type: boolean }
+          google_oauth_enabled: { type: boolean }
+        required:
+          - tasks_enabled
+          - receipts_ocr_enabled
+          - journal_enabled
+          - monetization_enabled
+          - csrf_enabled
+          - google_oauth_enabled
+      entitlements:
+        anyOf:
+          - type: "null"
+          - $ref: "#/schemas/EntitlementSnapshot"
+      request_id: { type: string }
+    required: [org, features, entitlements, request_id]
+  PlanCatalogEntry:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      label: { type: string }
+      limits: { $ref: "#/schemas/PlanLimit" }
+    required: [id, label, limits]
+  PlansResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      plans:
+        type: array
+        items:
+          $ref: "#/schemas/PlanCatalogEntry"
+      request_id: { type: string }
+    required: [plans, request_id]
+  UsageEventRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string, pattern: "^[A-Fa-f\\d]{24}$" }
+      user_id: { type: string, pattern: "^[A-Fa-f\\d]{24}$" }
+      feature: { $ref: "#/schemas/UsageFeature" }
+      units: { type: number, exclusiveMinimum: 0, maximum: 1000000 }
+      idempotency_key: { type: string, minLength: 8, maxLength: 128 }
+      context:
+        type: object
+        additionalProperties: true
+    required: [user_id, feature, units]
+  UsageEventIngestResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      accepted: { type: boolean }
+      request_id: { type: string }
+    required: [accepted, request_id]
+  MarketplaceInstallRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      plugin_key:
+        type: string
+        pattern: "^[a-z0-9][a-z0-9._:-]{1,118}[a-z0-9]$"
+      version:
+        type: string
+        minLength: 1
+        maxLength: 40
+      permissions:
+        type: array
+        maxItems: 100
+        items:
+          type: string
+          minLength: 1
+          maxLength: 120
+    required: [plugin_key]
+  PluginVersionUpdateRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      version:
+        type: string
+        minLength: 1
+        maxLength: 40
+    required: [version]
+  FeatureFlagUpsertRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      enabled: { type: boolean }
+      variant:
+        type: string
+        minLength: 1
+        maxLength: 80
+      rollout_percent:
+        type: integer
+        minimum: 0
+        maximum: 100
+      metadata:
+        type: object
+        additionalProperties: true
+    required: [enabled]
+  FeatureFlagRow:
+    type: object
+    additionalProperties: false
+    properties:
+      key: { type: string }
+      enabled: { type: boolean }
+      variant:
+        anyOf:
+          - type: "null"
+          - type: string
+      rollout_percent: { type: integer }
+      metadata:
+        type: object
+        additionalProperties: true
+      updated_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+    required: [key, enabled, variant, rollout_percent, metadata, updated_at]
+  IntegrationSyncRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      records_synced:
+        type: integer
+        minimum: 0
+        maximum: 1000000
+      simulate_error: { type: boolean }
+  AutomationEventEmitRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      event_type:
+        type: string
+        minLength: 2
+        maxLength: 120
+      aggregate_type:
+        type: string
+        minLength: 2
+        maxLength: 120
+      aggregate_id:
+        type: string
+        minLength: 2
+        maxLength: 200
+      payload:
+        type: object
+        additionalProperties: true
+    required: [event_type]
+  MarketplaceCatalogResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      plugins:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            plugin_key: { type: string }
+            name: { type: string }
+            description: { type: string }
+            publisher: { type: string }
+            status: { type: string, enum: [active, preview, deprecated] }
+            latest_version: { type: string }
+            available_versions:
+              type: array
+              items: { type: string }
+            permissions:
+              type: array
+              items: { type: string }
+            pricing_model: { type: string, enum: [free, paid] }
+            price_monthly_usd:
+              anyOf:
+                - type: "null"
+                - type: number
+            installed: { type: boolean }
+            installed_version:
+              anyOf:
+                - type: "null"
+                - type: string
+            installed_status:
+              anyOf:
+                - type: "null"
+                - type: string
+            installed_updated_at:
+              anyOf:
+                - type: "null"
+                - type: string
+                  format: date-time
+          required:
+            [
+              plugin_key,
+              name,
+              description,
+              publisher,
+              status,
+              latest_version,
+              available_versions,
+              permissions,
+              pricing_model,
+              price_monthly_usd,
+              installed,
+              installed_version,
+              installed_status,
+              installed_updated_at,
+            ]
+      request_id: { type: string }
+    required: [org_id, plugins, request_id]
+  MarketplaceInstallResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      install:
+        type: object
+        additionalProperties: false
+        properties:
+          plugin_key: { type: string }
+          version: { type: string }
+          status: { type: string }
+          permissions:
+            type: array
+            items: { type: string }
+          created_at:
+            anyOf:
+              - type: "null"
+              - type: string
+                format: date-time
+          updated_at:
+            anyOf:
+              - type: "null"
+              - type: string
+                format: date-time
+        required: [plugin_key, version, status, permissions, created_at, updated_at]
+      request_id: { type: string }
+    required: [org_id, install, request_id]
+  PluginsListResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      plugins:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            plugin_key: { type: string }
+            name: { type: string }
+            publisher: { type: string }
+            version: { type: string }
+            status: { type: string }
+            permissions:
+              type: array
+              items: { type: string }
+            created_at:
+              anyOf:
+                - type: "null"
+                - type: string
+                  format: date-time
+            updated_at:
+              anyOf:
+                - type: "null"
+                - type: string
+                  format: date-time
+          required: [plugin_key, name, publisher, version, status, permissions, created_at, updated_at]
+      request_id: { type: string }
+    required: [org_id, plugins, request_id]
+  PluginOperationResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      plugin:
+        type: object
+        additionalProperties: false
+        properties:
+          plugin_key: { type: string }
+          version: { type: string }
+          status: { type: string }
+          updated_at:
+            anyOf:
+              - type: "null"
+              - type: string
+                format: date-time
+        required: [plugin_key, version, status, updated_at]
+      request_id: { type: string }
+    required: [org_id, plugin, request_id]
+  IntegrationsListResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      connectors:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            connector_key: { type: string }
+            name: { type: string }
+            category: { type: string }
+            supports_webhook: { type: boolean }
+            stub_mode: { type: boolean }
+            status: { type: string }
+            last_sync_at:
+              anyOf:
+                - type: "null"
+                - type: string
+                  format: date-time
+            last_error:
+              anyOf:
+                - type: "null"
+                - type: string
+            metadata:
+              type: object
+              additionalProperties: true
+            updated_at:
+              anyOf:
+                - type: "null"
+                - type: string
+                  format: date-time
+          required:
+            [
+              connector_key,
+              name,
+              category,
+              supports_webhook,
+              stub_mode,
+              status,
+              last_sync_at,
+              last_error,
+              metadata,
+              updated_at,
+            ]
+      request_id: { type: string }
+    required: [org_id, connectors, request_id]
+  IntegrationSyncResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      queued: { type: boolean }
+      run:
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: string }
+          connector_key: { type: string }
+          status: { type: string, enum: [queued, running, succeeded, failed] }
+          records_synced: { type: integer }
+          started_at:
+            anyOf:
+              - type: "null"
+              - type: string
+                format: date-time
+          finished_at:
+            anyOf:
+              - type: "null"
+              - type: string
+                format: date-time
+          error:
+            anyOf:
+              - type: "null"
+              - type: string
+        required: [id, connector_key, status, records_synced, started_at, finished_at, error]
+      request_id: { type: string }
+    required: [org_id, queued, run, request_id]
+  IntegrationHistoryResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      connector_key: { type: string }
+      history:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            id: { type: string }
+            status: { type: string }
+            records_synced: { type: integer }
+            started_at:
+              anyOf:
+                - type: "null"
+                - type: string
+                  format: date-time
+            finished_at:
+              anyOf:
+                - type: "null"
+                - type: string
+                  format: date-time
+            error:
+              anyOf:
+                - type: "null"
+                - type: string
+            request_id:
+              anyOf:
+                - type: "null"
+                - type: string
+            created_at:
+              anyOf:
+                - type: "null"
+                - type: string
+                  format: date-time
+          required: [id, status, records_synced, started_at, finished_at, error, request_id, created_at]
+      request_id: { type: string }
+    required: [org_id, connector_key, history, request_id]
+  IntegrationConnectionRow:
+    type: object
+    additionalProperties: false
+    properties:
+      connector_key: { type: string }
+      status: { type: string }
+      last_sync_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      last_error:
+        anyOf:
+          - type: "null"
+          - type: string
+      metadata:
+        type: object
+        additionalProperties: true
+      updated_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+    required: [connector_key, status, last_sync_at, last_error, metadata, updated_at]
+  IntegrationHealthResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      connector_key: { type: string }
+      status: { type: string }
+      last_sync_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      last_error:
+        anyOf:
+          - type: "null"
+          - type: string
+      metadata:
+        type: object
+        additionalProperties: true
+      updated_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      request_id: { type: string }
+    required: [org_id, connector_key, status, last_sync_at, last_error, metadata, updated_at, request_id]
+  IntegrationConnectionResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      connector:
+        $ref: "#/schemas/IntegrationConnectionRow"
+      request_id: { type: string }
+    required: [org_id, connector, request_id]
+  FinancialStorySharePayload:
+    type: object
+    additionalProperties: false
+    properties:
+      type: { type: string, enum: [financial_story] }
+      generated_at: { type: string, format: date-time }
+      currency:
+        anyOf:
+          - type: "null"
+          - type: string
+      locale:
+        anyOf:
+          - type: "null"
+          - type: string
+      timezone:
+        anyOf:
+          - type: "null"
+          - type: string
+      summary:
+        type: object
+        additionalProperties: false
+        properties:
+          health_percentage: { type: integer, minimum: 0, maximum: 100 }
+          total_assets: { type: number }
+          savings_balance: { type: number }
+          goals_active: { type: integer }
+          milestones_count: { type: integer }
+        required: [health_percentage, total_assets, savings_balance, goals_active, milestones_count]
+      goals:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            name: { type: string }
+            target: { type: number }
+            current: { type: number }
+            deadline:
+              anyOf:
+                - type: "null"
+                - type: string
+            priority: { type: integer }
+          required: [name, target, current, priority]
+      milestones:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            agent_type: { type: string }
+            title: { type: string }
+            description: { type: string }
+            timestamp: { type: string, format: date-time }
+          required: [agent_type, title, description, timestamp]
+      profile_updated_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+    required: [type, generated_at, summary, goals, milestones]
+  CreateFinancialStoryShareRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      expires_in_days:
+        type: integer
+        minimum: 1
+        maximum: 365
+      include_goal_names: { type: boolean }
+      include_goal_deadlines: { type: boolean }
+      include_milestones: { type: boolean }
+      max_milestones:
+        type: integer
+        minimum: 1
+        maximum: 100
+  CreateFinancialStoryShareResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      share:
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: string }
+          type: { type: string }
+          token_prefix: { type: string }
+          expires_at: { type: string, format: date-time }
+          share_url: { type: string }
+        required: [id, type, token_prefix, expires_at, share_url]
+      token: { type: string }
+      request_id: { type: string }
+    required: [share, token, request_id]
+  PublicFinancialStoryShareResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      share_id: { type: string }
+      type: { type: string }
+      expires_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      payload:
+        $ref: "#/schemas/FinancialStorySharePayload"
+      request_id: { type: string }
+    required: [share_id, type, expires_at, payload, request_id]
+  AutomationEventsCatalogResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      events:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            event_type: { type: string }
+            title: { type: string }
+            source: { type: string }
+            description: { type: string }
+          required: [event_type, title, source, description]
+      request_id: { type: string }
+    required: [org_id, events, request_id]
+  AutomationEventEmitResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      accepted: { type: boolean }
+      org_id: { type: string }
+      event_type: { type: string }
+      aggregate_type: { type: string }
+      aggregate_id: { type: string }
+      request_id: { type: string }
+    required: [accepted, org_id, event_type, aggregate_type, aggregate_id, request_id]
+  FeatureFlagsListResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      flags:
+        type: array
+        items:
+          $ref: "#/schemas/FeatureFlagRow"
+      request_id: { type: string }
+    required: [org_id, flags, request_id]
+  FeatureFlagUpsertResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      flag: { $ref: "#/schemas/FeatureFlagRow" }
+      request_id: { type: string }
+    required: [org_id, flag, request_id]
+  FeatureFlagDeleteResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      key: { type: string }
+      deleted: { type: boolean }
+      request_id: { type: string }
+    required: [org_id, key, deleted, request_id]
+  AnalyticsOverviewResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      period_key: { type: string }
+      plan: { $ref: "#/schemas/PlanTier" }
+      status: { $ref: "#/schemas/EntitlementStatus" }
+      metrics:
+        type: object
+        additionalProperties: false
+        properties:
+          active_workflows: { type: integer }
+          workflow_runs_30d: { type: integer }
+          exports_30d: { type: integer }
+          connected_integrations: { type: integer }
+          installed_plugins: { type: integer }
+          feature_flags: { type: integer }
+        required:
+          [
+            active_workflows,
+            workflow_runs_30d,
+            exports_30d,
+            connected_integrations,
+            installed_plugins,
+            feature_flags,
+          ]
+      usage:
+        type: object
+        additionalProperties:
+          type: object
+          additionalProperties: false
+          properties:
+            units: { type: integer }
+            tokens_in: { type: integer }
+            tokens_out: { type: integer }
+            cost_usd: { type: number }
+          required: [units, tokens_in, tokens_out, cost_usd]
+      limits: { $ref: "#/schemas/PlanLimit" }
+      remaining: { $ref: "#/schemas/PlanLimit" }
+      request_id: { type: string }
+    required: [org_id, period_key, plan, status, metrics, usage, limits, remaining, request_id]
+  AuthProvidersResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      email: { type: boolean }
+      google: { type: boolean }
+      request_id: { type: string }
+    required: [email, google, request_id]
+  CsrfTokenResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      csrf_token: { type: string }
+      request_id: { type: string }
+    required: [csrf_token, request_id]
+  RegisterRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      name: { type: string, minLength: 1, maxLength: 100 }
+      email: { type: string, format: email }
+      password:
+        type: string
+        minLength: 8
+        maxLength: 128
+        pattern: "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).+$"
+      phoneNumber:
+        type: string
+        pattern: "^[+]?[0-9]{10,15}$"
+      referralCode:
+        type: string
+        pattern: "^[A-Z0-9]{6,16}$"
+    required: [name, email, password]
+  RegisterResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      message: { type: string }
+      request_id: { type: string }
+      dev_otp: { type: string }
+    required: [message, request_id]
+  LoginRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      email: { type: string, format: email }
+      password: { type: string, minLength: 1, maxLength: 128 }
+    required: [email, password]
+  VerifyEmailRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      email: { type: string, format: email }
+      otp:
+        type: string
+        pattern: "^\\d{6}$"
+    required: [email, otp]
+  ResendVerificationRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      email: { type: string, format: email }
+    required: [email]
+  ResendVerificationResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      message: { type: string }
+      request_id: { type: string }
+      dev_otp: { type: string }
+    required: [message, request_id]
+  AuthUserResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      name: { type: string }
+      email: { type: string, format: email }
+      photoURL: { type: string }
+      request_id: { type: string }
+    required: [id, name, email, request_id]
+  LogoutResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      message: { type: string }
+      request_id: { type: string }
+    required: [message, request_id]
+  ReferralsMeResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      referral_code: { type: string }
+      share_url: { type: string, format: uri }
+      redemptions_count: { type: integer, minimum: 0 }
+      referred_by:
+        anyOf:
+          - type: "null"
+          - type: object
+            additionalProperties: false
+            properties:
+              referral_code: { type: string }
+              redeemed_at: { type: string, format: date-time }
+            required: [referral_code]
+      reward:
+        type: object
+        additionalProperties: false
+        properties:
+          months: { type: integer, minimum: 1, maximum: 24 }
+          units:
+            type: object
+            additionalProperties: false
+            properties:
+              monthly_ai_calls: { type: integer, minimum: 0 }
+              api_requests: { type: integer, minimum: 0 }
+              workflow_runs: { type: integer, minimum: 0 }
+              marketplace_installs: { type: integer, minimum: 0 }
+            required: [monthly_ai_calls, api_requests, workflow_runs, marketplace_installs]
+        required: [months, units]
+      request_id: { type: string }
+    required: [org_id, referral_code, share_url, redemptions_count, reward, request_id]
+  ReferralRedeemRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      code: { type: string, pattern: "^[A-Z0-9]{6,16}$" }
+    required: [code]
+  ReferralRedeemResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      applied: { type: boolean }
+      reason: { type: string }
+      redemption_id: { type: string }
+      referrer_org_id: { type: string }
+      reward:
+        type: object
+        additionalProperties: false
+        properties:
+          periods:
+            type: array
+            items:
+              type: string
+              pattern: "^\\d{4}-\\d{2}$"
+          unitsByFeature:
+            type: object
+            additionalProperties: true
+        required: [periods, unitsByFeature]
+      request_id: { type: string }
+    required: [org_id, applied, reason, redemption_id, referrer_org_id, reward, request_id]
+  ApiKeyScope:
+    type: string
+    enum:
+      - usage:read
+      - workflows:read
+      - workflows:write
+      - transactions:read
+      - transactions:write
+  CreateApiKeyRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      name: { type: string, minLength: 2, maxLength: 120 }
+      scopes:
+        type: array
+        minItems: 1
+        maxItems: 20
+        items:
+          $ref: "#/schemas/ApiKeyScope"
+    required: [name, scopes]
+  CreateApiKeyResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      api_key:
+        type: string
+        description: Secret API key value (only returned once).
+      key:
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: string }
+          prefix: { type: string }
+          name: { type: string }
+          scopes:
+            type: array
+            items:
+              $ref: "#/schemas/ApiKeyScope"
+          created_at:
+            type: string
+            format: date-time
+        required: [id, prefix, name, scopes, created_at]
+      request_id:
+        type: string
+    required: [api_key, key, request_id]
+  ListApiKeysResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      api_keys:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            id: { type: string }
+            name: { type: string }
+            prefix: { type: string }
+            scopes:
+              type: array
+              items:
+                $ref: "#/schemas/ApiKeyScope"
+            created_at: { type: string, format: date-time }
+            last_used_at:
+              anyOf:
+                - type: "null"
+                - type: string
+                  format: date-time
+            revoked_at:
+              anyOf:
+                - type: "null"
+                - type: string
+                  format: date-time
+          required: [id, name, prefix, scopes, created_at, last_used_at, revoked_at]
+      request_id:
+        type: string
+    required: [api_keys, request_id]
+  RevokeApiKeyResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      revoked: { type: boolean }
+      key_id: { type: string }
+      revoked_at: { type: string, format: date-time }
+      request_id: { type: string }
+    required: [revoked, key_id, revoked_at, request_id]
+  PlanTier:
+    type: string
+    enum: [free, pro, team, enterprise]
+  PlanLimit:
+    type: object
+    additionalProperties: false
+    properties:
+      monthly_ai_calls: { type: integer }
+      scenario_depth: { type: integer }
+      ocr_quota: { type: integer }
+      export_access: { type: boolean }
+      api_requests: { type: integer }
+      workflow_runs: { type: integer }
+      connector_sync_records: { type: integer }
+      marketplace_installs: { type: integer }
+    required:
+      [
+        monthly_ai_calls,
+        scenario_depth,
+        ocr_quota,
+        export_access,
+        api_requests,
+        workflow_runs,
+        connector_sync_records,
+        marketplace_installs,
+      ]
+  EntitlementCredits:
+    type: object
+    additionalProperties: false
+    properties:
+      monthly_ai_calls: { type: integer }
+      scenario_depth: { type: integer }
+      ocr_quota: { type: integer }
+      api_requests: { type: integer }
+      workflow_runs: { type: integer }
+      connector_sync_records: { type: integer }
+      marketplace_installs: { type: integer }
+    required:
+      [
+        monthly_ai_calls,
+        scenario_depth,
+        ocr_quota,
+        api_requests,
+        workflow_runs,
+        connector_sync_records,
+        marketplace_installs,
+      ]
+  UsageFeature:
+    type: string
+    enum:
+      [
+        monthly_ai_calls,
+        scenario_depth,
+        ocr_quota,
+        export_access,
+        api_requests,
+        workflow_runs,
+        connector_sync_records,
+        marketplace_installs,
+      ]
+  UsageLedgerRow:
+    type: object
+    additionalProperties: false
+    properties:
+      feature: { $ref: "#/schemas/UsageFeature" }
+      units: { type: integer }
+      tokens_in: { type: integer }
+      tokens_out: { type: integer }
+      cost_usd: { type: number }
+      updated_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+    required: [feature, units, tokens_in, tokens_out, cost_usd, updated_at]
+  UsageLedgerResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      period_key: { type: string }
+      plan: { $ref: "#/schemas/PlanTier" }
+      status: { type: string }
+      base_limits: { $ref: "#/schemas/PlanLimit" }
+      credits: { $ref: "#/schemas/EntitlementCredits" }
+      limits: { $ref: "#/schemas/PlanLimit" }
+      usage:
+        type: object
+        additionalProperties: false
+        properties:
+          monthly_ai_calls: { type: integer }
+          scenario_depth: { type: integer }
+          ocr_quota: { type: integer }
+          export_access: { type: integer }
+          api_requests: { type: integer }
+          workflow_runs: { type: integer }
+          connector_sync_records: { type: integer }
+          marketplace_installs: { type: integer }
+        required:
+          [
+            monthly_ai_calls,
+            scenario_depth,
+            ocr_quota,
+            export_access,
+            api_requests,
+            workflow_runs,
+            connector_sync_records,
+            marketplace_installs,
+          ]
+      remaining: { $ref: "#/schemas/PlanLimit" }
+      ledger:
+        type: array
+        items:
+          $ref: "#/schemas/UsageLedgerRow"
+      request_id: { type: string }
+    required: [org_id, period_key, plan, status, base_limits, credits, limits, usage, remaining, ledger, request_id]
+  BillingProvider:
+    type: string
+    enum: [stub, stripe]
+  BillingCheckoutRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      plan_tier:
+        type: string
+        enum: [pro, team]
+      seats:
+        type: integer
+        minimum: 1
+        maximum: 10000
+      success_url:
+        type: string
+        format: uri
+      cancel_url:
+        type: string
+        format: uri
+    required: [plan_tier]
+  BillingCheckoutResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      provider: { $ref: "#/schemas/BillingProvider" }
+      checkout_url:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: uri
+      activated: { type: boolean }
+      session_id: { type: string }
+      request_id: { type: string }
+    required: [provider, checkout_url, activated, request_id]
+  BillingPortalResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      provider: { $ref: "#/schemas/BillingProvider" }
+      portal_url: { type: string, format: uri }
+      request_id: { type: string }
+    required: [provider, portal_url, request_id]
+  TaskPriority:
+    type: string
+    enum: [low, medium, high]
+  TaskKind:
+    type: string
+    enum: [cashflow, budget, debt, invest, goal, education, generic]
+  WorkflowTriggerManual:
+    type: object
+    additionalProperties: false
+    properties:
+      type: { type: string, enum: [manual] }
+    required: [type]
+  WorkflowTriggerCron:
+    type: object
+    additionalProperties: false
+    properties:
+      type: { type: string, enum: [cron] }
+      cron: { type: string }
+    required: [type, cron]
+  WorkflowTriggerEvent:
+    type: object
+    additionalProperties: false
+    properties:
+      type: { type: string, enum: [event] }
+      event_type: { type: string }
+    required: [type, event_type]
+  WorkflowTrigger:
+    anyOf:
+      - $ref: "#/schemas/WorkflowTriggerManual"
+      - $ref: "#/schemas/WorkflowTriggerCron"
+      - $ref: "#/schemas/WorkflowTriggerEvent"
+  WorkflowActionCreateTask:
+    type: object
+    additionalProperties: false
+    properties:
+      type: { type: string, enum: [create_task] }
+      bucket: { type: integer, enum: [7, 30, 365] }
+      title: { type: string }
+      why: { type: string }
+      steps:
+        type: array
+        items: { type: string }
+      priority: { $ref: "#/schemas/TaskPriority" }
+      expected_impact: { type: string }
+      kind: { $ref: "#/schemas/TaskKind" }
+      due_days: { type: integer }
+    required: [type, bucket, title, why, expected_impact]
+  WorkflowActionSendNotification:
+    type: object
+    additionalProperties: false
+    properties:
+      type: { type: string, enum: [send_notification] }
+      channel: { type: string, enum: [email] }
+      subject: { type: string }
+      message: { type: string }
+    required: [type, subject, message]
+  WorkflowActionExportReportTransactionsCsv:
+    type: object
+    additionalProperties: false
+    properties:
+      type: { type: string, enum: [export_report] }
+      export_type: { type: string, enum: [transactions_csv] }
+      params: { $ref: "#/schemas/TransactionsCsvExportParams" }
+    required: [type, export_type]
+  WorkflowActionExportReportMonthlySummaryPdf:
+    type: object
+    additionalProperties: false
+    properties:
+      type: { type: string, enum: [export_report] }
+      export_type: { type: string, enum: [monthly_summary_pdf] }
+      params: { $ref: "#/schemas/MonthlySummaryPdfExportParams" }
+    required: [type, export_type, params]
+  WorkflowActionExportReport:
+    anyOf:
+      - $ref: "#/schemas/WorkflowActionExportReportTransactionsCsv"
+      - $ref: "#/schemas/WorkflowActionExportReportMonthlySummaryPdf"
+  WorkflowAction:
+    anyOf:
+      - $ref: "#/schemas/WorkflowActionCreateTask"
+      - $ref: "#/schemas/WorkflowActionSendNotification"
+      - $ref: "#/schemas/WorkflowActionExportReport"
+  CreateWorkflowRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      name: { type: string }
+      enabled: { type: boolean }
+      trigger: { $ref: "#/schemas/WorkflowTrigger" }
+      actions:
+        type: array
+        items:
+          $ref: "#/schemas/WorkflowAction"
+    required: [name, trigger, actions]
+  Workflow:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      name: { type: string }
+      enabled: { type: boolean }
+      trigger: { $ref: "#/schemas/WorkflowTrigger" }
+      actions:
+        type: array
+        items:
+          $ref: "#/schemas/WorkflowAction"
+      created_at: { type: string, format: date-time }
+      updated_at: { type: string, format: date-time }
+    required: [id, name, enabled, trigger, actions, created_at, updated_at]
+  ListWorkflowsResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      workflows:
+        type: array
+        items:
+          $ref: "#/schemas/Workflow"
+      request_id:
+        type: string
+    required: [workflows, request_id]
+  CreateWorkflowResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      workflow:
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: string }
+          name: { type: string }
+          enabled: { type: boolean }
+          trigger: { $ref: "#/schemas/WorkflowTrigger" }
+          actions:
+            type: array
+            items:
+              $ref: "#/schemas/WorkflowAction"
+          created_at: { type: string, format: date-time }
+        required: [id, name, enabled, trigger, actions, created_at]
+      request_id:
+        type: string
+    required: [workflow, request_id]
+  RunWorkflowRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      idempotency_key:
+        type: string
+        minLength: 8
+        maxLength: 128
+    required: []
+  WorkflowRunResult:
+    type: object
+    additionalProperties: true
+  WorkflowRun:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      status: { type: string, enum: [queued, running, succeeded, failed] }
+      started_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      finished_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      result:
+        anyOf:
+          - type: "null"
+          - $ref: "#/schemas/WorkflowRunResult"
+      error:
+        anyOf:
+          - type: "null"
+          - type: string
+    required: [id, status, started_at, finished_at, result, error]
+  RunWorkflowResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      queued: { type: boolean }
+      run:
+        $ref: "#/schemas/WorkflowRun"
+      request_id: { type: string }
+    required: [queued, run, request_id]
+

@@ -9,7 +9,21 @@ export const csrfProtection: RequestHandler = (req, res, next) => {
     return next();
   }
 
+  const path = String(req.originalUrl || req.url || "");
+  if (
+    path.startsWith("/api/v1/billing/webhook") ||
+    path.startsWith("/api/usage-events") ||
+    path.startsWith("/api/v1/usage-events")
+  ) {
+    return next();
+  }
+
   if (SAFE_METHODS.has(req.method.toUpperCase())) {
+    return next();
+  }
+
+  const hasJwtCookie = Boolean((req as any).cookies?.jwt);
+  if (!hasJwtCookie) {
     return next();
   }
 
@@ -27,4 +41,3 @@ export const csrfProtection: RequestHandler = (req, res, next) => {
 
   next();
 };
-

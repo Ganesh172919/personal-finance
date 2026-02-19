@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/Label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/Sheet";
 import { useToast } from "@/hooks/useToast";
-import { useAppConfig } from "@/hooks/useAppConfig";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import { buildApiUrl } from "@/lib/apiBase";
 import {
   ApiError,
@@ -29,13 +29,6 @@ const formatError = (error: unknown, fallback: string) => {
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
-const formatDateTime = (value?: string | Date) => {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString();
-};
-
 const toNumberOr = (value: any, fallback: number) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
@@ -45,7 +38,7 @@ export default function ReceiptsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const configQuery = useAppConfig();
+  const { configQuery, currency, formatDateTime } = useOrgFormatters();
   const receiptsEnabled = configQuery.data?.features.receipts_ocr_enabled;
 
   const [tab, setTab] = useState<ReceiptStatus | "all">("all");
@@ -78,7 +71,7 @@ export default function ReceiptsPage() {
     date: "",
     total: 0,
     tax: undefined,
-    currency: "INR",
+    currency,
     category: "Other",
     description: "",
     items: undefined,
@@ -92,12 +85,12 @@ export default function ReceiptsPage() {
       date: String(extracted.date || "").trim(),
       total: toNumberOr(extracted.total, 0),
       tax: extracted.tax === null || extracted.tax === undefined ? undefined : toNumberOr(extracted.tax, 0),
-      currency: String(extracted.currency || "INR").trim() || "INR",
+      currency: String(extracted.currency || currency).trim() || currency,
       category: String((receipt.extracted as any)?.category_suggestion || "Other").trim() || "Other",
       description: String(extracted.vendor || "").trim(),
       items: Array.isArray(extracted.items) ? extracted.items : undefined,
     });
-  }, [receipt]);
+  }, [currency, receipt]);
 
   const confirmMutation = useMutation({
     mutationFn: (payload: { id: string; data: ReceiptConfirmPayload }) => confirmReceipt(payload.id, payload.data),
@@ -325,4 +318,3 @@ export default function ReceiptsPage() {
     </div>
   );
 }
-

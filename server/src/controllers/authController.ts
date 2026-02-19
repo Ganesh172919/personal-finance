@@ -44,11 +44,12 @@ export const getCsrfToken = async (req: Request, res: Response) => {
 // --- Register a new user ---
 export const register = async (req: Request, res: Response) => {
   const env = getEnv();
-  const { name, email, password, phoneNumber } = req.body as {
+  const { name, email, password, phoneNumber, referralCode } = req.body as {
     name: string;
     email: string;
     password: string;
     phoneNumber?: string;
+    referralCode?: string;
   };
 
   const userExists = await UserModel.findOne({ email }).select("_id").lean();
@@ -56,7 +57,14 @@ export const register = async (req: Request, res: Response) => {
     throw new HttpError(400, "USER_EXISTS", "User with this email already exists");
   }
 
-  const newUser = await UserModel.create({ name, email, password, phoneNumber, authProvider: "email" });
+  const newUser = await UserModel.create({
+    name,
+    email,
+    password,
+    phoneNumber,
+    authProvider: "email",
+    pendingReferralCode: referralCode ? String(referralCode).trim().toUpperCase() : undefined,
+  });
 
   const verificationToken = crypto.randomInt(100000, 999999).toString();
   newUser.emailVerificationToken = verificationToken;

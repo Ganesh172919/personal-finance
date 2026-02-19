@@ -57,6 +57,7 @@ vi.mock("../services/aiCoreClient", async () => {
 import { createApp } from "../app";
 import { configurePassport } from "../config/passport";
 import ReceiptModel from "../models/receiptModel";
+import { processAiCoreReceiptOcr } from "../services/aiCoreClient";
 import { createAuthedUser } from "./authHelpers";
 import { clearTestDb, startTestDb, stopTestDb } from "./testDb";
 
@@ -133,6 +134,21 @@ describe("receipts OCR API", () => {
       .get(`/api/media/${parseRes.body.file_id}`)
       .set("Cookie", [cookie])
       .expect(200);
+  });
+
+  it("defaults OCR currency hint to org currency when omitted", async () => {
+    vi.mocked(processAiCoreReceiptOcr).mockClear();
+
+    await request(app)
+      .post("/api/receipts/parse")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .attach("file", Buffer.from("fakepng"), { filename: "receipt.png", contentType: "image/png" })
+      .expect(200);
+
+    expect(vi.mocked(processAiCoreReceiptOcr)).toHaveBeenCalled();
+    const firstCall = vi.mocked(processAiCoreReceiptOcr).mock.calls[0];
+    expect(firstCall?.[0]?.currencyHint).toBe("USD");
   });
 
   it("deletes parsed receipts and blocks deletion after confirmation", async () => {

@@ -14,15 +14,12 @@ import {
 import { Calculator, TrendingDown, TrendingUp, Target } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { processScenario, ScenarioResponse } from "@/lib/apiClient";
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value || 0);
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
 export default function Scenarios() {
+  const { formatMoney } = useOrgFormatters();
+  const formatCurrency = (value: number) => formatMoney(value || 0, { maximumFractionDigits: 0 });
+
   const [scenarioType, setScenarioType] = useState<"expense" | "income" | "investment">("expense");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");

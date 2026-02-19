@@ -254,6 +254,7 @@ Server (`server/.env`):
 - `EMAIL_USER` / `EMAIL_PASSWORD` / `EMAIL_FROM` (required together for SMTP mode)
 - `EMAIL_SERVICE` (optional; default `gmail` when `EMAIL_HOST` is not provided)
 - `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_SECURE` / `EMAIL_REQUIRE_TLS` (optional explicit SMTP transport)
+- `BILLING_PROVIDER` (`stub|stripe`) and Stripe price ids (`STRIPE_PRICE_PRO_MONTHLY`, `STRIPE_PRICE_TEAM_SEAT`, `STRIPE_PRICE_ENTERPRISE`) for paid tiers
 
 AI Core (`server/AI_Core/.env`):
 - `GEMINI_API_KEY` (optional; AI Core runs in deterministic/fallback mode if missing)

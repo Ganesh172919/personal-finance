@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { useToast } from "@/hooks/useToast";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import {
   ApiError,
   createDebt,
@@ -55,6 +56,7 @@ const EMPTY_DEBT: DebtForm = {
 export default function GoalsAndDebts() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { formatMoney } = useOrgFormatters();
 
   const { data: profile, isLoading } = useQuery<IFinancialProfile>({
     queryKey: ["/api/financial-profiles/me"],
@@ -197,8 +199,7 @@ export default function GoalsAndDebts() {
     });
   };
 
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
+  const formatCurrency = (value: number) => formatMoney(value, { maximumFractionDigits: 0 });
 
   return (
     <div className="flex-1 p-6 overflow-auto" data-testid="goals-debts-page">
@@ -424,7 +425,7 @@ export default function GoalsAndDebts() {
                         <div>
                           <div className="font-medium text-foreground">{debt.name}</div>
                           <div className="text-xs text-muted-foreground">
-                            Balance: {formatCurrency(debt.balance)} â€¢ APR: {debt.interest_rate}% â€¢ Min:{" "}
+                            Balance: {formatCurrency(debt.balance)} • APR: {debt.interest_rate}% • Min:{" "}
                             {formatCurrency(debt.minimum_payment)}
                           </div>
                           <div className="text-xs text-muted-foreground">Type: {debt.type}</div>

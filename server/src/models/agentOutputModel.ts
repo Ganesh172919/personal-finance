@@ -2,6 +2,7 @@ import { Schema, model, Document, Types } from "mongoose";
 
 // This interface matches the frontend's IAgentOutput AND the new Python response
 export interface IAgentOutput {
+  orgId: Types.ObjectId;
   userId: Types.ObjectId;
   sessionId: string;
   userInput: string;
@@ -50,6 +51,7 @@ export interface IAgentOutputDocument extends IAgentOutput, Document {
 
 const agentOutputSchema = new Schema<IAgentOutputDocument>(
   {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     sessionId: { type: String, required: true },
     userInput: { type: String, required: true },
@@ -87,10 +89,10 @@ const agentOutputSchema = new Schema<IAgentOutputDocument>(
   }
 );
 
-agentOutputSchema.index({ userId: 1, timestamp: -1 });
-agentOutputSchema.index({ userId: 1, createdAt: -1 });
-agentOutputSchema.index({ userId: 1, request_id: 1, timestamp: -1 });
-agentOutputSchema.index({ userId: 1, actionable: 1, timestamp: -1 });
+agentOutputSchema.index({ orgId: 1, userId: 1, timestamp: -1 });
+agentOutputSchema.index({ orgId: 1, userId: 1, createdAt: -1 });
+agentOutputSchema.index({ orgId: 1, userId: 1, request_id: 1, timestamp: -1 });
+agentOutputSchema.index({ orgId: 1, userId: 1, actionable: 1, timestamp: -1 });
 
 const AgentOutputModel = model<IAgentOutputDocument>("AgentOutput", agentOutputSchema);
 export default AgentOutputModel;

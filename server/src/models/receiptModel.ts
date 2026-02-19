@@ -31,6 +31,7 @@ export type ReceiptConfidence = {
 };
 
 export interface IReceipt {
+  orgId: Types.ObjectId;
   userId: Types.ObjectId;
   fileId: Types.ObjectId;
   status: ReceiptStatus;
@@ -75,6 +76,7 @@ const receiptExtractedSchema = new Schema<ReceiptExtracted>(
 
 const receiptSchema = new Schema<IReceiptDocument>(
   {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     fileId: { type: Schema.Types.ObjectId, required: true, index: true },
     status: { type: String, enum: ["parsed", "confirmed"], default: "parsed", required: true },
@@ -88,8 +90,8 @@ const receiptSchema = new Schema<IReceiptDocument>(
   { timestamps: true }
 );
 
-receiptSchema.index({ userId: 1, createdAt: -1 });
-receiptSchema.index({ transactionId: 1 }, { sparse: true });
+receiptSchema.index({ orgId: 1, userId: 1, createdAt: -1 });
+receiptSchema.index({ orgId: 1, transactionId: 1 }, { sparse: true });
 
 const ReceiptModel = model<IReceiptDocument>("Receipt", receiptSchema);
 export default ReceiptModel;

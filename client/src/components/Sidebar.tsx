@@ -15,7 +15,11 @@ import {
   ScanLine,
   Target,
   TrendingUp,
-  StickyNote 
+  StickyNote,
+  CreditCard,
+  Building2,
+  Workflow,
+  Download
 } 
 from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -23,6 +27,7 @@ import { useAppConfig } from "@/hooks/useAppConfig";
 import { useTheme } from "./ThemeProvider";
 import { Button } from "@/components/ui/Button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
+import { reportClientError } from "@/lib/runtimeLogger";
 
 type NavigationItem = {
   href: string;
@@ -39,9 +44,13 @@ const navigationItems: NavigationItem[] = [
   { href: "/onboarding", icon: Brain, label: "Onboarding" },
   { href: "/goals-debts", icon: Target, label: "Goals & Debts" },
   { href: "/transactions", icon: ReceiptText, label: "Transactions" },
+  { href: "/exports", icon: Download, label: "Exports" },
+  { href: "/workflows", icon: Workflow, label: "Workflows" },
   { href: "/receipts", icon: ScanLine, label: "Receipts", requiresFeature: "receipts_ocr_enabled" },
   { href: "/portfolio", icon: PieChart, label: "Investment Portfolio" },
   { href: "/all-insights", icon: ListChecks, label: "All Insights" },
+  { href: "/org", icon: Building2, label: "Organization" },
+  { href: "/billing", icon: CreditCard, label: "Billing" },
   { href: "/blogs", icon: FileText, label: "Blogs" },
   { href: "/growth-stories", icon: TrendingUp, label: "Growth Stories" },
   { href: "/notes", icon: StickyNote, label: "Note Taking", requiresFeature: "journal_enabled" },
@@ -65,7 +74,7 @@ export function Sidebar() {
     try {
       await logout();
     } catch (error) {
-      console.error("Logout failed:", error);
+      reportClientError("Logout failed", error);
     }
   };
 

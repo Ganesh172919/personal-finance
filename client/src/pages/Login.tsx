@@ -12,12 +12,15 @@ import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { useAuth } from "@/hooks/useAuth";
 import { useLocation, Link } from "wouter";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { ApiError, apiClient } from "@/lib/apiClient";
 import { useToast } from "@/hooks/useToast";
+import { getSearchParam, sanitizeNextPath } from "@/lib/url";
+
+const POST_AUTH_REDIRECT_KEY = "finwise.post_auth_redirect";
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address" }),
@@ -26,7 +29,7 @@ const loginSchema = z.object({
 
 export default function Login() {
   const { user, loading, checkAuthStatus } = useAuth();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const { toast } = useToast();
   const [googleEnabled, setGoogleEnabled] = useState(false);
 
@@ -34,11 +37,28 @@ export default function Login() {
     resolver: zodResolver(loginSchema),
   });
 
+  const nextFromQuery = useMemo(
+    () => sanitizeNextPath(getSearchParam(location, "next")),
+    [location]
+  );
+
   useEffect(() => {
-    if (user && !loading) {
-      navigate("/dashboard");
+    if (!user || loading) return;
+
+    const stored = sanitizeNextPath(sessionStorage.getItem(POST_AUTH_REDIRECT_KEY));
+    if (stored) {
+      sessionStorage.removeItem(POST_AUTH_REDIRECT_KEY);
+      navigate(stored);
+      return;
     }
-  }, [user, loading, navigate]);
+
+    if (nextFromQuery) {
+      navigate(nextFromQuery);
+      return;
+    }
+
+    navigate("/dashboard");
+  }, [user, loading, navigate, nextFromQuery]);
 
   useEffect(() => {
     (async () => {

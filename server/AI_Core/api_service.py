@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional, Literal
 import uvicorn
 import logging
 import os
+import hashlib
 from datetime import datetime
 from dotenv import load_dotenv
 import sys
@@ -33,7 +34,7 @@ load_dotenv()
 from config import settings
 from graph.workflow import create_financial_workflow
 from graph.state import UserProfile, FinancialGoal
-from contracts import Plan, ProcessResponse, WorkflowTraceEntry
+from contracts import Plan, ProcessResponse, WorkflowTraceEntry, ToolCall
 from tools import PlanInputs, build_plan, render_plan_markdown
 from utils import (
     setup_logging,
@@ -41,7 +42,9 @@ from utils import (
     reset_rate_limiter,
     begin_request_metrics,
     get_llm_call_count,
+    get_llm_usage,
 )
+from utils.finwise_server import FinWiseServerHttpError, simulate_tool_call
 from utils.prometheus_metrics import FALLBACK_TOTAL, LLM_CALLS_TOTAL, REQUEST_DURATION_MS
 from vision.engine import get_vision_dependency_status, ocr_image_to_lines
 from vision.errors import VisionDependencyError
@@ -50,6 +53,187 @@ from vision.handwriting_parser import extract_handwriting
 
 # Setup logging
 logger = setup_logging()
+
+def _tool_id(seed: str) -> str:
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    return digest[:12]
+
+
+def _build_default_tool_calls(plan: Plan, user_profile: Dict[str, Any]) -> List[ToolCall]:
+    """
+    Build deterministic, low-risk tool calls to improve retention and execution.
+
+    This is used as a fallback when the routed agent does not emit tool calls.
+    All returned calls must be safe-by-default and require explicit user confirmation.
+    """
+
+    if not user_profile or not isinstance(user_profile, dict):
+        return []
+
+    plan_dict = plan.model_dump() if hasattr(plan, "model_dump") else {}
+    key_metrics = plan_dict.get("key_metrics") if isinstance(plan_dict, dict) else {}
+
+    monthly_net_cash_flow = None
+    emergency_fund_months = None
+    total_debt = None
+
+    if isinstance(key_metrics, dict):
+        monthly_net_cash_flow = key_metrics.get("monthly_net_cash_flow")
+        emergency_fund_months = key_metrics.get("emergency_fund_months")
+        total_debt = key_metrics.get("total_debt")
+
+    tool_calls: List[ToolCall] = []
+
+    tool_calls.append(
+        ToolCall(
+            id=_tool_id("workflow:weekly-review:v1"),
+            title="Enable weekly money check-in",
+            description="Creates a weekly automation that adds a short review task so you stay on track.",
+            tool="workflows.create",
+            requires_confirmation=True,
+            risk="low",
+            args={
+                "name": "Weekly money check-in",
+                "enabled": True,
+                "trigger": {"type": "cron", "cron": "0 9 * * 1"},
+                "actions": [
+                    {
+                        "type": "create_task",
+                        "bucket": 7,
+                        "title": "Weekly money check-in",
+                        "why": "A short weekly review improves follow-through and prevents drift.",
+                        "steps": [
+                            "Review your last 7 days of transactions and top spending categories",
+                            "Check your cash flow vs. plan and adjust one category cap",
+                            "Apply or dismiss one high-impact task",
+                        ],
+                        "priority": "medium",
+                        "expected_impact": "Improves consistency and reduces overspending via a lightweight habit loop.",
+                        "kind": "cashflow",
+                        "due_days": 7,
+                    }
+                ],
+            },
+        )
+    )
+
+    try:
+        fund_months = float(emergency_fund_months) if emergency_fund_months is not None else None
+    except Exception:
+        fund_months = None
+
+    if fund_months is not None and fund_months < 3:
+        tool_calls.append(
+            ToolCall(
+                id=_tool_id("workflow:emergency-fund-topup:v1"),
+                title="Enable emergency fund top-up reminder",
+                description="Creates a monthly automation that reminds you to build your emergency fund runway.",
+                tool="workflows.create",
+                requires_confirmation=True,
+                risk="low",
+                args={
+                    "name": "Emergency fund top-up",
+                    "enabled": True,
+                    "trigger": {"type": "cron", "cron": "0 9 1 * *"},
+                    "actions": [
+                        {
+                            "type": "create_task",
+                            "bucket": 30,
+                            "title": "Emergency fund top-up",
+                            "why": "A stronger buffer reduces the chance of needing new debt for surprises.",
+                            "steps": [
+                                "Set a realistic monthly top-up amount",
+                                "Automate a transfer to your emergency fund",
+                                "Re-evaluate runway after any income/expense change",
+                            ],
+                            "priority": "high",
+                            "expected_impact": "Improves resilience and reduces the need for expensive short-term debt.",
+                            "kind": "goal",
+                            "due_days": 30,
+                        }
+                    ],
+                },
+            )
+        )
+
+    try:
+        debt_total = float(total_debt) if total_debt is not None else None
+    except Exception:
+        debt_total = None
+
+    if debt_total is not None and debt_total > 0:
+        tool_calls.append(
+            ToolCall(
+                id=_tool_id("workflow:debt-checkin:v1"),
+                title="Enable monthly debt payoff check-in",
+                description="Creates a monthly automation to keep your debt payoff plan on track.",
+                tool="workflows.create",
+                requires_confirmation=True,
+                risk="low",
+                args={
+                    "name": "Debt payoff check-in",
+                    "enabled": True,
+                    "trigger": {"type": "cron", "cron": "0 9 1 * *"},
+                    "actions": [
+                        {
+                            "type": "create_task",
+                            "bucket": 30,
+                            "title": "Debt payoff check-in",
+                            "why": "Small monthly adjustments compound into faster payoff.",
+                            "steps": [
+                                "Confirm minimum payments are scheduled",
+                                "Direct extra money to the highest-interest debt (avalanche) or smallest balance (snowball)",
+                                "Update balances in Goals & Debts after payment",
+                            ],
+                            "priority": "high",
+                            "expected_impact": "Reduces interest and accelerates payoff timeline.",
+                            "kind": "debt",
+                            "due_days": 30,
+                        }
+                    ],
+                },
+            )
+        )
+
+    try:
+        net_flow = float(monthly_net_cash_flow) if monthly_net_cash_flow is not None else None
+    except Exception:
+        net_flow = None
+
+    if net_flow is not None and net_flow < 0:
+        tool_calls.append(
+            ToolCall(
+                id=_tool_id("workflow:transaction-created-review:v1"),
+                title="Enable new-transaction review (event trigger)",
+                description="Creates an automation that adds a short review task when you add a new transaction.",
+                tool="workflows.create",
+                requires_confirmation=True,
+                risk="low",
+                args={
+                    "name": "New transaction review",
+                    "enabled": True,
+                    "trigger": {"type": "event", "event_type": "TransactionCreated"},
+                    "actions": [
+                        {
+                            "type": "create_task",
+                            "bucket": 7,
+                            "title": "Review your latest transaction",
+                            "why": "Frequent quick reviews help stabilize cash flow during recovery.",
+                            "steps": [
+                                "Confirm the category and amount are correct",
+                                "If it was avoidable, set a cap for that category this week",
+                            ],
+                            "priority": "medium",
+                            "expected_impact": "Creates a fast feedback loop to reduce overspending.",
+                            "kind": "budget",
+                            "due_days": 2,
+                        }
+                    ],
+                },
+            )
+        )
+
+    return tool_calls[:5]
 
 # Validate API key
 try:
@@ -86,7 +270,15 @@ app.add_middleware(
 )
 
 @app.get("/metrics")
-async def metrics():
+async def metrics(authorization: Optional[str] = Header(default=None)):
+    token = (os.getenv("AI_CORE_METRICS_TOKEN") or "").strip()
+    if not token:
+        raise HTTPException(status_code=404, detail="Metrics disabled")
+
+    header = (authorization or "").strip()
+    if not header.startswith("Bearer ") or header[len("Bearer "):] != token:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 @app.middleware("http")
@@ -194,6 +386,9 @@ class UserProfileRequest(BaseModel):
     investment_experience: str = "beginner"
     time_horizon: int = 10
     transactions: List[TransactionRequest] = []
+    currency: Optional[str] = None
+    locale: Optional[str] = None
+    timezone: Optional[str] = None
 
 class ConversationMessage(BaseModel):
     role: str
@@ -205,6 +400,8 @@ class ProcessOptions(BaseModel):
 class ProcessRequest(BaseModel):
     user_input: str
     user_profile: Optional[UserProfileRequest] = None
+    org_id: Optional[str] = None
+    user_id: Optional[str] = None
     conversation_history: List[ConversationMessage] = Field(default_factory=list)
     session_summary: Optional[str] = None
     options: ProcessOptions = Field(default_factory=ProcessOptions)
@@ -253,7 +450,7 @@ async def _read_image_payload(request: Request) -> bytes:
 
 
 @app.post("/api/vision/receipts/parse")
-async def parse_receipt_image(request: Request, lang: Optional[str] = None, currencyHint: str = "INR"):
+async def parse_receipt_image(request: Request, lang: Optional[str] = None, currencyHint: str = "USD"):
     """OCR + receipt field extraction from an uploaded image."""
     request_id = getattr(request.state, "request_id", str(uuid4()))
 
@@ -262,7 +459,7 @@ async def parse_receipt_image(request: Request, lang: Optional[str] = None, curr
         resolved_lang, warnings = _normalize_vision_lang(lang)
 
         lines = ocr_image_to_lines(image_bytes, lang=resolved_lang)
-        parsed = extract_receipt(lines, currency_hint=(currencyHint or "INR"))
+        parsed = extract_receipt(lines, currency_hint=(currencyHint or "USD"))
 
         return {
             "success": True,
@@ -345,7 +542,14 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
     request_id = getattr(http_request.state, "request_id", str(uuid4()))
 
     try:
-        logger.info(f"[requestId={request_id}] Processing request: {request.user_input[:100]}...")
+        logger.info(
+            "[requestId=%s] Processing request (input_length=%s, has_profile=%s, history_items=%s, narrative=%s)",
+            request_id,
+            len(request.user_input or ""),
+            bool(request.user_profile),
+            len(request.conversation_history or []),
+            bool(getattr(request.options, "narrative", False)),
+        )
         
         user_profile_dict = request.user_profile.model_dump() if request.user_profile else None
         
@@ -372,7 +576,10 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                 risk_tolerance=user_profile_dict['risk_tolerance'],
                 investment_experience=user_profile_dict['investment_experience'],
                 time_horizon=user_profile_dict['time_horizon'],
-                transactions=user_profile_dict.get('transactions', [])
+                transactions=user_profile_dict.get('transactions', []),
+                currency=user_profile_dict.get('currency'),
+                locale=user_profile_dict.get('locale'),
+                timezone=user_profile_dict.get('timezone'),
             )
             profile_data_for_workflow = profile_instance.model_dump()
         else:
@@ -485,8 +692,14 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                 )
             )
 
+        currency_code = "USD"
+        if profile_data_for_workflow and isinstance(profile_data_for_workflow, dict):
+            candidate = str(profile_data_for_workflow.get("currency") or "").strip().upper()
+            if len(candidate) == 3 and candidate.isalpha():
+                currency_code = candidate
+
         if not str(response_text).strip():
-            response_text = render_plan_markdown(plan)
+            response_text = render_plan_markdown(plan, currency_code=currency_code)
 
         trace_simplified = _simplify_for_json(workflow_trace)
         trace_models: List[WorkflowTraceEntry] = []
@@ -496,6 +709,104 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                     trace_models.append(WorkflowTraceEntry.model_validate(entry))
                 except Exception:
                     continue
+
+        tool_calls_simplified = _simplify_for_json(result.get("tool_calls") or [])
+        tool_call_models: List[ToolCall] = []
+        if isinstance(tool_calls_simplified, list):
+            for entry in tool_calls_simplified:
+                try:
+                    tool_call_models.append(ToolCall.model_validate(entry))
+                except Exception:
+                    continue
+
+        if (
+            not tool_call_models
+            and profile_data_for_workflow
+            and isinstance(profile_data_for_workflow, dict)
+        ):
+            try:
+                tool_call_models = _build_default_tool_calls(plan, profile_data_for_workflow)
+            except Exception:
+                tool_call_models = []
+
+        # Optional: validate tool calls via FinWise server internal tools endpoint.
+        # This drops tool calls the user cannot apply (RBAC) and suppresses actions that are ineligible (e.g., plan-gated).
+        tool_validation: Dict[str, Any] = {"enabled": False}
+        org_id = (request.org_id or "").strip() if hasattr(request, "org_id") else ""
+        user_id = (request.user_id or "").strip() if hasattr(request, "user_id") else ""
+        can_validate_tools = (
+            bool(tool_call_models)
+            and bool(org_id)
+            and bool(user_id)
+            and bool(settings.FINWISE_SERVER_URL)
+            and bool(settings.FINWISE_TOOLS_TOKEN)
+        )
+
+        if can_validate_tools:
+            validated: List[ToolCall] = []
+            dropped: List[Dict[str, Any]] = []
+            previews: List[Dict[str, Any]] = []
+            aborted = False
+
+            for call in tool_call_models:
+                try:
+                    sim = simulate_tool_call(
+                        org_id=org_id,
+                        user_id=user_id,
+                        tool_call=call.model_dump(),
+                        request_id=request_id,
+                    )
+                    preview = sim.get("preview")
+
+                    # Convention: eligible=false preview blocks the action from being surfaced.
+                    if isinstance(preview, dict) and preview.get("eligible") is False:
+                        dropped.append({"id": call.id, "tool": call.tool, "reason": "ineligible"})
+                        continue
+
+                    validated.append(call)
+                    previews.append(
+                        {
+                            "tool_call_id": call.id,
+                            "tool": call.tool,
+                            "preview": preview if isinstance(preview, (dict, list, str, int, float, bool)) else None,
+                        }
+                    )
+                except FinWiseServerHttpError as exc:
+                    # If token is misconfigured, skip validation (do not drop actions).
+                    if exc.status_code in (401, 403) and (exc.code in ("FORBIDDEN", "NOT_FOUND")):
+                        tool_validation = {"enabled": False, "reason": exc.code or "FORBIDDEN"}
+                        aborted = True
+                        break
+
+                    dropped.append(
+                        {
+                            "id": call.id,
+                            "tool": call.tool,
+                            "status_code": exc.status_code,
+                            "code": exc.code,
+                            "message": exc.message,
+                        }
+                    )
+                except Exception as exc:
+                    # Connectivity/timeouts: skip validation entirely (do not drop actions).
+                    tool_validation = {"enabled": False, "reason": "UNAVAILABLE", "error": str(exc)[:200]}
+                    aborted = True
+                    break
+
+            if not aborted:
+                tool_call_models = validated
+                tool_validation = {
+                    "enabled": True,
+                    "validated": len(validated),
+                    "dropped": len(dropped),
+                    "dropped_items": dropped[:10],
+                    "previews": previews[:10],
+                }
+
+            try:
+                detailed_analysis["tool_validation"] = tool_validation
+            except Exception:
+                pass
 
         if fallback_used:
             FALLBACK_TOTAL.labels(endpoint="process").inc()
@@ -515,6 +826,8 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             llm_call_count=int(llm_call_count or 0),
             request_id=str(request_id),
             plan=plan,
+            usage=get_llm_usage(),
+            tool_calls=tool_call_models,
         )
         
     except Exception as e:
@@ -549,6 +862,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             llm_call_count=int(get_llm_call_count() or 0),
             request_id=str(request_id),
             plan=plan,
+            usage=get_llm_usage(),
         )
 
 @app.post("/api/agents/what-if-scenario")

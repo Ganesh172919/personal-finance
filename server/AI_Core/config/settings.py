@@ -24,6 +24,10 @@ class Settings:
     TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.1"))
     MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "4096"))
 
+    # Optional cost estimation (USD per 1K tokens). Defaults to 0 for local/dev.
+    LLM_COST_USD_PER_1K_INPUT_TOKENS = float(os.getenv("LLM_COST_USD_PER_1K_INPUT_TOKENS", "0"))
+    LLM_COST_USD_PER_1K_OUTPUT_TOKENS = float(os.getenv("LLM_COST_USD_PER_1K_OUTPUT_TOKENS", "0"))
+
     # Rate limiting / retry behavior
     LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
     LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "0"))
@@ -50,6 +54,10 @@ class Settings:
         lang.strip() for lang in _vision_lang_allowed_env.split(",") if lang.strip()
     ]
     VISION_MAX_IMAGE_BYTES = int(os.getenv("VISION_MAX_IMAGE_BYTES", str(10 * 1024 * 1024)))
+
+    # Optional tool-host integration (server-side tools)
+    FINWISE_SERVER_URL = os.getenv("FINWISE_SERVER_URL", "").strip()
+    FINWISE_TOOLS_TOKEN = os.getenv("FINWISE_TOOLS_TOKEN", "").strip()
 
     @classmethod
     def get_agent_config(cls, agent_type: str) -> Dict[str, Any]:

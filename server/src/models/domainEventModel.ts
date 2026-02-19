@@ -1,6 +1,7 @@
 import { Schema, model, Document, Types } from "mongoose";
 
 export interface IDomainEvent {
+  orgId: Types.ObjectId;
   userId: Types.ObjectId;
   eventType: string;
   aggregateType: string;
@@ -19,6 +20,7 @@ export interface IDomainEventDocument extends IDomainEvent, Document {
 
 const domainEventSchema = new Schema<IDomainEventDocument>(
   {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     eventType: { type: String, required: true, trim: true, maxlength: 120 },
     aggregateType: { type: String, required: true, trim: true, maxlength: 80 },
@@ -31,7 +33,7 @@ const domainEventSchema = new Schema<IDomainEventDocument>(
   { timestamps: true }
 );
 
-domainEventSchema.index({ userId: 1, createdAt: -1 });
+domainEventSchema.index({ orgId: 1, userId: 1, createdAt: -1 });
 domainEventSchema.index({ eventType: 1, createdAt: -1 });
 domainEventSchema.index({ processedAt: 1, createdAt: 1 });
 

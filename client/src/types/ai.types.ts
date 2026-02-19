@@ -2,6 +2,28 @@ import type { IWorkflowTraceEntry } from "@/types";
 
 export type Priority = "low" | "medium" | "high";
 
+export type ToolCallRisk = Priority;
+
+export type ToolName =
+  | "transactions.create"
+  | "goals.createOrUpdate"
+  | "debts.createOrUpdate"
+  | "workflows.create"
+  | "workflows.enable"
+  | "workflows.run"
+  | "exports.create"
+  | "notifications.sendEmail";
+
+export interface ToolCall {
+  id: string;
+  title: string;
+  description: string;
+  tool: ToolName;
+  args: Record<string, unknown>;
+  requires_confirmation: boolean;
+  risk: ToolCallRisk;
+}
+
 export interface KeyMetrics {
   monthly_net_cash_flow: number | null;
   savings_rate: number | null;
@@ -39,6 +61,7 @@ export interface ProcessAICommandResponse {
   success: boolean;
   response: string;
   plan?: Plan;
+  tool_calls?: ToolCall[];
   agent_output_id?: string;
   analysis_type?: string;
   agents_involved?: string[];

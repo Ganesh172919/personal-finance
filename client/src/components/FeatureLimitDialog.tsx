@@ -1,16 +1,12 @@
 import { Button } from "@/components/ui/Button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
+import { useMemo } from "react";
+import { useAppConfig } from "@/hooks/useAppConfig";
 import { useAppDialogStore } from "@/stores/appDialogStore";
 
 const formatFeature = (feature: unknown) => {
   if (!feature) return "This feature";
   return String(feature).replace(/_/g, " ");
-};
-
-const formatNumber = (value: unknown) => {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return "—";
-  return num.toLocaleString("en-IN");
 };
 
 export function FeatureLimitDialog() {
@@ -19,6 +15,15 @@ export function FeatureLimitDialog() {
   const openPlanAndUsage = useAppDialogStore((s) => s.openPlanAndUsage);
 
   const open = Boolean(featureLimit?.open);
+  const configQuery = useAppConfig({ enabled: open });
+  const locale = configQuery.data?.org?.locale || "en-US";
+  const numberFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
+  const formatNumber = (value: unknown) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return "—";
+    return numberFormatter.format(num);
+  };
+
   const details = (featureLimit?.details || {}) as any;
 
   const feature = details.feature;
@@ -48,7 +53,7 @@ export function FeatureLimitDialog() {
             <div className="font-medium text-foreground">{formatFeature(feature)}</div>
             <div className="mt-1 text-muted-foreground">
               Limit: {formatNumber(limit)} • Used: {formatNumber(used)} • Remaining:{" "}
-              {remaining === null ? "—" : remaining.toLocaleString("en-IN")}
+              {remaining === null ? "—" : formatNumber(remaining)}
             </div>
             {requested ? (
               <div className="mt-1 text-muted-foreground">Requested: {formatNumber(requested)}</div>
@@ -86,4 +91,3 @@ export function FeatureLimitDialog() {
     </Dialog>
   );
 }
-

@@ -42,6 +42,13 @@ const aiCacheTotal = new Counter({
   registers: [registry],
 });
 
+const responseCacheTotal = new Counter({
+  name: "finwise_response_cache_total",
+  help: "Response cache lookups by endpoint and hit/miss",
+  labelNames: ["endpoint", "hit"] as const,
+  registers: [registry],
+});
+
 const aiCircuitOpen = new Gauge({
   name: "finwise_ai_circuit_open",
   help: "AI Core circuit breaker state (1=open, 0=closed)",
@@ -125,6 +132,11 @@ export const recordAiCoreRequest = (params: {
 export const recordAiCache = (params: { endpoint: string; hit: boolean }) => {
   if (!isEnabled()) return;
   aiCacheTotal.labels(params.endpoint, params.hit ? "true" : "false").inc();
+};
+
+export const recordResponseCache = (params: { endpoint: string; hit: boolean }) => {
+  if (!isEnabled()) return;
+  responseCacheTotal.labels(params.endpoint, params.hit ? "true" : "false").inc();
 };
 
 export const setAiCircuitBreakerState = (params: { circuitOpen: boolean; consecutiveFailures: number }) => {

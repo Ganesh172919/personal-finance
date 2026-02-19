@@ -2,8 +2,10 @@ import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";
 import { useQuery } from "@tanstack/react-query";
 import { IFinancialProfile, IFinancialGoal } from "@/types";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
 export function GoalProgress() {
+  const { formatMoney } = useOrgFormatters();
   const { data: profile } = useQuery<IFinancialProfile>({
     queryKey: ["/api/financial-profiles/me"],
   });
@@ -58,8 +60,7 @@ export function GoalProgress() {
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm font-medium text-foreground">{goal.name}</span>
                 <span className="text-sm text-muted-foreground">
-                  ₹{goal.current.toLocaleString()} / ₹
-                  {goal.target.toLocaleString()}
+                  {formatMoney(goal.current, { maximumFractionDigits: 0 })} / {formatMoney(goal.target, { maximumFractionDigits: 0 })}
                 </span>
               </div>
               <div className="relative">

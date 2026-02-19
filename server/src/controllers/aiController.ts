@@ -6,6 +6,7 @@ import TaskModel from "../models/taskModel";
 import { IUserDocument } from "../models/userModel";
 import { v4 as uuidv4 } from "uuid";
 import mongoose from "mongoose";
+import OrganizationModel from "../models/organizationModel";
 import { processAiCoreRequest, processAiCoreScenario } from "../services/aiCoreClient";
 import { buildProcessRequest } from "../services/aiRequestBuilder";
 import { buildProcessCommandCacheKey, ttlMs } from "../services/aiCache";
@@ -23,6 +24,7 @@ import {
 } from "../services/profileService";
 import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements";
 import { HttpError } from "../middleware/httpError";
+import { logger } from "../config/logger";
 const DEFAULT_GOAL_TIMELINE_MONTHS = 12;
 const PROFILE_UPDATABLE_FIELDS = [
   "age",
@@ -69,6 +71,26 @@ const getTimelineMonths = (deadline?: string) => {
 
 const getSingleParam = (value: string | string[] | undefined) =>
   Array.isArray(value) ? value[0] : value;
+
+const requireOrgId = (req: Request) => {
+  const orgIdRaw = String((req as any).org?.orgId || "");
+  if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
+    throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
+  }
+  return new mongoose.Types.ObjectId(orgIdRaw);
+};
+
+const getOrgAiSettings = async (orgId: mongoose.Types.ObjectId) => {
+  const org = await OrganizationModel.findById(orgId)
+    .select({ currency: 1, locale: 1, timezone: 1 })
+    .lean();
+
+  return {
+    currency: String((org as any)?.currency || "USD"),
+    locale: String((org as any)?.locale || "en-US"),
+    timezone: String((org as any)?.timezone || "UTC"),
+  };
+};
 
 type ScenarioParametersInput =
   | {
@@ -119,23 +141,28 @@ export const processAICommand = async (req: Request, res: Response) => {
     const { command, options } = req.body as any;
     const { requestId } = req;
     const narrative = typeof options?.narrative === "boolean" ? options.narrative : false;
+    const orgId = requireOrgId(req);
 
     await enforceFeatureLimit({
+      orgId,
       userId: user._id,
       feature: "monthly_ai_calls",
       units: 1,
       requestId,
     });
 
-    const profile = await ensureProfileWithMigration(user._id);
-
-    const journalContext = await getJournalContextForAi({ userId: user._id });
+    const [profile, journalContext, orgSettings] = await Promise.all([
+      ensureProfileWithMigration({ orgId, userId: user._id }),
+      getJournalContextForAi({ orgId, userId: user._id }),
+      getOrgAiSettings(orgId),
+    ]);
 
     const profileUpdatedAt = profile.updatedAt ? new Date(profile.updatedAt).toISOString() : "unknown";
     const transactionsUpdatedAt = profile.transactionsUpdatedAt
       ? new Date(profile.transactionsUpdatedAt as unknown as Date).toISOString()
       : "unknown";
     const cacheKey = buildProcessCommandCacheKey({
+      orgId: orgId.toString(),
       userId: user._id.toString(),
       profileUpdatedAt,
       transactionsUpdatedAt,
@@ -146,27 +173,30 @@ export const processAICommand = async (req: Request, res: Response) => {
 
     const cached = await AiResponseCacheModel.findOne({ cacheKey }).lean();
     if (cached?.responseData && typeof cached.responseData === "object") {
-      console.log(`[requestId=${requestId}] process-command cache_hit=true`);
+      logger.info(`[requestId=${requestId}] process-command cache_hit=true`);
       recordAiCache({ endpoint: "process-command", hit: true });
       return res.json({ ...(cached.responseData as any), cache_hit: true });
     }
 
     recordAiCache({ endpoint: "process-command", hit: false });
 
-    const txResult = await fetchTransactionsForAi({ userId: user._id });
+    const txResult = await fetchTransactionsForAi({ orgId, userId: user._id });
 
     const { request: aiRequest, stats } = buildProcessRequest({
       userInput: command,
       profile,
+      orgId: orgId.toString(),
+      userId: user._id.toString(),
+      orgSettings,
       transactions: txResult.transactions,
       totalTransactions: txResult.stats.totalTransactions,
       sessionSummary: journalContext.summary || undefined,
       narrative,
     });
 
-    console.log(`[requestId=${requestId}] Sending command to Python AI Core`);
-    console.log(`[requestId=${requestId}] userInputLength=${command?.length ?? 0}`);
-    console.log(
+    logger.info(`[requestId=${requestId}] Sending command to Python AI Core`);
+    logger.info(`[requestId=${requestId}] userInputLength=${command?.length ?? 0}`);
+    logger.info(
       `[requestId=${requestId}] profileAge=${profile.age} transactionCountSent=${stats.sentTransactions} droppedTransactions=${stats.droppedTransactions}`
     );
 
@@ -179,14 +209,14 @@ export const processAICommand = async (req: Request, res: Response) => {
 
     const { plan: normalizedPlan, valid: planValid } = normalizeAiPlan(aiResponse.plan);
     if (!planValid) {
-      console.warn(`[requestId=${requestId}] ai.plan_validation_failed=true`);
+      logger.warn(`[requestId=${requestId}] ai.plan_validation_failed=true`);
     }
     
-    console.log(
+    logger.info(
       `[requestId=${requestId}] aiCore.durationMs=${aiDurationMs} fallback_used=${aiResponse.fallback_used} llm_call_count=${aiResponse.llm_call_count} analysis_type=${aiResponse.analysis_type}`
     );
     
-    console.log(
+    logger.info(
       `[requestId=${requestId}] Python response agent=${aiResponse.agent} analysisType=${aiResponse.analysis_type} responseLength=${aiResponse.final_output?.length || 0}`
     );
 
@@ -198,6 +228,7 @@ export const processAICommand = async (req: Request, res: Response) => {
     
     // Create main agent output
     const mainOutput = await AgentOutputModel.create({
+      orgId,
       userId: user._id,
       sessionId,
       userInput: command,
@@ -210,6 +241,7 @@ export const processAICommand = async (req: Request, res: Response) => {
         agent: aiResponse.agent || "master",
         insights: aiResponse.insights || [],
         plan: normalizedPlan,
+        tool_calls: aiResponse.tool_calls || [],
         fallback_used: aiResponse.fallback_used,
         llm_call_count: aiResponse.llm_call_count
       },
@@ -228,6 +260,7 @@ export const processAICommand = async (req: Request, res: Response) => {
     if (aiResponse.insights && Array.isArray(aiResponse.insights)) {
       for (const insight of aiResponse.insights) {
         await AgentOutputModel.create({
+          orgId,
           userId: user._id,
           sessionId,
           userInput: command,
@@ -257,6 +290,7 @@ export const processAICommand = async (req: Request, res: Response) => {
       actionType: aiResponse.actionType,
       priority,
       insights: aiResponse.insights,
+      tool_calls: aiResponse.tool_calls || [],
       workflow_trace: aiResponse.workflow_trace || [],
       detailed_analysis: aiResponse.detailed_analysis || {},
       fallback_used: aiResponse.fallback_used,
@@ -268,6 +302,7 @@ export const processAICommand = async (req: Request, res: Response) => {
       { cacheKey },
       {
         $set: {
+          orgId,
           userId: user._id,
           endpoint: "process-command",
           responseData: responsePayload,
@@ -278,9 +313,14 @@ export const processAICommand = async (req: Request, res: Response) => {
     );
 
     await recordFeatureUsage({
+      orgId,
       userId: user._id,
       feature: "monthly_ai_calls",
       units: 1,
+      tokensIn: aiResponse.usage?.tokens_in,
+      tokensOut: aiResponse.usage?.tokens_out,
+      costUsd: aiResponse.usage?.cost_usd,
+      modelName: aiResponse.usage?.models?.[0],
       requestId,
       context: {
         endpoint: "process-command",
@@ -298,8 +338,8 @@ export const processAICommand = async (req: Request, res: Response) => {
         request_id: req.requestId,
       });
     }
-    console.error(`[requestId=${req.requestId}] AI processing error status=${error.response?.status ?? "unknown"}`);
-    console.error(`[requestId=${req.requestId}]`, error.response?.data || error.message);
+    logger.error(`[requestId=${req.requestId}] AI processing error status=${error.response?.status ?? "unknown"}`);
+    logger.error(`[requestId=${req.requestId}]`, error.response?.data || error.message);
     
     res.status(500).json({ 
       success: false,
@@ -315,15 +355,20 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
     const user = req.user as IUserDocument;
     const { parameters } = req.body as { parameters: ScenarioParametersInput };
     const { requestId } = req;
+    const orgId = requireOrgId(req);
 
     await enforceFeatureLimit({
+      orgId,
       userId: user._id,
       feature: "scenario_depth",
       units: 1,
       requestId,
     });
 
-    const profile = await ensureProfile(user._id);
+    const [profile, orgSettings] = await Promise.all([
+      ensureProfile({ orgId, userId: user._id }),
+      getOrgAiSettings(orgId),
+    ]);
     const normalized = normalizeScenarioParameters(parameters);
     if (!Number.isFinite(normalized.amount) || normalized.amount <= 0) {
       return res.status(400).json({
@@ -331,7 +376,7 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
         request_id: requestId
       });
     }
-    const txResult = await fetchTransactionsForAi({ userId: user._id, maxItems: 120 });
+    const txResult = await fetchTransactionsForAi({ orgId, userId: user._id, maxItems: 120 });
 
     const scenarioRequest = {
       user_profile: {
@@ -349,6 +394,9 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
         risk_tolerance: profile.risk_tolerance,
         investment_experience: profile.investment_experience,
         time_horizon: 10,
+        currency: orgSettings.currency,
+        locale: orgSettings.locale,
+        timezone: orgSettings.timezone,
         transactions: txResult.transactions.map(transaction => ({
           amount: transaction.amount,
           category: transaction.category,
@@ -373,6 +421,7 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
     }
 
     await publishDomainEvent({
+      orgId,
       userId: user._id,
       eventType: "ScenarioEvaluated",
       aggregateType: "scenario",
@@ -386,6 +435,7 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
     });
 
     await recordFeatureUsage({
+      orgId,
       userId: user._id,
       feature: "scenario_depth",
       units: 1,
@@ -397,7 +447,7 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
       },
     });
 
-    console.log(`[requestId=${requestId}] aiCore.scenario.durationMs=${aiDurationMs}`);
+    logger.info(`[requestId=${requestId}] aiCore.scenario.durationMs=${aiDurationMs}`);
 
     res.json({
       ...response,
@@ -417,7 +467,7 @@ export const processWhatIfScenario = async (req: Request, res: Response) => {
         request_id: req.requestId,
       });
     }
-    console.error(`[requestId=${req.requestId}] Scenario processing error`, error);
+    logger.error(`[requestId=${req.requestId}] Scenario processing error`, error);
     res.status(500).json({ 
       message: "Failed to process scenario",
       error: error.message,
@@ -434,14 +484,15 @@ export const getFinancialProfile = async (req: Request, res: Response) => {
     const txLimit = Number.isFinite(txLimitRaw) ? Math.min(Math.max(1, txLimitRaw), 100) : 50;
 
     if (req.params.userId) {
-      console.warn(
+      logger.warn(
         `[requestId=${req.requestId}] Deprecated endpoint /financial-profiles/:userId called; ignoring userId param`
       );
     }
     
+    const orgId = requireOrgId(req);
     const profile = includeTransactions
-      ? await ensureProfileWithMigration(user._id)
-      : await ensureProfile(user._id);
+      ? await ensureProfileWithMigration({ orgId, userId: user._id })
+      : await ensureProfile({ orgId, userId: user._id });
 
     const completeness = {
       has_income: Number(profile.annual_income) > 0,
@@ -469,7 +520,7 @@ export const getFinancialProfile = async (req: Request, res: Response) => {
       return res.json({ ...dto, goals, debts, completeness });
     }
 
-    const recentTransactions = await TransactionModel.find({ userId: user._id })
+    const recentTransactions = await TransactionModel.find({ orgId, userId: user._id })
       .sort({ date: -1 })
       .limit(txLimit)
       .lean();
@@ -510,7 +561,7 @@ export const getFinancialProfile = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error fetching profile:`, error);
+    logger.error(`[requestId=${req.requestId}] Error fetching profile:`, error);
     res.status(500).json({ message: "Failed to fetch financial profile", request_id: req.requestId });
   }
 };
@@ -529,16 +580,18 @@ export const updateFinancialProfile = async (req: Request, res: Response) => {
     }
 
     if (req.params.userId) {
-      console.warn(
+      logger.warn(
         `[requestId=${req.requestId}] Deprecated endpoint /financial-profiles/:userId called; ignoring userId param`
       );
     }
 
+    const orgId = requireOrgId(req);
     const profile = await FinancialProfileModel.findOneAndUpdate(
-      { userId: user._id },
+      { orgId, userId: user._id },
       {
         $set: updates,
         $setOnInsert: {
+          orgId,
           userId: user._id
         }
       },
@@ -589,7 +642,7 @@ export const updateFinancialProfile = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error updating profile:`, error);
+    logger.error(`[requestId=${req.requestId}] Error updating profile:`, error);
     res.status(500).json({ message: "Failed to update financial profile", request_id: req.requestId });
   }
 };
@@ -603,7 +656,8 @@ export const addInvestment = async (req: Request, res: Response) => {
     }
 
     const { name, amount, date } = req.body;
-    const profile = await ensureProfileWithMigration(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
 
     const normalizedAmount = Math.abs(Number(amount));
     const now = new Date();
@@ -616,6 +670,7 @@ export const addInvestment = async (req: Request, res: Response) => {
     };
 
     await TransactionModel.create({
+      orgId,
       userId: user._id,
       amount: -normalizedAmount,
       category: "Investment",
@@ -635,7 +690,7 @@ export const addInvestment = async (req: Request, res: Response) => {
       profile
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error in addInvestment:`, error);
+    logger.error(`[requestId=${req.requestId}] Error in addInvestment:`, error);
     res.status(500).json({
       message: "Failed to add investment",
       error: error.message,
@@ -650,7 +705,8 @@ export const getRecentAgentOutputs = async (req: Request, res: Response) => {
     const limitRaw = Number((req.query as any)?.limit ?? 20);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, limitRaw), 100) : 20;
 
-    const outputs = await AgentOutputModel.find({ userId: user._id })
+    const orgId = requireOrgId(req);
+    const outputs = await AgentOutputModel.find({ orgId, userId: user._id })
       .sort({ timestamp: -1 })
       .limit(limit)
       .select({
@@ -668,6 +724,7 @@ export const getRecentAgentOutputs = async (req: Request, res: Response) => {
     const linkedTaskRows =
       objectIds.length > 0
         ? await TaskModel.find({
+            orgId,
             userId: user._id,
             "source.agentOutputId": { $in: objectIds },
           })
@@ -698,7 +755,7 @@ export const getRecentAgentOutputs = async (req: Request, res: Response) => {
       request_id: req.requestId,
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error fetching recent outputs:`, error);
+    logger.error(`[requestId=${req.requestId}] Error fetching recent outputs:`, error);
     return res.status(500).json({ message: "Failed to fetch recent outputs", request_id: req.requestId });
   }
 };
@@ -706,6 +763,7 @@ export const getRecentAgentOutputs = async (req: Request, res: Response) => {
 export const getAgentOutputById = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
     const id = getSingleParam(req.params.id);
     if (!id) {
       return res.status(400).json({ message: "Invalid insight ID" });
@@ -715,9 +773,9 @@ export const getAgentOutputById = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid insight ID" });
     }
 
-    const output = await AgentOutputModel.findById(id);
+    const output = await AgentOutputModel.findOne({ _id: id, orgId, userId: user._id });
 
-    if (!output || output.userId.toString() !== user._id.toString()) {
+    if (!output) {
       return res.status(404).json({ message: "Insight not found" });
     }
     
@@ -748,7 +806,7 @@ export const getAgentOutputById = async (req: Request, res: Response) => {
     res.json(insight);
 
   } catch (error: any) {
-    console.error("Error fetching single agent output:", error);
+    logger.error("Error fetching single agent output:", error);
     res.status(500).json({ message: "Failed to fetch agent output" });
   }
 };
@@ -756,11 +814,12 @@ export const getAgentOutputById = async (req: Request, res: Response) => {
 export const submitAgentOutputFeedback = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
     const { id } = req.params;
     const { rating, note } = req.body as { rating: "up" | "down"; note?: string };
 
     const updated = await AgentOutputModel.findOneAndUpdate(
-      { _id: id, userId: user._id },
+      { _id: id, orgId, userId: user._id },
       {
         $set: {
           feedback: {
@@ -783,7 +842,7 @@ export const submitAgentOutputFeedback = async (req: Request, res: Response) => 
       request_id: req.requestId
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error recording feedback:`, error);
+    logger.error(`[requestId=${req.requestId}] Error recording feedback:`, error);
     return res.status(500).json({ message: "Failed to record feedback", request_id: req.requestId });
   }
 };
@@ -791,17 +850,18 @@ export const submitAgentOutputFeedback = async (req: Request, res: Response) => 
 export const getAgentOutputs = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
     const { userId } = req.params;
     const limitRaw = Number((req.query as any)?.limit ?? 20);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, limitRaw), 100) : 20;
 
     if (userId && userId !== user._id.toString()) {
-      console.warn(
+      logger.warn(
         `[requestId=${req.requestId}] /agent-outputs/user/:userId called with mismatched userId; serving authenticated user's outputs`
       );
     }
 
-    const outputs = await AgentOutputModel.find({ userId: user._id })
+    const outputs = await AgentOutputModel.find({ orgId, userId: user._id })
       .sort({ timestamp: -1 })
       .limit(limit)
       .lean();
@@ -836,7 +896,7 @@ export const getAgentOutputs = async (req: Request, res: Response) => {
     res.json(insights);
 
   } catch (error: any) {
-    console.error("Error fetching outputs:", error);
+    logger.error("Error fetching outputs:", error);
     res.status(500).json({ message: "Failed to fetch agent outputs" });
   }
 };

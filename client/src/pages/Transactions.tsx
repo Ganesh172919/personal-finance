@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/Dialog";
 import { useToast } from "@/hooks/useToast";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import {
   ApiError,
   createTransaction,
@@ -86,6 +87,7 @@ const formatError = (error: unknown, fallback: string) => {
 export default function Transactions() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { formatMoney, formatDate, currency } = useOrgFormatters();
 
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
@@ -169,19 +171,8 @@ export default function Transactions() {
 
   const formatAmount = (amount: number, type: TransactionType) => {
     const prefix = type === "income" ? "+" : "-";
-    return `${prefix}${new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(Math.abs(amount))}`;
+    return `${prefix}${formatMoney(Math.abs(amount), { maximumFractionDigits: 0 })}`;
   };
-
-  const formatDate = (date: string | Date) =>
-    new Date(date).toLocaleDateString("en-IN", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
 
   const startCreate = () => {
     setEditingId(null);
@@ -341,7 +332,7 @@ export default function Transactions() {
         <div className="flex items-center justify-between gap-4 mb-2">
           <h1 className="text-3xl font-bold text-foreground">Transactions</h1>
           <div className="flex gap-2">
-            <ReceiptOcrDialog currencyHint="INR" />
+            <ReceiptOcrDialog currencyHint={currency} />
             <Dialog open={importOpen} onOpenChange={setImportOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline">Import CSV</Button>

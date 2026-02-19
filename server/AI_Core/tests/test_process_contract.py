@@ -20,6 +20,9 @@ MINIMAL_PROFILE = {
 
 PROFILE_WITH_TRANSACTIONS = {
     **MINIMAL_PROFILE,
+    "currency": "USD",
+    "locale": "en-US",
+    "timezone": "America/New_York",
     "debts": [
         {
             "name": "Credit Card",
@@ -83,6 +86,10 @@ def test_process_contract_full_profile():
         assert parsed.success is True
         assert parsed.analysis_type
         assert parsed.plan.key_metrics is not None
+        if parsed.plan.key_metrics.savings_rate is not None:
+            assert 0 <= parsed.plan.key_metrics.savings_rate <= 100
+        if parsed.plan.key_metrics.debt_to_income is not None:
+            assert 0 <= parsed.plan.key_metrics.debt_to_income <= 100
 
 
 def test_process_contract_no_profile_education_path():

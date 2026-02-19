@@ -36,7 +36,7 @@ class FinancialEducatorAgent:
 
     def explain_concept(self, user_input: str, user_profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Explain a concept with one LLM call and guaranteed fallback."""
-        logger.info("Explaining financial concept: %s...", user_input[:100])
+        logger.info("Explaining financial concept (input_length=%s)", len(user_input or ""))
 
         concept = self._simple_concept_extraction(user_input)
         cached = self._cache_get(concept)

@@ -15,18 +15,24 @@ export const DEFAULT_PROFILE = {
   investment_experience: "beginner" as const,
 };
 
-export const ensureProfile = async (userId: Types.ObjectId): Promise<IFinancialProfileDocument> => {
-  let profile = await FinancialProfileModel.findOne({ userId });
+export const ensureProfile = async (params: {
+  orgId: Types.ObjectId;
+  userId: Types.ObjectId;
+}): Promise<IFinancialProfileDocument> => {
+  let profile = await FinancialProfileModel.findOne({ orgId: params.orgId, userId: params.userId });
   if (!profile) {
-    profile = await FinancialProfileModel.create({ userId, ...DEFAULT_PROFILE });
+    profile = await FinancialProfileModel.create({ orgId: params.orgId, userId: params.userId, ...DEFAULT_PROFILE });
   }
   return profile;
 };
 
 export const ensureProfileWithMigration = async (
-  userId: Types.ObjectId
+  params: {
+    orgId: Types.ObjectId;
+    userId: Types.ObjectId;
+  }
 ): Promise<IFinancialProfileDocument> => {
-  const profile = await ensureProfile(userId);
+  const profile = await ensureProfile(params);
   await ensureProfileTransactionsMigrated(profile);
   return profile;
 };

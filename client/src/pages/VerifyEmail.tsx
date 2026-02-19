@@ -6,6 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { SimpleOTPInput } from "@/components/ui/InputOtp";
 import { useAuth } from "@/hooks/useAuth";
 import { useLocation } from "wouter";
+import { sanitizeNextPath } from "@/lib/url";
+
+const POST_AUTH_REDIRECT_KEY = "finwise.post_auth_redirect";
 
 export default function VerifyEmail() {
   const { checkAuthStatus } = useAuth();
@@ -58,7 +61,14 @@ export default function VerifyEmail() {
         description: "Welcome to Personal Finance. You are now logged in.",
       });
       sessionStorage.removeItem("devOtpForVerification");
-      navigate("/dashboard");
+
+      const stored = sanitizeNextPath(sessionStorage.getItem(POST_AUTH_REDIRECT_KEY));
+      if (stored) {
+        sessionStorage.removeItem(POST_AUTH_REDIRECT_KEY);
+        navigate(stored);
+      } else {
+        navigate("/dashboard");
+      }
     } catch (error: unknown) {
       const requestId = error instanceof ApiError ? error.requestId : undefined;
       const message = error instanceof Error ? error.message : "An unexpected error occurred.";

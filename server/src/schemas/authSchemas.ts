@@ -11,7 +11,13 @@ export const registerBodySchema = z
       .min(8, "Password must be at least 8 characters")
       .max(128)
       .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, "Password must include upper, lower, and numeric characters"),
-    phoneNumber: z.string().trim().regex(phoneRegex, "Invalid phone number").optional()
+    phoneNumber: z.string().trim().regex(phoneRegex, "Invalid phone number").optional(),
+    referralCode: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z0-9]{6,16}$/, "Referral code must be 6-16 alphanumeric characters")
+      .optional()
   })
   .strict();
 

@@ -9,6 +9,8 @@ import type { AiPlan } from "../schemas/aiPlanSchema";
 import type { TaskEffectInput } from "../schemas/taskSchemas";
 import { ActionOutcomeError, applyTaskEffects } from "../services/actionOutcomeService";
 import { recordTaskEvent } from "../observability/metrics";
+import { HttpError } from "../middleware/httpError";
+import { logger } from "../config/logger";
 
 const BUCKETS: Array<{ key: keyof AiPlan["actions"]; bucket: 7 | 30 | 365; defaultDueDays: number }> = [
   { key: "next_7_days", bucket: 7, defaultDueDays: 7 },
@@ -18,10 +20,10 @@ const BUCKETS: Array<{ key: keyof AiPlan["actions"]; bucket: 7 | 30 | 365; defau
 
 const normalizeTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase();
 
-const buildDeterministicTaskId = (params: { userId: string; bucket: number; title: string }) => {
+const buildDeterministicTaskId = (params: { orgId: string; userId: string; bucket: number; title: string }) => {
   const hash = crypto
     .createHash("sha256")
-    .update(`${params.userId}|${params.bucket}|${normalizeTitle(params.title)}`)
+    .update(`${params.orgId}|${params.userId}|${params.bucket}|${normalizeTitle(params.title)}`)
     .digest("hex");
   return hash.slice(0, 32);
 };
@@ -58,12 +60,21 @@ const dueDateFromDays = (days: number) => {
 
 const toObjectId = (value?: string) => (value ? new mongoose.Types.ObjectId(value) : undefined);
 
+const requireOrgId = (req: Request) => {
+  const orgIdRaw = String((req as any).org?.orgId || "");
+  if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
+    throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
+  }
+  return new mongoose.Types.ObjectId(orgIdRaw);
+};
+
 export const getTaskById = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
     const { id } = req.params as { id: string };
 
-    const task = await TaskModel.findOne({ _id: id, userId: user._id }).lean();
+    const task = await TaskModel.findOne({ _id: id, orgId, userId: user._id }).lean();
     if (!task) {
       return res.status(404).json({ message: "Task not found", request_id: req.requestId });
     }
@@ -77,7 +88,7 @@ export const getTaskById = async (req: Request, res: Response) => {
 
     const agentOutputId = (task as any)?.source?.agentOutputId;
     if (agentOutputId) {
-      const agentOutput = await AgentOutputModel.findOne({ _id: agentOutputId, userId: user._id })
+      const agentOutput = await AgentOutputModel.findOne({ _id: agentOutputId, orgId, userId: user._id })
         .select({ request_id: 1, userInput: 1, outputData: 1 })
         .lean();
 
@@ -102,7 +113,12 @@ export const getTaskById = async (req: Request, res: Response) => {
       request_id: req.requestId,
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error fetching task:`, error);
+    if (error instanceof HttpError) {
+      return res
+        .status(error.statusCode)
+        .json({ message: error.message, code: error.code, request_id: req.requestId });
+    }
+    logger.error(`[requestId=${req.requestId}] Error fetching task:`, error);
     return res.status(500).json({ message: "Failed to fetch task", request_id: req.requestId });
   }
 };
@@ -110,6 +126,7 @@ export const getTaskById = async (req: Request, res: Response) => {
 export const createTasksFromPlan = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
     const body = req.body as { source?: { agentOutputId?: string; chatMessageId?: string; requestId?: string }; plan: AiPlan };
 
     const source = body.source || {};
@@ -133,13 +150,14 @@ export const createTasksFromPlan = async (req: Request, res: Response) => {
             return null;
           }
 
-          const taskId = buildDeterministicTaskId({ userId: user._id.toString(), bucket, title });
+          const taskId = buildDeterministicTaskId({ orgId: orgId.toString(), userId: user._id.toString(), bucket, title });
 
           const dueDaysRaw = Number(item?.due_days);
           const dueDays = Number.isFinite(dueDaysRaw) && dueDaysRaw > 0 ? dueDaysRaw : defaultDueDays;
 
           return {
             _id: taskId,
+            orgId,
             userId: user._id,
             source: sourceDoc,
             bucket,
@@ -159,7 +177,7 @@ export const createTasksFromPlan = async (req: Request, res: Response) => {
 
     const ops = tasks.map(task => ({
       updateOne: {
-        filter: { _id: task._id, userId: user._id },
+        filter: { _id: task._id, orgId, userId: user._id },
         update: { $setOnInsert: task },
         upsert: true
       }
@@ -170,7 +188,7 @@ export const createTasksFromPlan = async (req: Request, res: Response) => {
     const ids = tasks.map(task => task._id);
 
     const stored = ids.length
-      ? await TaskModel.find({ _id: { $in: ids }, userId: user._id }).sort({ dueDate: 1 }).lean()
+      ? await TaskModel.find({ _id: { $in: ids }, orgId, userId: user._id }).sort({ dueDate: 1 }).lean()
       : [];
 
     if (created > 0) {
@@ -179,7 +197,12 @@ export const createTasksFromPlan = async (req: Request, res: Response) => {
 
     res.status(201).json({ created, tasks: stored });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error creating tasks from plan:`, error);
+    if (error instanceof HttpError) {
+      return res
+        .status(error.statusCode)
+        .json({ message: error.message, code: error.code, request_id: req.requestId });
+    }
+    logger.error(`[requestId=${req.requestId}] Error creating tasks from plan:`, error);
     res.status(500).json({ message: "Failed to create tasks", request_id: req.requestId });
   }
 };
@@ -187,19 +210,25 @@ export const createTasksFromPlan = async (req: Request, res: Response) => {
 export const listTasks = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
     const { status, limit } = req.query as { status?: TaskStatus; limit?: number };
 
     const safeStatus: TaskStatus = status === "completed" || status === "dismissed" || status === "open" ? status : "open";
     const safeLimit = Number.isFinite(Number(limit)) ? Math.min(Math.max(1, Number(limit)), 100) : 50;
 
-    const tasks = await TaskModel.find({ userId: user._id, status: safeStatus })
+    const tasks = await TaskModel.find({ orgId, userId: user._id, status: safeStatus })
       .sort({ dueDate: 1, createdAt: -1 })
       .limit(safeLimit)
       .lean();
 
     res.json({ tasks });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error listing tasks:`, error);
+    if (error instanceof HttpError) {
+      return res
+        .status(error.statusCode)
+        .json({ message: error.message, code: error.code, request_id: req.requestId });
+    }
+    logger.error(`[requestId=${req.requestId}] Error listing tasks:`, error);
     res.status(500).json({ message: "Failed to fetch tasks", request_id: req.requestId });
   }
 };
@@ -207,6 +236,7 @@ export const listTasks = async (req: Request, res: Response) => {
 export const updateTask = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
     const { id } = req.params as { id: string };
     const { status, completed_at, note, effects, completion_evidence, apply_status, apply_error_code } = req.body as {
       status: TaskStatus;
@@ -248,7 +278,7 @@ export const updateTask = async (req: Request, res: Response) => {
       modifiers.$set.applyErrorCode = apply_error_code ? String(apply_error_code) : undefined;
     }
 
-    const task = await TaskModel.findOneAndUpdate({ _id: id, userId: user._id }, modifiers, { new: true }).lean();
+    const task = await TaskModel.findOneAndUpdate({ _id: id, orgId, userId: user._id }, modifiers, { new: true }).lean();
     if (!task) {
       return res.status(404).json({ message: "Task not found", request_id: req.requestId });
     }
@@ -257,7 +287,12 @@ export const updateTask = async (req: Request, res: Response) => {
 
     res.json({ task });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error updating task:`, error);
+    if (error instanceof HttpError) {
+      return res
+        .status(error.statusCode)
+        .json({ message: error.message, code: error.code, request_id: req.requestId });
+    }
+    logger.error(`[requestId=${req.requestId}] Error updating task:`, error);
     res.status(500).json({ message: "Failed to update task", request_id: req.requestId });
   }
 };
@@ -265,6 +300,7 @@ export const updateTask = async (req: Request, res: Response) => {
 export const applyTask = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
     const { id } = req.params as { id: string };
     const { effects = [], completed_at, note, idempotency_key } = req.body as {
       effects?: TaskEffectInput[];
@@ -275,6 +311,7 @@ export const applyTask = async (req: Request, res: Response) => {
     const idempotencyKey = String(idempotency_key || req.requestId || crypto.randomUUID());
 
     const result = await applyTaskEffects({
+      orgId,
       userId: user._id,
       taskId: id,
       effects,
@@ -294,6 +331,11 @@ export const applyTask = async (req: Request, res: Response) => {
       request_id: req.requestId,
     });
   } catch (error: any) {
+    if (error instanceof HttpError) {
+      return res
+        .status(error.statusCode)
+        .json({ message: error.message, code: error.code, request_id: req.requestId });
+    }
     if (error instanceof ActionOutcomeError) {
       recordTaskEvent({ event: "apply_failure" });
       return res.status(error.status).json({
@@ -303,7 +345,7 @@ export const applyTask = async (req: Request, res: Response) => {
       });
     }
 
-    console.error(`[requestId=${req.requestId}] Error applying task effects:`, error);
+    logger.error(`[requestId=${req.requestId}] Error applying task effects:`, error);
     recordTaskEvent({ event: "apply_failure" });
     return res.status(500).json({ message: "Failed to apply task effects", request_id: req.requestId });
   }

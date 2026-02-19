@@ -27,6 +27,7 @@ export type TaskApplyStatus = "pending" | "succeeded" | "failed";
 
 export interface ITask {
   _id: string;
+  orgId: Types.ObjectId;
   userId: Types.ObjectId;
   source?: ITaskSource;
   bucket: 7 | 30 | 365;
@@ -58,6 +59,7 @@ export interface ITaskDocument extends Omit<ITask, "_id">, Document<string> {
 const taskSchema = new Schema<ITaskDocument>(
   {
     _id: { type: String, required: true },
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     source: {
       agentOutputId: { type: Schema.Types.ObjectId, ref: "AgentOutput" },
@@ -99,10 +101,10 @@ const taskSchema = new Schema<ITaskDocument>(
   { timestamps: true }
 );
 
-taskSchema.index({ userId: 1, status: 1, dueDate: 1 });
-taskSchema.index({ userId: 1, updatedAt: -1 });
-taskSchema.index({ userId: 1, "source.agentOutputId": 1, updatedAt: -1 });
-taskSchema.index({ userId: 1, applyIdempotencyKey: 1 }, { sparse: true });
+taskSchema.index({ orgId: 1, userId: 1, status: 1, dueDate: 1 });
+taskSchema.index({ orgId: 1, userId: 1, updatedAt: -1 });
+taskSchema.index({ orgId: 1, userId: 1, "source.agentOutputId": 1, updatedAt: -1 });
+taskSchema.index({ orgId: 1, userId: 1, applyIdempotencyKey: 1 }, { sparse: true });
 
 const TaskModel = model<ITaskDocument>("Task", taskSchema);
 export default TaskModel;

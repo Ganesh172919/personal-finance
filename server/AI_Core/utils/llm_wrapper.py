@@ -16,6 +16,7 @@ from utils.rate_limiter import (
     RateLimitError,
 )
 from utils.request_metrics import get_request_id, record_llm_call
+from utils.request_metrics import record_llm_usage
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,26 @@ class RateLimitedLLM:
                         logger.info("[requestId=%s] LLM usage_metadata=%s", request_id, usage_metadata)
                     else:
                         logger.info("LLM usage_metadata=%s", usage_metadata)
+
+                    try:
+                        prompt_tokens = None
+                        completion_tokens = None
+                        total_tokens = None
+
+                        if isinstance(usage_metadata, dict):
+                            prompt_tokens = usage_metadata.get("prompt_token_count") or usage_metadata.get("input_token_count")
+                            completion_tokens = usage_metadata.get("candidates_token_count") or usage_metadata.get("output_token_count")
+                            total_tokens = usage_metadata.get("total_token_count") or usage_metadata.get("total_tokens")
+
+                        record_llm_usage(
+                            model=model_name,
+                            prompt_tokens=int(prompt_tokens or 0) if prompt_tokens is not None else None,
+                            completion_tokens=int(completion_tokens or 0) if completion_tokens is not None else None,
+                            total_tokens=int(total_tokens or 0) if total_tokens is not None else None,
+                        )
+                    except Exception:
+                        # Usage metadata parsing should never fail the request.
+                        pass
 
                 self.active_model = model_name
                 return response

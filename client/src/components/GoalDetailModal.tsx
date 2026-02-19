@@ -11,20 +11,12 @@ import { Button } from "@/components/ui/Button";
 import { Progress } from "@/components/ui/Progress";
 import { IFinancialGoal } from "@/types";
 import { Clock, PiggyBank } from "lucide-react";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
 interface GoalDetailModalProps {
   goal: IFinancialGoal | null;
   onClose: () => void;
 }
-
-// Helper to format currency
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value);
-};
 
 // Helper to calculate time remaining
 const getTimeToDeadline = (deadline: string) => {
@@ -39,6 +31,7 @@ const getTimeToDeadline = (deadline: string) => {
 };
 
 export function GoalDetailModal({ goal, onClose }: GoalDetailModalProps) {
+  const { formatMoney } = useOrgFormatters();
   if (!goal) return null;
 
   const progress = (goal.current / goal.target) * 100;
@@ -65,19 +58,19 @@ export function GoalDetailModal({ goal, onClose }: GoalDetailModalProps) {
             </div>
             <Progress value={progress} className="h-3" />
             <div className="flex justify-between items-baseline text-sm">
-              <span className="font-medium">{formatCurrency(goal.current)}</span>
-              <span className="text-muted-foreground"> of {formatCurrency(goal.target)}</span>
+              <span className="font-medium">{formatMoney(goal.current, { maximumFractionDigits: 0 })}</span>
+              <span className="text-muted-foreground"> of {formatMoney(goal.target, { maximumFractionDigits: 0 })}</span>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="flex items-center space-x-2 rounded-lg bg-accent p-3">
               <PiggyBank className="w-5 h-5 text-primary" />
-              <div>
-                <div className="text-xs text-muted-foreground">Remaining</div>
-                <div className="text-sm font-medium">{formatCurrency(remaining)}</div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Remaining</div>
+                  <div className="text-sm font-medium">{formatMoney(remaining, { maximumFractionDigits: 0 })}</div>
+                </div>
               </div>
-            </div>
             <div className="flex items-center space-x-2 rounded-lg bg-accent p-3">
               <Clock className={`w-5 h-5 ${deadlineInfo.color}`} />
               <div>

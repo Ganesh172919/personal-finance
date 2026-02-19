@@ -4,13 +4,17 @@ import { HttpError } from "../middleware/httpError";
 
 const BUCKET_NAME = "uploads";
 
-export type GridFsPurpose = "receipt" | "journal";
+export type GridFsPurpose = "receipt" | "journal" | "export";
+
+export type GridFsMetadata = {
+  userId?: string;
+  orgId?: string;
+  purpose?: GridFsPurpose;
+  exportJobId?: string;
+};
 
 export type GridFsFileWithMetadata = GridFSFile & {
-  metadata?: {
-    userId?: string;
-    purpose?: GridFsPurpose;
-  };
+  metadata?: GridFsMetadata;
 };
 
 const getBucket = () => {
@@ -28,27 +32,46 @@ const parseObjectId = (value: string) => {
   return new mongoose.Types.ObjectId(value);
 };
 
+export const openGridFsUploadStream = (params: {
+  fileId?: mongoose.Types.ObjectId;
+  filename: string;
+  contentType: string;
+  metadata: GridFsMetadata;
+}) => {
+  const bucket = getBucket();
+  const fileId = params.fileId || new mongoose.Types.ObjectId();
+
+  const uploadStream = bucket.openUploadStreamWithId(fileId, params.filename, {
+    contentType: params.contentType,
+    metadata: params.metadata,
+  });
+
+  return { fileId, uploadStream };
+};
+
 export const uploadBufferToGridFs = async (params: {
   userId: string;
+  orgId?: string;
   purpose: GridFsPurpose;
+  exportJobId?: string;
   buffer: Buffer;
   filename: string;
   contentType: string;
 }): Promise<mongoose.Types.ObjectId> => {
-  const bucket = getBucket();
-  const fileId = new mongoose.Types.ObjectId();
+  const { fileId, uploadStream } = openGridFsUploadStream({
+    filename: params.filename,
+    contentType: params.contentType,
+    metadata: {
+      userId: params.userId,
+      orgId: params.orgId,
+      purpose: params.purpose,
+      exportJobId: params.exportJobId,
+    },
+  });
 
   await new Promise<void>((resolve, reject) => {
-    const uploadStream = bucket.openUploadStreamWithId(fileId, params.filename, {
-      contentType: params.contentType,
-      metadata: {
-        userId: params.userId,
-        purpose: params.purpose,
-      },
-    });
-
     uploadStream.once("finish", () => resolve());
-    uploadStream.once("error", err => reject(err));
+    uploadStream.once("error", (err) => reject(err));
     uploadStream.end(params.buffer);
   });
 
@@ -71,6 +94,8 @@ export const openGridFsDownloadStream = (fileId: string) => {
 export const assertGridFsOwnership = async (params: {
   fileId: string;
   userId: string;
+  orgId?: string;
+  purpose?: GridFsPurpose;
 }): Promise<GridFsFileWithMetadata> => {
   const file = await findGridFsFileById(params.fileId);
   if (!file) {
@@ -80,6 +105,16 @@ export const assertGridFsOwnership = async (params: {
   const owner = file.metadata?.userId;
   if (!owner || owner !== params.userId) {
     // Avoid leaking existence across users.
+    throw new HttpError(404, "NOT_FOUND", "File not found");
+  }
+
+  const orgId = params.orgId;
+  if (orgId && file.metadata?.orgId !== orgId) {
+    throw new HttpError(404, "NOT_FOUND", "File not found");
+  }
+
+  const purpose = params.purpose;
+  if (purpose && file.metadata?.purpose !== purpose) {
     throw new HttpError(404, "NOT_FOUND", "File not found");
   }
 

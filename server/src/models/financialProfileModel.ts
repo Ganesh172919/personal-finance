@@ -29,6 +29,7 @@ export interface ITransaction {
 }
 
 export interface IFinancialProfile {
+  orgId: Types.ObjectId;
   userId: Types.ObjectId;
   age: number;
   annual_income: number;
@@ -55,7 +56,8 @@ export interface IFinancialProfileDocument extends IFinancialProfile, Document {
 
 const financialProfileSchema = new Schema<IFinancialProfileDocument>(
   {
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     age: { type: Number, required: true },
     annual_income: { type: Number, required: true },
     monthly_expenses: { type: Number, required: true },
@@ -99,7 +101,7 @@ const financialProfileSchema = new Schema<IFinancialProfileDocument>(
     lastMutation: {
       origin: {
         type: String,
-        enum: ["manual", "csv_import", "receipt_ocr", "journal", "task_completion", "ai_plan"],
+        enum: ["manual", "csv_import", "receipt_ocr", "journal", "task_completion", "ai_plan", "connector"],
       },
       request_id: { type: String },
       task_id: { type: String },
@@ -125,6 +127,8 @@ const financialProfileSchema = new Schema<IFinancialProfileDocument>(
   },
   { timestamps: true }
 );
+
+financialProfileSchema.index({ orgId: 1, userId: 1 }, { unique: true });
 
 const FinancialProfileModel = model<IFinancialProfileDocument>("FinancialProfile", financialProfileSchema);
 export default FinancialProfileModel;

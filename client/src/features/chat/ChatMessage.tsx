@@ -9,9 +9,10 @@ import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
 import { AgentWorkflowVisualizer } from "@/components/AgentWorkflowVisualizer";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ApiError, createTasksFromPlan, submitAgentOutputFeedback } from "@/lib/apiClient";
+import { ApiError, createTasksFromPlan, executeToolCall, simulateToolCall, submitAgentOutputFeedback } from "@/lib/apiClient";
 import { useToast } from "@/hooks/useToast";
-import { useAppConfig } from "@/hooks/useAppConfig";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
+import type { ToolCall } from "@/types/ai.types";
 
 interface ChatMessageProps {
   message: IChatMessage;
@@ -25,7 +26,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const configQuery = useAppConfig({ enabled: !isUser });
+  const { configQuery, formatMoney, formatTime } = useOrgFormatters({ enabled: !isUser });
   const tasksEnabled = configQuery.data?.features.tasks_enabled;
 
   const formatError = (error: unknown, fallback: string) => {
@@ -60,6 +61,45 @@ export function ChatMessage({ message }: ChatMessageProps) {
     },
   });
 
+  const simulateToolMutation = useMutation({
+    mutationFn: (toolCall: ToolCall) => simulateToolCall(toolCall),
+    onSuccess: (data) => {
+      const operation =
+        typeof (data as any)?.preview?.operation === "string"
+          ? String((data as any).preview.operation)
+          : data.tool;
+      toast({
+        title: "Preview ready",
+        description: operation,
+      });
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: "Preview failed",
+        description: formatError(error, "Couldn't simulate this action."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const executeToolMutation = useMutation({
+    mutationFn: (toolCall: ToolCall) =>
+      executeToolCall(toolCall, { confirm: true, idempotency_key: toolCall.id }),
+    onSuccess: (data) => {
+      toast({
+        title: "Action applied",
+        description: data.idempotent_replay ? "Already applied (idempotent replay)." : "Applied successfully.",
+      });
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: "Action failed",
+        description: formatError(error, "Couldn't execute this action."),
+        variant: "destructive",
+      });
+    },
+  });
+
   const feedbackMutation = useMutation({
     mutationFn: (payload: { agentOutputId: string; rating: "up" | "down" }) =>
       submitAgentOutputFeedback(payload.agentOutputId, { rating: payload.rating }),
@@ -78,9 +118,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
   const formatCurrency = (value?: number | null) => {
     if (value === null || value === undefined || Number.isNaN(value)) return "—";
-    const rounded = Math.round(value);
-    const sign = rounded < 0 ? "-" : "";
-    return `${sign}₹${Math.abs(rounded).toLocaleString("en-IN")}`;
+    const rounded = Math.round(Number(value));
+    return formatMoney(rounded, { maximumFractionDigits: 0 });
   };
 
   const formatPercent = (value?: number | null) => {
@@ -115,9 +154,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
     feedbackMutation.mutate({ agentOutputId, rating });
   };
 
-  const formatTime = (dateStr: string | Date) => {
-    const date = new Date(dateStr);
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const handlePreviewToolCall = (toolCall: ToolCall) => {
+    simulateToolMutation.mutate(toolCall);
+  };
+
+  const handleExecuteToolCall = (toolCall: ToolCall) => {
+    const ok = window.confirm(`Apply: ${toolCall.title}?`);
+    if (!ok) return;
+    executeToolMutation.mutate(toolCall);
   };
 
   // Custom markdown components for AI responses
@@ -263,6 +307,42 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 <li key={idx}>{warning}</li>
               ))}
             </ul>
+          </div>
+        ) : null}
+
+        {!isUser && message.metadata?.toolCalls && message.metadata.toolCalls.length > 0 ? (
+          <div className="mt-2 w-full rounded-md border border-border bg-background/60 p-3">
+            <p className="text-xs font-semibold text-foreground mb-2">Autopilot actions</p>
+            <div className="space-y-2">
+              {message.metadata.toolCalls.slice(0, 5).map((toolCall) => (
+                <div key={toolCall.id} className="flex items-start justify-between gap-3 rounded-md border border-border bg-background p-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{toolCall.title}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{toolCall.description}</p>
+                    <p className="text-[11px] text-muted-foreground mt-2">
+                      Tool: {toolCall.tool} Â· Risk: {toolCall.risk}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 flex-shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePreviewToolCall(toolCall)}
+                      disabled={simulateToolMutation.isPending}
+                    >
+                      Preview
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => handleExecuteToolCall(toolCall)}
+                      disabled={executeToolMutation.isPending}
+                    >
+                      Apply
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
 

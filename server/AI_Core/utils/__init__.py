@@ -38,6 +38,8 @@ from .request_metrics import (
     begin_request_metrics,
     record_llm_call,
     get_llm_call_count,
+    record_llm_usage,
+    get_llm_usage,
     get_request_id
 )
 
@@ -72,5 +74,7 @@ __all__ = [
     "begin_request_metrics",
     "record_llm_call",
     "get_llm_call_count",
+    "record_llm_usage",
+    "get_llm_usage",
     "get_request_id"
 ]

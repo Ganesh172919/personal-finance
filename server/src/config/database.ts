@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import type { MongoMemoryServer } from "mongodb-memory-server";
 import { getEnv } from "./env";
+import { logger } from "./logger";
 
 let listenersBound = false;
 let memoryServer: MongoMemoryServer | null = null;
@@ -13,15 +14,15 @@ const bindConnectionListeners = () => {
   listenersBound = true;
 
   mongoose.connection.on("connected", () => {
-    console.log("Mongoose connected to the database.");
+    logger.info("Mongoose connected to the database.");
   });
 
   mongoose.connection.on("error", (error) => {
-    console.error("Mongoose connection error:", error);
+    logger.error({ error }, "Mongoose connection error");
   });
 
   mongoose.connection.on("disconnected", () => {
-    console.log("Mongoose disconnected from the database.");
+    logger.info("Mongoose disconnected from the database.");
   });
 };
 
@@ -36,7 +37,7 @@ export const connectDB = async () => {
   };
 
   const connectWithInMemory = async (reason: string) => {
-    console.warn(`${reason} Falling back to in-memory MongoDB.`);
+    logger.warn(`${reason} Falling back to in-memory MongoDB.`);
 
     const { MongoMemoryServer } = await import("mongodb-memory-server");
     memoryServer = await MongoMemoryServer.create({
@@ -48,7 +49,7 @@ export const connectDB = async () => {
     const memoryUri = memoryServer.getUri();
     await connectWithUri(memoryUri);
 
-    console.warn(`Using in-memory MongoDB at ${memoryUri}`);
+    logger.warn(`Using in-memory MongoDB at ${memoryUri}`);
   };
 
   if (!env.MONGO_URI) {

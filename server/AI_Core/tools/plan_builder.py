@@ -35,10 +35,26 @@ def _pick_first_float(*values: Any) -> Optional[float]:
     return None
 
 
-def _format_inr(value: Optional[float]) -> str:
+def _normalize_percent(value: Optional[float]) -> Optional[float]:
+    if value is None:
+        return None
+    if 0 < value <= 1:
+        return value * 100
+    return value
+
+
+def _normalize_currency_code(value: Any) -> str:
+    raw = str(value or "").strip().upper()
+    if len(raw) == 3 and raw.isalpha():
+        return raw
+    return "USD"
+
+
+def _format_currency(value: Optional[float], currency_code: str = "USD") -> str:
     if value is None:
         return "-"
-    return f"INR {value:,.0f}"
+    normalized = _normalize_currency_code(currency_code)
+    return f"{normalized} {value:,.0f}"
 
 
 def _format_percent(value: Optional[float]) -> str:
@@ -66,6 +82,7 @@ def build_plan(inputs: PlanInputs) -> Plan:
 
     user_profile = inputs.user_profile or {}
     has_profile = bool(inputs.user_profile)
+    currency_code = _normalize_currency_code(user_profile.get("currency"))
 
     transactions = user_profile.get("transactions")
     if has_profile and isinstance(transactions, list) and len(transactions) == 0:
@@ -91,7 +108,9 @@ def build_plan(inputs: PlanInputs) -> Plan:
             (income_summary or {}).get("monthly_net_flow"),
         )
     )
-    key_metrics.savings_rate = _round_or_none(_pick_first_float((income_summary or {}).get("savings_rate")))
+    key_metrics.savings_rate = _round_or_none(
+        _normalize_percent(_pick_first_float((income_summary or {}).get("savings_rate")))
+    )
 
     if key_metrics.monthly_net_cash_flow is None and monthly_income is not None and monthly_expenses is not None:
         key_metrics.monthly_net_cash_flow = _round_or_none(monthly_income - monthly_expenses)
@@ -109,7 +128,9 @@ def build_plan(inputs: PlanInputs) -> Plan:
         current = inputs.debt_optimization.get("current_debt_situation", {})
         if isinstance(current, dict):
             key_metrics.total_debt = _round_or_none(_pick_first_float(current.get("total_debt")))
-            key_metrics.debt_to_income = _round_or_none(_pick_first_float(current.get("debt_to_income_ratio")))
+            key_metrics.debt_to_income = _round_or_none(
+                _normalize_percent(_pick_first_float(current.get("debt_to_income_ratio")))
+            )
     else:
         debts = user_profile.get("debts") if isinstance(user_profile.get("debts"), list) else []
         total_debt = sum(_safe_float(debt.get("balance")) or 0.0 for debt in debts)
@@ -164,6 +185,7 @@ def build_plan(inputs: PlanInputs) -> Plan:
         budget_plan=inputs.budget_plan,
         debt_optimization=inputs.debt_optimization,
         warnings=warnings,
+        currency_code=currency_code,
     )
 
     return Plan(
@@ -182,6 +204,7 @@ def _build_actions(
     budget_plan: Optional[Dict[str, Any]],
     debt_optimization: Optional[Dict[str, Any]],
     warnings: List[str],
+    currency_code: str,
 ) -> ActionBuckets:
     buckets = ActionBuckets()
     has_profile = bool(user_profile)
@@ -325,7 +348,7 @@ def _build_actions(
                     title="Automate goal savings",
                     why="Automation prevents goal savings from being crowded out by discretionary spending.",
                     steps=[
-                        f"Set up an auto-transfer of {_format_inr(monthly_goal_savings)} per month toward goals",
+                        f"Set up an auto-transfer of {_format_currency(monthly_goal_savings, currency_code)} per month toward goals",
                         "Schedule it right after payday",
                         "Review the amount after any budget change",
                     ],
@@ -338,7 +361,7 @@ def _build_actions(
     return buckets
 
 
-def render_plan_markdown(plan: Plan) -> str:
+def render_plan_markdown(plan: Plan, currency_code: str = "USD") -> str:
     km = plan.key_metrics
 
     lines: List[str] = []
@@ -352,11 +375,11 @@ def render_plan_markdown(plan: Plan) -> str:
     lines.append("")
     lines.append("| Metric | Value |")
     lines.append("|---|---|")
-    lines.append(f"| Monthly net cash flow | {_format_inr(km.monthly_net_cash_flow)} |")
+    lines.append(f"| Monthly net cash flow | {_format_currency(km.monthly_net_cash_flow, currency_code)} |")
     lines.append(f"| Savings rate | {_format_percent(km.savings_rate)} |")
     lines.append(f"| Debt-to-income (min payments) | {_format_percent(km.debt_to_income)} |")
     lines.append(f"| Emergency fund runway | {km.emergency_fund_months:.1f} months |" if km.emergency_fund_months is not None else "| Emergency fund runway | - |")
-    lines.append(f"| Total debt | {_format_inr(km.total_debt)} |")
+    lines.append(f"| Total debt | {_format_currency(km.total_debt, currency_code)} |")
     lines.append("")
 
     lines.append("3. Actions")

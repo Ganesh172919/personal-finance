@@ -3,6 +3,7 @@ import { Wallet, TrendingUp, PiggyBank, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardSummaryResponse, getDashboardSummary } from "@/lib/apiClient";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
 interface Metric {
   icon: typeof Wallet;
@@ -13,14 +14,8 @@ interface Metric {
   isPositive: boolean;
 }
 
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value || 0);
-
 export function FinancialVitals() {
+  const { formatMoney } = useOrgFormatters();
   const { data: summary } = useQuery<DashboardSummaryResponse>({
     queryKey: ["/api/dashboard/summary"],
     queryFn: getDashboardSummary,
@@ -32,7 +27,7 @@ export function FinancialVitals() {
         {
           icon: Wallet,
           label: "Cash Flow",
-          value: formatCurrency(0),
+          value: formatMoney(0, { maximumFractionDigits: 0 }),
           change: "No data",
           color: "hsl(158 64% 52%)",
           isPositive: true,
@@ -48,7 +43,7 @@ export function FinancialVitals() {
         {
           icon: PiggyBank,
           label: "Total Savings",
-          value: formatCurrency(0),
+          value: formatMoney(0, { maximumFractionDigits: 0 }),
           change: "No data",
           color: "hsl(46 95% 53%)",
           isPositive: true,
@@ -73,7 +68,7 @@ export function FinancialVitals() {
       {
         icon: Wallet,
         label: "Cash Flow",
-        value: formatCurrency(cashFlow),
+        value: formatMoney(cashFlow, { maximumFractionDigits: 0 }),
         change: cashFlow > 0 ? "Positive cash flow" : "Negative cash flow",
         color: "hsl(158 64% 52%)",
         isPositive: cashFlow > 0,
@@ -89,7 +84,7 @@ export function FinancialVitals() {
       {
         icon: PiggyBank,
         label: "Total Savings",
-        value: formatCurrency(Number(summary.savings.balance || 0)),
+        value: formatMoney(Number(summary.savings.balance || 0), { maximumFractionDigits: 0 }),
         change:
           summary.savings.emergency_fund_months === null
             ? "Emergency runway unavailable"

@@ -14,25 +14,68 @@ import * as z from "zod";
 import { ApiError, apiClient } from "@/lib/apiClient";
 import { useToast } from "@/hooks/useToast";
 import { Link, useLocation } from "wouter";
+import { useEffect } from "react";
+import { getSearchParam, sanitizeNextPath } from "@/lib/url";
+
+const POST_AUTH_REDIRECT_KEY = "finwise.post_auth_redirect";
+
+const phoneRegex = /^[+]?[0-9]{10,15}$/;
+const emptyStringToUndefined = (value: unknown) =>
+  typeof value === "string" && value.trim().length === 0 ? undefined : value;
 
 const registerSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters" }),
   email: z.string().email({ message: "Please enter a valid email" }),
-  phoneNumber: z.string().optional(),
-  password: z.string().min(8, { message: "Password must be at least 8 characters" }),
+  phoneNumber: z.preprocess(
+    emptyStringToUndefined,
+    z.string().trim().regex(phoneRegex, { message: "Invalid phone number" }).optional()
+  ),
+  referralCode: z.preprocess(
+    emptyStringToUndefined,
+    z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z0-9]{6,16}$/, { message: "Referral code must be 6-16 alphanumeric characters" })
+      .optional()
+  ),
+  password: z
+    .string()
+    .min(8, { message: "Password must be at least 8 characters" })
+    .max(128, { message: "Password is too long" })
+    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, {
+      message: "Password must include upper, lower, and numeric characters",
+    }),
 });
 
 export default function Register() {
   const { toast } = useToast();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+
+  useEffect(() => {
+    const next = sanitizeNextPath(getSearchParam(location, "next"));
+    if (!next) return;
+    try {
+      sessionStorage.setItem(POST_AUTH_REDIRECT_KEY, next);
+    } catch {
+      // ignore
+    }
+  }, [location]);
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
   });
+
+  useEffect(() => {
+    const ref = getSearchParam(location, "ref");
+    if (!ref) return;
+    setValue("referralCode", ref.trim().toUpperCase());
+  }, [location, setValue]);
 
   const onSubmit = async (data: z.infer<typeof registerSchema>) => {
     try {
@@ -89,6 +132,12 @@ export default function Register() {
             <div className="grid gap-2">
               <Label htmlFor="phoneNumber">Phone Number (Optional)</Label>
               <Input id="phoneNumber" {...register("phoneNumber")} />
+              {errors.phoneNumber && <p className="text-xs text-destructive">{errors.phoneNumber.message}</p>}
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="referralCode">Referral Code (Optional)</Label>
+              <Input id="referralCode" {...register("referralCode")} placeholder="e.g. 8JQ2K7M9PA" />
+              {errors.referralCode && <p className="text-xs text-destructive">{errors.referralCode.message}</p>}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="password">Password</Label>

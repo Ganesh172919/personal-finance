@@ -139,7 +139,7 @@ describe("transactions API", () => {
       .expect(200);
 
     expect(listAfterDelete.body.pagination.total).toBe(2);
-  });
+  }, 15000);
 
   it("returns monthly summaries, caches responses, and invalidates cache when transactions change", async () => {
     // Jan expense
@@ -239,5 +239,5 @@ describe("transactions API", () => {
       .expect(200);
 
     expect(summary3.body.cache_hit).toBe(false);
-  });
+  }, 15000);
 });

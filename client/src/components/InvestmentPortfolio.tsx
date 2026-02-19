@@ -4,13 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { getPortfolioSummary, PortfolioSummaryResponse } from "@/lib/apiClient";
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value || 0);
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
 const allocationColor = (name: string) => {
   const lower = name.toLowerCase();
@@ -21,6 +15,7 @@ const allocationColor = (name: string) => {
 };
 
 export function InvestmentPortfolio() {
+  const { formatMoney } = useOrgFormatters();
   const { data } = useQuery<PortfolioSummaryResponse>({
     queryKey: ["/api/portfolio/summary", 12],
     queryFn: () => getPortfolioSummary({ months: 12 }),
@@ -64,7 +59,7 @@ export function InvestmentPortfolio() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3 }}
             >
-              {formatCurrency(totalValue)}
+              {formatMoney(totalValue, { maximumFractionDigits: 0 })}
             </motion.div>
             <div className="text-sm text-muted-foreground">Total Invested Capital</div>
           </div>
@@ -83,7 +78,7 @@ export function InvestmentPortfolio() {
         </div>
 
         <div className="text-xs text-muted-foreground mb-4">
-          Monthly SIP estimate: {formatCurrency(monthlySip)}
+          Monthly SIP estimate: {formatMoney(monthlySip, { maximumFractionDigits: 0 })}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -133,7 +128,7 @@ export function InvestmentPortfolio() {
                 <div>
                   <div className="font-medium text-sm text-foreground">{holding.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {holding.category} • {formatCurrency(holding.value)}
+                    {holding.category} • {formatMoney(holding.value, { maximumFractionDigits: 0 })}
                   </div>
                 </div>
                 <div className="text-right">

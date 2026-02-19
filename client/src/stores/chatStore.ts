@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { IChatSession, IChatMessage } from "@/types/chat.types";
 import * as chatApi from "@/services/chatApi";
+import { reportClientError } from "@/lib/runtimeLogger";
 
 interface ChatState {
   // Sessions state
@@ -44,7 +45,7 @@ export const useChatStore = create<ChatState>()(
           const response = await chatApi.fetchSessions();
           set({ sessions: response.sessions });
         } catch (error) {
-          console.error("Failed to load sessions:", error);
+          reportClientError("Failed to load sessions", error);
         } finally {
           set({ isLoadingSessions: false });
         }
@@ -61,7 +62,7 @@ export const useChatStore = create<ChatState>()(
           }));
           return newSession;
         } catch (error) {
-          console.error("Failed to create session:", error);
+          reportClientError("Failed to create session", error);
           return null;
         }
       },
@@ -75,7 +76,7 @@ export const useChatStore = create<ChatState>()(
           const response = await chatApi.fetchMessages(sessionId);
           set({ messages: response.messages });
         } catch (error) {
-          console.error("Failed to load messages:", error);
+          reportClientError("Failed to load messages", error);
         } finally {
           set({ isLoadingMessages: false });
         }
@@ -95,7 +96,7 @@ export const useChatStore = create<ChatState>()(
             };
           });
         } catch (error) {
-          console.error("Failed to delete session:", error);
+          reportClientError("Failed to delete session", error);
         }
       },
 
@@ -109,7 +110,7 @@ export const useChatStore = create<ChatState>()(
             )
           }));
         } catch (error) {
-          console.error("Failed to rename session:", error);
+          reportClientError("Failed to rename session", error);
         }
       },
 
@@ -165,7 +166,7 @@ export const useChatStore = create<ChatState>()(
             )
           }));
         } catch (error) {
-          console.error("Failed to send message:", error);
+          reportClientError("Failed to send message", error);
           // Remove optimistic message on error
           set((state) => ({
             messages: state.messages.filter(m => m.id !== tempUserMessage.id)

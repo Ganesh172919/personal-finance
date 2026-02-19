@@ -11,6 +11,7 @@ import {
   recognizeHandwriting,
 } from "../controllers/financialJournalController";
 import { journalUpload } from "../middleware/uploads";
+import { asyncRoute } from "../utils/asyncRoute";
 
 const router = Router();
 
@@ -19,16 +20,16 @@ router.use(passport.authenticate("jwt", { session: false }));
 router.post(
   "/financial-journal/recognize-handwriting",
   journalUpload().single("file"),
-  recognizeHandwriting
+  asyncRoute(recognizeHandwriting)
 );
 
-router.get("/financial-journal/entries", validate({ query: paginationQuerySchema }), listJournalEntries);
-router.get("/financial-journal/entries/:id", validate({ params: objectIdSchema }), getJournalEntryById);
+router.get("/financial-journal/entries", validate({ query: paginationQuerySchema }), asyncRoute(listJournalEntries));
+router.get("/financial-journal/entries/:id", validate({ params: objectIdSchema }), asyncRoute(getJournalEntryById));
 router.patch(
   "/financial-journal/entries/:id",
   validate({ params: objectIdSchema, body: patchJournalEntryBodySchema }),
-  patchJournalEntry
+  asyncRoute(patchJournalEntry)
 );
-router.post("/financial-journal/entries/:id/insights", validate({ params: objectIdSchema }), generateJournalInsights);
+router.post("/financial-journal/entries/:id/insights", validate({ params: objectIdSchema }), asyncRoute(generateJournalInsights));
 
 export default router;

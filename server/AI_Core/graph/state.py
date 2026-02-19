@@ -48,6 +48,9 @@ class UserProfile(BaseModel):
     investment_experience: str
     time_horizon: int
     transactions: List[Dict[str, Any]] = []
+    currency: Optional[str] = None
+    locale: Optional[str] = None
+    timezone: Optional[str] = None
     
     model_config = ConfigDict(
         json_schema_extra={

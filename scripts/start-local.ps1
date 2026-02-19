@@ -112,6 +112,81 @@ function Wait-HttpOk {
   throw "Timed out waiting for $Url"
 }
 
+function Test-LocalPortOpen {
+  param([Parameter(Mandatory = $true)][int]$Port)
+
+  try {
+    return (Test-NetConnection -ComputerName "127.0.0.1" -Port $Port -InformationLevel Quiet)
+  } catch {
+    return $false
+  }
+}
+
+function Wait-PortOpen {
+  param(
+    [Parameter(Mandatory = $true)][int]$Port,
+    [int]$TimeoutSeconds = 180,
+    [int]$IntervalSeconds = 2
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    if (Test-LocalPortOpen -Port $Port) {
+      return
+    }
+    Start-Sleep -Seconds $IntervalSeconds
+  }
+
+  throw "Timed out waiting for port $Port to accept connections"
+}
+
+function Ensure-DockerComposeServices {
+  param([Parameter(Mandatory = $true)][string[]]$Services)
+
+  $docker = Get-Command docker -ErrorAction SilentlyContinue
+  if (-not $docker) {
+    throw "Docker is required to auto-start infrastructure services ($($Services -join ', ')). Install Docker Desktop or run MongoDB/Redis locally."
+  }
+
+  $dockerDaemonReady = $false
+  try {
+    & docker info *> $null
+    $dockerDaemonReady = $LASTEXITCODE -eq 0
+  } catch {
+    $dockerDaemonReady = $false
+  }
+
+  if (-not $dockerDaemonReady) {
+    throw "Docker daemon is not available. Start Docker Desktop or run MongoDB/Redis locally."
+  }
+
+  $composeSubcommandOk = $false
+  try {
+    & docker compose version *> $null
+    $composeSubcommandOk = $LASTEXITCODE -eq 0
+  } catch {
+    $composeSubcommandOk = $false
+  }
+
+  if ($composeSubcommandOk) {
+    & docker compose up -d @Services *> $null
+    if ($LASTEXITCODE -ne 0) {
+      throw "docker compose up failed"
+    }
+    return
+  }
+
+  $dockerCompose = Get-Command docker-compose -ErrorAction SilentlyContinue
+  if (-not $dockerCompose) {
+    throw "Docker Compose not found. Install Docker Desktop or docker-compose."
+  }
+
+  & docker-compose up -d @Services *> $null
+  if ($LASTEXITCODE -ne 0) {
+    throw "docker-compose up failed"
+  }
+}
+
 function Stop-If-Running {
   param([Parameter(Mandatory = $true)][int]$ProcessId)
   try {
@@ -123,11 +198,64 @@ function Stop-If-Running {
   }
 }
 
+function Ensure-PortsAvailable {
+  param([Parameter(Mandatory = $true)][int[]]$Ports)
+
+  $allowedNames = @("node", "python", "py", "cmd", "npm")
+  $seen = New-Object "System.Collections.Generic.HashSet[int]"
+  $blocked = @()
+
+  foreach ($port in $Ports) {
+    $listeners = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue
+    foreach ($listener in $listeners) {
+      $ownedProcessId = [int]$listener.OwningProcess
+      if (-not $seen.Add($ownedProcessId)) {
+        continue
+      }
+
+      try {
+        $proc = Get-Process -Id $ownedProcessId -ErrorAction Stop
+        $name = $proc.ProcessName.ToLowerInvariant()
+
+        if ($allowedNames -contains $name) {
+          & taskkill /PID $ownedProcessId /T /F | Out-Null
+          Write-Host "Stopped PID $ownedProcessId on port $port ($($proc.ProcessName))." -ForegroundColor Yellow
+          continue
+        }
+
+        $blocked += "${port}:$($proc.ProcessName)($ownedProcessId)"
+      } catch {
+        # process already gone
+      }
+    }
+  }
+
+  if ($blocked.Count -gt 0) {
+    throw "Required local ports are occupied by non-dev processes: $($blocked -join ', ')."
+  }
+}
+
 function Ensure-NodeDeps {
-  param([Parameter(Mandatory = $true)][string]$ProjectPath)
+  param(
+    [Parameter(Mandatory = $true)][string]$ProjectPath,
+    [string[]]$RequiredPaths = @()
+  )
 
   $nodeModulesPath = Join-Path $ProjectPath "node_modules"
-  if (Test-Path $nodeModulesPath) {
+  $needsInstall = -not (Test-Path $nodeModulesPath)
+
+  if (-not $needsInstall -and $RequiredPaths.Count -gt 0) {
+    foreach ($relativePath in $RequiredPaths) {
+      $fullPath = Join-Path $ProjectPath $relativePath
+      if (-not (Test-Path $fullPath)) {
+        $needsInstall = $true
+        Write-Warning "Detected incomplete dependency install in $ProjectPath (missing: $relativePath). Reinstalling."
+        break
+      }
+    }
+  }
+
+  if (-not $needsInstall) {
     return
   }
 
@@ -137,6 +265,27 @@ function Ensure-NodeDeps {
     & npm ci
     if ($LASTEXITCODE -ne 0) {
       throw "npm ci failed in $ProjectPath"
+    }
+  } finally {
+    Pop-Location
+  }
+}
+
+function Ensure-SdkTsReady {
+  $sdkPath = Join-Path $repoRoot "packages\\sdk-ts"
+  Ensure-NodeDeps -ProjectPath $sdkPath -RequiredPaths @("node_modules\\openapi-typescript-codegen\\bin\\index.js")
+
+  $distIndexPath = Join-Path $sdkPath "dist\\index.js"
+  if (Test-Path $distIndexPath) {
+    return
+  }
+
+  Write-Host "Building local SDK package (packages/sdk-ts)..." -ForegroundColor Cyan
+  Push-Location $sdkPath
+  try {
+    & npm run generate
+    if ($LASTEXITCODE -ne 0) {
+      throw "npm run generate failed in $sdkPath"
     }
   } finally {
     Pop-Location
@@ -166,6 +315,71 @@ function Test-PythonCommand {
     return $LASTEXITCODE -eq 0
   } catch {
     return $false
+  }
+}
+
+function Get-PythonVersionInfo {
+  param(
+    [Parameter(Mandatory = $true)][string]$Command,
+    [string[]]$Prefix = @()
+  )
+
+  try {
+    $args = @($Prefix + @("-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"))
+    $lines = & $Command @args 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $lines) {
+      return $null
+    }
+
+    $raw = $lines | Select-Object -First 1
+    if (-not $raw) {
+      return $null
+    }
+
+    $text = [string]$raw
+    $parts = $text.Trim().Split(".")
+    if ($parts.Length -lt 2) {
+      return $null
+    }
+
+    $major = 0
+    $minor = 0
+    $patch = 0
+    if (-not [int]::TryParse($parts[0], [ref]$major)) {
+      return $null
+    }
+    if (-not [int]::TryParse($parts[1], [ref]$minor)) {
+      return $null
+    }
+    if ($parts.Length -ge 3) {
+      [int]::TryParse($parts[2], [ref]$patch) | Out-Null
+    }
+
+    return @{
+      Major = $major
+      Minor = $minor
+      Patch = $patch
+      Raw = $text.Trim()
+    }
+  } catch {
+    return $null
+  }
+}
+
+function Assert-AiCorePythonVersion {
+  param([Parameter(Mandatory = $true)][hashtable]$PythonConfig)
+
+  $version = Get-PythonVersionInfo -Command $PythonConfig.Command -Prefix $PythonConfig.Prefix
+  if (-not $version) {
+    throw "Unable to determine Python version for '$($PythonConfig.Label)'."
+  }
+
+  if ($version.Major -ne 3 -or $version.Minor -lt 10) {
+    throw "Python 3.10+ is required for AI Core. Found: $($version.Raw) via '$($PythonConfig.Label)'."
+  }
+
+  if ($version.Minor -lt 11) {
+    Write-Warning "Python $($version.Raw) detected. Python 3.11+ is recommended for best AI Core dependency compatibility."
   }
 }
 
@@ -228,7 +442,7 @@ function Ensure-AiCoreDeps {
   try {
     $depsReady = $false
     try {
-      & $VenvPython -c "import fastapi,uvicorn" *> $null
+      & $VenvPython -c "import fastapi,uvicorn,langgraph,langchain_google_genai,pydantic" *> $null
       $depsReady = $LASTEXITCODE -eq 0
     } catch {
       $depsReady = $false
@@ -293,6 +507,7 @@ if (Test-Path $pidsPath) {
     if ($existing.server.pid) { Stop-If-Running -ProcessId ([int]$existing.server.pid) }
     if ($existing.client.pid) { Stop-If-Running -ProcessId ([int]$existing.client.pid) }
     if ($existing.ai_core.pid) { Stop-If-Running -ProcessId ([int]$existing.ai_core.pid) }
+    if ($existing.worker.pid) { Stop-If-Running -ProcessId ([int]$existing.worker.pid) }
   } catch {
     Write-Warning "Failed to parse existing $pidsPath. Continuing."
   }
@@ -306,13 +521,54 @@ $clientLog = Join-Path $tmpDir "client.log"
 $clientErrLog = Join-Path $tmpDir "client.err.log"
 $aiCoreLog = Join-Path $tmpDir "ai_core.log"
 $aiCoreErrLog = Join-Path $tmpDir "ai_core.err.log"
+$workerLog = Join-Path $tmpDir "worker.log"
+$workerErrLog = Join-Path $tmpDir "worker.err.log"
 
-Ensure-NodeDeps -ProjectPath (Join-Path $repoRoot "server")
-Ensure-NodeDeps -ProjectPath (Join-Path $repoRoot "client")
+Ensure-NodeDeps -ProjectPath (Join-Path $repoRoot "server") -RequiredPaths @("node_modules\\tsx\\dist\\cli.mjs")
+Ensure-NodeDeps -ProjectPath (Join-Path $repoRoot "client") -RequiredPaths @("node_modules\\vite\\bin\\vite.js")
+Ensure-SdkTsReady
 
 $aiCorePythonConfig = Resolve-AiCorePython
+Assert-AiCorePythonVersion -PythonConfig $aiCorePythonConfig
 $aiCoreVenvPython = Ensure-AiCoreVenvPython -PythonConfig $aiCorePythonConfig
 Ensure-AiCoreDeps -PythonConfig $aiCorePythonConfig -VenvPython $aiCoreVenvPython
+
+# MongoDB + Redis are optional for local startup.
+# Mongo: server falls back to in-memory MongoDB in non-production when the primary URI is unavailable.
+if (-not (Test-LocalPortOpen -Port 27017)) {
+  Write-Host "MongoDB not detected on :27017. Attempting Docker Compose bootstrap..." -ForegroundColor Cyan
+  try {
+    Ensure-DockerComposeServices -Services @("mongodb")
+    Wait-PortOpen -Port 27017 -TimeoutSeconds 240
+  } catch {
+    Write-Warning "Could not auto-start MongoDB via Docker. Continuing; server will use non-production in-memory MongoDB fallback."
+  }
+}
+
+$redisAvailable = $false
+if (Test-LocalPortOpen -Port 6379) {
+  $redisAvailable = $true
+} else {
+  Write-Host "Redis not detected on :6379. Attempting Docker Compose bootstrap..." -ForegroundColor Cyan
+  try {
+    Ensure-DockerComposeServices -Services @("redis")
+    Wait-PortOpen -Port 6379 -TimeoutSeconds 240
+    $redisAvailable = $true
+  } catch {
+    Write-Warning "Could not auto-start Redis via Docker. Continuing without Redis (worker disabled, in-memory fallbacks enabled)."
+  }
+}
+
+if ($redisAvailable) {
+  $env:REDIS_URL = "redis://127.0.0.1:6379"
+  Write-Host "Set REDIS_URL=$($env:REDIS_URL) for this session." -ForegroundColor Yellow
+} else {
+  # Force-disable Redis for child processes even if .env has REDIS_URL set.
+  $env:REDIS_URL = ""
+}
+
+# Force local dev mode for startup script workflows.
+$env:NODE_ENV = "development"
 
 if (-not (Is-Truthy -Value $env:ALLOW_SMTP_IN_LOCAL)) {
   $env:EMAIL_USER = ""
@@ -321,9 +577,12 @@ if (-not (Is-Truthy -Value $env:ALLOW_SMTP_IN_LOCAL)) {
   Write-Host "Using dev OTP mode for local auth. Set ALLOW_SMTP_IN_LOCAL=true to keep SMTP settings." -ForegroundColor Yellow
 }
 
+Ensure-PortsAvailable -Ports @(3000, 5173, 8001)
+
 $serverProc = $null
 $clientProc = $null
 $aiProc = $null
+$workerProc = $null
 
 try {
   Write-Host "Starting server (Node)..." -ForegroundColor Cyan
@@ -362,23 +621,49 @@ try {
     -RedirectStandardError $aiCoreErrLog `
     -PassThru
 
+  $redisUrl = $env:REDIS_URL
+  if ($redisUrl -and $redisUrl.Trim().Length -gt 0) {
+    $env:WORKER_ENABLED = "true"
+    Write-Host "Starting worker (BullMQ)..." -ForegroundColor Cyan
+    $workerEntry = Join-Path $repoRoot "server\\node_modules\\tsx\\dist\\cli.mjs"
+    if (-not (Test-Path $workerEntry)) {
+      throw "Missing tsx entrypoint: $workerEntry"
+    }
+    $workerProc = Start-Process `
+      -FilePath "node.exe" `
+      -ArgumentList @($workerEntry, "src/worker.ts") `
+      -WorkingDirectory (Join-Path $repoRoot "server") `
+      -RedirectStandardOutput $workerLog `
+      -RedirectStandardError $workerErrLog `
+      -PassThru
+  } else {
+    Write-Host "REDIS_URL not set; skipping worker start. (Set REDIS_URL to enable BullMQ workers.)" -ForegroundColor Yellow
+  }
+
+  $workerPayload = $null
+  if ($workerProc) {
+    $workerPayload = @{ pid = $workerProc.Id; log = $workerLog; err = $workerErrLog }
+  }
+
   $payload = @{
     startedAt = $startedAt
     server = @{ pid = $serverProc.Id; log = $serverLog; err = $serverErrLog }
     client = @{ pid = $clientProc.Id; log = $clientLog; err = $clientErrLog }
     ai_core = @{ pid = $aiProc.Id; log = $aiCoreLog; err = $aiCoreErrLog; python = $aiCoreVenvPython }
+    worker = $workerPayload
   } | ConvertTo-Json -Depth 5
 
   $payload | Out-File -FilePath $pidsPath -Encoding utf8
 
   Write-Host "Waiting for services..." -ForegroundColor Cyan
-  Wait-HttpOk -Url "http://127.0.0.1:3000/api/test" -TimeoutSeconds 240
+  Wait-HttpOk -Url "http://127.0.0.1:3000/healthz" -TimeoutSeconds 240
   Wait-HttpOk -Url "http://127.0.0.1:8001/health" -TimeoutSeconds 240
   Wait-HttpOk -Url "http://127.0.0.1:5173/" -TimeoutSeconds 240
 } catch {
   if ($serverProc) { Stop-If-Running -ProcessId $serverProc.Id }
   if ($clientProc) { Stop-If-Running -ProcessId $clientProc.Id }
   if ($aiProc) { Stop-If-Running -ProcessId $aiProc.Id }
+  if ($workerProc) { Stop-If-Running -ProcessId $workerProc.Id }
   throw
 }
 
@@ -390,3 +675,7 @@ Write-Host "  client:  $clientLog"
 Write-Host "  client err: $clientErrLog"
 Write-Host "  ai_core: $aiCoreLog"
 Write-Host "  ai_core err: $aiCoreErrLog"
+if ($workerProc) {
+  Write-Host "  worker: $workerLog"
+  Write-Host "  worker err: $workerErrLog"
+}

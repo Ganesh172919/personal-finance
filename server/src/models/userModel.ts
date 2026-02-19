@@ -12,6 +12,8 @@ export interface IUser {
   isEmailVerified: boolean;
   emailVerificationToken?: string;
   emailVerificationTokenExpires?: Date;
+  pendingReferralCode?: string;
+  referralRedeemedAt?: Date;
 }
 
 export interface IUserDocument extends IUser, Document {
@@ -30,6 +32,8 @@ const userSchema = new Schema<IUserDocument>(
     isEmailVerified: { type: Boolean, default: false },
     emailVerificationToken: { type: String, select: false },
     emailVerificationTokenExpires: { type: Date, select: false },
+    pendingReferralCode: { type: String, trim: true, uppercase: true, maxlength: 16 },
+    referralRedeemedAt: { type: Date },
   },
   { timestamps: true }
 );
@@ -45,4 +49,3 @@ userSchema.pre("save", async function (next) {
 
 const UserModel = model<IUserDocument>("User", userSchema);
 export default UserModel;
-

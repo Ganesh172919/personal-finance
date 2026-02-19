@@ -5,6 +5,7 @@ import { Schema, model, Document, Types } from "mongoose";
  * Represents a conversation thread between a user and the AI
  */
 export interface IChatSession {
+  orgId: Types.ObjectId;
   userId: Types.ObjectId;
   title: string;
   createdAt: Date;
@@ -22,6 +23,12 @@ export interface IChatSessionDocument extends IChatSession, Document {
 
 const chatSessionSchema = new Schema<IChatSessionDocument>(
   {
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      required: true,
+      index: true,
+    },
     userId: { 
       type: Schema.Types.ObjectId, 
       ref: 'User', 
@@ -60,7 +67,7 @@ const chatSessionSchema = new Schema<IChatSessionDocument>(
 );
 
 // Index for efficient querying of user's sessions sorted by recency
-chatSessionSchema.index({ userId: 1, lastMessageAt: -1 });
+chatSessionSchema.index({ orgId: 1, userId: 1, lastMessageAt: -1 });
 
 const ChatSessionModel = model<IChatSessionDocument>("ChatSession", chatSessionSchema);
 export default ChatSessionModel;

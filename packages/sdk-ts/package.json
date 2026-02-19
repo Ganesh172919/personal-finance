@@ -1,0 +1,20 @@
+{
+  "name": "@finwise/sdk-ts",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "generate": "openapi --input ../contracts/openapi/api.v1.yaml --output src/generated --client fetch --useUnionTypes --exportCore true --exportServices true --exportModels true && npm run build",
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "openapi-typescript-codegen": "^0.29.0",
+    "typescript": "^5.9.3"
+  }
+}

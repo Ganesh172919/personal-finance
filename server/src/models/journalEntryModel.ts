@@ -14,6 +14,7 @@ export type JournalParsedIntent = {
 };
 
 export interface IJournalEntry {
+  orgId: Types.ObjectId;
   userId: Types.ObjectId;
   fileId: Types.ObjectId;
   strokes?: unknown;
@@ -30,6 +31,7 @@ export interface IJournalEntryDocument extends IJournalEntry, Document {
 
 const journalEntrySchema = new Schema<IJournalEntryDocument>(
   {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     fileId: { type: Schema.Types.ObjectId, required: true, index: true },
     strokes: { type: Schema.Types.Mixed, required: false },
@@ -40,8 +42,7 @@ const journalEntrySchema = new Schema<IJournalEntryDocument>(
   { timestamps: true }
 );
 
-journalEntrySchema.index({ userId: 1, createdAt: -1 });
+journalEntrySchema.index({ orgId: 1, userId: 1, createdAt: -1 });
 
 const JournalEntryModel = model<IJournalEntryDocument>("JournalEntry", journalEntrySchema);
 export default JournalEntryModel;
-

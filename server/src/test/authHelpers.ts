@@ -1,10 +1,14 @@
 import jwt from "jsonwebtoken";
 import UserModel from "../models/userModel";
 
-export const createAuthedUser = async () => {
+const randomSuffix = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+export const createAuthedUser = async (params?: { email?: string; name?: string }) => {
+  const email = params?.email || `test+${randomSuffix()}@example.com`;
+  const name = params?.name || "Test User";
   const user = await UserModel.create({
-    email: "test@example.com",
-    name: "Test User",
+    email,
+    name,
     authProvider: "email",
     isEmailVerified: true
   });
@@ -17,4 +21,3 @@ export const createAuthedUser = async () => {
   const token = jwt.sign({ id: user._id.toString() }, secret, { expiresIn: "1d" });
   return { user, cookie: `jwt=${token}` };
 };
-

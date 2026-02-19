@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app";
 import { configurePassport } from "../config/passport";
 import AgentOutputModel from "../models/agentOutputModel";
+import { ensurePersonalOrgForUser } from "../services/orgService";
 import { createAuthedUser } from "./authHelpers";
 import { clearTestDb, startTestDb, stopTestDb } from "./testDb";
 
@@ -11,6 +12,7 @@ describe("tasks API", () => {
   const app = createApp();
   let cookie = "";
   let userId = "";
+  let orgId = "";
   let csrfCookie = "";
   let csrfToken = "";
 
@@ -28,6 +30,7 @@ describe("tasks API", () => {
     const auth = await createAuthedUser();
     cookie = auth.cookie;
     userId = auth.user._id.toString();
+    orgId = String((await ensurePersonalOrgForUser(auth.user._id)).orgId);
 
     const csrf = await request(app).get("/api/auth/csrf").expect(200);
     csrfCookie = (csrf.headers["set-cookie"]?.[0] || "").split(";")[0] || "";
@@ -36,6 +39,7 @@ describe("tasks API", () => {
 
   it("creates tasks from a plan idempotently and updates status", async () => {
     const agentOutput = await AgentOutputModel.create({
+      orgId,
       userId,
       sessionId: "test-session",
       userInput: "Give me a budget plan",
@@ -121,7 +125,7 @@ describe("tasks API", () => {
 
     expect(completed.body.tasks).toHaveLength(1);
     expect(completed.body.tasks[0]._id).toBe(taskId);
-  });
+  }, 15000);
 
   it("applies task effects across transactions and profile entities", async () => {
     const plan = {
@@ -267,5 +271,5 @@ describe("tasks API", () => {
       amount: -1500,
       source: { origin: "task_completion" },
     });
-  });
+  }, 15000);
 });

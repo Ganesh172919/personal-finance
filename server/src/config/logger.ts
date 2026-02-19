@@ -11,6 +11,15 @@ export const logger = pino({
       "req.headers.authorization",
       "req.headers.cookie",
       "res.headers.set-cookie",
+      "req.body.password",
+      "req.body.otp",
+      "req.body.token",
+      "req.body.command",
+      "req.body.rows",
+      "req.body.file",
+      "req.body.image",
+      "req.body.buffer",
+      "req.body.receipt_buffer",
     ],
     remove: true,
   },
@@ -28,4 +37,3 @@ export const httpLogger = pinoHttp({
     return "info";
   },
 });
-

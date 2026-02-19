@@ -7,7 +7,8 @@ export type MutationOrigin =
   | "receipt_ocr"
   | "journal"
   | "task_completion"
-  | "ai_plan";
+  | "ai_plan"
+  | "connector";
 
 export interface MutationSource {
   origin: MutationOrigin;
@@ -215,4 +216,3 @@ export async function importTransactions(rows: Array<Required<TransactionPayload
     body: JSON.stringify({ rows }),
   });
 }
-

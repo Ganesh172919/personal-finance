@@ -10,6 +10,7 @@ export interface IChatMessageMetadata {
   priority?: 'low' | 'medium' | 'high';
   actionable?: boolean;
   plan?: Record<string, unknown>;
+  toolCalls?: Array<Record<string, unknown>>;
   detailedAnalysis?: Record<string, unknown>;
   workflowTrace?: Array<{
     agent: string;
@@ -28,6 +29,7 @@ export interface IChatMessageMetadata {
 }
 
 export interface IChatMessage {
+  orgId: Types.ObjectId;
   sessionId: Types.ObjectId;
   userId: Types.ObjectId;
   role: 'user' | 'assistant';
@@ -42,6 +44,12 @@ export interface IChatMessageDocument extends IChatMessage, Document {
 
 const chatMessageSchema = new Schema<IChatMessageDocument>(
   {
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      required: true,
+      index: true,
+    },
     sessionId: { 
       type: Schema.Types.ObjectId, 
       ref: 'ChatSession', 
@@ -74,6 +82,10 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
         type: Schema.Types.Mixed,
         default: undefined
       },
+      toolCalls: {
+        type: [Schema.Types.Mixed],
+        default: []
+      },
       detailedAnalysis: {
         type: Schema.Types.Mixed,
         default: {}
@@ -97,7 +109,7 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
 );
 
 // Compound index for efficient message retrieval within a session
-chatMessageSchema.index({ sessionId: 1, createdAt: 1 });
+chatMessageSchema.index({ orgId: 1, sessionId: 1, createdAt: 1 });
 
 const ChatMessageModel = model<IChatMessageDocument>("ChatMessage", chatMessageSchema);
 export default ChatMessageModel;

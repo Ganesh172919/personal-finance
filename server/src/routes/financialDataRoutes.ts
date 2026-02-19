@@ -35,31 +35,32 @@ import {
   updateGoalBodySchema,
   updateTransactionBodySchema
 } from "../schemas/financialDataSchemas";
+import { asyncRoute } from "../utils/asyncRoute";
 
 const router = Router();
 
 router.use(passport.authenticate("jwt", { session: false }));
 
-router.post("/transactions", validate({ body: createTransactionBodySchema }), createTransaction);
-router.post("/transactions/import", validate({ body: importTransactionsBodySchema }), importTransactions);
-router.get("/transactions/recent", validate({ query: recentTransactionsQuerySchema }), listRecentTransactions);
-router.get("/transactions/summary", validate({ query: transactionsSummaryQuerySchema }), getTransactionsSummary);
-router.get("/dashboard/summary", validate({ query: dashboardSummaryQuerySchema }), getDashboardSummary);
-router.get("/portfolio/summary", validate({ query: portfolioSummaryQuerySchema }), getPortfolioSummary);
-router.get("/transactions", validate({ query: listTransactionsQuerySchema }), listTransactions);
+router.post("/transactions", validate({ body: createTransactionBodySchema }), asyncRoute(createTransaction));
+router.post("/transactions/import", validate({ body: importTransactionsBodySchema }), asyncRoute(importTransactions));
+router.get("/transactions/recent", validate({ query: recentTransactionsQuerySchema }), asyncRoute(listRecentTransactions));
+router.get("/transactions/summary", validate({ query: transactionsSummaryQuerySchema }), asyncRoute(getTransactionsSummary));
+router.get("/dashboard/summary", validate({ query: dashboardSummaryQuerySchema }), asyncRoute(getDashboardSummary));
+router.get("/portfolio/summary", validate({ query: portfolioSummaryQuerySchema }), asyncRoute(getPortfolioSummary));
+router.get("/transactions", validate({ query: listTransactionsQuerySchema }), asyncRoute(listTransactions));
 router.patch(
   "/transactions/:id",
   validate({ params: transactionIdParamSchema, body: updateTransactionBodySchema }),
-  updateTransaction
+  asyncRoute(updateTransaction)
 );
-router.delete("/transactions/:id", validate({ params: transactionIdParamSchema }), deleteTransaction);
+router.delete("/transactions/:id", validate({ params: transactionIdParamSchema }), asyncRoute(deleteTransaction));
 
-router.post("/goals", validate({ body: createGoalBodySchema }), createGoal);
-router.patch("/goals/:goalId", validate({ params: goalIdParamSchema, body: updateGoalBodySchema }), updateGoal);
-router.delete("/goals/:goalId", validate({ params: goalIdParamSchema }), deleteGoal);
+router.post("/goals", validate({ body: createGoalBodySchema }), asyncRoute(createGoal));
+router.patch("/goals/:goalId", validate({ params: goalIdParamSchema, body: updateGoalBodySchema }), asyncRoute(updateGoal));
+router.delete("/goals/:goalId", validate({ params: goalIdParamSchema }), asyncRoute(deleteGoal));
 
-router.post("/debts", validate({ body: createDebtBodySchema }), createDebt);
-router.patch("/debts/:debtId", validate({ params: debtIdParamSchema, body: updateDebtBodySchema }), updateDebt);
-router.delete("/debts/:debtId", validate({ params: debtIdParamSchema }), deleteDebt);
+router.post("/debts", validate({ body: createDebtBodySchema }), asyncRoute(createDebt));
+router.patch("/debts/:debtId", validate({ params: debtIdParamSchema, body: updateDebtBodySchema }), asyncRoute(updateDebt));
+router.delete("/debts/:debtId", validate({ params: debtIdParamSchema }), asyncRoute(deleteDebt));
 
 export default router;

@@ -1,6 +1,7 @@
 import { Schema, model, Document, Types } from "mongoose";
 
 export interface IAiResponseCache {
+  orgId: Types.ObjectId;
   userId: Types.ObjectId;
   cacheKey: string;
   endpoint: string;
@@ -15,8 +16,9 @@ export interface IAiResponseCacheDocument extends IAiResponseCache, Document {
 
 const aiResponseCacheSchema = new Schema<IAiResponseCacheDocument>(
   {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    cacheKey: { type: String, required: true, unique: true, index: true },
+    cacheKey: { type: String, required: true, unique: true },
     endpoint: { type: String, required: true },
     responseData: { type: Schema.Types.Mixed, required: true, default: {} },
     expiresAt: { type: Date, required: true }
@@ -25,7 +27,7 @@ const aiResponseCacheSchema = new Schema<IAiResponseCacheDocument>(
 );
 
 aiResponseCacheSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+aiResponseCacheSchema.index({ orgId: 1, userId: 1, createdAt: -1 });
 
 const AiResponseCacheModel = model<IAiResponseCacheDocument>("AiResponseCache", aiResponseCacheSchema);
 export default AiResponseCacheModel;
-

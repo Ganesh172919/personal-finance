@@ -14,9 +14,21 @@ export interface WorkflowTraceEntry {
 export interface AiCoreProcessRequest {
   user_input: string;
   user_profile: Record<string, unknown> | null;
+  org_id?: string;
+  user_id?: string;
   conversation_history?: Array<{ role: "user" | "assistant"; content: string }>;
   session_summary?: string;
   options?: { narrative?: boolean };
+}
+
+export interface AiCoreToolCall {
+  id: string;
+  title: string;
+  description: string;
+  tool: string;
+  args: Record<string, unknown>;
+  requires_confirmation: boolean;
+  risk: "low" | "medium" | "high";
 }
 
 export interface AiCoreProcessResponse {
@@ -26,6 +38,13 @@ export interface AiCoreProcessResponse {
   actionType?: string;
   priority?: "low" | "medium" | "high";
   plan?: Record<string, unknown>;
+  usage?: {
+    tokens_in: number;
+    tokens_out: number;
+    total_tokens?: number;
+    cost_usd?: number;
+    models?: string[];
+  };
   insights: Array<{
     agent: string;
     title: string;
@@ -37,6 +56,7 @@ export interface AiCoreProcessResponse {
   agents_involved: string[];
   detailed_analysis: Record<string, unknown>;
   workflow_trace: WorkflowTraceEntry[];
+  tool_calls?: AiCoreToolCall[];
   fallback_used: boolean;
   llm_call_count: number;
   request_id: string;
@@ -101,6 +121,38 @@ const normalizeProcessResponse = (data: any, requestId: string): AiCoreProcessRe
         }))
     : [];
 
+  const usageRaw = data?.usage;
+  const usage =
+    usageRaw && typeof usageRaw === "object" && !Array.isArray(usageRaw)
+      ? {
+          tokens_in: Math.max(0, Number((usageRaw as any).tokens_in || 0)),
+          tokens_out: Math.max(0, Number((usageRaw as any).tokens_out || 0)),
+          total_tokens: Number.isFinite(Number((usageRaw as any).total_tokens))
+            ? Math.max(0, Number((usageRaw as any).total_tokens))
+            : undefined,
+          cost_usd: Number.isFinite(Number((usageRaw as any).cost_usd))
+            ? Math.max(0, Number((usageRaw as any).cost_usd))
+            : undefined,
+          models: Array.isArray((usageRaw as any).models)
+            ? (usageRaw as any).models.map((m: unknown) => String(m))
+            : undefined,
+        }
+      : undefined;
+
+  const toolCallsRaw = Array.isArray(data?.tool_calls) ? data.tool_calls : [];
+  const tool_calls: AiCoreToolCall[] = toolCallsRaw
+    .filter((entry: any) => entry && typeof entry === "object")
+    .map((entry: any) => ({
+      id: String(entry.id || ""),
+      title: String(entry.title || "Action"),
+      description: String(entry.description || ""),
+      tool: String(entry.tool || ""),
+      args: entry.args && typeof entry.args === "object" && !Array.isArray(entry.args) ? (entry.args as Record<string, unknown>) : {},
+      requires_confirmation: Boolean(entry.requires_confirmation),
+      risk: ["low", "medium", "high"].includes(String(entry.risk)) ? (entry.risk as "low" | "medium" | "high") : "low",
+    }))
+    .filter((entry: AiCoreToolCall) => Boolean(entry.id && entry.tool));
+
   return {
     success: data?.success !== false,
     final_output: String(data?.final_output || data?.response || ""),
@@ -110,6 +162,7 @@ const normalizeProcessResponse = (data: any, requestId: string): AiCoreProcessRe
       ? (data.priority as "low" | "medium" | "high")
       : "medium",
     plan: data?.plan && typeof data.plan === "object" && !Array.isArray(data.plan) ? (data.plan as Record<string, unknown>) : undefined,
+    usage,
     insights,
     analysis_type: String(data?.analysis_type || "comprehensive"),
     agents_involved: Array.isArray(data?.agents_involved)
@@ -120,6 +173,7 @@ const normalizeProcessResponse = (data: any, requestId: string): AiCoreProcessRe
         ? data.detailed_analysis
         : {},
     workflow_trace: workflowTrace,
+    tool_calls,
     fallback_used: Boolean(data?.fallback_used),
     llm_call_count: Number.isFinite(Number(data?.llm_call_count)) ? Number(data.llm_call_count) : 0,
     request_id: String(data?.request_id || requestId),
@@ -150,6 +204,12 @@ const buildFallbackResponse = (requestId: string, reason: string): AiCoreProcess
       assumptions: [],
       data_warnings: [reason],
     },
+    usage: {
+      tokens_in: 0,
+      tokens_out: 0,
+      cost_usd: 0,
+      models: [],
+    },
     insights: [],
     analysis_type: "comprehensive",
     agents_involved: ["master"],
@@ -163,6 +223,7 @@ const buildFallbackResponse = (requestId: string, reason: string): AiCoreProcess
         error: reason,
       },
     ],
+    tool_calls: [],
     fallback_used: true,
     llm_call_count: 0,
     request_id: requestId,
@@ -401,7 +462,7 @@ export const processAiCoreReceiptOcr = async (
         const { data } = await http.post("/api/vision/receipts/parse", payload.image, {
           params: {
             lang: payload.lang || "en",
-            currencyHint: payload.currencyHint || "INR",
+            currencyHint: payload.currencyHint || "USD",
           },
           headers: {
             "X-Request-Id": requestId,

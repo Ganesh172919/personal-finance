@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { useToast } from "@/hooks/useToast";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import { ApiError, applyTaskEffects, type Task, type TaskEffect, type TaskStatus, updateTaskStatus, type TransactionType } from "@/lib/apiClient";
 import type { IDebt, IFinancialGoal, IFinancialProfile } from "@/types";
 
@@ -40,6 +41,7 @@ export function TaskApplyDialog(props: {
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { currency } = useOrgFormatters({ enabled: props.open });
 
   const task = props.task;
 
@@ -96,7 +98,7 @@ export function TaskApplyDialog(props: {
     if (draftType === "transaction") {
       const amount = Number(txAmount);
       if (!Number.isFinite(amount) || amount <= 0) {
-        toast({ title: "Invalid amount", description: "Enter a valid INR amount.", variant: "destructive" });
+        toast({ title: "Invalid amount", description: `Enter a valid ${currency} amount.`, variant: "destructive" });
         return;
       }
       if (!txCategory.trim()) {
@@ -279,7 +281,7 @@ export function TaskApplyDialog(props: {
             {draftType === "transaction" ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <Label>Amount (INR)</Label>
+                  <Label>Amount ({currency})</Label>
                   <Input value={txAmount} onChange={(e) => setTxAmount(e.target.value)} type="number" min="0" step="1" />
                 </div>
                 <div>

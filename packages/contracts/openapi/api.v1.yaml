@@ -1,0 +1,17 @@
+openapi: 3.1.0
+info:
+  title: FinWise API
+  version: 1.0.0
+  description: |
+    FinWise API v1 (multi-tenant, billing, workflows, API keys, usage).
+
+    Notes:
+    - Authentication uses an httpOnly session cookie (`jwt`) for browser clients.
+    - Multi-tenant context can be selected via `X-Org-Id` header.
+    - When CSRF protection is enabled server-side, state-changing requests require `X-CSRF-Token`.
+servers:
+  - url: http://localhost:3000
+paths:
+  $ref: ./v1/paths/index.yaml
+components:
+  $ref: ./v1/components/index.yaml

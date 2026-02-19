@@ -4,9 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { getRecentTransactions } from "@/lib/apiClient";
 import { ArrowUpRight, ArrowDownLeft, RefreshCcw } from "lucide-react";
 import { useLocation } from "wouter";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
 export function RecentActivity() {
   const [, navigate] = useLocation();
+  const { formatMoney, formatDate } = useOrgFormatters();
 
   const { data } = useQuery({
     queryKey: ["/api/transactions/recent"],
@@ -14,21 +16,6 @@ export function RecentActivity() {
   });
 
   const recentTransactions = data?.transactions || [];
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(Math.abs(amount));
-  };
-
-  const formatDate = (date: string | Date) => {
-    return new Date(date).toLocaleDateString("en-IN", {
-      month: "short",
-      day: "numeric",
-    });
-  };
 
   return (
     <Card className="p-6 flex flex-col">
@@ -77,7 +64,7 @@ export function RecentActivity() {
                 </div>
                 <div>
                   <p className="font-medium text-foreground">{t.description}</p>
-                  <p className="text-xs text-muted-foreground">{t.category} • {formatDate(t.date)}</p>
+                  <p className="text-xs text-muted-foreground">{t.category} • {formatDate(t.date, { month: "short", day: "numeric" })}</p>
                 </div>
               </div>
               <div
@@ -88,7 +75,7 @@ export function RecentActivity() {
                 }`}
               >
                 {t.type === "income" ? "+" : "-"}
-                {formatCurrency(t.amount)}
+                {formatMoney(Math.abs(t.amount), { maximumFractionDigits: 0 })}
               </div>
             </motion.div>
           ))

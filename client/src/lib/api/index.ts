@@ -8,4 +8,6 @@ export * from "./tasks";
 export * from "./receipts";
 export * from "./journal";
 export * from "./chat";
-
+export * from "./billing";
+export * from "./tools";
+export * from "./v1";

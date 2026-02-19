@@ -160,11 +160,11 @@ class IncomeExpenseAnalyzerAgent:
 
         sr = metrics.get("savings_rate", 0)
         if sr >= 20:
-            patterns["strengths"].append("Excellent savings rate (â‰¥20%)")
+            patterns["strengths"].append("Excellent savings rate (>=20%)")
         elif sr >= 10:
             patterns["strengths"].append("Good savings rate (10-20%)")
         elif sr < 0:
-            patterns["concerns"].append("Negative savings rate â€” spending exceeds income")
+            patterns["concerns"].append("Negative savings rate - spending exceeds income")
 
         fr = metrics.get("fixed_expense_ratio", 0)
         if fr > 50:
@@ -176,13 +176,13 @@ class IncomeExpenseAnalyzerAgent:
             if pct > 30:
                 patterns["concerns"].append(f"High spending in {cat} ({pct}% of expenses)")
             elif pct < 5:
-                patterns["opportunities"].append(f"Low spending in {cat} â€” optimization possible")
+                patterns["opportunities"].append(f"Low spending in {cat} - optimization possible")
 
         flow = metrics.get("net_cash_flow", 0)
         if flow > 0:
-            patterns["strengths"].append(f"Positive cash flow: â‚¹{flow:,.2f} monthly")
+            patterns["strengths"].append(f"Positive cash flow: {flow:,.2f} monthly")
         else:
-            patterns["concerns"].append(f"Negative cash flow: â‚¹{abs(flow):,.2f} monthly deficit")
+            patterns["concerns"].append(f"Negative cash flow: {abs(flow):,.2f} monthly deficit")
 
         return patterns
 
@@ -335,4 +335,3 @@ class IncomeExpenseAnalyzerAgent:
             "summary_metrics": {"financial_health": "Analysis Failed", "key_strengths": 0, "key_concerns": 0},
             "health_score": 0
         }
-

@@ -42,6 +42,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/useToast";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import {
   ApiError,
   apiClient,
@@ -54,18 +55,12 @@ import { IAgentOutput, IFinancialProfile } from "@/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(value);
-};
-
 export default function Portfolio() {
   const { user } = useAuth();
   const userId = user?.id || localStorage.getItem("userId");
   const { toast } = useToast();
+  const { formatMoney, currency } = useOrgFormatters();
+  const formatCurrency = (value: number) => formatMoney(value, { maximumFractionDigits: 0 });
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newInvestment, setNewInvestment] = useState({
     name: "",
@@ -92,45 +87,38 @@ export default function Portfolio() {
   });
 
   const addInvestmentMutation = useMutation({
-  mutationFn: async (investment: typeof newInvestment) => {
-    console.log("Sending investment:", investment); 
-    
-    return await apiClient<IFinancialProfile>(
-      `/financial-profiles/investments`, 
-      {
+    mutationFn: async (investment: typeof newInvestment) => {
+      return apiClient<IFinancialProfile>(`/financial-profiles/investments`, {
         method: "POST",
         body: JSON.stringify({
           name: investment.name,
-          type: investment.type, 
+          type: investment.type,
           amount: investment.amount,
           date: investment.date,
         }),
-      }
-    );
-  },
-  onSuccess: (data) => {
-    console.log("Investment added, response:", data);
-    toast({
-      title: "Investment Added",
-      description: "Your investment has been recorded successfully.",
-    });
-    setIsAddDialogOpen(false);
-    setNewInvestment({ name: "", type: "Equity", amount: 0, date: new Date().toISOString().split('T')[0] });
-    queryClient.invalidateQueries({ queryKey: ["/api/financial-profiles/me"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/transactions", "investment"] });
-  },
-  onError: (error: unknown) => {
-    console.error("Mutation error:", error);
-    const requestId = error instanceof ApiError ? error.requestId : undefined;
-    const message =
-      error instanceof Error ? error.message : "Failed to add investment. Please try again.";
-    toast({
-      title: "Error",
-      description: requestId ? `${message} (Request ID: ${requestId})` : message,
-      variant: "destructive",
-    });
-  },
-});
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Investment Added",
+        description: "Your investment has been recorded successfully.",
+      });
+      setIsAddDialogOpen(false);
+      setNewInvestment({ name: "", type: "Equity", amount: 0, date: new Date().toISOString().split('T')[0] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial-profiles/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions", "investment"] });
+    },
+    onError: (error: unknown) => {
+      const requestId = error instanceof ApiError ? error.requestId : undefined;
+      const message =
+        error instanceof Error ? error.message : "Failed to add investment. Please try again.";
+      toast({
+        title: "Error",
+        description: requestId ? `${message} (Request ID: ${requestId})` : message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleAddInvestment = () => {
     if (newInvestment.name && newInvestment.amount > 0) {
@@ -346,7 +334,7 @@ export default function Portfolio() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="investment-amount">Amount (₹)</Label>
+                  <Label htmlFor="investment-amount">Amount ({currency})</Label>
                   <Input
                     id="investment-amount"
                     type="number"

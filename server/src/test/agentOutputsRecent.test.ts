@@ -5,6 +5,7 @@ import { createApp } from "../app";
 import { configurePassport } from "../config/passport";
 import AgentOutputModel from "../models/agentOutputModel";
 import TaskModel from "../models/taskModel";
+import { ensurePersonalOrgForUser } from "../services/orgService";
 import { createAuthedUser } from "./authHelpers";
 import { clearTestDb, startTestDb, stopTestDb } from "./testDb";
 
@@ -12,6 +13,7 @@ describe("recent agent outputs API", () => {
   const app = createApp();
   let cookie = "";
   let userId: any;
+  let orgId = "";
 
   beforeAll(async () => {
     await startTestDb();
@@ -27,10 +29,12 @@ describe("recent agent outputs API", () => {
     const auth = await createAuthedUser();
     cookie = auth.cookie;
     userId = auth.user._id;
+    orgId = String((await ensurePersonalOrgForUser(auth.user._id)).orgId);
   });
 
   it("returns compact recent outputs with linked task ids", async () => {
     const output = await AgentOutputModel.create({
+      orgId,
       userId,
       sessionId: "session-1",
       userInput: "Help optimize budget",
@@ -43,6 +47,7 @@ describe("recent agent outputs API", () => {
 
     await TaskModel.create({
       _id: "task-linked-001",
+      orgId,
       userId,
       source: { agentOutputId: output._id },
       bucket: 7,

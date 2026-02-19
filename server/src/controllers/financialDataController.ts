@@ -1,15 +1,14 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import {
   IDebt,
   IFinancialGoal,
   IFinancialProfileDocument
 } from "../models/financialProfileModel";
-import AiResponseCacheModel from "../models/aiResponseCacheModel";
 import TaskModel from "../models/taskModel";
 import TransactionModel, { TransactionType } from "../models/transactionModel";
 import { IUserDocument } from "../models/userModel";
-import { buildTransactionsSummaryCacheKey, ttlMs } from "../services/aiCache";
-import { recordAiCache } from "../observability/metrics";
+import { recordResponseCache } from "../observability/metrics";
 import { publishDomainEvent } from "../services/domainEvents";
 import {
   bumpTransactionMetadata,
@@ -17,7 +16,17 @@ import {
   ensureProfileWithMigration,
   setProfileMutationSource
 } from "../services/profileService";
+import {
+  buildDashboardSummaryCacheKey,
+  buildPortfolioSummaryCacheKey,
+  buildTransactionsSummaryCacheKey,
+  getCachedResponse,
+  responseCacheTtlMs,
+  setCachedResponse
+} from "../services/responseCache";
 import type { MutationSource } from "../types/provenance";
+import { HttpError } from "../middleware/httpError";
+import { logger } from "../config/logger";
 
 type TransactionInput = {
   amount: number;
@@ -25,6 +34,14 @@ type TransactionInput = {
   description: string;
   date?: string | Date;
   type: "income" | "expense" | "investment";
+};
+
+const requireOrgId = (req: Request) => {
+  const orgIdRaw = String((req as any).org?.orgId || "");
+  if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
+    throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
+  }
+  return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
 const normalizeTransactionAmount = (
@@ -124,10 +141,12 @@ export const createTransaction = async (req: Request, res: Response) => {
     const user = req.user as IUserDocument;
     const body = req.body as TransactionInput;
 
-    const profile = await ensureProfileWithMigration(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
     const source = buildMutationSource(req.requestId, "manual");
 
     const created = await TransactionModel.create({
+      orgId,
       userId: user._id,
       amount: normalizeTransactionAmount(body.amount, body.type),
       category: body.category,
@@ -138,6 +157,7 @@ export const createTransaction = async (req: Request, res: Response) => {
     });
 
     await publishDomainEvent({
+      orgId,
       userId: user._id,
       eventType: "TransactionCreated",
       aggregateType: "transaction",
@@ -162,7 +182,7 @@ export const createTransaction = async (req: Request, res: Response) => {
       transaction: mapTransactionRecord(created)
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error creating transaction:`, error);
+    logger.error(`[requestId=${req.requestId}] Error creating transaction:`, error);
     res.status(500).json({ message: "Failed to create transaction", request_id: req.requestId });
   }
 };
@@ -173,11 +193,13 @@ export const importTransactions = async (req: Request, res: Response) => {
     const body = req.body as { rows: TransactionInput[] };
     const rows = Array.isArray(body.rows) ? body.rows : [];
 
-    const profile = await ensureProfileWithMigration(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
     const source = buildMutationSource(req.requestId, "csv_import");
 
     const now = new Date();
     const docs = rows.map(row => ({
+      orgId,
       userId: user._id,
       amount: normalizeTransactionAmount(row.amount, row.type),
       category: row.category,
@@ -196,6 +218,7 @@ export const importTransactions = async (req: Request, res: Response) => {
 
     if (insertedCount > 0) {
       await publishDomainEvent({
+        orgId,
         userId: user._id,
         eventType: "TransactionImported",
         aggregateType: "transaction_batch",
@@ -215,7 +238,7 @@ export const importTransactions = async (req: Request, res: Response) => {
       inserted: insertedCount
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error importing transactions:`, error);
+    logger.error(`[requestId=${req.requestId}] Error importing transactions:`, error);
     res.status(500).json({ message: "Failed to import transactions", request_id: req.requestId });
   }
 };
@@ -239,9 +262,10 @@ export const listTransactions = async (req: Request, res: Response) => {
       category?: string;
     };
 
-    await ensureProfileWithMigration(user._id);
+    const orgId = requireOrgId(req);
+    await ensureProfileWithMigration({ orgId, userId: user._id });
 
-    const filter: Record<string, unknown> = { userId: user._id };
+    const filter: Record<string, unknown> = { orgId, userId: user._id };
 
     if (from || to) {
       const range: Record<string, Date> = {};
@@ -288,7 +312,7 @@ export const listTransactions = async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error listing transactions:`, error);
+    logger.error(`[requestId=${req.requestId}] Error listing transactions:`, error);
     res.status(500).json({ message: "Failed to fetch transactions", request_id: req.requestId });
   }
 };
@@ -297,9 +321,10 @@ export const updateTransaction = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
     const { id } = req.params;
-    const profile = await ensureProfileWithMigration(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
 
-    const existing = await TransactionModel.findOne({ _id: id, userId: user._id });
+    const existing = await TransactionModel.findOne({ _id: id, orgId, userId: user._id });
     if (!existing) {
       return res.status(404).json({ message: "Transaction not found", request_id: req.requestId });
     }
@@ -330,7 +355,7 @@ export const updateTransaction = async (req: Request, res: Response) => {
     }
 
     const updated = await TransactionModel.findOneAndUpdate(
-      { _id: id, userId: user._id },
+      { _id: id, orgId, userId: user._id },
       { $set: updateDoc },
       { new: true }
     );
@@ -345,7 +370,7 @@ export const updateTransaction = async (req: Request, res: Response) => {
       transaction: updated ? mapTransactionRecord(updated) : mapTransactionRecord(existing)
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error updating transaction:`, error);
+    logger.error(`[requestId=${req.requestId}] Error updating transaction:`, error);
     return res.status(500).json({ message: "Failed to update transaction", request_id: req.requestId });
   }
 };
@@ -354,15 +379,16 @@ export const deleteTransaction = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
     const { id } = req.params;
-    const profile = await ensureProfileWithMigration(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
 
-    const deleted = await TransactionModel.findOneAndDelete({ _id: id, userId: user._id });
+    const deleted = await TransactionModel.findOneAndDelete({ _id: id, orgId, userId: user._id });
     if (!deleted) {
       return res.status(404).json({ message: "Transaction not found", request_id: req.requestId });
     }
 
     const now = new Date();
-    const newCount = await TransactionModel.countDocuments({ userId: user._id });
+    const newCount = await TransactionModel.countDocuments({ orgId, userId: user._id });
     const source = buildMutationSource(req.requestId, "manual", {
       note: "transaction_delete"
     });
@@ -376,7 +402,7 @@ export const deleteTransaction = async (req: Request, res: Response) => {
       transaction_id: id
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error deleting transaction:`, error);
+    logger.error(`[requestId=${req.requestId}] Error deleting transaction:`, error);
     return res.status(500).json({ message: "Failed to delete transaction", request_id: req.requestId });
   }
 };
@@ -387,15 +413,16 @@ export const listRecentTransactions = async (req: Request, res: Response) => {
     const limitRaw = Number((req.query as any)?.limit ?? 5);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, limitRaw), 50) : 5;
 
-    await ensureProfileWithMigration(user._id);
+    const orgId = requireOrgId(req);
+    await ensureProfileWithMigration({ orgId, userId: user._id });
 
-    const docs = await TransactionModel.find({ userId: user._id }).sort({ date: -1 }).limit(limit).lean();
+    const docs = await TransactionModel.find({ orgId, userId: user._id }).sort({ date: -1 }).limit(limit).lean();
 
     return res.json({
       transactions: docs.map(doc => mapTransactionRecord(doc as any))
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error fetching recent transactions:`, error);
+    logger.error(`[requestId=${req.requestId}] Error fetching recent transactions:`, error);
     return res.status(500).json({ message: "Failed to fetch recent transactions", request_id: req.requestId });
   }
 };
@@ -410,7 +437,8 @@ export const getTransactionsSummary = async (req: Request, res: Response) => {
     const topCategoriesRaw = Number(query.topCategories ?? 6);
     const topCategories = Number.isFinite(topCategoriesRaw) ? Math.min(Math.max(1, topCategoriesRaw), 20) : 6;
 
-    const profile = await ensureProfileWithMigration(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
 
     const profileTxUpdatedAt = profile.transactionsUpdatedAt
       ? new Date(profile.transactionsUpdatedAt as unknown as Date).toISOString()
@@ -420,6 +448,7 @@ export const getTransactionsSummary = async (req: Request, res: Response) => {
     const toIso = new Date(to).toISOString();
 
     const cacheKey = buildTransactionsSummaryCacheKey({
+      orgId: orgId.toString(),
       userId: user._id.toString(),
       from: fromIso,
       to: toIso,
@@ -428,13 +457,13 @@ export const getTransactionsSummary = async (req: Request, res: Response) => {
       transactionsUpdatedAt: profileTxUpdatedAt
     });
 
-    const cached = await AiResponseCacheModel.findOne({ cacheKey }).lean();
-    if (cached?.responseData && typeof cached.responseData === "object") {
-      recordAiCache({ endpoint: "transactions-summary", hit: true });
-      return res.json({ ...(cached.responseData as any), cache_hit: true });
+    const cached = await getCachedResponse<any>({ cacheKey });
+    if (cached && typeof cached === "object") {
+      recordResponseCache({ endpoint: "transactions-summary", hit: true });
+      return res.json({ ...(cached as any), cache_hit: true });
     }
 
-    recordAiCache({ endpoint: "transactions-summary", hit: false });
+    recordResponseCache({ endpoint: "transactions-summary", hit: false });
 
     const fromDate = new Date(from);
     fromDate.setHours(0, 0, 0, 0);
@@ -451,6 +480,7 @@ export const getTransactionsSummary = async (req: Request, res: Response) => {
     const [agg] = await TransactionModel.aggregate([
       {
         $match: {
+          orgId,
           userId: user._id,
           date: { $gte: fromDate, $lte: toDate }
         }
@@ -525,22 +555,18 @@ export const getTransactionsSummary = async (req: Request, res: Response) => {
       top_categories_month: topCategoriesMonth
     };
 
-    await AiResponseCacheModel.findOneAndUpdate(
-      { cacheKey },
-      {
-        $set: {
-          userId: user._id,
-          endpoint: "transactions-summary",
-          responseData: responsePayload,
-          expiresAt: new Date(Date.now() + ttlMs.transactionsSummary)
-        }
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+    await setCachedResponse({
+      cacheKey,
+      orgId,
+      userId: user._id,
+      endpoint: "transactions-summary",
+      responseData: responsePayload,
+      ttlMs: responseCacheTtlMs.transactionsSummary,
+    });
 
     return res.json({ ...responsePayload, cache_hit: false });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error building transactions summary:`, error);
+    logger.error(`[requestId=${req.requestId}] Error building transactions summary:`, error);
     return res.status(500).json({ message: "Failed to build transactions summary", request_id: req.requestId });
   }
 };
@@ -548,7 +574,8 @@ export const getTransactionsSummary = async (req: Request, res: Response) => {
 export const createGoal = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
-    const profile = await ensureProfile(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfile({ orgId, userId: user._id });
     const source = buildMutationSource(req.requestId, "manual", { note: "goal_create" });
 
     profile.goals.push(req.body);
@@ -563,7 +590,7 @@ export const createGoal = async (req: Request, res: Response) => {
       goal: mapGoal(createdGoal)
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error creating goal:`, error);
+    logger.error(`[requestId=${req.requestId}] Error creating goal:`, error);
     res.status(500).json({ message: "Failed to create goal", request_id: req.requestId });
   }
 };
@@ -575,7 +602,8 @@ export const updateGoal = async (req: Request, res: Response) => {
     if (!goalId) {
       return res.status(400).json({ message: "Invalid goal ID", request_id: req.requestId });
     }
-    const profile = await ensureProfile(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfile({ orgId, userId: user._id });
     const source = buildMutationSource(req.requestId, "manual", { note: "goal_update" });
 
     const { goal } = findGoal(profile, goalId);
@@ -609,7 +637,7 @@ export const updateGoal = async (req: Request, res: Response) => {
       goal: mapGoal(goal)
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error updating goal:`, error);
+    logger.error(`[requestId=${req.requestId}] Error updating goal:`, error);
     return res.status(500).json({ message: "Failed to update goal", request_id: req.requestId });
   }
 };
@@ -621,7 +649,8 @@ export const deleteGoal = async (req: Request, res: Response) => {
     if (!goalId) {
       return res.status(400).json({ message: "Invalid goal ID", request_id: req.requestId });
     }
-    const profile = await ensureProfile(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfile({ orgId, userId: user._id });
     const source = buildMutationSource(req.requestId, "manual", { note: "goal_delete" });
 
     const { goalIndex } = findGoal(profile, goalId);
@@ -639,7 +668,7 @@ export const deleteGoal = async (req: Request, res: Response) => {
       goal_id: goalId
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error deleting goal:`, error);
+    logger.error(`[requestId=${req.requestId}] Error deleting goal:`, error);
     return res.status(500).json({ message: "Failed to delete goal", request_id: req.requestId });
   }
 };
@@ -647,7 +676,8 @@ export const deleteGoal = async (req: Request, res: Response) => {
 export const createDebt = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
-    const profile = await ensureProfile(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfile({ orgId, userId: user._id });
     const source = buildMutationSource(req.requestId, "manual", { note: "debt_create" });
 
     profile.debts.push(req.body);
@@ -662,7 +692,7 @@ export const createDebt = async (req: Request, res: Response) => {
       debt: mapDebt(createdDebt)
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error creating debt:`, error);
+    logger.error(`[requestId=${req.requestId}] Error creating debt:`, error);
     res.status(500).json({ message: "Failed to create debt", request_id: req.requestId });
   }
 };
@@ -674,7 +704,8 @@ export const updateDebt = async (req: Request, res: Response) => {
     if (!debtId) {
       return res.status(400).json({ message: "Invalid debt ID", request_id: req.requestId });
     }
-    const profile = await ensureProfile(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfile({ orgId, userId: user._id });
     const source = buildMutationSource(req.requestId, "manual", { note: "debt_update" });
 
     const { debt } = findDebt(profile, debtId);
@@ -708,7 +739,7 @@ export const updateDebt = async (req: Request, res: Response) => {
       debt: mapDebt(debt)
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error updating debt:`, error);
+    logger.error(`[requestId=${req.requestId}] Error updating debt:`, error);
     return res.status(500).json({ message: "Failed to update debt", request_id: req.requestId });
   }
 };
@@ -720,7 +751,8 @@ export const deleteDebt = async (req: Request, res: Response) => {
     if (!debtId) {
       return res.status(400).json({ message: "Invalid debt ID", request_id: req.requestId });
     }
-    const profile = await ensureProfile(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfile({ orgId, userId: user._id });
     const source = buildMutationSource(req.requestId, "manual", { note: "debt_delete" });
 
     const { debtIndex } = findDebt(profile, debtId);
@@ -738,7 +770,7 @@ export const deleteDebt = async (req: Request, res: Response) => {
       debt_id: debtId
     });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error deleting debt:`, error);
+    logger.error(`[requestId=${req.requestId}] Error deleting debt:`, error);
     return res.status(500).json({ message: "Failed to delete debt", request_id: req.requestId });
   }
 };
@@ -746,9 +778,40 @@ export const deleteDebt = async (req: Request, res: Response) => {
 export const getDashboardSummary = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
-    const profile = await ensureProfileWithMigration(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
 
     const now = new Date();
+    const currentMonth = monthKey(now);
+
+    const profileUpdatedAt = profile.updatedAt ? new Date(profile.updatedAt).toISOString() : "";
+    const transactionsUpdatedAt = profile.transactionsUpdatedAt
+      ? new Date(profile.transactionsUpdatedAt as unknown as Date).toISOString()
+      : "";
+
+    const latestTask = await TaskModel.findOne({ orgId, userId: user._id })
+      .sort({ updatedAt: -1 })
+      .select({ updatedAt: 1 })
+      .lean();
+    const tasksUpdatedAt = latestTask?.updatedAt ? new Date(latestTask.updatedAt).toISOString() : "";
+
+    const cacheKey = buildDashboardSummaryCacheKey({
+      orgId: orgId.toString(),
+      userId: user._id.toString(),
+      monthKey: currentMonth,
+      profileUpdatedAt,
+      transactionsUpdatedAt,
+      tasksUpdatedAt,
+    });
+
+    const cached = await getCachedResponse<any>({ cacheKey });
+    if (cached && typeof cached === "object") {
+      recordResponseCache({ endpoint: "dashboard-summary", hit: true });
+      return res.json({ ...(cached as any), cache_hit: true });
+    }
+
+    recordResponseCache({ endpoint: "dashboard-summary", hit: false });
+
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
@@ -756,6 +819,7 @@ export const getDashboardSummary = async (req: Request, res: Response) => {
       TransactionModel.aggregate([
         {
           $match: {
+            orgId,
             userId: user._id,
             date: { $gte: prevMonthStart, $lte: now }
           }
@@ -776,6 +840,7 @@ export const getDashboardSummary = async (req: Request, res: Response) => {
       TransactionModel.aggregate([
         {
           $match: {
+            orgId,
             userId: user._id,
             type: "expense",
             date: { $gte: monthStart, $lte: now }
@@ -785,16 +850,16 @@ export const getDashboardSummary = async (req: Request, res: Response) => {
         { $sort: { amount: -1 } },
         { $limit: 6 }
       ]),
-      TaskModel.countDocuments({ userId: user._id, status: "open" }),
-      TaskModel.countDocuments({ userId: user._id, status: "completed" }),
-      TaskModel.countDocuments({ userId: user._id, status: "dismissed" }),
-      TaskModel.find({ userId: user._id, status: "open" })
+      TaskModel.countDocuments({ orgId, userId: user._id, status: "open" }),
+      TaskModel.countDocuments({ orgId, userId: user._id, status: "completed" }),
+      TaskModel.countDocuments({ orgId, userId: user._id, status: "dismissed" }),
+      TaskModel.find({ orgId, userId: user._id, status: "open" })
         .sort({ dueDate: 1, createdAt: -1 })
         .limit(5)
         .lean()
     ]);
 
-    const currentKey = monthKey(now);
+    const currentKey = currentMonth;
     const previousKey = monthKey(prevMonthStart);
 
     const currentExpense = Number(monthlyRows.find((row: any) => row._id === currentKey)?.expense || 0);
@@ -823,7 +888,7 @@ export const getDashboardSummary = async (req: Request, res: Response) => {
       has_transactions: Number(profile.transactionsCount || 0) > 0
     };
 
-    return res.json({
+    const responsePayload = {
       generated_at: now.toISOString(),
       cash_flow: {
         monthly_income: monthlyIncome,
@@ -863,9 +928,20 @@ export const getDashboardSummary = async (req: Request, res: Response) => {
         }))
       },
       completeness
+    };
+
+    await setCachedResponse({
+      cacheKey,
+      orgId,
+      userId: user._id,
+      endpoint: "dashboard-summary",
+      responseData: responsePayload,
+      ttlMs: responseCacheTtlMs.dashboardSummary,
     });
+
+    return res.json({ ...responsePayload, cache_hit: false });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error building dashboard summary:`, error);
+    logger.error(`[requestId=${req.requestId}] Error building dashboard summary:`, error);
     return res.status(500).json({ message: "Failed to build dashboard summary", request_id: req.requestId });
   }
 };
@@ -876,14 +952,37 @@ export const getPortfolioSummary = async (req: Request, res: Response) => {
     const monthsRaw = Number((req.query as any)?.months ?? 12);
     const months = Number.isFinite(monthsRaw) ? Math.min(Math.max(1, monthsRaw), 36) : 12;
 
-    await ensureProfileWithMigration(user._id);
+    const orgId = requireOrgId(req);
+    const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
 
     const now = new Date();
+    const currentMonth = monthKey(now);
+
+    const transactionsUpdatedAt = profile.transactionsUpdatedAt
+      ? new Date(profile.transactionsUpdatedAt as unknown as Date).toISOString()
+      : "";
+
+    const cacheKey = buildPortfolioSummaryCacheKey({
+      orgId: orgId.toString(),
+      userId: user._id.toString(),
+      monthKey: currentMonth,
+      months,
+      transactionsUpdatedAt,
+    });
+
+    const cached = await getCachedResponse<any>({ cacheKey });
+    if (cached && typeof cached === "object") {
+      recordResponseCache({ endpoint: "portfolio-summary", hit: true });
+      return res.json({ ...(cached as any), cache_hit: true });
+    }
+
+    recordResponseCache({ endpoint: "portfolio-summary", hit: false });
+
     const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const previousMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
-    const investmentTx = await TransactionModel.find({ userId: user._id, type: "investment" })
+    const investmentTx = await TransactionModel.find({ orgId, userId: user._id, type: "investment" })
       .sort({ date: 1 })
       .lean();
 
@@ -962,7 +1061,7 @@ export const getPortfolioSummary = async (req: Request, res: Response) => {
         ? recentContributions.reduce((sum, row) => sum + row.invested, 0) / recentContributions.length
         : 0;
 
-    return res.json({
+    const responsePayload = {
       generated_at: now.toISOString(),
       summary: {
         total_invested: totalInvested,
@@ -980,9 +1079,20 @@ export const getPortfolioSummary = async (req: Request, res: Response) => {
         "Portfolio values use recorded investment transactions as invested capital.",
         "Return percentage is unavailable until live/mark-to-market valuations are integrated."
       ]
+    };
+
+    await setCachedResponse({
+      cacheKey,
+      orgId,
+      userId: user._id,
+      endpoint: "portfolio-summary",
+      responseData: responsePayload,
+      ttlMs: responseCacheTtlMs.portfolioSummary,
     });
+
+    return res.json({ ...responsePayload, cache_hit: false });
   } catch (error: any) {
-    console.error(`[requestId=${req.requestId}] Error building portfolio summary:`, error);
+    logger.error(`[requestId=${req.requestId}] Error building portfolio summary:`, error);
     return res.status(500).json({ message: "Failed to build portfolio summary", request_id: req.requestId });
   }
 };

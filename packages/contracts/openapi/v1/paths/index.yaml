@@ -1,0 +1,2685 @@
+/api/v1/orgs/me:
+  get:
+    summary: List my organizations
+    operationId: orgsMe
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Organizations visible to the current user.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/OrgsMeResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/orgs:
+  post:
+    summary: Create an organization
+    operationId: createOrg
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/CreateOrgRequest"
+    responses:
+      "201":
+        description: Organization created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/CreateOrgResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "402":
+        $ref: "../components/index.yaml#/responses/PaymentRequired"
+      "409":
+        $ref: "../components/index.yaml#/responses/Conflict"
+/api/v1/orgs/{orgId}/members:
+  post:
+    summary: Add a member to an organization
+    operationId: addOrgMember
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/OrgIdPath"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/AddOrgMemberRequest"
+    responses:
+      "201":
+        description: Member added.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AddOrgMemberResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "402":
+        $ref: "../components/index.yaml#/responses/PaymentRequired"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+      "409":
+        $ref: "../components/index.yaml#/responses/Conflict"
+/api/v1/api-keys:
+  get:
+    summary: List API keys for the active org
+    operationId: listApiKeys
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: API keys.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ListApiKeysResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+  post:
+    summary: Create an API key for the active org
+    operationId: createApiKey
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/CreateApiKeyRequest"
+    responses:
+      "201":
+        description: API key created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/CreateApiKeyResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/api-keys/{id}/revoke:
+  post:
+    summary: Revoke an API key
+    operationId: revokeApiKey
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "200":
+        description: Key revoked.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/RevokeApiKeyResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/usage/ledger:
+  get:
+    summary: Read usage ledger for the active org
+    operationId: usageLedger
+    security:
+      - CookieAuth: []
+      - ApiKeyAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: period_key
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: "^\\d{4}-\\d{2}$"
+        description: Billing period key (YYYY-MM). Defaults to current period.
+    responses:
+      "200":
+        description: Usage, limits, and ledger rows.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/UsageLedgerResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/billing/checkout:
+  post:
+    summary: Create a billing checkout session (Stripe) or activate plan (stub)
+    operationId: billingCheckout
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/BillingCheckoutRequest"
+    responses:
+      "200":
+        description: Checkout session created or plan activated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/BillingCheckoutResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/billing/portal:
+  get:
+    summary: Create a billing portal session (Stripe) or return an app link (stub)
+    operationId: billingPortal
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: return_url
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uri
+    responses:
+      "200":
+        description: Billing portal response.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/BillingPortalResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/billing/webhook:
+  post:
+    summary: Stripe webhook (server-to-server)
+    operationId: stripeWebhook
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+    parameters:
+      - name: stripe-signature
+        in: header
+        required: true
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Webhook received.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                received:
+                  type: boolean
+                request_id:
+                  type: string
+              required: [received, request_id]
+/api/v1/workflows:
+  get:
+    summary: List workflows for the active org
+    operationId: listWorkflows
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Workflows.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ListWorkflowsResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+  post:
+    summary: Create a workflow for the active org
+    operationId: createWorkflow
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/CreateWorkflowRequest"
+    responses:
+      "201":
+        description: Workflow created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/CreateWorkflowResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/workflows/{id}/run:
+  post:
+    summary: Run a workflow (queued when Redis is enabled)
+    operationId: runWorkflow
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/WorkflowIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/RunWorkflowRequest"
+    responses:
+      "200":
+        description: Workflow run accepted or completed inline.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/RunWorkflowResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/orgs/{orgId}/settings:
+  patch:
+    summary: Update organization settings
+    operationId: updateOrgSettings
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/OrgIdPath"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/UpdateOrgSettingsRequest"
+    responses:
+      "200":
+        description: Organization updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/UpdateOrgSettingsResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/org-invites/accept:
+  post:
+    summary: Accept an organization invite
+    operationId: acceptOrgInvite
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/AcceptOrgInviteRequest"
+    responses:
+      "200":
+        description: Invite accepted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AcceptOrgInviteResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "402":
+        $ref: "../components/index.yaml#/responses/PaymentRequired"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/referrals/me:
+  get:
+    summary: Get referral code + stats for the active org
+    operationId: referralsMe
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Referral information.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ReferralsMeResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/referrals/redeem:
+  post:
+    summary: Redeem a referral code for the active org
+    operationId: referralRedeem
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/ReferralRedeemRequest"
+    responses:
+      "200":
+        description: Referral already redeemed (idempotent).
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ReferralRedeemResponse"
+      "201":
+        description: Referral redeemed and credits granted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ReferralRedeemResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/exports:
+  get:
+    summary: List exports for the active org
+    operationId: listExports
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: "../components/index.yaml#/schemas/ExportJobStatus"
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+    responses:
+      "200":
+        description: Export jobs.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ListExportsResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+  post:
+    summary: Create an export job
+    operationId: createExport
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/CreateExportRequest"
+    responses:
+      "200":
+        description: Existing export returned (idempotency hit).
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/CreateExportResponse"
+      "201":
+        description: Export job created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/CreateExportResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "402":
+        $ref: "../components/index.yaml#/responses/PaymentRequired"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/exports/{id}:
+  get:
+    summary: Get export job by id
+    operationId: getExportById
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Export job.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/GetExportResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/exports/{id}/download:
+  get:
+    summary: Download an export file
+    operationId: downloadExport
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Export file download.
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+      "409":
+        $ref: "../components/index.yaml#/responses/Conflict"
+/api/v1/audit/events:
+  get:
+    summary: List audit events for the active org
+    operationId: listAuditEvents
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: action
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 80
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+    responses:
+      "200":
+        description: Audit events.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AuditEventsResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/config/me:
+  get:
+    summary: Get my app config (org + features + entitlements)
+    operationId: configMe
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Current user config.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AppConfigResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/plans:
+  get:
+    summary: List available subscription plans
+    operationId: listPlans
+    security:
+      - CookieAuth: []
+    responses:
+      "200":
+        description: Plan catalog.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PlansResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/entitlements/me:
+  get:
+    summary: Get my entitlements for the active org
+    operationId: entitlementsMe
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Resolved entitlements and usage.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/EntitlementsMeResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/usage-events:
+  post:
+    summary: Ingest an internal usage event
+    operationId: ingestUsageEvent
+    security:
+      - InternalUsageTokenAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/UsageEventRequest"
+    responses:
+      "202":
+        description: Usage event accepted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/UsageEventIngestResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/marketplace/catalog:
+  get:
+    summary: List marketplace catalog entries
+    operationId: listMarketplaceCatalog
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 120
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [active, preview, deprecated]
+    responses:
+      "200":
+        description: Marketplace catalog.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/MarketplaceCatalogResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/marketplace/install:
+  post:
+    summary: Install a marketplace plugin in the active org
+    operationId: installMarketplacePlugin
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/MarketplaceInstallRequest"
+    responses:
+      "201":
+        description: Plugin installed.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/MarketplaceInstallResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/plugins:
+  get:
+    summary: List plugins installed for the active org
+    operationId: listInstalledPlugins
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Installed plugins.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PluginsListResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/plugins/{id}/update:
+  post:
+    summary: Update installed plugin version
+    operationId: updateInstalledPluginVersion
+    security:
+      - CookieAuth: []
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._:-]{1,118}[a-z0-9]$"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/PluginVersionUpdateRequest"
+    responses:
+      "200":
+        description: Plugin updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PluginOperationResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/plugins/{id}/uninstall:
+  post:
+    summary: Disable an installed plugin
+    operationId: uninstallPlugin
+    security:
+      - CookieAuth: []
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._:-]{1,118}[a-z0-9]$"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "200":
+        description: Plugin disabled.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PluginOperationResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/integrations:
+  get:
+    summary: List integrations for the active org
+    operationId: listIntegrations
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Integrations and latest sync state.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/IntegrationsListResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/integrations/{id}/health:
+  get:
+    summary: Get integration connection health/state
+    operationId: integrationHealth
+    security:
+      - CookieAuth: []
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._:-]{1,118}[a-z0-9]$"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Integration connection state.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/IntegrationHealthResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/integrations/{id}/connect:
+  post:
+    summary: Connect an integration
+    operationId: connectIntegration
+    security:
+      - CookieAuth: []
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._:-]{1,118}[a-z0-9]$"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+    responses:
+      "200":
+        description: Integration connection updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/IntegrationConnectionResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/integrations/{id}/disconnect:
+  post:
+    summary: Disconnect an integration
+    operationId: disconnectIntegration
+    security:
+      - CookieAuth: []
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._:-]{1,118}[a-z0-9]$"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+    responses:
+      "200":
+        description: Integration connection updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/IntegrationConnectionResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/integrations/{id}/sync:
+  post:
+    summary: Trigger an integration sync run
+    operationId: syncIntegration
+    security:
+      - CookieAuth: []
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._:-]{1,118}[a-z0-9]$"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/IntegrationSyncRequest"
+    responses:
+      "202":
+        description: Integration sync queued/completed.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/IntegrationSyncResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/integrations/{id}/history:
+  get:
+    summary: List integration sync history
+    operationId: integrationHistory
+    security:
+      - CookieAuth: []
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._:-]{1,118}[a-z0-9]$"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+    responses:
+      "200":
+        description: Integration sync history.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/IntegrationHistoryResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/automation/events:
+  get:
+    summary: List automation event catalog
+    operationId: listAutomationEvents
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Supported event types for automation workflows.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AutomationEventsCatalogResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/automation/events/emit:
+  post:
+    summary: Emit a domain event for automation workflows
+    operationId: emitAutomationEvent
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/AutomationEventEmitRequest"
+    responses:
+      "202":
+        description: Event accepted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AutomationEventEmitResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/feature-flags:
+  get:
+    summary: List feature flags for the active org
+    operationId: listFeatureFlags
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: key_prefix
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: enabled
+        in: query
+        required: false
+        schema:
+          type: boolean
+    responses:
+      "200":
+        description: Feature flags.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/FeatureFlagsListResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/feature-flags/{key}:
+  put:
+    summary: Create or update a feature flag
+    operationId: upsertFeatureFlag
+    security:
+      - CookieAuth: []
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._:-]{1,118}[a-z0-9]$"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/FeatureFlagUpsertRequest"
+    responses:
+      "201":
+        description: Feature flag saved.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/FeatureFlagUpsertResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+  delete:
+    summary: Delete a feature flag
+    operationId: deleteFeatureFlag
+    security:
+      - CookieAuth: []
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._:-]{1,118}[a-z0-9]$"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "200":
+        description: Feature flag deleted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/FeatureFlagDeleteResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/analytics/overview:
+  get:
+    summary: Read analytics overview for the active org
+    operationId: analyticsOverview
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: period_key
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: "^\\d{4}-\\d{2}$"
+    responses:
+      "200":
+        description: Analytics snapshot.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AnalyticsOverviewResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/shares/financial-story:
+  post:
+    summary: Create a share link for a financial story snapshot
+    operationId: createFinancialStoryShare
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/CreateFinancialStoryShareRequest"
+    responses:
+      "201":
+        description: Share link created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/CreateFinancialStoryShareResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/public/shares/financial-story/{token}:
+  get:
+    summary: Read a public financial story share payload by token
+    operationId: publicFinancialStoryShare
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 16
+          maxLength: 256
+          pattern: "^[a-zA-Z0-9_-]+$"
+    responses:
+      "200":
+        description: Public share payload.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PublicFinancialStoryShareResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/auth/providers:
+  get:
+    summary: List enabled authentication providers
+    operationId: authProviders
+    responses:
+      "200":
+        description: Providers.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AuthProvidersResponse"
+/api/v1/auth/csrf:
+  get:
+    summary: Issue a CSRF token cookie + response
+    operationId: authCsrf
+    responses:
+      "200":
+        description: CSRF token.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/CsrfTokenResponse"
+/api/v1/auth/register:
+  post:
+    summary: Register a new user
+    operationId: authRegister
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/RegisterRequest"
+    responses:
+      "201":
+        description: Registration accepted (email verification required).
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/RegisterResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+/api/v1/auth/login:
+  post:
+    summary: Login with email + password
+    operationId: authLogin
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/LoginRequest"
+    responses:
+      "200":
+        description: Login successful.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AuthUserResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/auth/verify-email:
+  post:
+    summary: Verify email (OTP) and create session
+    operationId: authVerifyEmail
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/VerifyEmailRequest"
+    responses:
+      "200":
+        description: Email verified.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AuthUserResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+/api/v1/auth/resend-verification:
+  post:
+    summary: Resend verification OTP
+    operationId: authResendVerification
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/ResendVerificationRequest"
+    responses:
+      "200":
+        description: Verification OTP resent.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ResendVerificationResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+/api/v1/auth/profile:
+  get:
+    summary: Get the current authenticated user profile
+    operationId: authProfile
+    security:
+      - CookieAuth: []
+    responses:
+      "200":
+        description: User profile.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AuthUserResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/auth/logout:
+  post:
+    summary: Logout (clears session cookie)
+    operationId: authLogout
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "200":
+        description: Logout complete.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LogoutResponse"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/process-command:
+  post:
+    summary: Process an AI command
+    operationId: processCommand
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+            properties:
+              command:
+                type: string
+                minLength: 1
+              options:
+                type: object
+                additionalProperties: true
+            required: [command]
+    responses:
+      "200":
+        description: Command processed.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "402":
+        $ref: "../components/index.yaml#/responses/PaymentRequired"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/scenarios/what-if:
+  post:
+    summary: Run a what-if scenario
+    operationId: whatIfScenario
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+            properties:
+              scenario:
+                type: object
+                additionalProperties: true
+    responses:
+      "200":
+        description: Scenario result.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "402":
+        $ref: "../components/index.yaml#/responses/PaymentRequired"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/ai-core/status:
+  get:
+    summary: Get AI Core status snapshot
+    operationId: getAiCoreStatus
+    security:
+      - CookieAuth: []
+    responses:
+      "200":
+        description: AI Core status.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/financial-profiles/investments:
+  post:
+    summary: Add an investment to my profile
+    operationId: addFinancialProfileInvestment
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+            properties:
+              amount:
+                type: number
+              type:
+                type: string
+    responses:
+      "201":
+        description: Investment added.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/financial-profiles/me:
+  get:
+    summary: Get my financial profile
+    operationId: getFinancialProfileMe
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Financial profile.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+  put:
+    summary: Update my financial profile
+    operationId: updateFinancialProfileMe
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "200":
+        description: Updated profile.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/agent-outputs/recent:
+  get:
+    summary: List recent agent outputs
+    operationId: listRecentAgentOutputs
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+    responses:
+      "200":
+        description: Recent agent outputs.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PaginatedLooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/agent-outputs/{id}:
+  get:
+    summary: Get an agent output by id
+    operationId: getAgentOutput
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Agent output.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/agent-outputs/{id}/feedback:
+  post:
+    summary: Submit feedback for an agent output
+    operationId: submitAgentOutputFeedback
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+            properties:
+              helpful:
+                type: boolean
+              rating:
+                type: integer
+                minimum: 1
+                maximum: 5
+    responses:
+      "200":
+        description: Feedback saved.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/agent-outputs/user/{userId}:
+  get:
+    summary: List agent outputs for a user
+    operationId: listAgentOutputsByUser
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/UserIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Agent outputs.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PaginatedLooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/transactions:
+  get:
+    summary: List transactions
+    operationId: listTransactions
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: type
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [income, expense, investment]
+      - name: category
+        in: query
+        required: false
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Transactions list.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PaginatedLooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+  post:
+    summary: Create a transaction
+    operationId: createTransaction
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              amount:
+                type: number
+              category:
+                type: string
+              description:
+                type: string
+              date:
+                type: string
+                format: date-time
+              type:
+                type: string
+                enum: [income, expense, investment]
+            required: [amount, category, description, type]
+    responses:
+      "201":
+        description: Transaction created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/transactions/import:
+  post:
+    summary: Bulk import transactions
+    operationId: importTransactions
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              rows:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+            required: [rows]
+    responses:
+      "201":
+        description: Transactions imported.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/transactions/{id}:
+  patch:
+    summary: Update a transaction
+    operationId: updateTransaction
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "200":
+        description: Transaction updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+  delete:
+    summary: Delete a transaction
+    operationId: deleteTransaction
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "200":
+        description: Transaction deleted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/transactions/recent:
+  get:
+    summary: List recent transactions
+    operationId: listRecentTransactions
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+    responses:
+      "200":
+        description: Recent transactions.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PaginatedLooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/transactions/summary:
+  get:
+    summary: Get transaction summary
+    operationId: getTransactionsSummary
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: from
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: to
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: groupBy
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: topCategories
+        in: query
+        required: false
+        schema:
+          type: integer
+    responses:
+      "200":
+        description: Summary payload.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/dashboard/summary:
+  get:
+    summary: Get dashboard summary
+    operationId: getDashboardSummary
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+    responses:
+      "200":
+        description: Dashboard summary.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/portfolio/summary:
+  get:
+    summary: Get portfolio summary
+    operationId: getPortfolioSummary
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: months
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 60
+    responses:
+      "200":
+        description: Portfolio summary.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/goals:
+  post:
+    summary: Create a financial goal
+    operationId: createGoal
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "201":
+        description: Goal created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/goals/{goalId}:
+  patch:
+    summary: Update a financial goal
+    operationId: updateGoal
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/GoalIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "200":
+        description: Goal updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+  delete:
+    summary: Delete a financial goal
+    operationId: deleteGoal
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/GoalIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "200":
+        description: Goal deleted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/debts:
+  post:
+    summary: Create a debt record
+    operationId: createDebt
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "201":
+        description: Debt created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/debts/{debtId}:
+  patch:
+    summary: Update a debt record
+    operationId: updateDebt
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/DebtIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "200":
+        description: Debt updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/chat/sessions:
+  post:
+    summary: Create a chat session
+    operationId: createChatSession
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "201":
+        description: Session created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+  get:
+    summary: List chat sessions
+    operationId: listChatSessions
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+    responses:
+      "200":
+        description: Session list.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PaginatedLooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/chat/sessions/{sessionId}:
+  get:
+    summary: Get a chat session
+    operationId: getChatSession
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/SessionIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Chat session.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+  delete:
+    summary: Delete a chat session
+    operationId: deleteChatSession
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/SessionIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "200":
+        description: Session deleted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+  patch:
+    summary: Rename a chat session
+    operationId: renameChatSession
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/SessionIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              title:
+                type: string
+            required: [title]
+    responses:
+      "200":
+        description: Session renamed.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/chat/sessions/{sessionId}/messages:
+  get:
+    summary: List messages in a chat session
+    operationId: listChatMessages
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/SessionIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+    responses:
+      "200":
+        description: Messages list.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PaginatedLooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+  post:
+    summary: Send a message in a chat session
+    operationId: sendChatMessage
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/SessionIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+            properties:
+              content:
+                type: string
+                minLength: 1
+              options:
+                type: object
+                additionalProperties: true
+            required: [content]
+    responses:
+      "200":
+        description: Message accepted and response returned.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "402":
+        $ref: "../components/index.yaml#/responses/PaymentRequired"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/tasks/from-plan:
+  post:
+    summary: Create tasks from an AI plan
+    operationId: createTasksFromPlan
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "201":
+        description: Tasks created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/tasks:
+  get:
+    summary: List tasks
+    operationId: listTasks
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+    responses:
+      "200":
+        description: Tasks list.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PaginatedLooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/tasks/{id}:
+  get:
+    summary: Get a task by id
+    operationId: getTask
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Task details.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+  patch:
+    summary: Update task status/details
+    operationId: updateTask
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "200":
+        description: Task updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/tasks/{id}/apply:
+  post:
+    summary: Apply task effects to financial data
+    operationId: applyTask
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "200":
+        description: Task effects applied.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/receipts/parse:
+  post:
+    summary: Parse an uploaded receipt
+    operationId: parseReceipt
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            properties:
+              file:
+                type: string
+                format: binary
+            required: [file]
+    responses:
+      "200":
+        description: Receipt parsed.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/receipts/{id}/confirm:
+  post:
+    summary: Confirm parsed receipt values
+    operationId: confirmReceipt
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "200":
+        description: Receipt confirmed.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/receipts:
+  get:
+    summary: List receipts
+    operationId: listReceipts
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+    responses:
+      "200":
+        description: Receipt list.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PaginatedLooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/receipts/{id}:
+  get:
+    summary: Get a receipt by id
+    operationId: getReceipt
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Receipt details.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+  delete:
+    summary: Delete a receipt
+    operationId: deleteReceipt
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "200":
+        description: Receipt deleted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/financial-journal/recognize-handwriting:
+  post:
+    summary: Recognize handwriting from journal media
+    operationId: recognizeJournalHandwriting
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            properties:
+              file:
+                type: string
+                format: binary
+            required: [file]
+    responses:
+      "200":
+        description: Handwriting recognized.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/financial-journal/entries:
+  get:
+    summary: List financial journal entries
+    operationId: listJournalEntries
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+    responses:
+      "200":
+        description: Journal entries.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/PaginatedLooseSuccessResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/financial-journal/entries/{id}:
+  get:
+    summary: Get a financial journal entry
+    operationId: getJournalEntry
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Journal entry details.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+  patch:
+    summary: Patch a financial journal entry
+    operationId: patchJournalEntry
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "200":
+        description: Journal entry updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/financial-journal/entries/{id}/insights:
+  post:
+    summary: Generate insights for a journal entry
+    operationId: generateJournalInsights
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "200":
+        description: Insights generated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+/api/v1/media/{fileId}:
+  get:
+    summary: Download media content by GridFS file id
+    operationId: getMediaByFileId
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/FileIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Media content stream.
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+  delete:
+    summary: Delete a debt record
+    operationId: deleteDebt
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/DebtIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "200":
+        description: Debt deleted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+

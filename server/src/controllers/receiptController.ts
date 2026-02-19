@@ -1,7 +1,9 @@
 import type { Request, Response } from "express";
+import mongoose from "mongoose";
 import { getEnv } from "../config/env";
 import { HttpError } from "../middleware/httpError";
 import ReceiptModel, { type ReceiptExtracted } from "../models/receiptModel";
+import OrganizationModel from "../models/organizationModel";
 import TransactionModel from "../models/transactionModel";
 import { IUserDocument } from "../models/userModel";
 import { processAiCoreReceiptOcr } from "../services/aiCoreClient";
@@ -11,8 +13,10 @@ import {
   ensureProfileWithMigration,
   setProfileMutationSource,
 } from "../services/profileService";
+import { publishDomainEvent } from "../services/domainEvents";
 import { recordOcrParse } from "../observability/metrics";
 import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements";
+import { logger } from "../config/logger";
 
 const mapTransactionRecord = (transaction: {
   _id: unknown;
@@ -32,6 +36,23 @@ const mapTransactionRecord = (transaction: {
   source: transaction.source || undefined,
 });
 
+const requireOrgId = (req: Request) => {
+  const orgIdRaw = String((req as any).org?.orgId || "");
+  if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
+    throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
+  }
+  return new mongoose.Types.ObjectId(orgIdRaw);
+};
+
+const resolveOrgCurrency = async (orgId: mongoose.Types.ObjectId) => {
+  const org = await OrganizationModel.findById(orgId).select({ currency: 1 }).lean();
+  const code = String((org as any)?.currency || "").trim().toUpperCase();
+  if (code.length === 3 && /^[A-Z]{3}$/.test(code)) {
+    return code;
+  }
+  return "USD";
+};
+
 export const parseReceipt = async (req: Request, res: Response) => {
   const env = getEnv();
   if (!env.RECEIPTS_OCR_ENABLED) {
@@ -39,7 +60,9 @@ export const parseReceipt = async (req: Request, res: Response) => {
   }
 
   const user = req.user as IUserDocument;
+  const orgId = requireOrgId(req);
   await enforceFeatureLimit({
+    orgId,
     userId: user._id,
     feature: "ocr_quota",
     units: 1,
@@ -53,7 +76,9 @@ export const parseReceipt = async (req: Request, res: Response) => {
 
   const lang = typeof req.body?.lang === "string" ? req.body.lang.trim() : "en";
   const currencyHint =
-    typeof req.body?.currencyHint === "string" ? req.body.currencyHint.trim() : "INR";
+    typeof req.body?.currencyHint === "string" && req.body.currencyHint.trim()
+      ? req.body.currencyHint.trim().toUpperCase()
+      : await resolveOrgCurrency(orgId);
 
   const fileId = await uploadBufferToGridFs({
     userId: user._id.toString(),
@@ -78,6 +103,7 @@ export const parseReceipt = async (req: Request, res: Response) => {
   const extracted: ReceiptExtracted = ocr.extracted || {};
 
   const receipt = await ReceiptModel.create({
+    orgId,
     userId: user._id,
     fileId,
     status: "parsed",
@@ -88,6 +114,7 @@ export const parseReceipt = async (req: Request, res: Response) => {
   });
 
   await recordFeatureUsage({
+    orgId,
     userId: user._id,
     feature: "ocr_quota",
     units: 1,
@@ -117,16 +144,17 @@ export const confirmReceipt = async (req: Request, res: Response) => {
   }
 
   const user = req.user as IUserDocument;
+  const orgId = requireOrgId(req);
   const receiptId = String((req as any).params?.id || "");
 
-  const receipt = await ReceiptModel.findOne({ _id: receiptId, userId: user._id });
+  const receipt = await ReceiptModel.findOne({ _id: receiptId, orgId, userId: user._id });
   if (!receipt) {
     throw new HttpError(404, "NOT_FOUND", "Receipt not found");
   }
 
   const { vendor, date, total, tax, currency, category, description, items } = req.body as any;
 
-  const profile = await ensureProfileWithMigration(user._id);
+  const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
   const source = {
     origin: "receipt_ocr" as const,
     request_id: req.requestId,
@@ -136,6 +164,7 @@ export const confirmReceipt = async (req: Request, res: Response) => {
   };
 
   const created = await TransactionModel.create({
+    orgId,
     userId: user._id,
     amount: -Math.abs(Number(total)),
     category: String(category),
@@ -163,6 +192,36 @@ export const confirmReceipt = async (req: Request, res: Response) => {
   receipt.transactionId = created._id as any;
   await receipt.save();
 
+  await publishDomainEvent({
+    orgId,
+    userId: user._id,
+    eventType: "TransactionCreated",
+    aggregateType: "transaction",
+    aggregateId: created._id.toString(),
+    requestId: req.requestId,
+    payload: {
+      source,
+      transaction_type: created.type,
+      category: created.category,
+      amount: created.amount,
+      receipt_id: receiptId,
+    },
+  }).catch(() => null);
+
+  await publishDomainEvent({
+    orgId,
+    userId: user._id,
+    eventType: "ReceiptConfirmed",
+    aggregateType: "receipt",
+    aggregateId: receiptId,
+    requestId: req.requestId,
+    payload: {
+      receipt_id: receiptId,
+      transaction_id: created._id.toString(),
+      source,
+    },
+  }).catch(() => null);
+
   res.json({
     source,
     transaction: mapTransactionRecord(created),
@@ -189,13 +248,14 @@ export const listReceipts = async (req: Request, res: Response) => {
   }
 
   const user = req.user as IUserDocument;
+  const orgId = requireOrgId(req);
   const page = Math.max(1, Number((req as any).query?.page) || 1);
   const limit = Math.max(1, Math.min(100, Number((req as any).query?.limit) || 20));
   const skip = (page - 1) * limit;
 
   const [total, docs] = await Promise.all([
-    ReceiptModel.countDocuments({ userId: user._id }),
-    ReceiptModel.find({ userId: user._id })
+    ReceiptModel.countDocuments({ orgId, userId: user._id }),
+    ReceiptModel.find({ orgId, userId: user._id })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -229,9 +289,10 @@ export const getReceiptById = async (req: Request, res: Response) => {
   }
 
   const user = req.user as IUserDocument;
+  const orgId = requireOrgId(req);
   const receiptId = String((req as any).params?.id || "");
 
-  const receipt = await ReceiptModel.findOne({ _id: receiptId, userId: user._id }).lean();
+  const receipt = await ReceiptModel.findOne({ _id: receiptId, orgId, userId: user._id }).lean();
   if (!receipt) {
     throw new HttpError(404, "NOT_FOUND", "Receipt not found");
   }
@@ -260,9 +321,10 @@ export const deleteReceipt = async (req: Request, res: Response) => {
   }
 
   const user = req.user as IUserDocument;
+  const orgId = requireOrgId(req);
   const receiptId = String((req as any).params?.id || "");
 
-  const receipt = await ReceiptModel.findOne({ _id: receiptId, userId: user._id });
+  const receipt = await ReceiptModel.findOne({ _id: receiptId, orgId, userId: user._id });
   if (!receipt) {
     throw new HttpError(404, "NOT_FOUND", "Receipt not found");
   }
@@ -273,11 +335,11 @@ export const deleteReceipt = async (req: Request, res: Response) => {
 
   const fileId = receipt.fileId?.toString();
 
-  await ReceiptModel.deleteOne({ _id: receiptId, userId: user._id });
+  await ReceiptModel.deleteOne({ _id: receiptId, orgId, userId: user._id });
 
   if (fileId) {
     await deleteGridFsFile(fileId).catch((error) => {
-      console.warn(`[requestId=${req.requestId}] Failed to delete GridFS file ${fileId}:`, error);
+      logger.warn(`[requestId=${req.requestId}] Failed to delete GridFS file ${fileId}:`, error);
     });
   }
 

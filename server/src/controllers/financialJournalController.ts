@@ -1,8 +1,10 @@
 import type { Request, Response } from "express";
+import mongoose from "mongoose";
 import { getEnv } from "../config/env";
 import { HttpError } from "../middleware/httpError";
 import AgentOutputModel from "../models/agentOutputModel";
 import JournalEntryModel from "../models/journalEntryModel";
+import OrganizationModel from "../models/organizationModel";
 import { IUserDocument } from "../models/userModel";
 import { processAiCoreHandwriting, processAiCoreRequest } from "../services/aiCoreClient";
 import { buildProcessRequest } from "../services/aiRequestBuilder";
@@ -23,6 +25,26 @@ const parseMaybeJson = (value: unknown) => {
   }
 };
 
+const requireOrgId = (req: Request) => {
+  const orgIdRaw = String((req as any).org?.orgId || "");
+  if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
+    throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
+  }
+  return new mongoose.Types.ObjectId(orgIdRaw);
+};
+
+const getOrgAiSettings = async (orgId: mongoose.Types.ObjectId) => {
+  const org = await OrganizationModel.findById(orgId)
+    .select({ currency: 1, locale: 1, timezone: 1 })
+    .lean();
+
+  return {
+    currency: String((org as any)?.currency || "USD"),
+    locale: String((org as any)?.locale || "en-US"),
+    timezone: String((org as any)?.timezone || "UTC"),
+  };
+};
+
 export const recognizeHandwriting = async (req: Request, res: Response) => {
   const env = getEnv();
   if (!env.JOURNAL_ENABLED) {
@@ -30,6 +52,7 @@ export const recognizeHandwriting = async (req: Request, res: Response) => {
   }
 
   const user = req.user as IUserDocument;
+  const orgId = requireOrgId(req);
   const file = (req as any).file as Express.Multer.File | undefined;
   if (!file?.buffer || !file.originalname) {
     throw new HttpError(400, "MISSING_FILE", "Missing handwriting image file");
@@ -57,6 +80,7 @@ export const recognizeHandwriting = async (req: Request, res: Response) => {
   );
 
   const entry = await JournalEntryModel.create({
+    orgId,
     userId: user._id,
     fileId,
     strokes,
@@ -66,6 +90,7 @@ export const recognizeHandwriting = async (req: Request, res: Response) => {
   });
 
   await AgentOutputModel.create({
+    orgId,
     userId: user._id,
     sessionId: entry._id.toString(),
     userInput: String(recognition.recognized_text || "(handwriting)").slice(0, 5000),
@@ -103,13 +128,14 @@ export const listJournalEntries = async (req: Request, res: Response) => {
   }
 
   const user = req.user as IUserDocument;
+  const orgId = requireOrgId(req);
   const page = Math.max(1, Number((req as any).query?.page) || 1);
   const limit = Math.max(1, Math.min(100, Number((req as any).query?.limit) || 20));
   const skip = (page - 1) * limit;
 
   const [total, docs] = await Promise.all([
-    JournalEntryModel.countDocuments({ userId: user._id }),
-    JournalEntryModel.find({ userId: user._id })
+    JournalEntryModel.countDocuments({ orgId, userId: user._id }),
+    JournalEntryModel.find({ orgId, userId: user._id })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -143,9 +169,10 @@ export const getJournalEntryById = async (req: Request, res: Response) => {
   }
 
   const user = req.user as IUserDocument;
+  const orgId = requireOrgId(req);
   const entryId = String((req as any).params?.id || "");
 
-  const entry = await JournalEntryModel.findOne({ _id: entryId, userId: user._id }).lean();
+  const entry = await JournalEntryModel.findOne({ _id: entryId, orgId, userId: user._id }).lean();
   if (!entry) {
     throw new HttpError(404, "NOT_FOUND", "Journal entry not found");
   }
@@ -172,13 +199,14 @@ export const patchJournalEntry = async (req: Request, res: Response) => {
   }
 
   const user = req.user as IUserDocument;
+  const orgId = requireOrgId(req);
   const entryId = String((req as any).params?.id || "");
 
   const recognizedText = String((req.body as any)?.recognized_text || "").slice(0, 5000);
   const parsedIntent = parseJournalIntent(recognizedText);
 
   const entry = await JournalEntryModel.findOneAndUpdate(
-    { _id: entryId, userId: user._id },
+    { _id: entryId, orgId, userId: user._id },
     { $set: { recognizedText, parsedIntent } },
     { new: true }
   ).lean();
@@ -209,15 +237,19 @@ export const generateJournalInsights = async (req: Request, res: Response) => {
   }
 
   const user = req.user as IUserDocument;
+  const orgId = requireOrgId(req);
   const entryId = String((req as any).params?.id || "");
 
-  const entry = await JournalEntryModel.findOne({ _id: entryId, userId: user._id });
+  const entry = await JournalEntryModel.findOne({ _id: entryId, orgId, userId: user._id });
   if (!entry) {
     throw new HttpError(404, "NOT_FOUND", "Journal entry not found");
   }
 
-  const profile = await ensureProfileWithMigration(user._id);
-  const txResult = await fetchTransactionsForAi({ userId: user._id });
+  const [profile, txResult, orgSettings] = await Promise.all([
+    ensureProfileWithMigration({ orgId, userId: user._id }),
+    fetchTransactionsForAi({ orgId, userId: user._id }),
+    getOrgAiSettings(orgId),
+  ]);
 
   const prompt =
     "You are a personal finance coach. The user wrote a journal note.\n" +
@@ -230,6 +262,9 @@ export const generateJournalInsights = async (req: Request, res: Response) => {
   const { request: aiRequest } = buildProcessRequest({
     userInput: prompt,
     profile,
+    orgId: orgId.toString(),
+    userId: user._id.toString(),
+    orgSettings,
     transactions: txResult.transactions,
     totalTransactions: txResult.stats.totalTransactions,
     narrative: true,
@@ -239,6 +274,7 @@ export const generateJournalInsights = async (req: Request, res: Response) => {
   const { plan: normalizedPlan } = normalizeAiPlan(aiResponse.plan);
 
   const stored = await AgentOutputModel.create({
+    orgId,
     userId: user._id,
     sessionId: entry._id.toString(),
     userInput: entry.recognizedText.slice(0, 5000),

@@ -13,10 +13,13 @@ import {
   PiggyBank,
   GraduationCap
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import { IFinancialProfile, IFinancialGoal, IAgentOutput } from "@/types";
 import { GoalDetailModal } from "@/components/GoalDetailModal"; 
+import { useToast } from "@/hooks/useToast";
+import { createFinancialStoryShare } from "@/lib/apiClient";
 
 // Helper to get the correct icon for milestones
 const milestoneIcons: { [key: string]: typeof Star } = {
@@ -45,6 +48,8 @@ const formatMilestoneDate = (dateString: string | Date) => {
 export default function FinancialStory() {
   const { user } = useAuth();
   const userId = user?.id || localStorage.getItem("userId");
+  const { formatMoney } = useOrgFormatters();
+  const { toast } = useToast();
   
   const [selectedGoal, setSelectedGoal] = useState<IFinancialGoal | null>(null);
 
@@ -60,6 +65,37 @@ export default function FinancialStory() {
 
   const goals = profile?.goals || [];
 
+  const shareMutation = useMutation({
+    mutationFn: () =>
+      createFinancialStoryShare({
+        expires_in_days: 7,
+        include_goal_names: false,
+        include_goal_deadlines: false,
+        include_milestones: true,
+        max_milestones: 30,
+      }),
+    onSuccess: async (data) => {
+      const url = data?.share?.share_url;
+      if (typeof url === "string" && url.trim()) {
+        try {
+          await navigator.clipboard.writeText(url);
+          toast({ title: "Share link copied", description: "Anyone with the link can view this snapshot." });
+        } catch {
+          toast({ title: "Share link created", description: url });
+        }
+      } else {
+        toast({ title: "Share link created" });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Share failed",
+        description: error?.message || "Couldn't create share link.",
+        variant: "destructive",
+      });
+    },
+  });
+
 
   const { totalTarget, totalCurrent } = goals.reduce(
     (acc, goal) => {
@@ -73,14 +109,7 @@ export default function FinancialStory() {
   const healthPercentage = totalTarget > 0 ? Math.round((totalCurrent / totalTarget) * 100) : 0;
   const totalAssets = (profile?.savings || 0) + totalCurrent;
   
-  // Helper to format currency
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
+  const formatCurrency = (value: number) => formatMoney(value, { maximumFractionDigits: 0 });
 
   if (isLoadingProfile || isLoadingInsights) {
     return (
@@ -98,11 +127,21 @@ export default function FinancialStory() {
         className="max-w-4xl mx-auto"
       >
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Your Financial Story</h1>
-          <p className="text-muted-foreground">
-            Track your journey towards financial freedom with personalized
-            milestones
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-foreground mb-2">Your Financial Story</h1>
+              <p className="text-muted-foreground">
+                Track your journey towards financial freedom with personalized milestones
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => shareMutation.mutate()}
+              disabled={shareMutation.isPending}
+            >
+              {shareMutation.isPending ? "Sharing…" : "Share"}
+            </Button>
+          </div>
         </div>
 
         {/* Overall Progress -  Dynamic */}

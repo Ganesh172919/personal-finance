@@ -4,6 +4,7 @@ import ChatMessageModel, { IChatMessageDocument } from "../models/chatMessageMod
 import AiResponseCacheModel from "../models/aiResponseCacheModel";
 import AgentOutputModel from "../models/agentOutputModel";
 import { IUserDocument } from "../models/userModel";
+import OrganizationModel from "../models/organizationModel";
 import mongoose from "mongoose";
 import { processAiCoreRequest } from "../services/aiCoreClient";
 import { buildProcessRequest } from "../services/aiRequestBuilder";
@@ -16,9 +17,30 @@ import { normalizeAiPlan } from "../schemas/aiPlanSchema";
 import { recordAiCache, recordAiFallback } from "../observability/metrics";
 import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements";
 import { HttpError } from "../middleware/httpError";
+import { logger } from "../config/logger";
 
 const getSingleParam = (value: string | string[] | undefined) =>
   Array.isArray(value) ? value[0] : value;
+
+const requireOrgId = (req: Request) => {
+  const orgIdRaw = String((req as any).org?.orgId || "");
+  if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
+    throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
+  }
+  return new mongoose.Types.ObjectId(orgIdRaw);
+};
+
+const getOrgAiSettings = async (orgId: mongoose.Types.ObjectId) => {
+  const org = await OrganizationModel.findById(orgId)
+    .select({ currency: 1, locale: 1, timezone: 1 })
+    .lean();
+
+  return {
+    currency: String((org as any)?.currency || "USD"),
+    locale: String((org as any)?.locale || "en-US"),
+    timezone: String((org as any)?.timezone || "UTC"),
+  };
+};
 
 /**
  * Create a new chat session
@@ -30,7 +52,9 @@ export async function createSession(req: Request, res: Response) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
+    const orgId = requireOrgId(req);
     const session = await ChatSessionModel.create({
+      orgId,
       userId: user._id,
       title: "New Chat",
       lastMessageAt: new Date(),
@@ -45,7 +69,7 @@ export async function createSession(req: Request, res: Response) {
       createdAt: session.createdAt
     });
   } catch (error) {
-    console.error("Error creating chat session:", error);
+    logger.error({ error }, "Error creating chat session");
     return res.status(500).json({ message: "Failed to create chat session" });
   }
 }
@@ -60,11 +84,13 @@ export async function getSessions(req: Request, res: Response) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
+    const orgId = requireOrgId(req);
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 50;
     const skip = (page - 1) * limit;
 
     const sessions = await ChatSessionModel.find({
+      orgId,
       userId: user._id,
       isArchived: false
     })
@@ -74,6 +100,7 @@ export async function getSessions(req: Request, res: Response) {
       .lean();
 
     const total = await ChatSessionModel.countDocuments({
+      orgId,
       userId: user._id,
       isArchived: false
     });
@@ -94,7 +121,7 @@ export async function getSessions(req: Request, res: Response) {
       }
     });
   } catch (error) {
-    console.error("Error fetching chat sessions:", error);
+    logger.error({ error }, "Error fetching chat sessions");
     return res.status(500).json({ message: "Failed to fetch chat sessions" });
   }
 }
@@ -109,6 +136,7 @@ export async function getSession(req: Request, res: Response) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
+    const orgId = requireOrgId(req);
     const sessionId = getSingleParam(req.params.sessionId);
     if (!sessionId) {
       return res.status(400).json({ message: "Invalid session ID" });
@@ -119,6 +147,7 @@ export async function getSession(req: Request, res: Response) {
 
     const session = await ChatSessionModel.findOne({
       _id: sessionId,
+      orgId,
       userId: user._id
     });
 
@@ -134,7 +163,7 @@ export async function getSession(req: Request, res: Response) {
       createdAt: session.createdAt
     });
   } catch (error) {
-    console.error("Error fetching chat session:", error);
+    logger.error({ error }, "Error fetching chat session");
     return res.status(500).json({ message: "Failed to fetch chat session" });
   }
 }
@@ -149,6 +178,7 @@ export async function deleteSession(req: Request, res: Response) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
+    const orgId = requireOrgId(req);
     const sessionId = getSingleParam(req.params.sessionId);
     if (!sessionId) {
       return res.status(400).json({ message: "Invalid session ID" });
@@ -159,6 +189,7 @@ export async function deleteSession(req: Request, res: Response) {
 
     const session = await ChatSessionModel.findOneAndDelete({
       _id: sessionId,
+      orgId,
       userId: user._id
     });
 
@@ -167,11 +198,11 @@ export async function deleteSession(req: Request, res: Response) {
     }
 
     // Delete all messages in this session
-    await ChatMessageModel.deleteMany({ sessionId: session._id });
+    await ChatMessageModel.deleteMany({ orgId, sessionId: session._id });
 
     return res.json({ message: "Session deleted successfully" });
   } catch (error) {
-    console.error("Error deleting chat session:", error);
+    logger.error({ error }, "Error deleting chat session");
     return res.status(500).json({ message: "Failed to delete chat session" });
   }
 }
@@ -186,6 +217,7 @@ export async function renameSession(req: Request, res: Response) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
+    const orgId = requireOrgId(req);
     const sessionId = getSingleParam(req.params.sessionId);
     if (!sessionId) {
       return res.status(400).json({ message: "Invalid session ID" });
@@ -201,7 +233,7 @@ export async function renameSession(req: Request, res: Response) {
     }
 
     const session = await ChatSessionModel.findOneAndUpdate(
-      { _id: sessionId, userId: user._id },
+      { _id: sessionId, orgId, userId: user._id },
       { title: title.trim().substring(0, 200) },
       { new: true }
     );
@@ -217,7 +249,7 @@ export async function renameSession(req: Request, res: Response) {
       messageCount: session.messageCount
     });
   } catch (error) {
-    console.error("Error renaming chat session:", error);
+    logger.error({ error }, "Error renaming chat session");
     return res.status(500).json({ message: "Failed to rename chat session" });
   }
 }
@@ -232,6 +264,7 @@ export async function getMessages(req: Request, res: Response) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
+    const orgId = requireOrgId(req);
     const sessionId = getSingleParam(req.params.sessionId);
     if (!sessionId) {
       return res.status(400).json({ message: "Invalid session ID" });
@@ -243,6 +276,7 @@ export async function getMessages(req: Request, res: Response) {
     // Verify session belongs to user
     const session = await ChatSessionModel.findOne({
       _id: sessionId,
+      orgId,
       userId: user._id
     });
 
@@ -254,13 +288,13 @@ export async function getMessages(req: Request, res: Response) {
     const limit = parseInt(req.query.limit as string) || 50;
     const skip = (page - 1) * limit;
 
-    const messages = await ChatMessageModel.find({ sessionId })
+    const messages = await ChatMessageModel.find({ orgId, sessionId })
       .sort({ createdAt: 1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    const total = await ChatMessageModel.countDocuments({ sessionId });
+    const total = await ChatMessageModel.countDocuments({ orgId, sessionId });
 
     return res.json({
       messages: messages.map(m => ({
@@ -279,7 +313,7 @@ export async function getMessages(req: Request, res: Response) {
       }
     });
   } catch (error) {
-    console.error("Error fetching messages:", error);
+    logger.error({ error }, "Error fetching messages");
     return res.status(500).json({ message: "Failed to fetch messages" });
   }
 }
@@ -295,6 +329,7 @@ export async function sendMessage(req: Request, res: Response) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
+    const orgId = requireOrgId(req);
     const sessionId = getSingleParam(req.params.sessionId);
     if (!sessionId) {
       return res.status(400).json({ message: "Invalid session ID" });
@@ -311,6 +346,7 @@ export async function sendMessage(req: Request, res: Response) {
     }
 
     await enforceFeatureLimit({
+      orgId,
       userId: user._id,
       feature: "monthly_ai_calls",
       units: 1,
@@ -320,6 +356,7 @@ export async function sendMessage(req: Request, res: Response) {
     // Verify session belongs to user
     const session = await ChatSessionModel.findOne({
       _id: sessionId,
+      orgId,
       userId: user._id
     });
 
@@ -327,7 +364,7 @@ export async function sendMessage(req: Request, res: Response) {
       return res.status(404).json({ message: "Session not found" });
     }
 
-    const historyDocs = await ChatMessageModel.find({ sessionId: session._id })
+    const historyDocs = await ChatMessageModel.find({ orgId, sessionId: session._id })
       .sort({ createdAt: -1 })
       .limit(6)
       .lean();
@@ -341,6 +378,7 @@ export async function sendMessage(req: Request, res: Response) {
 
     // Create user message
     const userMessage = await ChatMessageModel.create({
+      orgId,
       sessionId: session._id,
       userId: user._id,
       role: "user",
@@ -348,10 +386,11 @@ export async function sendMessage(req: Request, res: Response) {
     });
 
     // Get the user's financial profile for AI context
-    const financialProfile = await ensureProfileWithMigration(user._id);
+    const financialProfile = await ensureProfileWithMigration({ orgId, userId: user._id });
 
     let aiResponseContent = "I apologize, but I'm having trouble processing your request right now. Please try again.";
     let aiMetadata: any = {};
+    let aiUsage: any = undefined;
 
     try {
       const aiStartedAt = Date.now();
@@ -364,9 +403,10 @@ export async function sendMessage(req: Request, res: Response) {
         ? new Date(session.summaryUpdatedAt as unknown as Date).toISOString()
         : undefined;
 
-      const journalContext = await getJournalContextForAi({ userId: user._id });
+      const journalContext = await getJournalContextForAi({ orgId, userId: user._id });
 
       const cacheKey = buildChatMessageCacheKey({
+        orgId: orgId.toString(),
         userId: user._id.toString(),
         profileUpdatedAt,
         transactionsUpdatedAt,
@@ -383,33 +423,40 @@ export async function sendMessage(req: Request, res: Response) {
         const cachedData = cached.responseData as any;
         aiResponseContent = String(cachedData.content || aiResponseContent);
         aiMetadata = { ...(cachedData.metadata || {}), cacheHit: true, aiCoreDurationMs: 0 };
-        console.log(`[requestId=${requestId}] chat-message cache_hit=true`);
+        aiUsage = (cachedData.metadata as any)?.tokenUsage || (cachedData.metadata as any)?.usage;
+        logger.info(`[requestId=${requestId}] chat-message cache_hit=true`);
         recordAiCache({ endpoint: "chat-message", hit: true });
       } else {
         recordAiCache({ endpoint: "chat-message", hit: false });
-        const txResult = await fetchTransactionsForAi({ userId: user._id });
+        const txResult = await fetchTransactionsForAi({ orgId, userId: user._id });
 
-        const { request: aiRequest, stats } = buildProcessRequest({
-          userInput: content.trim(),
-          profile: financialProfile,
-          transactions: txResult.transactions,
-          totalTransactions: txResult.stats.totalTransactions,
-          conversationHistory,
-          sessionSummary: [session.summary, journalContext.summary].filter(Boolean).join("\n\n") || undefined,
-          narrative,
-        });
+        const orgSettings = await getOrgAiSettings(orgId);
 
-        console.log(
+         const { request: aiRequest, stats } = buildProcessRequest({
+           userInput: content.trim(),
+           profile: financialProfile,
+           orgId: orgId.toString(),
+           userId: user._id.toString(),
+           orgSettings,
+           transactions: txResult.transactions,
+           totalTransactions: txResult.stats.totalTransactions,
+           conversationHistory,
+           sessionSummary: [session.summary, journalContext.summary].filter(Boolean).join("\n\n") || undefined,
+           narrative,
+         });
+
+        logger.info(
           `[requestId=${requestId}] chat.aiRequest transactionCountSent=${stats.sentTransactions} droppedTransactions=${stats.droppedTransactions}`
         );
 
         const aiResponse = await processAiCoreRequest(aiRequest, requestId, { userId: user._id.toString() });
+        aiUsage = aiResponse.usage;
         const aiDurationMs = Date.now() - aiStartedAt;
 
         if (aiResponse && aiResponse.success) {
           const { plan: normalizedPlan, valid: planValid } = normalizeAiPlan(aiResponse.plan);
           if (!planValid) {
-            console.warn(`[requestId=${requestId}] chat.ai.plan_validation_failed=true`);
+            logger.warn(`[requestId=${requestId}] chat.ai.plan_validation_failed=true`);
           }
 
           aiResponseContent = aiResponse.final_output || aiResponseContent;
@@ -419,10 +466,12 @@ export async function sendMessage(req: Request, res: Response) {
             priority: aiResponse.priority,
             actionable: aiResponse.actionType ? true : false,
             plan: normalizedPlan,
+            toolCalls: aiResponse.tool_calls || [],
             detailedAnalysis: aiResponse.detailed_analysis || {},
             workflowTrace: aiResponse.workflow_trace || [],
             fallbackUsed: aiResponse.fallback_used || false,
             llmCallCount: aiResponse.llm_call_count || 0,
+            tokenUsage: aiResponse.usage,
             requestId: aiResponse.request_id || requestId,
             actionLinkId: aiResponse.request_id || requestId,
             linkedTaskIds: [],
@@ -438,6 +487,7 @@ export async function sendMessage(req: Request, res: Response) {
           { cacheKey },
           {
             $set: {
+              orgId,
               userId: user._id,
               endpoint: "chat-message",
               responseData: { content: aiResponseContent, metadata: aiMetadata },
@@ -448,13 +498,14 @@ export async function sendMessage(req: Request, res: Response) {
         );
       }
     } catch (aiError: any) {
-      console.error(`[requestId=${requestId}] AI service error:`, aiError.message);
+      logger.error({ error: aiError?.message ?? aiError }, `[requestId=${requestId}] AI service error`);
       aiResponseContent = "I'm currently experiencing some difficulties connecting to the AI service. Please try again in a moment.";
     }
 
     // Persist assistant response as an agent output (enables feedback + task creation by id)
     try {
       const agentOutput = await AgentOutputModel.create({
+        orgId,
         userId: user._id,
         sessionId: session._id.toString(),
         userInput: content.trim(),
@@ -466,6 +517,7 @@ export async function sendMessage(req: Request, res: Response) {
           actionType: aiMetadata?.actionType || "review",
           agent: String(aiMetadata?.agentsInvolved?.[0] || "master"),
           plan: aiMetadata?.plan,
+          tool_calls: aiMetadata?.toolCalls || [],
         },
         analysis_type: String(aiMetadata?.analysisType || "comprehensive"),
         agents_involved: Array.isArray(aiMetadata?.agentsInvolved) ? aiMetadata.agentsInvolved : [],
@@ -481,11 +533,12 @@ export async function sendMessage(req: Request, res: Response) {
 
       aiMetadata.agentOutputId = agentOutput._id.toString();
     } catch (persistError: any) {
-      console.warn(`[requestId=${requestId}] Failed to persist chat agent output:`, persistError?.message || persistError);
+      logger.warn(`[requestId=${requestId}] Failed to persist chat agent output:`, persistError?.message || persistError);
     }
 
     // Create AI response message
     const aiMessage = await ChatMessageModel.create({
+      orgId,
       sessionId: session._id,
       userId: user._id,
       role: "assistant",
@@ -515,7 +568,7 @@ export async function sendMessage(req: Request, res: Response) {
       nextUserMessageCount % 8 === 0;
 
     if (shouldUpdateSummary) {
-      const summaryDocs = await ChatMessageModel.find({ sessionId: session._id })
+      const summaryDocs = await ChatMessageModel.find({ orgId, sessionId: session._id })
         .sort({ createdAt: -1 })
         .limit(20)
         .lean();
@@ -533,9 +586,14 @@ export async function sendMessage(req: Request, res: Response) {
     }
 
     await recordFeatureUsage({
+      orgId,
       userId: user._id,
       feature: "monthly_ai_calls",
       units: 1,
+      tokensIn: aiUsage?.tokens_in,
+      tokensOut: aiUsage?.tokens_out,
+      costUsd: aiUsage?.cost_usd,
+      modelName: Array.isArray(aiUsage?.models) ? aiUsage.models[0] : undefined,
       requestId,
       context: {
         endpoint: "chat/send-message",
@@ -568,7 +626,7 @@ export async function sendMessage(req: Request, res: Response) {
         request_id: req.requestId,
       });
     }
-    console.error(`[requestId=${req.requestId}] Error sending message:`, error);
+    logger.error({ error }, `[requestId=${req.requestId}] Error sending message`);
     return res.status(500).json({ message: "Failed to send message", request_id: req.requestId });
   }
 }

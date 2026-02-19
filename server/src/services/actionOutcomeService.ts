@@ -31,6 +31,7 @@ export class ActionOutcomeError extends Error {
 }
 
 export type ApplyTaskEffectsParams = {
+  orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
   taskId: string;
   effects: TaskEffectInput[];
@@ -129,7 +130,7 @@ const applyProfileUpdate = (params: {
 };
 
 export const applyTaskEffects = async (params: ApplyTaskEffectsParams): Promise<ApplyTaskEffectsResult> => {
-  await ensureProfileWithMigration(params.userId);
+  await ensureProfileWithMigration({ orgId: params.orgId, userId: params.userId });
 
   const buildReplayResult = (task: Record<string, any>): ApplyTaskEffectsResult => {
     const summary = task.appliedSummary || {};
@@ -176,7 +177,11 @@ export const applyTaskEffects = async (params: ApplyTaskEffectsParams): Promise<
   const runApply = async (session?: mongoose.ClientSession): Promise<ApplyTaskEffectsResult> => {
     const queryOptions = session ? { session } : undefined;
 
-    const task = await TaskModel.findOne({ _id: params.taskId, userId: params.userId }, null, queryOptions);
+    const task = await TaskModel.findOne(
+      { _id: params.taskId, orgId: params.orgId, userId: params.userId },
+      null,
+      queryOptions
+    );
     if (!task) {
       throw new ActionOutcomeError(404, "TASK_NOT_FOUND", "Task not found");
     }
@@ -192,7 +197,11 @@ export const applyTaskEffects = async (params: ApplyTaskEffectsParams): Promise<
       throw new ActionOutcomeError(409, "TASK_ALREADY_APPLIED", "Task effects have already been applied");
     }
 
-    const profile = await FinancialProfileModel.findOne({ userId: params.userId }, null, queryOptions);
+    const profile = await FinancialProfileModel.findOne(
+      { orgId: params.orgId, userId: params.userId },
+      null,
+      queryOptions
+    );
     if (!profile) {
       throw new ActionOutcomeError(404, "PROFILE_NOT_FOUND", "Financial profile not found");
     }
@@ -224,6 +233,7 @@ export const applyTaskEffects = async (params: ApplyTaskEffectsParams): Promise<
         if (effect.type === "transaction") {
           const tx = effect.transaction;
           const created = new TransactionModel({
+            orgId: params.orgId,
             userId: params.userId,
             amount: normalizeTransactionAmount(tx.amount, tx.tx_type),
             category: tx.category,
@@ -312,6 +322,7 @@ export const applyTaskEffects = async (params: ApplyTaskEffectsParams): Promise<
 
     for (const transactionId of createdTransactions) {
       await publishDomainEvent({
+        orgId: params.orgId,
         userId: params.userId,
         eventType: "TransactionCreated",
         aggregateType: "transaction",
@@ -327,6 +338,7 @@ export const applyTaskEffects = async (params: ApplyTaskEffectsParams): Promise<
     }
 
     await publishDomainEvent({
+      orgId: params.orgId,
       userId: params.userId,
       eventType: "TaskApplied",
       aggregateType: "task",

@@ -89,6 +89,8 @@ const envSchema = z
     RECEIPTS_OCR_ENABLED: boolFromEnv.default(true),
     JOURNAL_ENABLED: boolFromEnv.default(true),
 
+    ORG_LEGACY_BACKFILL_ENABLED: optionalBoolFromEnv,
+
     UPLOAD_ALLOWED_MIME: csvArray("image/jpeg,image/png,image/webp"),
     RECEIPT_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
     JOURNAL_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(4 * 1024 * 1024),
@@ -96,12 +98,33 @@ const envSchema = z
     METRICS_ENABLED: boolFromEnv.default(false),
     METRICS_TOKEN: optionalNonEmptyString,
 
+    REDIS_URL: optionalNonEmptyString,
+    WORKER_ENABLED: boolFromEnv.default(false),
+    WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
+    USAGE_AGGREGATION_CRON: z.string().trim().min(1).default("0 * * * *"),
+    DIGEST_EMAIL_CRON: z.string().trim().min(1).default("0 8 * * *"),
+    DIGEST_EMAIL_DAYS_BACK: z.coerce.number().int().min(1).max(31).default(7),
+
     TASKS_ENABLED: boolFromEnv.default(false),
     MONETIZATION_ENABLED: boolFromEnv.default(true),
     USAGE_EVENTS_INTERNAL_TOKEN: z.preprocess(
       emptyStringToUndefined,
       z.string().trim().min(8).optional()
     ),
+
+    API_KEY_PEPPER: optionalNonEmptyString,
+
+    AI_CORE_TOOLS_TOKEN: z.preprocess(
+      emptyStringToUndefined,
+      z.string().trim().min(16).max(256).optional()
+    ),
+
+    BILLING_PROVIDER: z.enum(["stub", "stripe"]).optional(),
+    STRIPE_SECRET_KEY: optionalNonEmptyString,
+    STRIPE_WEBHOOK_SECRET: optionalNonEmptyString,
+    STRIPE_PRICE_PRO_MONTHLY: optionalNonEmptyString,
+    STRIPE_PRICE_TEAM_SEAT: optionalNonEmptyString,
+    STRIPE_PRICE_ENTERPRISE: optionalNonEmptyString,
 
     AI_CORE_MAX_CONCURRENCY: z.coerce.number().int().positive().default(8),
     AI_CORE_MAX_CONCURRENCY_PER_USER: z.coerce.number().int().positive().default(2),
@@ -112,6 +135,10 @@ const envSchema = z
     AI_CORE_CIRCUIT_FAILURE_THRESHOLD: z.coerce.number().int().positive().default(3),
     AI_CORE_CIRCUIT_OPEN_MS: z.coerce.number().int().positive().default(30_000),
     AI_CORE_HEALTH_CACHE_MS: z.coerce.number().int().positive().default(5000),
+
+    PLUGIN_RUNTIME_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+    PLUGIN_RUNTIME_ALLOW_INSECURE: optionalBoolFromEnv,
+    PLUGIN_RUNTIME_ALLOW_LOCALHOST: optionalBoolFromEnv,
 
     GOOGLE_CLIENT_ID: optionalNonEmptyString,
     GOOGLE_CLIENT_SECRET: optionalNonEmptyString,
@@ -158,6 +185,9 @@ export const getEnv = (): Env => {
       ? parsed.data.MONETIZATION_ENABLED
       : parsed.data.NODE_ENV !== "production";
 
+  const csrfEnabledExplicit = typeof process.env.CSRF_ENABLED === "string" ? parsed.data.CSRF_ENABLED : undefined;
+  const csrfEnabledComputed = csrfEnabledExplicit ?? parsed.data.NODE_ENV === "production";
+
   const cookieSecureExplicit = typeof process.env.COOKIE_SECURE === "string" ? parsed.data.COOKIE_SECURE : undefined;
   const cookieSecureComputed =
     cookieSecureExplicit ?? (parsed.data.NODE_ENV === "production" && parsed.data.CLIENT_URL.startsWith("https://"));
@@ -169,6 +199,27 @@ export const getEnv = (): Env => {
   const trustProxyRaw = parseTrustProxy(parsed.data.TRUST_PROXY);
   const trustProxyComputed =
     trustProxyRaw !== undefined ? trustProxyRaw : parsed.data.NODE_ENV === "production";
+
+  const pluginAllowInsecureExplicit =
+    typeof process.env.PLUGIN_RUNTIME_ALLOW_INSECURE === "string" ? parsed.data.PLUGIN_RUNTIME_ALLOW_INSECURE : undefined;
+  const pluginAllowInsecureComputed = pluginAllowInsecureExplicit ?? parsed.data.NODE_ENV !== "production";
+
+  const pluginAllowLocalhostExplicit =
+    typeof process.env.PLUGIN_RUNTIME_ALLOW_LOCALHOST === "string" ? parsed.data.PLUGIN_RUNTIME_ALLOW_LOCALHOST : undefined;
+  const pluginAllowLocalhostComputed = pluginAllowLocalhostExplicit ?? parsed.data.NODE_ENV !== "production";
+
+  const billingProviderExplicit =
+    typeof process.env.BILLING_PROVIDER === "string" ? parsed.data.BILLING_PROVIDER : undefined;
+  const billingProviderComputed =
+    billingProviderExplicit ?? (parsed.data.STRIPE_SECRET_KEY ? "stripe" : "stub");
+
+  if (billingProviderComputed === "stripe" && !parsed.data.STRIPE_SECRET_KEY) {
+    throw new Error("STRIPE_SECRET_KEY is required when BILLING_PROVIDER=stripe");
+  }
+
+  const orgLegacyBackfillExplicit =
+    typeof process.env.ORG_LEGACY_BACKFILL_ENABLED === "string" ? parsed.data.ORG_LEGACY_BACKFILL_ENABLED : undefined;
+  const orgLegacyBackfillComputed = orgLegacyBackfillExplicit ?? parsed.data.NODE_ENV !== "production";
 
   const hasCoreEmailCredentials = Boolean(parsed.data.EMAIL_USER && parsed.data.EMAIL_PASSWORD && parsed.data.EMAIL_FROM);
   const hasPartialCoreEmailCredentials = Boolean(
@@ -186,7 +237,12 @@ export const getEnv = (): Env => {
     ...parsed.data,
     TASKS_ENABLED: tasksEnabled,
     MONETIZATION_ENABLED: monetizationEnabled,
+    CSRF_ENABLED: csrfEnabledComputed,
     COOKIE_SECURE: cookieSecureComputed,
     TRUST_PROXY: trustProxyComputed,
+    PLUGIN_RUNTIME_ALLOW_INSECURE: pluginAllowInsecureComputed,
+    PLUGIN_RUNTIME_ALLOW_LOCALHOST: pluginAllowLocalhostComputed,
+    BILLING_PROVIDER: billingProviderComputed,
+    ORG_LEGACY_BACKFILL_ENABLED: orgLegacyBackfillComputed,
   };
 };

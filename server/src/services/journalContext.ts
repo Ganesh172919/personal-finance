@@ -2,6 +2,7 @@ import type { Types } from "mongoose";
 import JournalEntryModel from "../models/journalEntryModel";
 
 export const getJournalContextForAi = async (params: {
+  orgId: Types.ObjectId;
   userId: Types.ObjectId;
   maxEntries?: number;
   maxCharsPerEntry?: number;
@@ -15,6 +16,7 @@ export const getJournalContextForAi = async (params: {
   cutoff.setDate(cutoff.getDate() - maxAgeDays);
 
   const docs = await JournalEntryModel.find({
+    orgId: params.orgId,
     userId: params.userId,
     createdAt: { $gte: cutoff },
     recognizedText: { $exists: true, $ne: "" },
@@ -46,4 +48,3 @@ export const getJournalContextForAi = async (params: {
 
   return { summary, updatedAt };
 };
-

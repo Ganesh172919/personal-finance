@@ -4,6 +4,9 @@ const DEFAULT_GOAL_TIMELINE_MONTHS = 12;
 const DEFAULT_TIME_HORIZON_YEARS = 10;
 const DEFAULT_TX_MAX_ITEMS = 300;
 const DEFAULT_TX_MAX_AGE_DAYS = 365;
+const DEFAULT_CURRENCY = "USD";
+const DEFAULT_LOCALE = "en-US";
+const DEFAULT_TIMEZONE = "UTC";
 
 export type ConversationMessage = { role: "user" | "assistant"; content: string };
 
@@ -18,6 +21,12 @@ type TransactionLike = {
 type TransactionsContext = {
   transactions?: Array<TransactionLike>;
   totalTransactions?: number;
+};
+
+type OrgSettingsLike = {
+  currency?: unknown;
+  locale?: unknown;
+  timezone?: unknown;
 };
 
 type FinancialProfileLike = {
@@ -86,6 +95,24 @@ const normalizeTransactionType = (value: unknown, amount: number): "income" | "e
   return amount >= 0 ? "income" : "expense";
 };
 
+const normalizeCurrencyCode = (value: unknown) => {
+  const normalized = toStringOrEmpty(value).toUpperCase().trim();
+  if (normalized.length === 3 && /^[A-Z]{3}$/.test(normalized)) {
+    return normalized;
+  }
+  return DEFAULT_CURRENCY;
+};
+
+const normalizeLocale = (value: unknown) => {
+  const normalized = toStringOrEmpty(value).trim();
+  return normalized || DEFAULT_LOCALE;
+};
+
+const normalizeTimezone = (value: unknown) => {
+  const normalized = toStringOrEmpty(value).trim();
+  return normalized || DEFAULT_TIMEZONE;
+};
+
 export type BuildUserProfileResult = {
   user_profile: Record<string, unknown>;
   stats: {
@@ -98,10 +125,11 @@ export type BuildUserProfileResult = {
 export const buildAiCoreUserProfile = (
   profile: FinancialProfileLike,
   txContext: TransactionsContext = {},
-  opts: { maxTransactions?: number; maxAgeDays?: number } = {}
+  opts: { maxTransactions?: number; maxAgeDays?: number; orgSettings?: OrgSettingsLike } = {}
 ): BuildUserProfileResult => {
   const maxTransactions = opts.maxTransactions ?? DEFAULT_TX_MAX_ITEMS;
   const maxAgeDays = opts.maxAgeDays ?? DEFAULT_TX_MAX_AGE_DAYS;
+  const orgSettings = opts.orgSettings || {};
 
   const rawTransactions = Array.isArray(txContext.transactions)
     ? txContext.transactions
@@ -160,6 +188,9 @@ export const buildAiCoreUserProfile = (
       risk_tolerance: toStringOrEmpty(profile.risk_tolerance) || "moderate",
       investment_experience: toStringOrEmpty(profile.investment_experience) || "beginner",
       time_horizon: toNumberOrZero(profile.time_horizon) || DEFAULT_TIME_HORIZON_YEARS,
+      currency: normalizeCurrencyCode(orgSettings.currency),
+      locale: normalizeLocale(orgSettings.locale),
+      timezone: normalizeTimezone(orgSettings.timezone),
       transactions: trimmed.map(tx => ({
         amount: tx.amount,
         category: tx.category,
@@ -179,6 +210,9 @@ export const buildAiCoreUserProfile = (
 export const buildProcessRequest = (params: {
   userInput: string;
   profile: FinancialProfileLike | null;
+  orgId?: string;
+  userId?: string;
+  orgSettings?: OrgSettingsLike;
   transactions?: TransactionLike[];
   totalTransactions?: number;
   conversationHistory?: ConversationMessage[];
@@ -189,7 +223,7 @@ export const buildProcessRequest = (params: {
     ? buildAiCoreUserProfile(params.profile, {
         transactions: params.transactions,
         totalTransactions: params.totalTransactions,
-      })
+      }, { orgSettings: params.orgSettings })
     : {
         user_profile: null,
         stats: { totalTransactions: 0, sentTransactions: 0, droppedTransactions: 0 },
@@ -199,6 +233,8 @@ export const buildProcessRequest = (params: {
     request: {
       user_input: params.userInput,
       user_profile,
+      org_id: params.orgId,
+      user_id: params.userId,
       conversation_history: params.conversationHistory,
       session_summary: params.sessionSummary,
       options: params.narrative === undefined ? undefined : { narrative: params.narrative },

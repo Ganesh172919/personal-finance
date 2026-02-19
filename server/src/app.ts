@@ -16,13 +16,20 @@ import financialJournalRoutes from "./routes/financialJournalRoutes";
 import mediaRoutes from "./routes/mediaRoutes";
 import monetizationRoutes from "./routes/monetizationRoutes";
 import configRoutes from "./routes/configRoutes";
+import v1Routes from "./routes/v1Routes";
+import internalToolsRoutes from "./routes/internalToolsRoutes";
+import publicShareRoutes from "./routes/publicShareRoutes";
 import { requestContext } from "./middleware/requestContext";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { getEnv } from "./config/env";
-import { httpLogger } from "./config/logger";
+import { createRedisRateLimitStore } from "./config/rateLimitStore";
+import { httpLogger, logger } from "./config/logger";
 import { metricsHandler, metricsMiddleware } from "./observability/metrics";
 import { csrfProtection } from "./middleware/csrfProtection";
 import { optionalJwtAuth } from "./middleware/optionalJwtAuth";
+import { orgContext } from "./middleware/orgContext";
+import { legacyApiDeprecation } from "./middleware/legacyApiDeprecation";
+import { responseContext } from "./middleware/responseContext";
 
 export const createApp = () => {
   const app = express();
@@ -41,9 +48,25 @@ export const createApp = () => {
     max: env.RATE_LIMIT_MAX,
     standardHeaders: true,
     legacyHeaders: false,
+    passOnStoreError: true,
+    store: createRedisRateLimitStore("rl_api:"),
     keyGenerator: (req, _res) => {
-      const userId = (req as any).user?._id?.toString?.();
-      return userId || req.ip;
+      const apiKeyOrgId = (req as any).apiKey?.orgId;
+      if (apiKeyOrgId) {
+        return `api_key_org:${String(apiKeyOrgId)}`;
+      }
+
+      const orgId = (req as any).org?.orgId;
+      if (orgId) {
+        return `org:${String(orgId)}`;
+      }
+
+      const userIdRaw = (req as any).user?._id;
+      if (userIdRaw) {
+        return `user:${String(userIdRaw)}`;
+      }
+
+      return String(req.ip || "unknown");
     },
     message: {
       message: "Too many requests, please try again shortly.",
@@ -70,14 +93,27 @@ export const createApp = () => {
     })
   );
 
-  app.use(express.json({ limit: REQUEST_SIZE_LIMIT }));
+  app.use(
+    express.json({
+      limit: REQUEST_SIZE_LIMIT,
+      verify: (req, _res, buf) => {
+        const path = String((req as any).originalUrl || (req as any).url || "");
+        if (path.startsWith("/api/v1/billing/webhook")) {
+          (req as any).rawBody = buf;
+        }
+      },
+    })
+  );
   app.use(express.urlencoded({ extended: true, limit: REQUEST_SIZE_LIMIT }));
   app.use(cookieParser());
   app.use(passport.initialize());
   app.use(requestContext);
+  app.use(responseContext);
+  app.use(legacyApiDeprecation);
   app.use(httpLogger);
   app.use(metricsMiddleware);
   app.use(optionalJwtAuth);
+  app.use(orgContext);
   app.use("/api", apiRateLimiter);
   app.use("/api", csrfProtection);
 
@@ -104,7 +140,28 @@ export const createApp = () => {
     }
   });
 
-  // Routes
+  // Canonical /api/v1 surface:
+  // mount v1 before /api because `/api` prefix also matches `/api/v1/*` in Express.
+  app.use("/api/internal/tools", internalToolsRoutes);
+  app.use("/api/v1/auth", authRoutes);
+  app.use("/api/v1/config", configRoutes);
+  app.use("/api/v1/public", publicShareRoutes);
+  app.use("/api/v1", v1Routes);
+  if (env.MONETIZATION_ENABLED) {
+    app.use("/api/v1", monetizationRoutes);
+  }
+  // vNext shims: mount legacy feature routers under /api/v1 (keep /api routes intact for one release cycle).
+  app.use("/api/v1", aiRoutes);
+  app.use("/api/v1/chat", chatRoutes);
+  app.use("/api/v1", financialDataRoutes);
+  app.use("/api/v1", receiptRoutes);
+  app.use("/api/v1", financialJournalRoutes);
+  app.use("/api/v1", mediaRoutes);
+  if (env.TASKS_ENABLED) {
+    app.use("/api/v1/tasks", taskRoutes);
+  }
+
+  // Legacy /api routes (kept during deprecation window)
   app.use("/api/auth", authRoutes);
   app.use("/api/config", configRoutes);
   if (env.MONETIZATION_ENABLED) {
@@ -127,8 +184,8 @@ export const createApp = () => {
   app.use(errorHandler);
 
   if (env.NODE_ENV !== "test") {
-    console.log(`Server configured on PORT=${env.PORT}`);
-    console.log(`Expecting Python AI service at ${PYTHON_API_URL}`);
+    logger.info(`Server configured on PORT=${env.PORT}`);
+    logger.info(`Expecting Python AI service at ${PYTHON_API_URL}`);
   }
 
   return app;
