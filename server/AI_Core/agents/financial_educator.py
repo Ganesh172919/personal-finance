@@ -3,7 +3,7 @@ from collections import OrderedDict
 from time import time
 from typing import Any, Dict, Optional, Tuple
 
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import settings
 from utils import RateLimitedLLM, get_fallback_response

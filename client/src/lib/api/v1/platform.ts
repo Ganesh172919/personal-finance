@@ -1,4 +1,4 @@
-import { apiClient } from "../core";
+﻿import { apiClient } from "../core";
 
 import type {
   AnalyticsOverviewResponse,
@@ -18,7 +18,7 @@ import type {
   MarketplaceInstallResponse,
   PluginOperationResponse,
   PluginsListResponse,
-} from "@finwise/sdk-ts";
+} from "@/types/apiTypes";
 
 export async function listMarketplaceCatalog(params?: { q?: string; status?: "active" | "preview" | "deprecated" }) {
   const search = new URLSearchParams();
@@ -153,3 +153,5 @@ export async function getAnalyticsOverview(periodKey?: string) {
   const query = periodKey ? `?period_key=${encodeURIComponent(periodKey)}` : "";
   return apiClient(`/v1/analytics/overview${query}`) as Promise<AnalyticsOverviewResponse>;
 }
+
+

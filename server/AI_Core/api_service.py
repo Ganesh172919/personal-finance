@@ -1,21 +1,38 @@
-from fastapi import FastAPI, HTTPException, Request, Header
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
-from pydantic import BaseModel, Field
-from typing import Dict, Any, List, Optional, Literal
-import uvicorn
-import logging
-import os
 import hashlib
-from datetime import datetime
-from dotenv import load_dotenv
+import os
 import sys
 from contextlib import asynccontextmanager
-import pandas as pd  # For serializer
-from uuid import uuid4
 from time import perf_counter
+from typing import Any, Dict, List, Literal, Optional
+from uuid import uuid4
 
+import pandas as pd  # For serializer
+import uvicorn
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from pydantic import BaseModel, Field
+
+from config import settings
+from contracts import Plan, ProcessResponse, ToolCall, WorkflowTraceEntry
+from graph.state import FinancialGoal, UserProfile
+from graph.workflow import create_financial_workflow
+from tools import PlanInputs, build_plan, render_plan_markdown
+from utils import (
+    begin_request_metrics,
+    get_llm_call_count,
+    get_llm_usage,
+    get_rate_limiter_status,
+    reset_rate_limiter,
+    setup_logging,
+)
+from utils.finwise_server import FinWiseServerHttpError, simulate_tool_call
+from utils.prometheus_metrics import FALLBACK_TOTAL, LLM_CALLS_TOTAL, REQUEST_DURATION_MS
+from vision.engine import get_vision_dependency_status, ocr_image_to_lines
+from vision.errors import VisionDependencyError
+from vision.handwriting_parser import extract_handwriting
+from vision.receipt_parser import extract_receipt
 
 # Ensure UTF-8 output on Windows without breaking pytest capture.
 if sys.platform == "win32":
@@ -27,37 +44,14 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# Load environment variables
-load_dotenv()
-
-# Import your existing modules
-from config import settings
-from graph.workflow import create_financial_workflow
-from graph.state import UserProfile, FinancialGoal
-from contracts import Plan, ProcessResponse, WorkflowTraceEntry, ToolCall
-from tools import PlanInputs, build_plan, render_plan_markdown
-from utils import (
-    setup_logging,
-    get_rate_limiter_status,
-    reset_rate_limiter,
-    begin_request_metrics,
-    get_llm_call_count,
-    get_llm_usage,
-)
-from utils.finwise_server import FinWiseServerHttpError, simulate_tool_call
-from utils.prometheus_metrics import FALLBACK_TOTAL, LLM_CALLS_TOTAL, REQUEST_DURATION_MS
-from vision.engine import get_vision_dependency_status, ocr_image_to_lines
-from vision.errors import VisionDependencyError
-from vision.receipt_parser import extract_receipt
-from vision.handwriting_parser import extract_handwriting
-
 # Setup logging
 logger = setup_logging()
 
 _memory_store = None
 _extract_memories = None
 try:
-    from memory import MemoryStore, extract_memories as _extract_memories
+    from memory import MemoryStore
+    from memory import extract_memories as _extract_memories
 
     _memory_store = MemoryStore(db_path=settings.MEMORY_DB_PATH)
 except Exception as _mem_exc:

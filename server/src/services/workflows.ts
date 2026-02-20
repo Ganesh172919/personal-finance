@@ -5,11 +5,15 @@ import TaskModel, { type TaskKind, type TaskPriority } from "../models/taskModel
 import ExportJobModel from "../models/exportJobModel";
 import NotificationModel from "../models/notificationModel";
 import UserModel from "../models/userModel";
+import OrganizationModel from "../models/organizationModel";
 import WorkflowModel, { type WorkflowAction } from "../models/workflowModel";
 import WorkflowRunModel from "../models/workflowRunModel";
 import { enforceFeatureLimit, recordFeatureUsage } from "./entitlements";
 import { processExportJob } from "./exports";
 import { sendEmail } from "../utils/sendEmail";
+import { getEnv } from "../config/env";
+import { HttpError } from "../middleware/httpError";
+import { computeNextCronRunAt } from "./workflowCron";
 
 const normalizeTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase();
 
@@ -41,23 +45,45 @@ export const createWorkflow = async (params: {
   trigger: { type: "manual" | "cron" | "event"; cron?: string; event_type?: string };
   actions: WorkflowAction[];
 }) => {
+  const enabled = params.enabled ?? true;
+  const trigger = params.trigger || { type: "manual" as const };
+
+  let scheduleTimezone: string | undefined;
+  let nextRunAt: Date | undefined;
+
+  if (trigger.type === "cron") {
+    const cron = String(trigger.cron || "").trim();
+    if (!cron) {
+      throw new HttpError(400, "CRON_REQUIRED", "Cron trigger requires a cron expression");
+    }
+
+    const org = await OrganizationModel.findById(params.orgId)
+      .select({ timezone: 1 })
+      .lean();
+    scheduleTimezone = String((org as any)?.timezone || "UTC").trim() || "UTC";
+
+    try {
+      nextRunAt = enabled
+        ? computeNextCronRunAt({ cron, timeZone: scheduleTimezone })
+        : undefined;
+    } catch (error: any) {
+      throw new HttpError(400, "INVALID_CRON", "Invalid cron expression", {
+        cron,
+        error: String(error?.message || error),
+      });
+    }
+  }
+
   const created = await WorkflowModel.create({
     orgId: params.orgId,
     createdByUserId: params.userId,
     name: params.name,
-    enabled: params.enabled ?? true,
-    trigger: params.trigger,
+    enabled,
+    trigger,
+    scheduleTimezone,
+    nextRunAt,
     actions: params.actions,
   });
-
-  if (
-    created.enabled &&
-    (created as any)?.trigger?.type === "cron" &&
-    typeof (created as any)?.trigger?.cron === "string" &&
-    (created as any).trigger.cron.trim().length > 0
-  ) {
-    // Cron scheduling previously relied on Redis + BullMQ. In localhost-only mode, cron triggers are ignored.
-  }
 
   return created;
 };
@@ -73,11 +99,22 @@ export const enqueueWorkflowRun = async (params: {
   requestId?: string;
   idempotencyKey?: string;
 }) => {
+  const env = getEnv();
   const idempotencyKey = params.idempotencyKey?.trim() ? params.idempotencyKey.trim() : undefined;
 
   const existing = idempotencyKey
     ? await WorkflowRunModel.findOne({ workflowId: params.workflowId, idempotencyKey }).lean()
     : null;
+
+  if (!existing) {
+    await enforceFeatureLimit({
+      orgId: params.orgId,
+      userId: params.triggeredByUserId,
+      feature: "workflow_runs",
+      units: 1,
+      requestId: params.requestId,
+    });
+  }
 
   let createdRun = false;
   const run = existing
@@ -109,11 +146,18 @@ export const enqueueWorkflowRun = async (params: {
 
   const runId = String((run as any)._id);
 
+  if (env.ASYNC_JOBS_ENABLED) {
+    const status = String((run as any)?.status || "queued");
+    const terminal = status === "succeeded" || status === "failed";
+    return { run, queued: !terminal };
+  }
+
   const processed = await processWorkflowRun(runId);
   return { run: processed, queued: false };
 };
 
 export const processWorkflowRun = async (workflowRunId: string) => {
+  const env = getEnv();
   if (!mongoose.Types.ObjectId.isValid(workflowRunId)) {
     throw new Error("Invalid workflowRunId");
   }
@@ -287,7 +331,9 @@ export const processWorkflowRun = async (workflowRunId: string) => {
         const exportJobId = exportJob._id.toString();
         createdExportIds.push(exportJobId);
 
-        await processExportJob(exportJobId);
+        if (!env.ASYNC_JOBS_ENABLED) {
+          await processExportJob(exportJobId);
+        }
       }
     }
 

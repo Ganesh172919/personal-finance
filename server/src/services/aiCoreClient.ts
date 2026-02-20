@@ -323,7 +323,7 @@ export const processAiCoreRequest = async (
         const detail = lastHealthError ? `AI core health check failed: ${lastHealthError}` : "AI core health check failed";
         const hint =
           env.NODE_ENV !== "production"
-            ? ` (Is AI Core running at ${env.PYTHON_API_URL}? Start via scripts/start-local.ps1 or uvicorn on port 8001.)`
+            ? ` (Is AI Core running at ${env.PYTHON_API_URL}? Start it with uvicorn on port 8001.)`
             : "";
         return buildFallbackResponse(requestId, `${detail}${hint}`, {
           includeReasonInOutput: env.NODE_ENV !== "production",

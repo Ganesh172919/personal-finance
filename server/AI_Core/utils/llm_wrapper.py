@@ -4,19 +4,18 @@ LLM Wrapper with model failover, rate limiting, and graceful fallback handling.
 
 import logging
 import re
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import BaseMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from config import settings
 from utils.rate_limiter import (
-    with_rate_limit_and_retry,
-    get_rate_limiter_status,
     RateLimitError,
+    get_rate_limiter_status,
+    with_rate_limit_and_retry,
 )
-from utils.request_metrics import get_request_id, record_llm_call
-from utils.request_metrics import record_llm_usage
+from utils.request_metrics import get_request_id, record_llm_call, record_llm_usage
 
 logger = logging.getLogger(__name__)
 

@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import type { IUserDocument } from "../../models/userModel";
 import DomainEventModel from "../../models/domainEventModel";
 import { HttpError } from "../../middleware/httpError";
+import { getEventBus, type EventBusEvent, type EventBusSubscription } from "../../modules/realtime/eventBus";
 
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
@@ -41,13 +42,6 @@ export const streamEvents = async (req: Request, res: Response) => {
   // Initial message (lets clients confirm the stream is live).
   res.write(`event: ready\ndata: ${JSON.stringify({ ok: true, request_id: req.requestId })}\n\n`);
 
-  if (!lastId) {
-    const latest = await DomainEventModel.findOne({ orgId }).sort({ _id: -1 }).select({ _id: 1 }).lean();
-    if (latest?._id && mongoose.Types.ObjectId.isValid(String((latest as any)._id))) {
-      lastId = new mongoose.Types.ObjectId(String((latest as any)._id));
-    }
-  }
-
   const heartbeat = setInterval(() => {
     try {
       if (!res.writableEnded && !res.destroyed) {
@@ -72,20 +66,75 @@ export const streamEvents = async (req: Request, res: Response) => {
   };
 
   let stopped = false;
+  let subscription: EventBusSubscription | null = null;
 
   const cleanup = () => {
     if (stopped) return;
     stopped = true;
     clearInterval(heartbeat);
+    if (subscription) {
+      subscription.close();
+      subscription = null;
+    }
     res.end();
   };
 
-  let pollTimeout: NodeJS.Timeout | null = null;
+  const sendDomainEvent = async (data: any) => {
+    const id = String(data?.id || "");
+    if (!id) return;
+    await writeChunk(`id: ${id}\nevent: domain_event\ndata: ${JSON.stringify(data)}\n\n`);
+  };
 
-  const pollOnce = async () => {
-    if (stopped || res.writableEnded || res.destroyed) return;
+  let writeChain = Promise.resolve();
+  const enqueueWrite = (write: () => Promise<void>) => {
+    writeChain = writeChain.then(write).catch(() => undefined);
+  };
 
-    try {
+  const orgIdString = orgId.toString();
+  const buffer: EventBusEvent[] = [];
+  let busPaused = true;
+
+  const onBusEvent = (evt: EventBusEvent) => {
+    if (stopped) return;
+    if (evt.kind !== "domain_event") return;
+    if (evt.orgId !== orgIdString) return;
+
+    if (busPaused) {
+      buffer.push(evt);
+      return;
+    }
+
+    const id = String(evt.event?.id || "");
+    if (!mongoose.Types.ObjectId.isValid(id)) return;
+    if (lastId && id <= lastId.toString()) return;
+
+    lastId = new mongoose.Types.ObjectId(id);
+
+    const data = {
+      id,
+      type: String(evt.event?.type || ""),
+      aggregate_type: String(evt.event?.aggregate_type || ""),
+      aggregate_id: String(evt.event?.aggregate_id || ""),
+      action_link_id: evt.event?.action_link_id ?? null,
+      request_id: evt.event?.request_id ?? null,
+      payload: evt.event?.payload || {},
+      created_at: evt.event?.created_at ?? null,
+    };
+
+    enqueueWrite(() => sendDomainEvent(data));
+  };
+
+  subscription = getEventBus().subscribe({ orgId: orgIdString, onEvent: onBusEvent });
+
+  const replayFromDb = async () => {
+    const maxReplay = 1000;
+    const pageSize = 200;
+    let replayed = 0;
+
+    while (!stopped && replayed < maxReplay) {
+      const remaining = maxReplay - replayed;
+      const limit = Math.min(pageSize, remaining);
+
       const query: any = { orgId };
       if (lastId) {
         query._id = { $gt: lastId };
@@ -93,10 +142,8 @@ export const streamEvents = async (req: Request, res: Response) => {
 
       const events = await DomainEventModel.find(query)
         .sort({ _id: 1 })
-        .limit(50)
+        .limit(limit)
         .select({
-          orgId: 1,
-          userId: 1,
           eventType: 1,
           aggregateType: 1,
           aggregateId: 1,
@@ -107,9 +154,15 @@ export const streamEvents = async (req: Request, res: Response) => {
         })
         .lean();
 
+      if (!events.length) {
+        break;
+      }
+
       for (const event of events as any[]) {
         const id = String(event._id);
-        lastId = mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : lastId;
+        if (!mongoose.Types.ObjectId.isValid(id)) continue;
+        if (lastId && id <= lastId.toString()) continue;
+        lastId = new mongoose.Types.ObjectId(id);
 
         const data = {
           id,
@@ -119,27 +172,41 @@ export const streamEvents = async (req: Request, res: Response) => {
           action_link_id: event.actionLinkId ? String(event.actionLinkId) : null,
           request_id: event.requestId ? String(event.requestId) : null,
           payload: event.payload || {},
-          created_at: event.createdAt || null,
+          created_at: event.createdAt ? new Date(event.createdAt).toISOString() : null,
         };
 
-        await writeChunk(`id: ${id}\nevent: domain_event\ndata: ${JSON.stringify(data)}\n\n`);
+        enqueueWrite(() => sendDomainEvent(data));
       }
-    } catch (error: any) {
-      await writeChunk(
-        `event: error\ndata: ${JSON.stringify({
-          message: "Event stream poll failed",
-          error: String(error?.message || error).slice(0, 300),
-          request_id: req.requestId,
-        })}\n\n`
-      );
-    } finally {
-      if (!stopped) {
-        pollTimeout = setTimeout(pollOnce, 2000);
-      }
+
+      replayed += events.length;
     }
   };
 
-  pollTimeout = setTimeout(pollOnce, 2000);
+  const unpauseAndFlush = () => {
+    busPaused = false;
+    while (buffer.length > 0) {
+      const evt = buffer.shift()!;
+      onBusEvent(evt);
+    }
+  };
+
+  if (!lastId) {
+    unpauseAndFlush();
+  } else {
+    void replayFromDb()
+      .catch((error: any) => {
+        enqueueWrite(() =>
+          writeChunk(
+            `event: error\ndata: ${JSON.stringify({
+              message: "Event stream replay failed",
+              error: String(error?.message || error).slice(0, 300),
+              request_id: req.requestId,
+            })}\n\n`
+          )
+        );
+      })
+      .finally(unpauseAndFlush);
+  }
 
   req.on("close", cleanup);
   req.on("aborted", cleanup);

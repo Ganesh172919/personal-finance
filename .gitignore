@@ -12,10 +12,12 @@ client/.vite/
 
 
 
-.env
+
 server/.env
 client/.env
-.env.local
+plugin-runtime/.env
+observability/.env
+
 
 # Local helper scripts
 .tmp/

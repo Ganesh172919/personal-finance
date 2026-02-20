@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import List, Tuple
 
-
 _RISK_MAP = {
     "conservative": "low",
     "low risk": "low",

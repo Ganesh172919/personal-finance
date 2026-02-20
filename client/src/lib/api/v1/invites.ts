@@ -1,6 +1,6 @@
-import { apiClient } from "../core";
+﻿import { apiClient } from "../core";
 
-import type { AcceptOrgInviteResponse as SdkAcceptOrgInviteResponse } from "@finwise/sdk-ts";
+import type { AcceptOrgInviteResponse as SdkAcceptOrgInviteResponse } from "@/types/apiTypes";
 
 export type AcceptOrgInviteResponse = SdkAcceptOrgInviteResponse;
 
@@ -10,3 +10,5 @@ export async function acceptOrgInvite(token: string): Promise<AcceptOrgInviteRes
     body: JSON.stringify({ token }),
   });
 }
+
+

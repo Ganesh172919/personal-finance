@@ -94,29 +94,6 @@ export const getCurrentPeriodKey = (now = new Date()) =>
   `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 
 const sumUsageByFeature = async (params: { orgId?: Types.ObjectId; userId: Types.ObjectId; periodKey: string }) => {
-  const match =
-    params.orgId
-      ? {
-          periodKey: params.periodKey,
-          $or: [{ orgId: params.orgId }, { orgId: { $exists: false }, userId: params.userId }],
-        }
-      : {
-          userId: params.userId,
-          periodKey: params.periodKey,
-        };
-
-  const rows = await UsageEventModel.aggregate([
-    {
-      $match: match,
-    },
-    {
-      $group: {
-        _id: "$feature",
-        units: { $sum: "$units" },
-      },
-    },
-  ]);
-
   const usage: Record<UsageFeature, number> = {
     monthly_ai_calls: 0,
     scenario_depth: 0,
@@ -128,9 +105,77 @@ const sumUsageByFeature = async (params: { orgId?: Types.ObjectId; userId: Types
     connector_sync_records: 0,
     marketplace_installs: 0,
   };
-  for (const row of rows) {
-    const key = String((row as any)._id) as UsageFeature;
-    usage[key] = Number((row as any).units || 0);
+
+  if (params.orgId) {
+    const ledgerRows = await UsageLedgerModel.find({ orgId: params.orgId, periodKey: params.periodKey })
+      .select({ feature: 1, units: 1 })
+      .lean();
+
+    for (const row of ledgerRows as any[]) {
+      const key = String((row as any)?.feature || "") as UsageFeature;
+      if (!key || !(key in usage)) continue;
+      usage[key] = Math.max(0, Number((row as any)?.units || 0));
+    }
+
+    // Backward-compatible: include legacy per-user usage events with no orgId.
+    const legacyRows = await UsageEventModel.aggregate([
+      {
+        $match: {
+          userId: params.userId,
+          periodKey: params.periodKey,
+          orgId: { $exists: false },
+        },
+      },
+      {
+        $group: {
+          _id: "$feature",
+          units: { $sum: "$units" },
+        },
+      },
+    ]);
+
+    for (const row of legacyRows as any[]) {
+      const key = String((row as any)?._id || "") as UsageFeature;
+      if (!key || !(key in usage)) continue;
+      usage[key] += Math.max(0, Number((row as any)?.units || 0));
+    }
+
+    // Fallback: if ledger is empty but org-scoped usage events exist, prefer the event aggregation.
+    if (ledgerRows.length === 0) {
+      const orgRows = await UsageEventModel.aggregate([
+        { $match: { orgId: params.orgId, periodKey: params.periodKey } },
+        { $group: { _id: "$feature", units: { $sum: "$units" } } },
+      ]);
+
+      for (const row of orgRows as any[]) {
+        const key = String((row as any)?._id || "") as UsageFeature;
+        if (!key || !(key in usage)) continue;
+        usage[key] += Math.max(0, Number((row as any)?.units || 0));
+      }
+    }
+
+    return usage;
+  }
+
+  const rows = await UsageEventModel.aggregate([
+    {
+      $match: {
+        userId: params.userId,
+        periodKey: params.periodKey,
+      },
+    },
+    {
+      $group: {
+        _id: "$feature",
+        units: { $sum: "$units" },
+      },
+    },
+  ]);
+
+  for (const row of rows as any[]) {
+    const key = String((row as any)?._id || "") as UsageFeature;
+    if (!key || !(key in usage)) continue;
+    usage[key] = Math.max(0, Number((row as any)?.units || 0));
   }
   return usage;
 };

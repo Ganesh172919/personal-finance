@@ -13,6 +13,7 @@ import RecurringRuleModel from "../../models/recurringRuleModel";
 import TransactionModel, { type TransactionType } from "../../models/transactionModel";
 import UserModel from "../../models/userModel";
 import WorkflowModel from "../../models/workflowModel";
+import { getEnv } from "../../config/env";
 import { HttpError } from "../../middleware/httpError";
 import { recordAuditEvent } from "../auditLog";
 import { publishDomainEvent } from "../domainEvents";
@@ -21,6 +22,7 @@ import { processExportJob } from "../exports";
 import { detectRecurringCandidates, getBudgetEnvelopes, parsePeriodKey } from "../financeIntelligence";
 import { bumpTransactionMetadata, ensureProfileWithMigration, setProfileMutationSource } from "../profileService";
 import { createWorkflow, enqueueWorkflowRun } from "../workflows";
+import { computeNextCronRunAt } from "../workflowCron";
 import { sendEmail } from "../../utils/sendEmail";
 import { getToolCatalogEntry } from "../toolCatalog";
 import type { ToolHandler } from "./types";
@@ -144,9 +146,10 @@ export const builtinToolHandlers: ToolHandler[] = [
     execute: async (ctx) => {
       const args: any = ctx.toolCall.args;
 
+      const nextEnabled = Boolean(args.enabled);
       const workflow = await WorkflowModel.findOneAndUpdate(
         { _id: args.workflow_id, orgId: ctx.orgId },
-        { $set: { enabled: Boolean(args.enabled) } },
+        { $set: { enabled: nextEnabled } },
         { new: true }
       );
       if (!workflow) {
@@ -158,7 +161,21 @@ export const builtinToolHandlers: ToolHandler[] = [
         (workflow as any)?.trigger?.type === "cron" &&
         String((workflow as any)?.trigger?.cron || "").trim()
       ) {
-        // Cron scheduling previously relied on Redis + BullMQ. In localhost-only mode, cron triggers are ignored.
+        const cron = String((workflow as any)?.trigger?.cron || "").trim();
+        const org = await OrganizationModel.findById(ctx.orgId)
+          .select({ timezone: 1 })
+          .lean();
+        const scheduleTimezone = String((org as any)?.timezone || "UTC").trim() || "UTC";
+
+        const nextRunAt = computeNextCronRunAt({ cron, timeZone: scheduleTimezone });
+        (workflow as any).scheduleTimezone = scheduleTimezone;
+        (workflow as any).nextRunAt = nextRunAt;
+        (workflow as any).lastError = undefined;
+        await workflow.save();
+      } else if (!workflow.enabled) {
+        (workflow as any).nextRunAt = undefined;
+        (workflow as any).lastError = undefined;
+        await workflow.save();
       }
 
       await recordAuditEvent({
@@ -271,6 +288,7 @@ export const builtinToolHandlers: ToolHandler[] = [
       };
     },
     execute: async (ctx) => {
+      const env = getEnv();
       const args: any = ctx.toolCall.args;
 
       await enforceFeatureLimit({
@@ -291,6 +309,20 @@ export const builtinToolHandlers: ToolHandler[] = [
         idempotencyKey: idempotencyKeyInner,
       }).lean();
       if (existingJob) {
+        if (env.ASYNC_JOBS_ENABLED) {
+          const status = String((existingJob as any).status || "queued");
+          const terminal = status === "succeeded" || status === "failed";
+          return {
+            export: {
+              id: String((existingJob as any)._id),
+              type: String((existingJob as any).type),
+              status,
+            },
+            queued: !terminal,
+            idempotent_export: true,
+          };
+        }
+
         return {
           export: {
             id: String((existingJob as any)._id),
@@ -334,6 +366,10 @@ export const builtinToolHandlers: ToolHandler[] = [
       }).catch(() => null);
 
       const exportJobId = createdJob._id.toString();
+
+      if (env.ASYNC_JOBS_ENABLED) {
+        return { export_job_id: exportJobId, queued: true, status: "queued" };
+      }
 
       const processed = await processExportJob(exportJobId);
       return { export_job_id: exportJobId, queued: false, status: (processed as any).status };
@@ -977,6 +1013,7 @@ export const builtinToolHandlers: ToolHandler[] = [
       };
     },
     execute: async (ctx) => {
+      const env = getEnv();
       const args = ctx.toolCall.args as any;
       const periodKey = String(args.period_key || "").trim();
       const includeExport = args.include_export === undefined ? true : Boolean(args.include_export);
@@ -1050,7 +1087,9 @@ export const builtinToolHandlers: ToolHandler[] = [
           context: { export_type: "monthly_summary_pdf", tool_call_id: ctx.toolCall.id, period_key: periodKey },
         }).catch(() => null);
 
-        await processExportJob(exportJobId);
+        if (!env.ASYNC_JOBS_ENABLED) {
+          await processExportJob(exportJobId);
+        }
       }
 
       await recordAuditEvent({

@@ -1,4 +1,4 @@
-import { apiClient } from "../core";
+﻿import { apiClient } from "../core";
 
 import type {
   ApiKeyScope as SdkApiKeyScope,
@@ -6,7 +6,7 @@ import type {
   CreateApiKeyResponse,
   ListApiKeysResponse,
   RevokeApiKeyResponse,
-} from "@finwise/sdk-ts";
+} from "@/types/apiTypes";
 
 export type ApiKeyScope = SdkApiKeyScope;
 export type ApiKeyListItem = ListApiKeysResponse["api_keys"][number];
@@ -25,3 +25,5 @@ export async function createApiKey(body: CreateApiKeyRequest): Promise<CreateApi
 export async function revokeApiKey(id: string): Promise<RevokeApiKeyResponse> {
   return apiClient(`/v1/api-keys/${id}/revoke`, { method: "POST" });
 }
+
+

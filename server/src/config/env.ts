@@ -81,6 +81,14 @@ const envSchema = z
     JWT_SECRET: z.string().trim().min(1, "JWT_SECRET is required"),
     TRUST_PROXY: z.preprocess(emptyStringToUndefined, z.string().trim().optional()),
 
+    ASYNC_JOBS_ENABLED: optionalBoolFromEnv.default(false),
+    WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
+    WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(200).max(60_000).default(1000),
+
+    DOMAIN_EVENT_FANOUT_ENABLED: optionalBoolFromEnv.default(true),
+    DOMAIN_EVENT_FANOUT_MODE: z.enum(["auto", "poll", "change_stream"]).default("auto"),
+    DOMAIN_EVENT_FANOUT_POLL_INTERVAL_MS: z.coerce.number().int().min(200).max(60_000).default(1000),
+
     PYTHON_API_URL: z.string().url().default("http://localhost:8001").transform(normalizeBaseUrl),
     CLIENT_URL: z.string().url().default("http://localhost:5173"),
     CORS_ORIGINS: csv("http://localhost:5173"),

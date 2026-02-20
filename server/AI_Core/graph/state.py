@@ -1,6 +1,8 @@
-from typing import TypedDict, List, Dict, Any, Optional, Annotated
-from pydantic import BaseModel, ConfigDict, Field
 from enum import Enum
+from typing import Any, Dict, List, Optional, TypedDict
+
+from pydantic import BaseModel, ConfigDict, Field
+
 
 class AgentState(TypedDict):
     """State for the multi-agent financial system"""

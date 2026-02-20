@@ -3,14 +3,12 @@ Rate Limiter and Retry Handler for Gemini API calls.
 Provides exponential backoff, request throttling, and graceful error handling.
 """
 
-import time
 import logging
-import asyncio
-from functools import wraps
-from typing import Any, Callable, Optional, TypeVar, Union
-from datetime import datetime, timedelta
-from threading import Lock
+import time
 from collections import deque
+from functools import wraps
+from threading import Lock
+from typing import Callable, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 

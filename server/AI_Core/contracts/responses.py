@@ -3,8 +3,8 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from .plan import Plan
-from .trace import WorkflowTraceEntry
 from .tool_calls import ToolCall
+from .trace import WorkflowTraceEntry
 
 
 class UsageMetadata(BaseModel):

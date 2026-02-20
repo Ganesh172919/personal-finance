@@ -8,6 +8,7 @@ import { enforceFeatureLimit, recordFeatureUsage } from "../../services/entitlem
 import { recordAuditEvent } from "../../services/auditLog";
 import { processExportJob } from "../../services/exports";
 import { assertGridFsOwnership, openGridFsDownloadStream } from "../../services/gridfs";
+import { getEnv } from "../../config/env";
 
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
@@ -66,6 +67,7 @@ export const listExports = async (req: Request, res: Response) => {
 };
 
 export const createExport = async (req: Request, res: Response) => {
+  const env = getEnv();
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);
   const body = req.body as {
@@ -89,7 +91,12 @@ export const createExport = async (req: Request, res: Response) => {
   if (idempotencyKey) {
     const existing = await ExportJobModel.findOne({ orgId, createdByUserId: user._id, idempotencyKey }).lean();
     if (existing) {
-      return res.status(200).json({ export: toPublicJob(existing), queued: false, request_id: req.requestId });
+      if (!env.ASYNC_JOBS_ENABLED) {
+        return res.status(200).json({ export: toPublicJob(existing), queued: false, request_id: req.requestId });
+      }
+      const status = String((existing as any)?.status || "queued");
+      const terminal = status === "succeeded" || status === "failed";
+      return res.status(200).json({ export: toPublicJob(existing), queued: !terminal, request_id: req.requestId });
     }
   }
 
@@ -125,6 +132,10 @@ export const createExport = async (req: Request, res: Response) => {
   }).catch(() => null);
 
   const exportJobId = created._id.toString();
+
+  if (env.ASYNC_JOBS_ENABLED) {
+    return res.status(201).json({ export: toPublicJob(created), queued: true, request_id: req.requestId });
+  }
 
   const processed = await processExportJob(exportJobId);
   return res.status(201).json({ export: toPublicJob(processed), queued: false, request_id: req.requestId });

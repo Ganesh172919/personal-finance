@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -24,7 +24,7 @@ import {
   type Workflow,
 } from "@/lib/apiClient";
 
-import type { TaskKind, TaskPriority, WorkflowAction } from "@finwise/sdk-ts";
+import type { TaskKind, TaskPriority, WorkflowAction } from "@/types/apiTypes";
 
 import {
   builtinWorkflowTemplates,
@@ -647,3 +647,5 @@ export default function WorkflowsPage() {
     </div>
   );
 }
+
+

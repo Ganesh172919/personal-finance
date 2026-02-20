@@ -2,7 +2,6 @@ from typing import Any, Dict, List, Literal
 
 from pydantic import BaseModel, Field
 
-
 ToolRisk = Literal["low", "medium", "high"]
 ToolName = Literal[
     "transactions.create",

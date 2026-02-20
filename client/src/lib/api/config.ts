@@ -1,11 +1,11 @@
-import { apiClient } from "./core";
+﻿import { apiClient } from "./core";
 
 import type {
   AppConfigResponse as SdkAppConfigResponse,
   EntitlementsMeResponse as SdkEntitlementsMeResponse,
   PlanLimit,
   PlansResponse,
-} from "@finwise/sdk-ts";
+} from "@/types/apiTypes";
 
 export type AppConfig = SdkAppConfigResponse;
 export type Entitlement = SdkEntitlementsMeResponse;
@@ -22,3 +22,5 @@ export async function getPlans(): Promise<PlansResponse> {
 export async function getMyEntitlements(): Promise<Entitlement> {
   return apiClient("/entitlements/me");
 }
+
+

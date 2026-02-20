@@ -1,4 +1,4 @@
-import { buildApiUrl } from "@/lib/apiBase";
+﻿import { buildApiUrl } from "@/lib/apiBase";
 import { parseApiError } from "@/lib/apiError";
 import { getActiveOrgId } from "@/lib/orgContext";
 
@@ -12,7 +12,7 @@ import type {
   ExportJobType,
   GetExportResponse,
   ListExportsResponse,
-} from "@finwise/sdk-ts";
+} from "@/types/apiTypes";
 
 export type { ExportJob, ExportJobStatus, ExportJobType, ListExportsResponse };
 
@@ -88,3 +88,5 @@ export const triggerBrowserDownload = (params: { blob: Blob; filename: string })
     URL.revokeObjectURL(url);
   }
 };
+
+

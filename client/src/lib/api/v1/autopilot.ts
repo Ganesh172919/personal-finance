@@ -1,11 +1,11 @@
-import { apiClient } from "../core";
+﻿import { apiClient } from "../core";
 
 import type {
   AutopilotApproveRequest as SdkAutopilotApproveRequest,
   AutopilotPlanRequest as SdkAutopilotPlanRequest,
   AutopilotRunIdRequest as SdkAutopilotRunIdRequest,
   AutopilotRunResponse as SdkAutopilotRunResponse,
-} from "@finwise/sdk-ts";
+} from "@/types/apiTypes";
 
 export type AutopilotPlanRequest = SdkAutopilotPlanRequest;
 export type AutopilotRunIdRequest = SdkAutopilotRunIdRequest;
@@ -44,3 +44,5 @@ export async function executeAutopilotRun(body: AutopilotRunIdRequest): Promise<
 export async function getAutopilotRun(runId: string): Promise<AutopilotRunResponse> {
   return apiClient(`/v1/autopilot/runs/${encodeURIComponent(runId)}`) as Promise<AutopilotRunResponse>;
 }
+
+

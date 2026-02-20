@@ -43,6 +43,7 @@ export const connectDB = async () => {
     memoryServer = await MongoMemoryServer.create({
       instance: {
         dbName: "finwise-local",
+        launchTimeout: 30_000,
       },
     });
 
@@ -69,6 +70,20 @@ export const connectDB = async () => {
     }
     await connectWithInMemory("Primary MongoDB connection failed in non-production mode.");
   }
+};
+
+export const connectDBStrict = async () => {
+  const env = getEnv();
+  bindConnectionListeners();
+
+  if (!env.MONGO_URI) {
+    throw new Error("MONGO_URI is required for strict database connections.");
+  }
+
+  await mongoose.connect(env.MONGO_URI, {
+    serverSelectionTimeoutMS: 10_000,
+    maxPoolSize: 20,
+  });
 };
 
 export const closeDB = async () => {

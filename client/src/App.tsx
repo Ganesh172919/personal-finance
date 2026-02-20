@@ -163,8 +163,8 @@ function Router() {
           </ProtectedRoute>
         </Route>
 
-        {/* Default redirect - Now goes to chat as primary interface */}
-        <Route path="/">{user ? <Redirect to="/chat" /> : <Redirect to="/login" />}</Route>
+        {/* Default redirect - Now goes to dashboard as primary interface */}
+        <Route path="/">{user ? <Redirect to="/dashboard" /> : <Redirect to="/login" />}</Route>
 
         <Route component={NotFound} />
       </Switch>

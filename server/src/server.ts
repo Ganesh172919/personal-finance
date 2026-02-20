@@ -5,11 +5,15 @@ import { getEnv } from "./config/env";
 import { logger } from "./config/logger";
 import { processPendingDomainEvents } from "./services/domainEventTriggers";
 import { startPluginManager } from "./modules/plugins/pluginManager";
+import { startDomainEventFanout } from "./modules/realtime/domainEventFanout";
+import { startWorkflowScheduler } from "./services/workflowScheduler";
 
 let server: ReturnType<ReturnType<typeof createApp>["listen"]> | null = null;
 let shuttingDown = false;
 let domainEventPoller: NodeJS.Timeout | null = null;
 let pluginManagerStop: (() => void) | null = null;
+let domainEventFanoutStop: (() => void) | null = null;
+let workflowSchedulerStop: (() => void) | null = null;
 
 const shutdown = async (reason: string, exitCode = 0) => {
   if (shuttingDown) {
@@ -39,6 +43,14 @@ const shutdown = async (reason: string, exitCode = 0) => {
       pluginManagerStop();
       pluginManagerStop = null;
     }
+    if (domainEventFanoutStop) {
+      domainEventFanoutStop();
+      domainEventFanoutStop = null;
+    }
+    if (workflowSchedulerStop) {
+      workflowSchedulerStop();
+      workflowSchedulerStop = null;
+    }
     await closeDB();
     logger.info("Graceful shutdown completed.");
     process.exit(exitCode);
@@ -54,6 +66,10 @@ async function start() {
   await connectDB();
 
   pluginManagerStop = startPluginManager().stop;
+  domainEventFanoutStop = startDomainEventFanout().stop;
+  if (env.NODE_ENV !== "test" && !env.ASYNC_JOBS_ENABLED) {
+    workflowSchedulerStop = startWorkflowScheduler({ label: "server" }).stop;
+  }
 
   const app = createApp();
 

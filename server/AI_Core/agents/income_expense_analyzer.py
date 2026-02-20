@@ -1,6 +1,6 @@
-from typing import Dict, Any, List
 import logging
-from datetime import datetime
+from typing import Any, Dict, List
+
 import pandas as pd
 from dateutil.parser import parse as parse_date
 

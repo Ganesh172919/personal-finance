@@ -1,7 +1,7 @@
-import type { ToolCall } from "@/types/ai.types";
+﻿import type { ToolCall } from "@/types/ai.types";
 import type { CreateWorkflowRequest, Workflow } from "@/lib/apiClient";
 
-import type { WorkflowAction } from "@finwise/sdk-ts";
+import type { WorkflowAction } from "@/types/apiTypes";
 
 const newToolCallId = () => {
   try {
@@ -47,4 +47,6 @@ export const workflowActionLabel = (action: WorkflowAction) => {
   if (action.type === "export_report") return `Export: ${(action as any).export_type || "export_report"}`;
   return "Action";
 };
+
+
 

@@ -1,6 +1,6 @@
+import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, Tuple
-import logging
 
 from langgraph.graph import END, StateGraph
 
@@ -13,12 +13,12 @@ class FinancialWorkflow:
     """Orchestrates the multi-agent financial workflow."""
 
     def __init__(self):
-        from agents.master_agent import MasterFinancialStrategistAgent
-        from agents.income_expense_analyzer import IncomeExpenseAnalyzerAgent
         from agents.budget_planner import BudgetPlannerAgent
-        from agents.investment_advisor import InvestmentAdvisorAgent
         from agents.debt_optimizer import DebtOptimizerAgent
         from agents.financial_educator import FinancialEducatorAgent
+        from agents.income_expense_analyzer import IncomeExpenseAnalyzerAgent
+        from agents.investment_advisor import InvestmentAdvisorAgent
+        from agents.master_agent import MasterFinancialStrategistAgent
 
         self.master_agent = MasterFinancialStrategistAgent()
         self.income_analyzer = IncomeExpenseAnalyzerAgent()

@@ -1,6 +1,6 @@
-import type { CreateWorkflowRequest, Workflow } from "@/lib/apiClient";
+﻿import type { CreateWorkflowRequest, Workflow } from "@/lib/apiClient";
 
-import type { WorkflowAction } from "@finwise/sdk-ts";
+import type { WorkflowAction } from "@/types/apiTypes";
 
 export type WorkflowTemplate = {
   id: string;
@@ -165,3 +165,5 @@ export const builtinWorkflowTemplates = (): WorkflowTemplate[] => [
     },
   },
 ];
+
+

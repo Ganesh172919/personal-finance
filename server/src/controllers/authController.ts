@@ -159,18 +159,29 @@ export const resendVerification = async (req: Request, res: Response) => {
 // --- Login with Email & Password ---
 export const login = async (req: Request, res: Response) => {
   const { email, password } = req.body as { email: string; password: string };
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const normalizedPassword = String(password || "");
 
-  const user = await UserModel.findOne({ email, authProvider: "email" }).select("+password");
+  const user = await UserModel.findOne({ email: normalizedEmail }).select("+password");
   if (!user || !user.password) {
-    throw new HttpError(401, "INVALID_CREDENTIALS", "Invalid credentials.");
-  }
-  if (!user.isEmailVerified) {
-    throw new HttpError(401, "EMAIL_NOT_VERIFIED", "Please verify your email first.");
+    throw new HttpError(401, "INVALID_CREDENTIALS", "Invalid email or password.");
   }
 
-  const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch) {
-    throw new HttpError(401, "INVALID_CREDENTIALS", "Invalid credentials.");
+  if (user.authProvider === "google") {
+    throw new HttpError(400, "GOOGLE_AUTH_REQUIRED", "This account uses Google sign-in. Please continue with Google.");
+  }
+
+  const isPasswordValid = await bcrypt.compare(normalizedPassword, user.password);
+  if (!isPasswordValid) {
+    throw new HttpError(401, "INVALID_CREDENTIALS", "Invalid email or password.");
+  }
+
+  if (!user.isEmailVerified) {
+    throw new HttpError(
+      403,
+      "EMAIL_NOT_VERIFIED",
+      "Email not verified. Please verify your email before logging in."
+    );
   }
 
   generateAndSetToken(res, user._id.toString());

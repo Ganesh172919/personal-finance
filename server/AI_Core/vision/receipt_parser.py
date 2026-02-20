@@ -1,13 +1,11 @@
 ﻿from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from dateutil.parser import parse as parse_date
 
 from .engine import OcrLine
-
 
 _DATE_PATTERNS = [
     re.compile(r"\b(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})\b"),
@@ -220,7 +218,9 @@ def extract_receipt(lines: List[OcrLine], *, currency_hint: str = "INR") -> Dict
     """
 
     warnings: List[str] = []
-    normalized_lines = [OcrLine(text=_normalize_ws(l.text), confidence=float(l.confidence)) for l in lines if l.text]
+    normalized_lines = [
+        OcrLine(text=_normalize_ws(line.text), confidence=float(line.confidence)) for line in lines if line.text
+    ]
 
     vendor, vendor_conf = _pick_vendor(normalized_lines)
     date_str, date_conf = _parse_date(normalized_lines)
@@ -235,7 +235,7 @@ def extract_receipt(lines: List[OcrLine], *, currency_hint: str = "INR") -> Dict
 
     items, item_conf = _extract_items(normalized_lines)
     currency = _detect_currency(normalized_lines, currency_hint)
-    raw_text = "\n".join(l.text for l in normalized_lines if l.text)
+    raw_text = "\n".join(line.text for line in normalized_lines if line.text)
 
     if vendor is None:
         warnings.append("Vendor not detected.")
@@ -267,5 +267,4 @@ def extract_receipt(lines: List[OcrLine], *, currency_hint: str = "INR") -> Dict
     }
 
     return {"extracted": extracted, "confidence": confidence, "warnings": warnings}
-
 

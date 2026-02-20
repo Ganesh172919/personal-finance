@@ -2,7 +2,7 @@
 LangGraph workflow and state management
 """
 
-from .state import AgentState, AnalysisType, UserProfile, FinancialPlan
+from .state import AgentState, AnalysisType, FinancialPlan, UserProfile
 from .workflow import create_financial_workflow
 
 __all__ = [

@@ -1,4 +1,4 @@
-import { apiClient } from "../core";
+﻿import { apiClient } from "../core";
 
 import type {
   CreateWorkflowRequest as SdkCreateWorkflowRequest,
@@ -6,7 +6,7 @@ import type {
   ListWorkflowsResponse as SdkListWorkflowsResponse,
   RunWorkflowRequest as SdkRunWorkflowRequest,
   RunWorkflowResponse as SdkRunWorkflowResponse,
-} from "@finwise/sdk-ts";
+} from "@/types/apiTypes";
 
 export type CreateWorkflowRequest = SdkCreateWorkflowRequest;
 export type CreateWorkflowResponse = SdkCreateWorkflowResponse;
@@ -52,3 +52,5 @@ export type ListWorkflowTemplatesResponse = {
 export async function listWorkflowTemplates(): Promise<ListWorkflowTemplatesResponse> {
   return apiClient("/v1/workflows/templates") as Promise<ListWorkflowTemplatesResponse>;
 }
+
+

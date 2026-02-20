@@ -1,4 +1,4 @@
-import { apiClient } from "../core";
+﻿import { apiClient } from "../core";
 
 import type {
   AddOrgMemberRequest as SdkAddOrgMemberRequest,
@@ -9,7 +9,7 @@ import type {
   OrgsMeResponse as SdkOrgsMeResponse,
   UpdateOrgSettingsRequest as SdkUpdateOrgSettingsRequest,
   UpdateOrgSettingsResponse as SdkUpdateOrgSettingsResponse,
-} from "@finwise/sdk-ts";
+} from "@/types/apiTypes";
 
 export type OrgRole = SdkOrgRole;
 export type OrgsMeResponse = SdkOrgsMeResponse;
@@ -50,3 +50,5 @@ export async function updateOrgSettings(
     body: JSON.stringify(body),
   });
 }
+
+

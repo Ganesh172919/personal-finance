@@ -7,6 +7,7 @@ import type { BuiltinConnectorKey, ConnectorKey, ConnectorSyncOptions } from "..
 import { enforceFeatureLimit, recordFeatureUsage } from "./entitlements";
 import { logger } from "../config/logger";
 import type { MutationSource } from "../types/provenance";
+import { getEnv } from "../config/env";
 
 const normalizeConnectorKey = (value: string): ConnectorKey => String(value || "").trim().toLowerCase();
 
@@ -72,6 +73,7 @@ export const enqueueIntegrationSync = async (params: {
   requestId?: string;
   options?: ConnectorSyncOptions;
 }) => {
+  const env = getEnv();
   const connectorKey = normalizeConnectorKey(params.connectorKey);
   getConnectorOrThrow(connectorKey);
 
@@ -120,6 +122,12 @@ export const enqueueIntegrationSync = async (params: {
   ).catch(() => null);
 
   const runId = String((run as any)._id);
+
+  if (env.ASYNC_JOBS_ENABLED) {
+    const status = String((run as any)?.status || "queued");
+    const terminal = status === "succeeded" || status === "failed";
+    return { queued: !terminal, run };
+  }
 
   try {
     const processed = await processIntegrationSyncRun(runId);

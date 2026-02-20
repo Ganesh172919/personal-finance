@@ -45,6 +45,10 @@ export interface IWorkflow {
   name: string;
   enabled: boolean;
   trigger: WorkflowTrigger;
+  scheduleTimezone?: string;
+  nextRunAt?: Date;
+  lastRunAt?: Date;
+  lastError?: string;
   actions: WorkflowAction[];
   createdAt: Date;
   updatedAt: Date;
@@ -98,6 +102,10 @@ const workflowSchema = new Schema<IWorkflowDocument>(
     createdByUserId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     name: { type: String, required: true, trim: true, maxlength: 160 },
     enabled: { type: Boolean, default: true },
+    scheduleTimezone: { type: String, trim: true, maxlength: 80 },
+    nextRunAt: { type: Date, index: true },
+    lastRunAt: { type: Date },
+    lastError: { type: String, trim: true, maxlength: 800 },
     trigger: {
       type: {
         type: String,
@@ -116,6 +124,7 @@ const workflowSchema = new Schema<IWorkflowDocument>(
 workflowSchema.index({ orgId: 1, enabled: 1, createdAt: -1 });
 workflowSchema.index({ orgId: 1, createdByUserId: 1, createdAt: -1 });
 workflowSchema.index({ orgId: 1, enabled: 1, "trigger.type": 1, "trigger.event_type": 1, createdAt: -1 });
+workflowSchema.index({ enabled: 1, "trigger.type": 1, nextRunAt: 1, orgId: 1 });
 
 const WorkflowModel = model<IWorkflowDocument>("Workflow", workflowSchema);
 export default WorkflowModel;

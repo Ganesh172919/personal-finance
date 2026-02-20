@@ -7,7 +7,6 @@ from dateutil.parser import parse as parse_date
 
 from .engine import OcrLine
 
-
 _PERCENT_RE = re.compile(r"(?<!\d)(\d+(?:\.\d+)?)\s*%")
 _DATE_LIKE_RE = re.compile(r"\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})\b")
 _AMOUNT_RE = re.compile(

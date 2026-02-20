@@ -4,6 +4,7 @@ import DomainEventModel from "../models/domainEventModel";
 import WorkflowModel from "../models/workflowModel";
 import { enqueueWorkflowRun } from "./workflows";
 import { logger } from "../config/logger";
+import { HttpError } from "../middleware/httpError";
 
 const parseLimit = (value: unknown, fallback: number) => {
   const numeric = Number(value);
@@ -47,6 +48,7 @@ export const processDomainEventById = async (domainEventId: string) => {
   }
 
   let successes = 0;
+  let skippedQuota = 0;
   for (const workflow of workflows as any[]) {
     const workflowId = workflow?._id;
     if (!workflowId) continue;
@@ -61,6 +63,10 @@ export const processDomainEventById = async (domainEventId: string) => {
       });
       successes += 1;
     } catch (error) {
+      if (error instanceof HttpError && error.statusCode === 402) {
+        skippedQuota += 1;
+        continue;
+      }
       logger.error(
         {
           event: "domain_event_trigger_failed",
@@ -73,11 +79,11 @@ export const processDomainEventById = async (domainEventId: string) => {
     }
   }
 
-  if (successes > 0) {
+  if (successes > 0 || skippedQuota > 0) {
     await DomainEventModel.updateOne({ _id: (event as any)._id }, { $set: { processedAt: new Date() } }).catch(() => null);
   }
 
-  return { ok: true, workflows_matched: workflows.length, runs_enqueued: successes };
+  return { ok: true, workflows_matched: workflows.length, runs_enqueued: successes, skipped_quota: skippedQuota };
 };
 
 export const processPendingDomainEvents = async (params: { limit?: number } = {}) => {
@@ -99,4 +105,3 @@ export const processPendingDomainEvents = async (params: { limit?: number } = {}
 
   return { ok: true, scanned: events.length, processed };
 };
-
