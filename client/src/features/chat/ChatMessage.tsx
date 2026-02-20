@@ -8,8 +8,18 @@ import { Avatar, AvatarFallback } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
 import { AgentWorkflowVisualizer } from "@/components/AgentWorkflowVisualizer";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ApiError, createTasksFromPlan, executeToolCall, simulateToolCall, submitAgentOutputFeedback } from "@/lib/apiClient";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ApiError,
+  approveAutopilotRun,
+  createTasksFromPlan,
+  executeAutopilotRun,
+  executeToolCall,
+  getAutopilotRun,
+  simulateAutopilotRun,
+  simulateToolCall,
+  submitAgentOutputFeedback,
+} from "@/lib/apiClient";
 import { useToast } from "@/hooks/useToast";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import type { ToolCall } from "@/types/ai.types";
@@ -28,6 +38,28 @@ export function ChatMessage({ message }: ChatMessageProps) {
   const queryClient = useQueryClient();
   const { configQuery, formatMoney, formatTime } = useOrgFormatters({ enabled: !isUser });
   const tasksEnabled = configQuery.data?.features.tasks_enabled;
+  const autopilotRunId =
+    !isUser && typeof (message.metadata as any)?.autopilotRunId === "string"
+      ? String((message.metadata as any).autopilotRunId)
+      : !isUser && typeof (message.metadata as any)?.autopilot_run_id === "string"
+        ? String((message.metadata as any).autopilot_run_id)
+        : null;
+
+  const autopilotRunQuery = useQuery({
+    queryKey: ["v1/autopilot/runs", autopilotRunId || "none"],
+    queryFn: () => getAutopilotRun(String(autopilotRunId)),
+    enabled: Boolean(autopilotRunId),
+    retry: 1,
+  });
+
+  const autopilotRun = autopilotRunQuery.data?.run;
+  const autopilotToolCalls = autopilotRun ? ((autopilotRun.tool_calls || []) as unknown as ToolCall[]) : null;
+  const autopilotApprovals =
+    autopilotRun?.approvals && typeof autopilotRun.approvals === "object" && !Array.isArray(autopilotRun.approvals)
+      ? (autopilotRun.approvals as Record<string, any>)
+      : {};
+  const requiredApprovalIds = autopilotToolCalls?.filter((call) => call.requires_confirmation).map((call) => call.id) || [];
+  const missingApprovalIds = requiredApprovalIds.filter((id) => !autopilotApprovals?.[id]?.approved);
 
   const formatError = (error: unknown, fallback: string) => {
     const requestId = error instanceof ApiError ? error.requestId : undefined;
@@ -95,6 +127,64 @@ export function ChatMessage({ message }: ChatMessageProps) {
       toast({
         title: "Action failed",
         description: formatError(error, "Couldn't execute this action."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const simulateRunMutation = useMutation({
+    mutationFn: (runId: string) => simulateAutopilotRun({ run_id: runId }),
+    onSuccess: async (_data, runId) => {
+      await queryClient.invalidateQueries({ queryKey: ["v1/autopilot/runs", runId] });
+      toast({ title: "Preview ready", description: "Autopilot simulations updated." });
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: "Preview failed",
+        description: formatError(error, "Couldn't simulate this run."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const approveRunMutation = useMutation({
+    mutationFn: (payload: { runId: string; approveAll?: boolean; toolCallIds?: string[] }) =>
+      approveAutopilotRun({
+        run_id: payload.runId,
+        approve_all: payload.approveAll,
+        tool_call_ids: payload.toolCallIds,
+      }),
+    onSuccess: async (data) => {
+      await queryClient.invalidateQueries({ queryKey: ["v1/autopilot/runs", data.run.id] });
+      toast({ title: "Approved", description: "Autopilot approvals recorded." });
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: "Approval failed",
+        description: formatError(error, "Couldn't approve this run."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const executeRunMutation = useMutation({
+    mutationFn: (runId: string) => executeAutopilotRun({ run_id: runId }),
+    onSuccess: async (_data, runId) => {
+      await Promise.allSettled([
+        queryClient.invalidateQueries({ queryKey: ["v1/autopilot/runs", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["v1/workflows"] }),
+        queryClient.invalidateQueries({ queryKey: ["v1/exports"] }),
+        queryClient.invalidateQueries({ queryKey: ["v1/finance/accounts"] }),
+        queryClient.invalidateQueries({ queryKey: ["v1/finance/merchants"] }),
+        queryClient.invalidateQueries({ queryKey: ["v1/finance/recurring"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }),
+      ]);
+      toast({ title: "Autopilot complete", description: "Execution finished." });
+    },
+    onError: (error: unknown) => {
+      toast({
+        title: "Execution failed",
+        description: formatError(error, "Couldn't execute this run."),
         variant: "destructive",
       });
     },
@@ -310,39 +400,139 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </div>
         ) : null}
 
-        {!isUser && message.metadata?.toolCalls && message.metadata.toolCalls.length > 0 ? (
+        {!isUser &&
+        ((autopilotRunId && (autopilotRunQuery.isLoading || Boolean(autopilotRunQuery.data))) ||
+          (message.metadata?.toolCalls && message.metadata.toolCalls.length > 0)) ? (
           <div className="mt-2 w-full rounded-md border border-border bg-background/60 p-3">
-            <p className="text-xs font-semibold text-foreground mb-2">Autopilot actions</p>
-            <div className="space-y-2">
-              {message.metadata.toolCalls.slice(0, 5).map((toolCall) => (
-                <div key={toolCall.id} className="flex items-start justify-between gap-3 rounded-md border border-border bg-background p-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{toolCall.title}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{toolCall.description}</p>
-                    <p className="text-[11px] text-muted-foreground mt-2">
-                      Tool: {toolCall.tool} Â· Risk: {toolCall.risk}
-                    </p>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-foreground">Autopilot actions</p>
+              {autopilotRunId ? (
+                <span className="text-[11px] text-muted-foreground">
+                  Run status: {autopilotRun?.status || (autopilotRunQuery.isLoading ? "loading" : "unknown")}
+                </span>
+              ) : null}
+            </div>
+
+            {autopilotRunId && autopilotRunQuery.isLoading ? (
+              <div className="text-sm text-muted-foreground">Loading...</div>
+            ) : autopilotRun ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] text-muted-foreground">
+                    {missingApprovalIds.length > 0 ? `Approval required: ${missingApprovalIds.length}` : "No approvals required"}
+                    {autopilotRun.error ? ` · ${autopilotRun.error}` : ""}
                   </div>
-                  <div className="flex flex-col gap-2 flex-shrink-0">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handlePreviewToolCall(toolCall)}
-                      disabled={simulateToolMutation.isPending}
+                      onClick={() => simulateRunMutation.mutate(autopilotRun.id)}
+                      disabled={simulateRunMutation.isPending || executeRunMutation.isPending}
                     >
-                      Preview
+                      {simulateRunMutation.isPending ? "Simulating..." : "Simulate"}
                     </Button>
+                    {missingApprovalIds.length > 0 ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => approveRunMutation.mutate({ runId: autopilotRun.id, approveAll: true })}
+                        disabled={approveRunMutation.isPending || executeRunMutation.isPending}
+                      >
+                        {approveRunMutation.isPending ? "Approving..." : `Approve (${missingApprovalIds.length})`}
+                      </Button>
+                    ) : null}
                     <Button
                       size="sm"
-                      onClick={() => handleExecuteToolCall(toolCall)}
-                      disabled={executeToolMutation.isPending}
+                      onClick={() => {
+                        const ok = window.confirm("Execute this autopilot run?");
+                        if (!ok) return;
+                        executeRunMutation.mutate(autopilotRun.id);
+                      }}
+                      disabled={executeRunMutation.isPending || missingApprovalIds.length > 0 || autopilotRun.status === "executing"}
                     >
-                      Apply
+                      {executeRunMutation.isPending ? "Executing..." : "Execute"}
                     </Button>
                   </div>
                 </div>
-              ))}
-            </div>
+
+                {Array.isArray(autopilotRun.simulations) && autopilotRun.simulations.length > 0 ? (
+                  <div className="rounded-md border border-border bg-background p-3">
+                    <p className="text-xs font-semibold text-foreground">Previews</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {autopilotRun.simulations.filter((s: any) => Boolean(s?.ok)).length}/{autopilotRun.simulations.length} succeeded
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-border bg-background p-3 text-[11px] text-muted-foreground">
+                    No previews yet. Click Simulate to generate safe diffs.
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {(autopilotToolCalls || []).slice(0, 8).map((toolCall) => {
+                    const approved = toolCall.requires_confirmation ? Boolean(autopilotApprovals?.[toolCall.id]?.approved) : true;
+                    return (
+                      <div
+                        key={toolCall.id}
+                        className="flex items-start justify-between gap-3 rounded-md border border-border bg-background p-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{toolCall.title}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{toolCall.description}</p>
+                          <p className="text-[11px] text-muted-foreground mt-2">
+                            Tool: {toolCall.tool} · Risk: {toolCall.risk}
+                            {toolCall.requires_confirmation ? " · Confirm" : ""}
+                            {approved ? " · Approved" : " · Pending approval"}
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-2 flex-shrink-0">
+                          {toolCall.requires_confirmation && !approved ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => approveRunMutation.mutate({ runId: autopilotRun.id, toolCallIds: [toolCall.id] })}
+                              disabled={approveRunMutation.isPending || executeRunMutation.isPending}
+                            >
+                              Approve
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {(message.metadata?.toolCalls || []).slice(0, 5).map((toolCall: ToolCall) => (
+                  <div
+                    key={toolCall.id}
+                    className="flex items-start justify-between gap-3 rounded-md border border-border bg-background p-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{toolCall.title}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{toolCall.description}</p>
+                      <p className="text-[11px] text-muted-foreground mt-2">
+                        Tool: {toolCall.tool} · Risk: {toolCall.risk}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 flex-shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePreviewToolCall(toolCall)}
+                        disabled={simulateToolMutation.isPending}
+                      >
+                        Preview
+                      </Button>
+                      <Button size="sm" onClick={() => handleExecuteToolCall(toolCall)} disabled={executeToolMutation.isPending}>
+                        Apply
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : null}
 

@@ -5,7 +5,7 @@ const objectIdRegex = /^[a-f\d]{24}$/i;
 const taskKindSchema = z.enum(["cashflow", "budget", "debt", "invest", "goal", "education", "generic"]);
 const taskPrioritySchema = z.enum(["low", "medium", "high"]);
 const exportTypeSchema = z.enum(["transactions_csv", "monthly_summary_pdf"]);
-const notificationChannelSchema = z.enum(["email"]);
+const notificationChannelSchema = z.enum(["email", "in_app"]);
 const domainEventTypeSchema = z.string().trim().min(2).max(120);
 
 const workflowActionSchema = z.discriminatedUnion("type", [

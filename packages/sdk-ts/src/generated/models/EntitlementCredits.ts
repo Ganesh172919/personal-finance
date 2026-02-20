@@ -7,6 +7,7 @@ export type EntitlementCredits = {
     scenario_depth: number;
     ocr_quota: number;
     api_requests: number;
+    autopilot_actions: number;
     workflow_runs: number;
     connector_sync_records: number;
     marketplace_installs: number;

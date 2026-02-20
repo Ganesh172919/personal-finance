@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import type { Types } from "mongoose";
 
-import { getRedis } from "../config/redis";
 import AiResponseCacheModel from "../models/aiResponseCacheModel";
 
 export const sha256 = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
@@ -56,21 +55,7 @@ export const buildPortfolioSummaryCacheKey = (params: {
   );
 };
 
-const buildRedisKey = (cacheKey: string) => `finwise:response_cache:${cacheKey}`;
-
 export const getCachedResponse = async <T>(params: { cacheKey: string }): Promise<T | null> => {
-  const redis = getRedis();
-  if (redis) {
-    const raw = await redis.get(buildRedisKey(params.cacheKey));
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw) as T;
-    } catch {
-      await redis.del(buildRedisKey(params.cacheKey));
-      return null;
-    }
-  }
-
   const cached = await AiResponseCacheModel.findOne({ cacheKey: params.cacheKey }).lean();
   if (!cached) return null;
   return cached.responseData as T;
@@ -84,12 +69,6 @@ export const setCachedResponse = async (params: {
   responseData: unknown;
   ttlMs: number;
 }): Promise<void> => {
-  const redis = getRedis();
-  if (redis) {
-    await redis.set(buildRedisKey(params.cacheKey), JSON.stringify(params.responseData), "PX", params.ttlMs);
-    return;
-  }
-
   await AiResponseCacheModel.findOneAndUpdate(
     { cacheKey: params.cacheKey },
     {
@@ -104,4 +83,3 @@ export const setCachedResponse = async (params: {
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 };
-

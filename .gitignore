@@ -36,6 +36,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .venv/
+*.egg-info/
 
 # Editor directories and files
 .vscode/*

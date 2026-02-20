@@ -7,7 +7,6 @@ import { HttpError } from "../../middleware/httpError";
 import { enforceFeatureLimit, recordFeatureUsage } from "../../services/entitlements";
 import { recordAuditEvent } from "../../services/auditLog";
 import { processExportJob } from "../../services/exports";
-import { QUEUE_NAMES, getQueue } from "../../worker/queues";
 import { assertGridFsOwnership, openGridFsDownloadStream } from "../../services/gridfs";
 
 const requireOrgId = (req: Request) => {
@@ -127,22 +126,8 @@ export const createExport = async (req: Request, res: Response) => {
 
   const exportJobId = created._id.toString();
 
-  try {
-    const queue = getQueue(QUEUE_NAMES.exports);
-    await queue.add(
-      "export-job",
-      { exportJobId },
-      {
-        jobId: exportJobId,
-        removeOnComplete: true,
-        removeOnFail: false,
-      }
-    );
-    return res.status(201).json({ export: toPublicJob(created.toObject()), queued: true, request_id: req.requestId });
-  } catch {
-    const processed = await processExportJob(exportJobId);
-    return res.status(201).json({ export: toPublicJob(processed), queued: false, request_id: req.requestId });
-  }
+  const processed = await processExportJob(exportJobId);
+  return res.status(201).json({ export: toPublicJob(processed), queued: false, request_id: req.requestId });
 };
 
 export const getExportById = async (req: Request, res: Response) => {

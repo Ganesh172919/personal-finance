@@ -4,10 +4,12 @@ import { createApp } from "./app";
 import { getEnv } from "./config/env";
 import { logger } from "./config/logger";
 import { processPendingDomainEvents } from "./services/domainEventTriggers";
+import { startPluginManager } from "./modules/plugins/pluginManager";
 
 let server: ReturnType<ReturnType<typeof createApp>["listen"]> | null = null;
 let shuttingDown = false;
 let domainEventPoller: NodeJS.Timeout | null = null;
+let pluginManagerStop: (() => void) | null = null;
 
 const shutdown = async (reason: string, exitCode = 0) => {
   if (shuttingDown) {
@@ -33,6 +35,10 @@ const shutdown = async (reason: string, exitCode = 0) => {
       clearInterval(domainEventPoller);
       domainEventPoller = null;
     }
+    if (pluginManagerStop) {
+      pluginManagerStop();
+      pluginManagerStop = null;
+    }
     await closeDB();
     logger.info("Graceful shutdown completed.");
     process.exit(exitCode);
@@ -47,6 +53,8 @@ async function start() {
   configurePassport();
   await connectDB();
 
+  pluginManagerStop = startPluginManager().stop;
+
   const app = createApp();
 
   server = app.listen(env.PORT, () => {
@@ -56,7 +64,7 @@ async function start() {
   server.requestTimeout = 30_000;
   server.headersTimeout = 35_000;
 
-  if (env.NODE_ENV !== "test" && (!env.REDIS_URL || !env.WORKER_ENABLED)) {
+  if (env.NODE_ENV !== "test") {
     const intervalMs = 10_000;
     domainEventPoller = setInterval(() => {
       void processPendingDomainEvents({ limit: 50 }).catch((error) => {
@@ -70,7 +78,7 @@ async function start() {
         event: "domain_event_poller_enabled",
         interval_ms: intervalMs,
       },
-      "Domain event poller enabled (Redis/worker unavailable)"
+      "Domain event poller enabled"
     );
   }
 

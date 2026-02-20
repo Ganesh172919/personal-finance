@@ -22,14 +22,18 @@ import {
   createApiKey,
   createOrg,
   getIntegrationHistory,
+  installMarketplacePlugin,
   getMyOrgs,
   getMyReferral,
   getUsageLedger,
+  listMarketplaceCatalog,
   listIntegrations,
   listApiKeys,
   redeemReferral,
   revokeApiKey,
   syncIntegration,
+  uninstallInstalledPlugin,
+  updateInstalledPluginVersion,
   updateOrgSettings,
   type ApiKeyScope,
   type OrgRole,
@@ -100,6 +104,19 @@ export default function Organization() {
     enabled: Boolean(activeOrgIdFromServer),
   });
 
+  const [marketplaceQuery, setMarketplaceQuery] = useState("");
+  const [marketplaceStatus, setMarketplaceStatus] = useState<"all" | "active" | "preview" | "deprecated">("active");
+
+  const marketplaceCatalogQuery = useQuery({
+    queryKey: ["v1/marketplace/catalog", activeOrgIdFromServer, marketplaceQuery, marketplaceStatus],
+    queryFn: () =>
+      listMarketplaceCatalog({
+        q: marketplaceQuery.trim() || undefined,
+        status: marketplaceStatus === "all" ? undefined : marketplaceStatus,
+      }),
+    enabled: Boolean(activeOrgIdFromServer),
+  });
+
   const referralQuery = useQuery({
     queryKey: ["v1/referrals/me", activeOrgIdFromServer],
     queryFn: getMyReferral,
@@ -144,6 +161,7 @@ export default function Organization() {
       queryClient.invalidateQueries({ queryKey: ["v1/api-keys"] }),
       queryClient.invalidateQueries({ queryKey: ["v1/usage/ledger"] }),
       queryClient.invalidateQueries({ queryKey: ["v1/integrations"] }),
+      queryClient.invalidateQueries({ queryKey: ["v1/marketplace/catalog"] }),
     ]);
   };
 
@@ -277,6 +295,58 @@ export default function Organization() {
     },
   });
 
+  const installPluginMutation = useMutation({
+    mutationFn: async (pluginKey: string) => installMarketplacePlugin({ plugin_key: pluginKey }),
+    onSuccess: async (resp: any) => {
+      setNotice(`Installed ${resp?.install?.plugin_key || "plugin"}.`);
+      setError(null);
+      await Promise.allSettled([
+        queryClient.invalidateQueries({ queryKey: ["v1/marketplace/catalog"] }),
+        queryClient.invalidateQueries({ queryKey: ["v1/workflows/templates"] }),
+      ]);
+      await marketplaceCatalogQuery.refetch();
+    },
+    onError: (e: any) => {
+      setNotice(null);
+      setError(e?.message || "Failed to install plugin");
+    },
+  });
+
+  const uninstallPluginMutation = useMutation({
+    mutationFn: async (pluginKey: string) => uninstallInstalledPlugin(pluginKey),
+    onSuccess: async (resp: any) => {
+      setNotice(`Uninstalled ${resp?.plugin?.plugin_key || "plugin"}.`);
+      setError(null);
+      await Promise.allSettled([
+        queryClient.invalidateQueries({ queryKey: ["v1/marketplace/catalog"] }),
+        queryClient.invalidateQueries({ queryKey: ["v1/workflows/templates"] }),
+      ]);
+      await marketplaceCatalogQuery.refetch();
+    },
+    onError: (e: any) => {
+      setNotice(null);
+      setError(e?.message || "Failed to uninstall plugin");
+    },
+  });
+
+  const updatePluginMutation = useMutation({
+    mutationFn: async (payload: { pluginKey: string; version: string }) =>
+      updateInstalledPluginVersion(payload.pluginKey, payload.version),
+    onSuccess: async (resp: any) => {
+      setNotice(`Updated ${resp?.plugin?.plugin_key || "plugin"}.`);
+      setError(null);
+      await Promise.allSettled([
+        queryClient.invalidateQueries({ queryKey: ["v1/marketplace/catalog"] }),
+        queryClient.invalidateQueries({ queryKey: ["v1/workflows/templates"] }),
+      ]);
+      await marketplaceCatalogQuery.refetch();
+    },
+    onError: (e: any) => {
+      setNotice(null);
+      setError(e?.message || "Failed to update plugin");
+    },
+  });
+
   const redeemReferralMutation = useMutation({
     mutationFn: async () => redeemReferral({ code: redeemCode }),
     onSuccess: async (resp: any) => {
@@ -376,15 +446,16 @@ export default function Organization() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="members">
-        <TabsList>
-          <TabsTrigger value="members">Members</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-          <TabsTrigger value="integrations">Integrations</TabsTrigger>
-          <TabsTrigger value="api_keys">API keys</TabsTrigger>
-          <TabsTrigger value="referrals">Referrals</TabsTrigger>
-          <TabsTrigger value="usage">Usage</TabsTrigger>
-        </TabsList>
+        <Tabs defaultValue="members">
+          <TabsList>
+            <TabsTrigger value="members">Members</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsTrigger value="integrations">Integrations</TabsTrigger>
+            <TabsTrigger value="marketplace">Marketplace</TabsTrigger>
+            <TabsTrigger value="api_keys">API keys</TabsTrigger>
+            <TabsTrigger value="referrals">Referrals</TabsTrigger>
+            <TabsTrigger value="usage">Usage</TabsTrigger>
+          </TabsList>
 
         <TabsContent value="members" className="mt-4">
           <Card>
@@ -648,6 +719,139 @@ export default function Organization() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="marketplace" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Marketplace</CardTitle>
+              <CardDescription>Install trusted plugins that add connectors and workflow templates.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="sm:col-span-2">
+                  <Label>Search</Label>
+                  <Input
+                    value={marketplaceQuery}
+                    onChange={(e) => setMarketplaceQuery(e.target.value)}
+                    placeholder="Search plugins (bank, digest, templates...)"
+                  />
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Select value={marketplaceStatus} onValueChange={(v) => setMarketplaceStatus(v as any)}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">active</SelectItem>
+                      <SelectItem value="preview">preview</SelectItem>
+                      <SelectItem value="deprecated">deprecated</SelectItem>
+                      <SelectItem value="all">all</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {!canAdmin ? (
+                <div className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                  Only org admins can install or uninstall plugins.
+                </div>
+              ) : null}
+
+              {marketplaceCatalogQuery.isLoading ? (
+                <div className="text-sm text-muted-foreground">Loading marketplace...</div>
+              ) : marketplaceCatalogQuery.data?.plugins?.length ? (
+                <div className="space-y-3">
+                  {marketplaceCatalogQuery.data.plugins.map((plugin: any) => {
+                    const installed = Boolean(plugin.installed);
+                    const canUpdate =
+                      installed &&
+                      plugin.installed_version &&
+                      plugin.latest_version &&
+                      String(plugin.installed_version) !== String(plugin.latest_version);
+
+                    return (
+                      <div
+                        key={String(plugin.plugin_key)}
+                        className="rounded-md border border-border p-4 flex flex-col md:flex-row md:items-start md:justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-sm font-medium text-foreground">{String(plugin.name || plugin.plugin_key)}</div>
+                            <div className="text-xs text-muted-foreground capitalize">{String(plugin.status || "active")}</div>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">{String(plugin.description || "")}</div>
+                          <div className="text-[11px] text-muted-foreground mt-2">
+                            Key: {String(plugin.plugin_key)} • Publisher: {String(plugin.publisher || "Unknown")} • Latest:{" "}
+                            {String(plugin.latest_version || "")}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground mt-1">
+                            Permissions:{" "}
+                            {Array.isArray(plugin.permissions) && plugin.permissions.length > 0
+                              ? plugin.permissions.join(", ")
+                              : "—"}
+                            {String(plugin.pricing_model || "free") === "paid"
+                              ? ` • $${String(plugin.price_monthly_usd || "")}/mo`
+                              : " • Free"}
+                          </div>
+                          {installed ? (
+                            <div className="text-[11px] text-muted-foreground mt-1">
+                              Installed: {String(plugin.installed_version || "")} ({String(plugin.installed_status || "installed")})
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="flex flex-col gap-2 flex-shrink-0">
+                          {installed ? (
+                            <>
+                              {canUpdate ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={!canAdmin || updatePluginMutation.isPending}
+                                  onClick={() =>
+                                    updatePluginMutation.mutate({
+                                      pluginKey: String(plugin.plugin_key),
+                                      version: String(plugin.latest_version),
+                                    })
+                                  }
+                                >
+                                  {updatePluginMutation.isPending ? "Updating..." : "Update"}
+                                </Button>
+                              ) : null}
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                disabled={!canAdmin || uninstallPluginMutation.isPending}
+                                onClick={() => uninstallPluginMutation.mutate(String(plugin.plugin_key))}
+                              >
+                                {uninstallPluginMutation.isPending ? "Uninstalling..." : "Uninstall"}
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              size="sm"
+                              disabled={!canAdmin || installPluginMutation.isPending}
+                              onClick={() => installPluginMutation.mutate(String(plugin.plugin_key))}
+                            >
+                              {installPluginMutation.isPending ? "Installing..." : "Install"}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">No plugins found.</div>
+              )}
+
+              <div className="text-xs text-muted-foreground">
+                Tip: installed plugins can add workflow templates under Workflows → Templates.
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

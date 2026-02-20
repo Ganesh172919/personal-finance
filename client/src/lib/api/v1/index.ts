@@ -5,5 +5,7 @@ export * from "./invites";
 export * from "./exports";
 export * from "./workflows";
 export * from "./platform";
+export * from "./autopilot";
 export * from "./shares";
 export * from "./referrals";
+export * from "./finance";

@@ -130,6 +130,14 @@ Prerequisites:
 - Python (3.11+; 3.11 recommended for full OCR support)
 - MongoDB (local or Atlas)
 
+0) Generate the local TS SDK (required by the client)
+
+```bash
+cd packages/sdk-ts
+npm install
+npm run generate
+```
+
 1) Backend (Node.js Server)
 
 ```bash
@@ -192,32 +200,12 @@ Smoke test (assumes services already running):
 #### Dev email verification (no SMTP required)
 
 If `EMAIL_USER` / `EMAIL_PASSWORD` / `EMAIL_FROM` are not set and `NODE_ENV` is **not** `production`, the server runs in **console OTP** mode:
-- `POST /api/auth/register` and `POST /api/auth/resend-verification` include `dev_otp` in the JSON response.
+- `POST /api/v1/auth/register` and `POST /api/v1/auth/resend-verification` include `dev_otp` in the JSON response.
 
 #### Google OAuth auto-detect
 
-The client calls `GET /api/auth/providers` and only shows “Continue with Google” when:
+The client calls `GET /api/v1/auth/providers` and only shows “Continue with Google” when:
 - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set.
-
-### Containerized Run (Cloud-Like)
-
-Build and run the full stack with Docker Compose:
-
-```bash
-docker compose up --build
-```
-
-Services:
-- Client: `http://localhost:8080`
-- Server API: `http://localhost:3000`
-- AI Core: `http://localhost:8001`
-- MongoDB: `mongodb://localhost:27017`
-
-Production-oriented compose file (expects production-grade env secrets):
-
-```bash
-docker compose -f docker-compose.prod.yml up --build -d
-```
 
 ---
 

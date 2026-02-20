@@ -3,6 +3,7 @@ import ChatSessionModel, { IChatSessionDocument } from "../models/chatSessionMod
 import ChatMessageModel, { IChatMessageDocument } from "../models/chatMessageModel";
 import AiResponseCacheModel from "../models/aiResponseCacheModel";
 import AgentOutputModel from "../models/agentOutputModel";
+import AutopilotRunModel from "../models/autopilotRunModel";
 import { IUserDocument } from "../models/userModel";
 import OrganizationModel from "../models/organizationModel";
 import mongoose from "mongoose";
@@ -14,8 +15,11 @@ import { ensureProfileWithMigration } from "../services/profileService";
 import { fetchTransactionsForAi } from "../services/transactionService";
 import { getJournalContextForAi } from "../services/journalContext";
 import { normalizeAiPlan } from "../schemas/aiPlanSchema";
+import { toolCallSchema, type ToolCallInput } from "../schemas/v1/toolSchemas";
 import { recordAiCache, recordAiFallback } from "../observability/metrics";
 import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements";
+import { recordAuditEvent } from "../services/auditLog";
+import { publishDomainEvent } from "../services/domainEvents";
 import { HttpError } from "../middleware/httpError";
 import { logger } from "../config/logger";
 
@@ -391,6 +395,9 @@ export async function sendMessage(req: Request, res: Response) {
     let aiResponseContent = "I apologize, but I'm having trouble processing your request right now. Please try again.";
     let aiMetadata: any = {};
     let aiUsage: any = undefined;
+    let aiCacheKey: string | null = null;
+    let aiContextStats: any = undefined;
+    let normalizedPlanValid: boolean | null = null;
 
     try {
       const aiStartedAt = Date.now();
@@ -417,6 +424,7 @@ export async function sendMessage(req: Request, res: Response) {
         sessionSummaryUpdatedAt,
         content: content.trim()
       });
+      aiCacheKey = cacheKey;
 
       const cached = await AiResponseCacheModel.findOne({ cacheKey }).lean();
       if (cached?.responseData && typeof cached.responseData === "object") {
@@ -444,6 +452,7 @@ export async function sendMessage(req: Request, res: Response) {
            sessionSummary: [session.summary, journalContext.summary].filter(Boolean).join("\n\n") || undefined,
            narrative,
          });
+         aiContextStats = stats;
 
         logger.info(
           `[requestId=${requestId}] chat.aiRequest transactionCountSent=${stats.sentTransactions} droppedTransactions=${stats.droppedTransactions}`
@@ -455,6 +464,7 @@ export async function sendMessage(req: Request, res: Response) {
 
         if (aiResponse && aiResponse.success) {
           const { plan: normalizedPlan, valid: planValid } = normalizeAiPlan(aiResponse.plan);
+          normalizedPlanValid = planValid;
           if (!planValid) {
             logger.warn(`[requestId=${requestId}] chat.ai.plan_validation_failed=true`);
           }
@@ -466,6 +476,7 @@ export async function sendMessage(req: Request, res: Response) {
             priority: aiResponse.priority,
             actionable: aiResponse.actionType ? true : false,
             plan: normalizedPlan,
+            planValid,
             toolCalls: aiResponse.tool_calls || [],
             detailedAnalysis: aiResponse.detailed_analysis || {},
             workflowTrace: aiResponse.workflow_trace || [],
@@ -500,6 +511,110 @@ export async function sendMessage(req: Request, res: Response) {
     } catch (aiError: any) {
       logger.error({ error: aiError?.message ?? aiError }, `[requestId=${requestId}] AI service error`);
       aiResponseContent = "I'm currently experiencing some difficulties connecting to the AI service. Please try again in a moment.";
+    }
+
+    try {
+      const runIdAlreadySet = typeof aiMetadata?.autopilotRunId === "string" && aiMetadata.autopilotRunId.trim().length > 0;
+      const rawToolCalls = Array.isArray(aiMetadata?.toolCalls) ? aiMetadata.toolCalls : [];
+
+      if (!runIdAlreadySet && rawToolCalls.length > 0) {
+        const validatedToolCalls: ToolCallInput[] = [];
+        const droppedToolCalls: Array<{ id: string; tool: string; reason: string }> = [];
+
+        for (const call of rawToolCalls) {
+          const parsed = toolCallSchema.safeParse(call);
+          if (parsed.success) {
+            validatedToolCalls.push(parsed.data);
+            continue;
+          }
+          droppedToolCalls.push({
+            id: String((call as any)?.id || ""),
+            tool: String((call as any)?.tool || ""),
+            reason: "tool_call_schema_invalid",
+          });
+        }
+
+        if (validatedToolCalls.length > 0) {
+          aiMetadata.toolCalls = validatedToolCalls;
+          aiMetadata.toolCallsDropped = droppedToolCalls.slice(0, 50);
+
+          const run = await AutopilotRunModel.create({
+            orgId,
+            userId: user._id,
+            goal: content.trim(),
+            status: "planned",
+            requestId,
+            ai: {
+              final_output: aiResponseContent,
+              plan: aiMetadata?.plan,
+              plan_valid: typeof aiMetadata?.planValid === "boolean" ? aiMetadata.planValid : normalizedPlanValid,
+              analysis_type: aiMetadata?.analysisType,
+              agents_involved: aiMetadata?.agentsInvolved,
+              request_id: aiMetadata?.requestId || requestId,
+              fallback_used: aiMetadata?.fallbackUsed,
+              llm_call_count: aiMetadata?.llmCallCount,
+              usage: aiUsage,
+              tool_calls_dropped: droppedToolCalls.slice(0, 50),
+              context_stats: aiContextStats,
+              source: "chat",
+              chat_session_id: session._id.toString(),
+              chat_user_message_id: userMessage._id.toString(),
+            },
+            toolCalls: validatedToolCalls as unknown as Array<Record<string, unknown>>,
+          });
+
+          aiMetadata.autopilotRunId = run._id.toString();
+          aiMetadata.autopilotRunStatus = run.status;
+
+          await recordAuditEvent({
+            orgId,
+            actorType: "user",
+            actorUserId: user._id,
+            action: "autopilot_plan_created",
+            targetType: "autopilot_run",
+            targetId: run._id.toString(),
+            requestId,
+            metadata: {
+              source: "chat",
+              tool_calls: validatedToolCalls.length,
+              dropped_tool_calls: droppedToolCalls.length,
+              chat_session_id: session._id.toString(),
+            },
+          });
+
+          await publishDomainEvent({
+            orgId,
+            userId: user._id,
+            eventType: "AutopilotRunPlanned",
+            aggregateType: "autopilot_run",
+            aggregateId: run._id.toString(),
+            actionLinkId: `autopilot:${run._id.toString()}`.slice(0, 128),
+            requestId,
+            payload: {
+              run_id: run._id.toString(),
+              tool_calls: validatedToolCalls.length,
+              dropped_tool_calls: droppedToolCalls.length,
+              ai_request_id: aiMetadata?.requestId || requestId,
+            },
+          }).catch(() => null);
+
+          if (aiCacheKey) {
+            await AiResponseCacheModel.findOneAndUpdate(
+              { cacheKey: aiCacheKey },
+              {
+                $set: {
+                  responseData: { content: aiResponseContent, metadata: aiMetadata },
+                },
+              }
+            ).catch(() => null);
+          }
+        }
+      }
+    } catch (persistAutopilotError: any) {
+      logger.warn(
+        { error: persistAutopilotError?.message ?? persistAutopilotError },
+        `[requestId=${requestId}] Failed to persist autopilot run from chat message`
+      );
     }
 
     // Persist assistant response as an agent output (enables feedback + task creation by id)

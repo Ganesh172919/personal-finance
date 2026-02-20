@@ -21,7 +21,8 @@ import {
   createTransaction,
   deleteTransaction,
   getTransactions,
-  importTransactions,
+  importTransactionsCsv,
+  listAccounts,
   TransactionType,
   updateTransaction,
 } from "@/lib/apiClient";
@@ -36,15 +37,18 @@ type TransactionForm = {
 };
 
 type CsvState = {
+  file: File | null;
   fileName: string;
   columns: string[];
   rawRows: Array<Record<string, string>>;
+  accountId: string;
   mapping: {
     amount: string;
     category: string;
     description: string;
     date: string;
     type: string;
+    merchant: string;
   };
 };
 
@@ -57,10 +61,12 @@ const EMPTY_FORM: TransactionForm = {
 };
 
 const EMPTY_CSV: CsvState = {
+  file: null,
   fileName: "",
   columns: [],
   rawRows: [],
-  mapping: { amount: "", category: "", description: "", date: "", type: "" },
+  accountId: "",
+  mapping: { amount: "", category: "", description: "", date: "", type: "", merchant: "" },
 };
 
 const pickFirstMatchingColumn = (columns: string[], candidates: string[]) => {
@@ -71,11 +77,6 @@ const pickFirstMatchingColumn = (columns: string[], candidates: string[]) => {
     if (match) return match.col;
   }
   return "";
-};
-
-const safeNumber = (value: string) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : 0;
 };
 
 const formatError = (error: unknown, fallback: string) => {
@@ -95,6 +96,11 @@ export default function Transactions() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [fromFilter, setFromFilter] = useState("");
   const [toFilter, setToFilter] = useState("");
+
+  const accountsQuery = useQuery({
+    queryKey: ["v1/finance/accounts"],
+    queryFn: listAccounts,
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/transactions", page, limit, typeFilter, categoryFilter, fromFilter, toFilter],
@@ -225,10 +231,13 @@ export default function Transactions() {
   const [csv, setCsv] = useState<CsvState>(EMPTY_CSV);
 
   const importMutation = useMutation({
-    mutationFn: importTransactions,
+    mutationFn: importTransactionsCsv,
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      toast({ title: "Imported", description: `Imported ${result.inserted} transactions.` });
+      toast({
+        title: "Imported",
+        description: `Inserted ${result.inserted} transactions (${result.duplicates} duplicates). Merchants touched: ${result.merchants_touched}.`,
+      });
       setImportOpen(false);
       setCsv(EMPTY_CSV);
     },
@@ -256,14 +265,17 @@ export default function Transactions() {
       amount: pickFirstMatchingColumn(columns, ["amount", "amt", "value"]),
       category: pickFirstMatchingColumn(columns, ["category", "cat"]),
       description: pickFirstMatchingColumn(columns, ["description", "desc", "narration", "note"]),
+      merchant: pickFirstMatchingColumn(columns, ["merchant", "payee", "vendor", "counterparty", "name"]),
       date: pickFirstMatchingColumn(columns, ["date", "txn_date", "transaction_date"]),
       type: pickFirstMatchingColumn(columns, ["type", "txn_type", "transaction_type"]),
     };
 
     setCsv({
+      file,
       fileName: file.name,
       columns,
       rawRows: rows.slice(0, 2000),
+      accountId: "",
       mapping,
     });
   };
@@ -271,59 +283,45 @@ export default function Transactions() {
   const previewRows = useMemo(() => {
     if (!csv.rawRows.length) return [];
     const { mapping } = csv;
-    if (!mapping.amount || !mapping.category || !mapping.description || !mapping.date || !mapping.type) return [];
+    if (!mapping.amount || !mapping.date) return [];
 
     return csv.rawRows.slice(0, 5).map(row => ({
       date: String(row[mapping.date] || "").trim(),
-      description: String(row[mapping.description] || "").trim(),
-      category: String(row[mapping.category] || "").trim(),
+      merchant: mapping.merchant ? String(row[mapping.merchant] || "").trim() : "",
+      description: mapping.description ? String(row[mapping.description] || "").trim() : "",
+      category: mapping.category ? String(row[mapping.category] || "").trim() : "",
       amount: String(row[mapping.amount] || "").trim(),
-      type: String(row[mapping.type] || "").trim().toLowerCase(),
+      type: mapping.type ? String(row[mapping.type] || "").trim().toLowerCase() : "",
     }));
   }, [csv]);
 
   const runImport = async () => {
     const { mapping } = csv;
-    if (!csv.rawRows.length) return;
+    if (!csv.file || !csv.rawRows.length) return;
 
-    if (!mapping.amount || !mapping.category || !mapping.description || !mapping.date || !mapping.type) {
+    if (!mapping.amount || !mapping.date) {
       toast({
         title: "Mapping required",
-        description: "Map amount, category, description, date, and type columns.",
+        description: "Map at least Amount and Date columns (Type is recommended).",
         variant: "destructive",
       });
       return;
     }
 
-    const rows = csv.rawRows
-      .map(row => {
-        const type = String(row[mapping.type] || "").trim().toLowerCase() as any;
-        const amount = safeNumber(String(row[mapping.amount] ?? ""));
-        return {
-          amount: Math.abs(amount),
-          category: String(row[mapping.category] || "").trim() || "Other",
-          description: String(row[mapping.description] || "").trim() || "Imported",
-          date: String(row[mapping.date] || "").trim(),
-          type,
-        };
-      })
-      .filter(
-        row =>
-          row.amount > 0 &&
-          row.date &&
-          (row.type === "income" || row.type === "expense" || row.type === "investment")
-      );
+    const mappingPayload: any = {
+      amount: mapping.amount,
+      date: mapping.date,
+      description: mapping.description || undefined,
+      category: mapping.category || undefined,
+      type: mapping.type || undefined,
+      merchant: mapping.merchant || undefined,
+    };
 
-    if (rows.length === 0) {
-      toast({
-        title: "No rows to import",
-        description: "Ensure type values are income/expense/investment and dates are present.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    await importMutation.mutateAsync(rows as any);
+    await importMutation.mutateAsync({
+      file: csv.file,
+      mapping: mappingPayload,
+      account_id: csv.accountId || undefined,
+    });
   };
 
   return (
@@ -341,7 +339,7 @@ export default function Transactions() {
                 <DialogHeader>
                   <DialogTitle>Import transactions</DialogTitle>
                   <DialogDescription>
-                    Upload a CSV and map columns. Type values must be income/expense/investment.
+                    Upload a CSV and map columns. Amount + Date are required; Type is recommended (otherwise inferred from sign).
                   </DialogDescription>
                 </DialogHeader>
 
@@ -369,36 +367,63 @@ export default function Transactions() {
                   ) : null}
 
                   {csv.columns.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {(
-                        [
-                          ["amount", "Amount"],
-                          ["category", "Category"],
-                          ["description", "Description"],
-                          ["date", "Date"],
-                          ["type", "Type"],
-                        ] as const
-                      ).map(([key, label]) => (
-                        <div key={key}>
-                          <label className="text-sm font-medium">{label}</label>
-                          <select
-                            value={(csv.mapping as any)[key]}
-                            onChange={e =>
-                              setCsv(prev => ({
-                                ...prev,
-                                mapping: { ...prev.mapping, [key]: e.target.value },
-                              }))}
-                            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
-                          >
-                            <option value="">Select column</option>
-                            {csv.columns.map(col => (
-                              <option key={col} value={col}>
-                                {col}
-                              </option>
-                            ))}
-                          </select>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="text-sm font-medium">Account (optional)</label>
+                        <select
+                          value={csv.accountId}
+                          onChange={(e) => setCsv((prev) => ({ ...prev, accountId: e.target.value }))}
+                          disabled={accountsQuery.isLoading}
+                          className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+                        >
+                          <option value="">No account</option>
+                          {(accountsQuery.data?.accounts || []).map((acc) => (
+                            <option key={acc.id} value={acc.id}>
+                              {acc.name} ({acc.type})
+                            </option>
+                          ))}
+                        </select>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {accountsQuery.isLoading
+                            ? "Loading accounts..."
+                            : accountsQuery.data?.accounts?.length
+                              ? "Helps segment imports and power account-level insights."
+                              : "No accounts yet. Create one in Finance OS."}
                         </div>
-                      ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {(
+                          [
+                            ["amount", "Amount"],
+                            ["date", "Date"],
+                            ["type", "Type (optional)"],
+                            ["description", "Description (optional)"],
+                            ["merchant", "Merchant (optional)"],
+                            ["category", "Category (optional)"],
+                          ] as const
+                        ).map(([key, label]) => (
+                          <div key={key}>
+                            <label className="text-sm font-medium">{label}</label>
+                            <select
+                              value={(csv.mapping as any)[key]}
+                              onChange={e =>
+                                setCsv(prev => ({
+                                  ...prev,
+                                  mapping: { ...prev.mapping, [key]: e.target.value },
+                                }))}
+                              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+                            >
+                              <option value="">Select column</option>
+                              {csv.columns.map(col => (
+                                <option key={col} value={col}>
+                                  {col}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 
@@ -408,6 +433,7 @@ export default function Transactions() {
                         <thead className="bg-muted">
                           <tr>
                             <th className="px-3 py-2 text-left">Date</th>
+                            <th className="px-3 py-2 text-left">Merchant</th>
                             <th className="px-3 py-2 text-left">Description</th>
                             <th className="px-3 py-2 text-left">Category</th>
                             <th className="px-3 py-2 text-left">Amount</th>
@@ -418,6 +444,7 @@ export default function Transactions() {
                           {previewRows.map((row, idx) => (
                             <tr key={idx} className="border-t border-border">
                               <td className="px-3 py-2">{row.date}</td>
+                              <td className="px-3 py-2">{row.merchant}</td>
                               <td className="px-3 py-2">{row.description}</td>
                               <td className="px-3 py-2">{row.category}</td>
                               <td className="px-3 py-2">{row.amount}</td>
@@ -430,11 +457,17 @@ export default function Transactions() {
                   )}
 
                   <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={() => setImportOpen(false)}>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setImportOpen(false);
+                        setCsv(EMPTY_CSV);
+                      }}
+                    >
                       Cancel
                     </Button>
                     <Button onClick={runImport} disabled={importMutation.isPending}>
-                      Import
+                      {importMutation.isPending ? "Importing..." : "Import"}
                     </Button>
                   </div>
                 </div>

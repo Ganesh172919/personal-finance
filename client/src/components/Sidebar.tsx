@@ -19,7 +19,8 @@ import {
   CreditCard,
   Building2,
   Workflow,
-  Download
+  Download,
+  Wallet
 } 
 from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -44,6 +45,7 @@ const navigationItems: NavigationItem[] = [
   { href: "/onboarding", icon: Brain, label: "Onboarding" },
   { href: "/goals-debts", icon: Target, label: "Goals & Debts" },
   { href: "/transactions", icon: ReceiptText, label: "Transactions" },
+  { href: "/finance", icon: Wallet, label: "Finance OS" },
   { href: "/exports", icon: Download, label: "Exports" },
   { href: "/workflows", icon: Workflow, label: "Workflows" },
   { href: "/receipts", icon: ScanLine, label: "Receipts", requiresFeature: "receipts_ocr_enabled" },
@@ -85,32 +87,30 @@ export function Sidebar() {
     >
       {/* Logo and Brand */}
       <div className="p-6 border-b border-border">
-        <Link href="/dashboard">
-          <motion.div
+        <Link href="/dashboard" asChild>
+          <motion.a
             className="flex items-center space-x-3 cursor-pointer"
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            data-testid="brand-logo"
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
+            data-testid="brand-logo"
           >
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <Brain className="w-4 h-4 text-primary-foreground" />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">Personal Finance</h1>
-              <p className="text-xs text-muted-foreground">
-                AI Financial Strategist
-              </p>
+              <p className="text-xs text-muted-foreground">AI Financial Strategist</p>
             </div>
-          </motion.div>
+          </motion.a>
         </Link>
       </div>
 
       {/* Navigation Menu */}
       <nav className="flex-1 p-6 space-y-2" data-testid="navigation">
         {visibleNavItems.map((item, index) => { 
-          const isActive = location === item.href;
+          const isActive = location === item.href || location.startsWith(`${item.href}/`);
 
           return (
             <motion.div
@@ -119,8 +119,8 @@ export function Sidebar() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.1 }}
             >
-              <Link href={item.href}>
-                <motion.div
+              <Link href={item.href} asChild>
+                <motion.a
                   className={`flex items-center space-x-3 p-3 rounded-lg transition-colors cursor-pointer ${
                     isActive
                       ? "bg-primary text-primary-foreground"
@@ -131,10 +131,11 @@ export function Sidebar() {
                   data-testid={`nav-${item.label
                     .toLowerCase()
                     .replace(/\s/g, "-")}`}
+                  aria-current={isActive ? "page" : undefined}
                 >
                   <item.icon className="w-5 h-5" />
                   <span className="font-medium">{item.label}</span>
-                </motion.div>
+                </motion.a>
               </Link>
             </motion.div>
           );

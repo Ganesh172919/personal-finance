@@ -54,6 +54,20 @@ from vision.handwriting_parser import extract_handwriting
 # Setup logging
 logger = setup_logging()
 
+_memory_store = None
+_extract_memories = None
+try:
+    from memory import MemoryStore, extract_memories as _extract_memories
+
+    _memory_store = MemoryStore(db_path=settings.MEMORY_DB_PATH)
+except Exception as _mem_exc:
+    try:
+        logger.warning("AI Core memory store disabled (%s)", str(_mem_exc)[:200])
+    except Exception:
+        pass
+    _memory_store = None
+    _extract_memories = None
+
 def _tool_id(seed: str) -> str:
     digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
     return digest[:12]
@@ -588,14 +602,45 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
         conversation_history = [msg.model_dump() for msg in request.conversation_history] if request.conversation_history else []
         options = request.options.model_dump() if request.options else {"narrative": False}
 
+        org_id = (request.org_id or "").strip() if hasattr(request, "org_id") else ""
+        user_id = (request.user_id or "").strip() if hasattr(request, "user_id") else ""
+
+        session_summary = request.session_summary
+        if _memory_store is not None and _extract_memories is not None and org_id and user_id:
+            try:
+                memories = _memory_store.search(
+                    org_id=org_id,
+                    user_id=user_id,
+                    query=request.user_input,
+                    limit=int(getattr(settings, "MEMORY_TOP_K", 8)),
+                )
+                if memories:
+                    lines = [
+                        f"- {m.key}: {m.value} (confidence {m.confidence:.2f}, source {m.source})"
+                        for m in memories
+                    ]
+                    memory_block = "User memory (preferences/facts):\n" + "\n".join(lines)
+                    base = (session_summary or "").strip()
+                    session_summary = (base + "\n\n" + memory_block).strip() if base else memory_block
+            except Exception:
+                pass
+
         # Process through workflow
         result = workflow.process_request(
             request.user_input,
             profile_data_for_workflow,
             conversation_history=conversation_history,
-            session_summary=request.session_summary,
+            session_summary=session_summary,
             options=options,
         )
+
+        if _memory_store is not None and _extract_memories is not None and org_id and user_id:
+            try:
+                extracted = _extract_memories(request.user_input)
+                _memory_store.upsert_many(org_id=org_id, user_id=user_id, records=extracted)
+            except Exception:
+                pass
+
         final_output = result.get("final_output", "")
         workflow_trace = result.get("workflow_trace", []) or []
         llm_call_count = get_llm_call_count()
@@ -732,8 +777,6 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
         # Optional: validate tool calls via FinWise server internal tools endpoint.
         # This drops tool calls the user cannot apply (RBAC) and suppresses actions that are ineligible (e.g., plan-gated).
         tool_validation: Dict[str, Any] = {"enabled": False}
-        org_id = (request.org_id or "").strip() if hasattr(request, "org_id") else ""
-        user_id = (request.user_id or "").strip() if hasattr(request, "user_id") else ""
         can_validate_tools = (
             bool(tool_call_models)
             and bool(org_id)

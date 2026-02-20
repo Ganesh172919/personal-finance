@@ -3,13 +3,13 @@ import mongoose from "mongoose";
 
 import TaskModel, { type TaskKind, type TaskPriority } from "../models/taskModel";
 import ExportJobModel from "../models/exportJobModel";
+import NotificationModel from "../models/notificationModel";
 import UserModel from "../models/userModel";
 import WorkflowModel, { type WorkflowAction } from "../models/workflowModel";
 import WorkflowRunModel from "../models/workflowRunModel";
 import { enforceFeatureLimit, recordFeatureUsage } from "./entitlements";
 import { processExportJob } from "./exports";
 import { sendEmail } from "../utils/sendEmail";
-import { QUEUE_NAMES, getQueue } from "../worker/queues";
 
 const normalizeTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase();
 
@@ -56,21 +56,7 @@ export const createWorkflow = async (params: {
     typeof (created as any)?.trigger?.cron === "string" &&
     (created as any).trigger.cron.trim().length > 0
   ) {
-    try {
-      const queue = getQueue(QUEUE_NAMES.workflowEval);
-      await queue.add(
-        "workflow-cron",
-        { workflowId: created._id.toString() },
-        {
-          jobId: `wf_cron:${created._id.toString()}`,
-          repeat: { pattern: String((created as any).trigger.cron).trim() },
-          removeOnComplete: true,
-          removeOnFail: false,
-        }
-      );
-    } catch {
-      // Scheduling is best-effort here; the worker scheduler will reconcile repeatable jobs on startup.
-    }
+    // Cron scheduling previously relied on Redis + BullMQ. In localhost-only mode, cron triggers are ignored.
   }
 
   return created;
@@ -123,22 +109,8 @@ export const enqueueWorkflowRun = async (params: {
 
   const runId = String((run as any)._id);
 
-  try {
-    const queue = getQueue(QUEUE_NAMES.workflowEval);
-    await queue.add(
-      "workflow-run",
-      { workflowRunId: runId },
-      {
-        jobId: runId,
-        removeOnComplete: true,
-        removeOnFail: false,
-      }
-    );
-    return { run, queued: true };
-  } catch {
-    const processed = await processWorkflowRun(runId);
-    return { run: processed, queued: false };
-  }
+  const processed = await processWorkflowRun(runId);
+  return { run: processed, queued: false };
 };
 
 export const processWorkflowRun = async (workflowRunId: string) => {
@@ -239,14 +211,32 @@ export const processWorkflowRun = async (workflowRunId: string) => {
 
       if (action.type === "send_notification") {
         const channel = String(action.channel || "email").trim().toLowerCase();
-        if (channel !== "email") {
-          throw new Error(`Unsupported notification channel: ${channel}`);
-        }
-
         const subject = String(action.subject || "").trim();
         const message = String(action.message || "").trim();
         if (!subject || !message) {
           throw new Error("send_notification requires subject and message");
+        }
+
+        if (channel === "in_app") {
+          const notification = await NotificationModel.create({
+            orgId: run.orgId,
+            userId: run.triggeredByUserId,
+            status: "unread",
+            title: subject,
+            message,
+            metadata: {
+              source: "workflow",
+              workflow_id: run.workflowId ? run.workflowId.toString() : undefined,
+              workflow_run_id: run._id.toString(),
+              request_id: run.requestId,
+            },
+          });
+          sentNotifications.push({ channel: "in_app", to: notification._id.toString(), mode: "db" });
+          continue;
+        }
+
+        if (channel !== "email") {
+          throw new Error(`Unsupported notification channel: ${channel}`);
         }
 
         const user = await UserModel.findById(run.triggeredByUserId)
@@ -297,20 +287,7 @@ export const processWorkflowRun = async (workflowRunId: string) => {
         const exportJobId = exportJob._id.toString();
         createdExportIds.push(exportJobId);
 
-        try {
-          const queue = getQueue(QUEUE_NAMES.exports);
-          await queue.add(
-            "export-job",
-            { exportJobId },
-            {
-              jobId: exportJobId,
-              removeOnComplete: true,
-              removeOnFail: false,
-            }
-          );
-        } catch {
-          await processExportJob(exportJobId);
-        }
+        await processExportJob(exportJobId);
       }
     }
 

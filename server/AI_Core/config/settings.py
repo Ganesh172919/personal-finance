@@ -59,6 +59,13 @@ class Settings:
     FINWISE_SERVER_URL = os.getenv("FINWISE_SERVER_URL", "").strip()
     FINWISE_TOOLS_TOKEN = os.getenv("FINWISE_TOOLS_TOKEN", "").strip()
 
+    # Local-first memory store (SQLite)
+    MEMORY_DB_PATH = os.getenv(
+        "FINWISE_MEMORY_DB_PATH",
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", ".tmp", "ai_core", "memory.sqlite3"),
+    )
+    MEMORY_TOP_K = int(os.getenv("FINWISE_MEMORY_TOP_K", "8"))
+
     @classmethod
     def get_agent_config(cls, agent_type: str) -> Dict[str, Any]:
         """Get configuration for specific agent type."""

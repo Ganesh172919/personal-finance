@@ -2,20 +2,25 @@ import mongoose from "mongoose";
 
 import IntegrationConnectionModel from "../models/integrationConnectionModel";
 import IntegrationSyncRunModel from "../models/integrationSyncRunModel";
-import { getEnv } from "../config/env";
-import { QUEUE_NAMES, getQueue } from "../worker/queues";
 import { getConnectorOrThrow, listConnectorCatalog } from "../connectors/registry";
-import type { ConnectorKey, ConnectorSyncOptions } from "../connectors/types";
+import type { BuiltinConnectorKey, ConnectorKey, ConnectorSyncOptions } from "../connectors/types";
 import { enforceFeatureLimit, recordFeatureUsage } from "./entitlements";
 import { logger } from "../config/logger";
 import type { MutationSource } from "../types/provenance";
 
-const normalizeConnectorKey = (value: string): ConnectorKey => String(value || "").trim().toLowerCase() as ConnectorKey;
+const normalizeConnectorKey = (value: string): ConnectorKey => String(value || "").trim().toLowerCase();
 
-const DEFAULT_REQUESTED_UNITS: Record<ConnectorKey, number> = {
+const DEFAULT_REQUESTED_UNITS: Record<BuiltinConnectorKey, number> = {
   bank_stub: 10,
   transactions_csv: 0,
   receipts_ocr: 0,
+};
+
+const getDefaultRequestedUnits = (connectorKey: ConnectorKey): number => {
+  if (Object.prototype.hasOwnProperty.call(DEFAULT_REQUESTED_UNITS, connectorKey)) {
+    return DEFAULT_REQUESTED_UNITS[connectorKey as BuiltinConnectorKey] ?? 0;
+  }
+  return 0;
 };
 
 const parseRequestedRecords = (value: unknown): number | undefined => {
@@ -73,8 +78,8 @@ export const enqueueIntegrationSync = async (params: {
   const requestedRecordsInput = params.options?.records_synced;
   const requestedRecords =
     requestedRecordsInput === undefined
-      ? DEFAULT_REQUESTED_UNITS[connectorKey] ?? 0
-      : (parseRequestedRecords(requestedRecordsInput) ?? (DEFAULT_REQUESTED_UNITS[connectorKey] ?? 0));
+      ? getDefaultRequestedUnits(connectorKey)
+      : (parseRequestedRecords(requestedRecordsInput) ?? getDefaultRequestedUnits(connectorKey));
 
   if (requestedRecords > 0) {
     await enforceFeatureLimit({
@@ -116,29 +121,13 @@ export const enqueueIntegrationSync = async (params: {
 
   const runId = String((run as any)._id);
 
-  const env = getEnv();
-  const canQueue = Boolean(env.REDIS_URL && env.WORKER_ENABLED);
-
-  if (canQueue) {
-    try {
-      const queue = getQueue(QUEUE_NAMES.integrationSync);
-      await queue.add(
-        "integration-sync-run",
-        { integrationSyncRunId: runId },
-        {
-          jobId: runId,
-          removeOnComplete: true,
-          removeOnFail: false,
-        }
-      );
-      return { queued: true, run };
-    } catch (error) {
-      logger.warn({ error }, "Failed to enqueue integration sync job; falling back to inline processing");
-    }
+  try {
+    const processed = await processIntegrationSyncRun(runId);
+    return { queued: false, run: processed };
+  } catch (error) {
+    logger.warn({ error, runId, connectorKey }, "Integration sync failed");
+    throw error;
   }
-
-  const processed = await processIntegrationSyncRun(runId);
-  return { queued: false, run: processed };
 };
 
 export const processIntegrationSyncRun = async (integrationSyncRunId: string) => {
@@ -177,7 +166,7 @@ export const processIntegrationSyncRun = async (integrationSyncRunId: string) =>
       return parsedFromOptions;
     }
 
-    return DEFAULT_REQUESTED_UNITS[connectorKey] ?? 0;
+    return getDefaultRequestedUnits(connectorKey);
   })();
 
   const userId = run.triggeredByUserId;

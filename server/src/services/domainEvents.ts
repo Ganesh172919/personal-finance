@@ -1,8 +1,7 @@
 import type { Types } from "mongoose";
 import type { ClientSession } from "mongoose";
 import DomainEventModel from "../models/domainEventModel";
-import { getEnv } from "../config/env";
-import { QUEUE_NAMES, getQueue } from "../worker/queues";
+import { processDomainEventById } from "./domainEventTriggers";
 
 export type PublishDomainEventInput = {
   orgId: Types.ObjectId;
@@ -33,23 +32,5 @@ export const publishDomainEvent = async (event: PublishDomainEventInput) => {
     return;
   }
 
-  const env = getEnv();
-  if (!env.REDIS_URL || !env.WORKER_ENABLED) {
-    return;
-  }
-
-  try {
-    const queue = getQueue(QUEUE_NAMES.domainEvents);
-    await queue.add(
-      "domain-event",
-      { domainEventId: document._id.toString() },
-      {
-        jobId: document._id.toString(),
-        removeOnComplete: true,
-        removeOnFail: false,
-      }
-    );
-  } catch {
-    // best-effort enqueue; repeatable scan will pick up later
-  }
+  void processDomainEventById(document._id.toString()).catch(() => null);
 };

@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import type { IUserDocument } from "../../models/userModel";
 import { HttpError } from "../../middleware/httpError";
 import { createWorkflow, enqueueWorkflowRun, listWorkflows } from "../../services/workflows";
+import { listWorkflowTemplatesForOrg } from "../../services/workflowTemplates";
 
 const roleRank: Record<"member" | "admin" | "owner", number> = {
   member: 1,
@@ -39,6 +40,16 @@ export const listOrgWorkflows = async (req: Request, res: Response) => {
       created_at: wf.createdAt,
       updated_at: wf.updatedAt,
     })),
+    request_id: req.requestId,
+  });
+};
+
+export const listOrgWorkflowTemplates = async (req: Request, res: Response) => {
+  const orgId = requireOrg(req);
+  const templates = await listWorkflowTemplatesForOrg({ orgId });
+  return res.json({
+    org_id: orgId.toString(),
+    templates,
     request_id: req.requestId,
   });
 };
@@ -103,4 +114,3 @@ export const runOrgWorkflow = async (req: Request, res: Response) => {
     request_id: req.requestId,
   });
 };
-

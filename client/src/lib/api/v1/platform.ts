@@ -72,6 +72,47 @@ export async function getIntegrationHistory(connectorKey: string, limit?: number
   return apiClient(`/v1/integrations/${encodeURIComponent(connectorKey)}/history${query}`) as Promise<IntegrationHistoryResponse>;
 }
 
+export type TransactionsCsvImportMapping = {
+  amount: string;
+  date: string;
+  description?: string;
+  category?: string;
+  type?: string;
+  merchant?: string;
+};
+
+export type TransactionsCsvImportResponse = {
+  ok: true;
+  org_id: string;
+  import_id: string;
+  file_name: string;
+  parsed_rows: number;
+  valid_rows: number;
+  inserted: number;
+  duplicates: number;
+  merchants_touched: number;
+  dry_run: boolean;
+  request_id: string;
+};
+
+export async function importTransactionsCsv(params: {
+  file: File;
+  mapping: TransactionsCsvImportMapping;
+  account_id?: string;
+  dry_run?: boolean;
+}): Promise<TransactionsCsvImportResponse> {
+  const form = new FormData();
+  form.append("file", params.file, params.file.name);
+  form.append("mapping", JSON.stringify(params.mapping));
+  if (params.account_id) form.append("account_id", params.account_id);
+  if (params.dry_run) form.append("dry_run", "true");
+
+  return apiClient("/v1/integrations/transactions_csv/import", {
+    method: "POST",
+    body: form,
+  }) as Promise<TransactionsCsvImportResponse>;
+}
+
 export async function listAutomationEvents() {
   return apiClient("/v1/automation/events") as Promise<AutomationEventsCatalogResponse>;
 }

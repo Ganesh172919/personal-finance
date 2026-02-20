@@ -1,0 +1,12 @@
+{
+  "name": "finwise-plugin-runtime",
+  "version": "1.0.0",
+  "tasks": {
+    "dev": "deno run --allow-net --allow-env --allow-read=./plugins src/server.ts",
+    "test": "deno test -A"
+  },
+  "compilerOptions": {
+    "strict": true
+  }
+}
+

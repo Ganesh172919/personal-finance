@@ -13,6 +13,13 @@ ToolName = Literal[
     "workflows.run",
     "exports.create",
     "notifications.sendEmail",
+    "notifications.send",
+    "finance.lookupAccount",
+    "finance.lookupMerchant",
+    "finance.lookupRecurringRule",
+    "finance.detectRecurringCandidates",
+    "budgets.recommendAllocations",
+    "closeMonth.run",
 ]
 
 
@@ -28,4 +35,3 @@ class ToolCall(BaseModel):
 
 class ToolCallSet(BaseModel):
     tool_calls: List[ToolCall] = Field(default_factory=list)
-

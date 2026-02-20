@@ -34,3 +34,21 @@ export async function runWorkflow(workflowId: string, body: RunWorkflowRequest =
   });
 }
 
+export type WorkflowTemplate = {
+  template_key: string;
+  plugin_key: string;
+  plugin_version: string | null;
+  name: string;
+  description: string;
+  request: CreateWorkflowRequest;
+};
+
+export type ListWorkflowTemplatesResponse = {
+  org_id: string;
+  templates: WorkflowTemplate[];
+  request_id: string;
+};
+
+export async function listWorkflowTemplates(): Promise<ListWorkflowTemplatesResponse> {
+  return apiClient("/v1/workflows/templates") as Promise<ListWorkflowTemplatesResponse>;
+}

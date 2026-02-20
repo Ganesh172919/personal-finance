@@ -5,6 +5,8 @@ import ToolExecutionModel from "../models/toolExecutionModel";
 import { HttpError } from "../middleware/httpError";
 import type { MutationSource } from "../types/provenance";
 import { enforceToolRole, getToolHandler } from "./tools/registry";
+import { enforceFeatureLimit } from "./entitlements";
+import { evaluateToolPolicy } from "./toolPolicy";
 
 const clampIdempotencyKey = (value: string) => value.trim().slice(0, 128);
 
@@ -39,17 +41,20 @@ export const simulateToolCall = async (params: {
   toolCall: ToolCallInput;
   requestId?: string;
 }): Promise<ToolSimulationResult> => {
-  const base = {
-    ok: true as const,
-    tool_call_id: params.toolCall.id,
-    tool: params.toolCall.tool,
-    requires_confirmation: Boolean(params.toolCall.requires_confirmation),
-    risk: String(params.toolCall.risk || "low"),
-    request_id: params.requestId,
-  };
-
   const handler = getToolHandler(params.toolCall.tool);
   enforceToolRole({ actorRole: params.actorRole, requiredRole: handler.requiredRole });
+
+  if (handler.catalog.required_entitlement) {
+    await enforceFeatureLimit({
+      orgId: params.orgId,
+      userId: params.userId,
+      feature: handler.catalog.required_entitlement.feature as any,
+      units: handler.catalog.required_entitlement.units,
+      requestId: params.requestId,
+    });
+  }
+
+  const policy = evaluateToolPolicy({ toolCall: params.toolCall, catalog: handler.catalog });
 
   const preview = await handler.simulate({
     orgId: params.orgId,
@@ -59,7 +64,15 @@ export const simulateToolCall = async (params: {
     requestId: params.requestId,
   });
 
-  return { ...base, preview };
+  return {
+    ok: true,
+    tool_call_id: params.toolCall.id,
+    tool: params.toolCall.tool,
+    requires_confirmation: policy.requires_confirmation,
+    risk: policy.risk,
+    preview,
+    request_id: params.requestId,
+  };
 };
 
 export type ToolExecuteResult = {
@@ -83,10 +96,6 @@ export const executeToolCall = async (params: {
   confirmed?: boolean;
 }): Promise<ToolExecuteResult> => {
   const confirmed = params.confirmed ?? true;
-  if (params.toolCall.requires_confirmation && !confirmed) {
-    throw new HttpError(400, "CONFIRMATION_REQUIRED", "Tool call requires confirmation");
-  }
-
   const idempotencyKey = clampIdempotencyKey(params.idempotencyKey || params.toolCall.id);
   if (!idempotencyKey) {
     throw new HttpError(400, "IDEMPOTENCY_KEY_REQUIRED", "Missing idempotency key");
@@ -113,6 +122,27 @@ export const executeToolCall = async (params: {
     if ((existing as any).status === "running") {
       throw new HttpError(409, "TOOL_ALREADY_RUNNING", "Tool execution already in progress");
     }
+  }
+
+  const handler = getToolHandler(params.toolCall.tool);
+  const policy = evaluateToolPolicy({ toolCall: params.toolCall, catalog: handler.catalog });
+
+  if (policy.requires_confirmation && !confirmed) {
+    throw new HttpError(400, "CONFIRMATION_REQUIRED", "Tool call requires confirmation", {
+      tool: params.toolCall.tool,
+      tool_call_id: params.toolCall.id,
+      risk: policy.risk,
+    });
+  }
+
+  if (handler.catalog.required_entitlement) {
+    await enforceFeatureLimit({
+      orgId: params.orgId,
+      userId: params.userId,
+      feature: handler.catalog.required_entitlement.feature as any,
+      units: handler.catalog.required_entitlement.units,
+      requestId: params.requestId,
+    });
   }
 
   const created =
@@ -184,7 +214,6 @@ export const executeToolCall = async (params: {
       sourceRef: `tool:${params.toolCall.tool}`.slice(0, 128),
     });
 
-    const handler = getToolHandler(params.toolCall.tool);
     enforceToolRole({ actorRole: params.actorRole, requiredRole: handler.requiredRole });
 
     const result = await handler.execute({

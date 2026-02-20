@@ -66,6 +66,7 @@ let consecutiveFailures = 0;
 let circuitOpenUntil = 0;
 let lastHealthCheckAt = 0;
 let lastHealthHealthy = true;
+let lastHealthError: string | null = null;
 
 let http: AxiosInstance | null = null;
 let httpBaseUrl = "";
@@ -180,12 +181,22 @@ const normalizeProcessResponse = (data: any, requestId: string): AiCoreProcessRe
   };
 };
 
-const buildFallbackResponse = (requestId: string, reason: string): AiCoreProcessResponse => {
+const buildFallbackResponse = (
+  requestId: string,
+  reason: string,
+  options: { includeReasonInOutput?: boolean } = {}
+): AiCoreProcessResponse => {
   const timestamp = nowIso();
+  const includeReasonInOutput = Boolean(options.includeReasonInOutput);
+  const trimmedReason = String(reason || "").trim();
+  const reasonSnippet =
+    includeReasonInOutput && trimmedReason.length > 0
+      ? ` (${trimmedReason.length > 180 ? `${trimmedReason.slice(0, 177)}...` : trimmedReason})`
+      : "";
   return {
     success: true,
     final_output:
-      "AI analysis is temporarily unavailable. Safe fallback: keep monthly cash flow positive, " +
+      `AI analysis is temporarily unavailable${reasonSnippet}. Safe fallback: keep monthly cash flow positive, ` +
       "protect emergency savings, prioritize high-interest debt, and invest consistently in diversified assets.",
     agent: "master",
     actionType: "review",
@@ -269,16 +280,19 @@ const checkAiCoreHealth = async (env: Env, requestId: string): Promise<boolean> 
   lastHealthCheckAt = now;
 
   try {
-    await axios.get(`${env.PYTHON_API_URL}/health`, {
+    const http = getHttpClient();
+    await http.get("/health", {
       timeout: env.AI_CORE_HEALTH_TIMEOUT_MS,
       headers: {
         "X-Request-Id": requestId,
       },
     });
     lastHealthHealthy = true;
+    lastHealthError = null;
     return true;
-  } catch {
+  } catch (error) {
     lastHealthHealthy = false;
+    lastHealthError = extractErrorReason(error);
     return false;
   }
 };
@@ -297,14 +311,23 @@ export const processAiCoreRequest = async (
 
       if (isCircuitOpen()) {
         recordAiCoreRequest({ endpoint: "process", durationMs: Date.now() - startedAt, fallbackUsed: true });
-        return buildFallbackResponse(requestId, "AI core circuit breaker open");
+        return buildFallbackResponse(requestId, "AI core circuit breaker open", {
+          includeReasonInOutput: env.NODE_ENV !== "production",
+        });
       }
 
       const healthy = await checkAiCoreHealth(env, requestId);
       if (!healthy) {
         markFailure(env);
         recordAiCoreRequest({ endpoint: "process", durationMs: Date.now() - startedAt, fallbackUsed: true });
-        return buildFallbackResponse(requestId, "AI core health check failed");
+        const detail = lastHealthError ? `AI core health check failed: ${lastHealthError}` : "AI core health check failed";
+        const hint =
+          env.NODE_ENV !== "production"
+            ? ` (Is AI Core running at ${env.PYTHON_API_URL}? Start via scripts/start-local.ps1 or uvicorn on port 8001.)`
+            : "";
+        return buildFallbackResponse(requestId, `${detail}${hint}`, {
+          includeReasonInOutput: env.NODE_ENV !== "production",
+        });
       }
 
       try {
@@ -321,7 +344,11 @@ export const processAiCoreRequest = async (
       } catch (error) {
         markFailure(env);
         recordAiCoreRequest({ endpoint: "process", durationMs: Date.now() - startedAt, fallbackUsed: true });
-        return buildFallbackResponse(requestId, extractErrorReason(error));
+        const detail = extractErrorReason(error);
+        const hint = env.NODE_ENV !== "production" ? ` (AI Core base URL: ${env.PYTHON_API_URL})` : "";
+        return buildFallbackResponse(requestId, `${detail}${hint}`, {
+          includeReasonInOutput: env.NODE_ENV !== "production",
+        });
       }
     },
   });
@@ -406,6 +433,9 @@ export const getAiCoreClientStatus = () => ({
   circuitOpenUntil,
   circuitOpen: isCircuitOpen(),
   aiCoreBaseUrl: getEnv().PYTHON_API_URL,
+  lastHealthCheckAt,
+  lastHealthHealthy,
+  lastHealthError,
 });
 
 export type AiCoreReceiptOcrResponse = {
@@ -452,7 +482,7 @@ export const processAiCoreReceiptOcr = async (
           success: false,
           extracted: {},
           confidence: {},
-          warnings: ["AI core health check failed"],
+          warnings: [lastHealthError ? `AI core health check failed: ${lastHealthError}` : "AI core health check failed"],
           request_id: requestId,
         };
       }
@@ -544,7 +574,7 @@ export const processAiCoreHandwriting = async (
           recognized_text: "",
           confidence: {},
           detected_values: {},
-          warnings: ["AI core health check failed"],
+          warnings: [lastHealthError ? `AI core health check failed: ${lastHealthError}` : "AI core health check failed"],
           request_id: requestId,
         };
       }

@@ -32,11 +32,15 @@ import { emitAutomationEventBodySchema } from "../schemas/v1/automationEventSche
 import { analyticsOverviewQuerySchema } from "../schemas/v1/analyticsSchemas";
 import { createFinancialStoryShareBodySchema } from "../schemas/v1/shareSchemas";
 import { redeemReferralBodySchema } from "../schemas/v1/referralSchemas";
+import { listNotificationsQuerySchema } from "../schemas/v1/notificationSchemas";
+import { autopilotApproveBodySchema, autopilotPlanBodySchema, autopilotRunIdBodySchema } from "../schemas/v1/autopilotSchemas";
+import { transactionsCsvImportBodySchema } from "../schemas/v1/csvImportSchemas";
+import { forecastQuerySchema, recurringCandidatesQuerySchema } from "../schemas/v1/financeIntelligenceSchemas";
 import { createOrg, listMyOrgs, addOrgMember, updateOrgSettings } from "../controllers/v1/orgController";
 import { createApiKeyForOrg, listApiKeys, revokeApiKey } from "../controllers/v1/apiKeyController";
 import { getUsageLedger } from "../controllers/v1/usageController";
 import { createBillingPortal, createCheckoutSession, stripeWebhook } from "../controllers/v1/billingController";
-import { createOrgWorkflow, listOrgWorkflows, runOrgWorkflow } from "../controllers/v1/workflowController";
+import { createOrgWorkflow, listOrgWorkflows, listOrgWorkflowTemplates, runOrgWorkflow } from "../controllers/v1/workflowController";
 import { createExport, downloadExport, getExportById, listExports } from "../controllers/v1/exportController";
 import { acceptInvite } from "../controllers/v1/inviteController";
 import { listAuditEvents } from "../controllers/v1/auditController";
@@ -61,6 +65,28 @@ import { emitAutomationEvent, listAutomationEvents } from "../controllers/v1/aut
 import { getAnalyticsOverview } from "../controllers/v1/analyticsController";
 import { createFinancialStoryShare } from "../controllers/v1/shareController";
 import { getMyReferral, redeemReferral } from "../controllers/v1/referralController";
+import { listNotifications, markNotificationRead } from "../controllers/v1/notificationController";
+import { approveAutopilotRun, createAutopilotPlan, executeAutopilotRun, getAutopilotRun, simulateAutopilotRun } from "../controllers/v1/autopilotController";
+import { streamEvents } from "../controllers/v1/eventsController";
+import {
+  budgetAllocationUpsertBodySchema,
+  createAccountBodySchema,
+  createRecurringRuleBodySchema,
+  listBudgetAllocationsQuerySchema,
+  listMerchantsQuerySchema,
+  periodKeyParamSchema,
+  updateAccountBodySchema,
+  updateRecurringRuleBodySchema,
+  upsertMerchantBodySchema,
+  recurringRuleIdParamSchema,
+} from "../schemas/v1/financeSchemas";
+import { createAccount, listAccounts, updateAccount } from "../controllers/v1/financeAccountsController";
+import { listMerchants, upsertMerchant } from "../controllers/v1/financeMerchantsController";
+import { listBudgetAllocations, upsertBudgetAllocation } from "../controllers/v1/financeBudgetsController";
+import { createRecurringRule, listRecurringRules, updateRecurringRule } from "../controllers/v1/financeRecurringController";
+import { getBudgetEnvelopesEndpoint, getForecastEndpoint, listRecurringCandidatesEndpoint } from "../controllers/v1/financeIntelligenceController";
+import { importTransactionsCsvEndpoint } from "../controllers/v1/transactionsCsvImportController";
+import { csvUpload } from "../middleware/uploads";
 
 const router = Router();
 
@@ -127,6 +153,7 @@ router.get(
 );
 router.post("/billing/webhook", asyncRoute(stripeWebhook));
 
+router.get("/workflows/templates", passport.authenticate("jwt", { session: false }), asyncRoute(listOrgWorkflowTemplates));
 router.get("/workflows", passport.authenticate("jwt", { session: false }), asyncRoute(listOrgWorkflows));
 router.post(
   "/workflows",
@@ -139,6 +166,78 @@ router.post(
   passport.authenticate("jwt", { session: false }),
   validate({ params: workflowIdParamSchema, body: runWorkflowBodySchema }),
   asyncRoute(runOrgWorkflow)
+);
+
+router.get("/finance/accounts", passport.authenticate("jwt", { session: false }), asyncRoute(listAccounts));
+router.post(
+  "/finance/accounts",
+  passport.authenticate("jwt", { session: false }),
+  validate({ body: createAccountBodySchema }),
+  asyncRoute(createAccount)
+);
+router.patch(
+  "/finance/accounts/:id",
+  passport.authenticate("jwt", { session: false }),
+  validate({ params: objectIdSchema, body: updateAccountBodySchema }),
+  asyncRoute(updateAccount)
+);
+
+router.get(
+  "/finance/merchants",
+  passport.authenticate("jwt", { session: false }),
+  validate({ query: listMerchantsQuerySchema }),
+  asyncRoute(listMerchants)
+);
+router.post(
+  "/finance/merchants",
+  passport.authenticate("jwt", { session: false }),
+  validate({ body: upsertMerchantBodySchema }),
+  asyncRoute(upsertMerchant)
+);
+
+router.get(
+  "/finance/budgets/:periodKey/allocations",
+  passport.authenticate("jwt", { session: false }),
+  validate({ params: periodKeyParamSchema, query: listBudgetAllocationsQuerySchema }),
+  asyncRoute(listBudgetAllocations)
+);
+router.put(
+  "/finance/budgets/:periodKey/allocations",
+  passport.authenticate("jwt", { session: false }),
+  validate({ params: periodKeyParamSchema, body: budgetAllocationUpsertBodySchema }),
+  asyncRoute(upsertBudgetAllocation)
+);
+router.get(
+  "/finance/budgets/:periodKey/envelopes",
+  passport.authenticate("jwt", { session: false }),
+  validate({ params: periodKeyParamSchema }),
+  asyncRoute(getBudgetEnvelopesEndpoint)
+);
+
+router.get(
+  "/finance/recurring/candidates",
+  passport.authenticate("jwt", { session: false }),
+  validate({ query: recurringCandidatesQuerySchema }),
+  asyncRoute(listRecurringCandidatesEndpoint)
+);
+router.get("/finance/recurring", passport.authenticate("jwt", { session: false }), asyncRoute(listRecurringRules));
+router.post(
+  "/finance/recurring",
+  passport.authenticate("jwt", { session: false }),
+  validate({ body: createRecurringRuleBodySchema }),
+  asyncRoute(createRecurringRule)
+);
+router.patch(
+  "/finance/recurring/:id",
+  passport.authenticate("jwt", { session: false }),
+  validate({ params: recurringRuleIdParamSchema, body: updateRecurringRuleBodySchema }),
+  asyncRoute(updateRecurringRule)
+);
+router.get(
+  "/finance/forecast",
+  passport.authenticate("jwt", { session: false }),
+  validate({ query: forecastQuerySchema }),
+  asyncRoute(getForecastEndpoint)
 );
 
 router.get(
@@ -187,6 +286,61 @@ router.post(
   asyncRoute(executeTool)
 );
 
+router.post(
+  "/autopilot/plan",
+  passport.authenticate("jwt", { session: false }),
+  validate({ body: autopilotPlanBodySchema }),
+  asyncRoute(createAutopilotPlan)
+);
+
+router.post(
+  "/autopilot/simulate",
+  passport.authenticate("jwt", { session: false }),
+  validate({ body: autopilotRunIdBodySchema }),
+  asyncRoute(simulateAutopilotRun)
+);
+
+router.post(
+  "/autopilot/approve",
+  passport.authenticate("jwt", { session: false }),
+  validate({ body: autopilotApproveBodySchema }),
+  asyncRoute(approveAutopilotRun)
+);
+
+router.post(
+  "/autopilot/execute",
+  passport.authenticate("jwt", { session: false }),
+  validate({ body: autopilotRunIdBodySchema }),
+  asyncRoute(executeAutopilotRun)
+);
+
+router.get(
+  "/autopilot/runs/:id",
+  passport.authenticate("jwt", { session: false }),
+  validate({ params: objectIdSchema }),
+  asyncRoute(getAutopilotRun)
+);
+
+router.get(
+  "/events/stream",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(streamEvents)
+);
+
+router.get(
+  "/notifications",
+  passport.authenticate("jwt", { session: false }),
+  validate({ query: listNotificationsQuerySchema }),
+  asyncRoute(listNotifications)
+);
+
+router.post(
+  "/notifications/:id/read",
+  passport.authenticate("jwt", { session: false }),
+  validate({ params: objectIdSchema }),
+  asyncRoute(markNotificationRead)
+);
+
 router.get(
   "/marketplace/catalog",
   passport.authenticate("jwt", { session: false }),
@@ -215,6 +369,13 @@ router.post(
 );
 
 router.get("/integrations", passport.authenticate("jwt", { session: false }), asyncRoute(listIntegrations));
+router.post(
+  "/integrations/transactions_csv/import",
+  passport.authenticate("jwt", { session: false }),
+  csvUpload().single("file"),
+  validate({ body: transactionsCsvImportBodySchema }),
+  asyncRoute(importTransactionsCsvEndpoint)
+);
 router.get(
   "/integrations/:id/health",
   passport.authenticate("jwt", { session: false }),

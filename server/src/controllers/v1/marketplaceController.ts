@@ -5,7 +5,7 @@ import type { IUserDocument } from "../../models/userModel";
 import MarketplacePluginModel from "../../models/marketplacePluginModel";
 import PluginInstallModel from "../../models/pluginInstallModel";
 import { HttpError } from "../../middleware/httpError";
-import { recordFeatureUsage } from "../../services/entitlements";
+import { enforceFeatureLimit, recordFeatureUsage } from "../../services/entitlements";
 
 const roleRank: Record<"member" | "admin" | "owner", number> = {
   member: 1,
@@ -50,6 +50,18 @@ const FALLBACK_MARKETPLACE_CATALOG: CatalogPlugin[] = [
     permissions: ["workflows:read", "workflows:write"],
     pricing_model: "paid",
     price_monthly_usd: 19,
+  },
+  {
+    plugin_key: "finwise.sample",
+    name: "Sample Plugin Tools",
+    description: "Fixture plugin for local development (adds a safe echo tool).",
+    publisher: "FinWise Labs",
+    status: "preview",
+    latest_version: "1.0.0",
+    available_versions: ["1.0.0"],
+    permissions: ["transactions:read"],
+    pricing_model: "free",
+    price_monthly_usd: null,
   },
 ];
 
@@ -193,6 +205,14 @@ export const installMarketplacePlugin = async (req: Request, res: Response) => {
   if (!user?._id) {
     throw new HttpError(401, "UNAUTHORIZED", "Missing user context");
   }
+
+  await enforceFeatureLimit({
+    orgId,
+    userId: user._id,
+    feature: "marketplace_installs",
+    units: 1,
+    requestId: req.requestId,
+  });
 
   const body = req.body as {
     plugin_key: string;

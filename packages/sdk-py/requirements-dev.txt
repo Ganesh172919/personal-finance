@@ -1,0 +1,2 @@
+openapi-python-client==0.23.0
+

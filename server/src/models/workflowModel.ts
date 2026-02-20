@@ -26,7 +26,7 @@ export type WorkflowCreateTaskAction = {
 
 export type WorkflowSendNotificationAction = {
   type: "send_notification";
-  channel: "email";
+  channel: "email" | "in_app";
   subject: string;
   message: string;
 };
@@ -76,7 +76,7 @@ const workflowCreateTaskActionSchema = new Schema<WorkflowCreateTaskAction>(
 const workflowSendNotificationActionSchema = new Schema<WorkflowSendNotificationAction>(
   {
     type: { type: String, enum: ["send_notification"], required: true },
-    channel: { type: String, enum: ["email"], required: true, default: "email" },
+    channel: { type: String, enum: ["email", "in_app"], required: true, default: "email" },
     subject: { type: String, required: true, trim: true, maxlength: 160 },
     message: { type: String, required: true, trim: true, maxlength: 2000 },
   },

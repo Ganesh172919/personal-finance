@@ -48,7 +48,6 @@ if (Test-Path $pidsPath) {
   if ($data.server.pid) { Stop-If-Running -ProcessId ([int]$data.server.pid) }
   if ($data.client.pid) { Stop-If-Running -ProcessId ([int]$data.client.pid) }
   if ($data.ai_core.pid) { Stop-If-Running -ProcessId ([int]$data.ai_core.pid) }
-  if ($data.worker.pid) { Stop-If-Running -ProcessId ([int]$data.worker.pid) }
 
   Remove-Item $pidsPath -Force
 }

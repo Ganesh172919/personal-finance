@@ -21,6 +21,7 @@ const SharedFinancialStory = lazy(() => import("@/pages/SharedFinancialStory"));
 const Portfolio = lazy(() => import("@/pages/Portfolio"));
 const AllInsights = lazy(() => import("@/pages/AllInsights"));
 const Transactions = lazy(() => import("@/pages/Transactions"));
+const FinanceOS = lazy(() => import("@/pages/FinanceOS"));
 const GoalsAndDebts = lazy(() => import("@/pages/GoalsAndDebts"));
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
 const ComingSoon = lazy(() => import("@/pages/ComingSoon"));
@@ -57,7 +58,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     ? Boolean(profile?.onboardingCompletedAt)
     : localOnboardingCompleted;
 
-  if (!onboardingCompleted && location !== "/onboarding") {
+  const allowPreOnboardingRoutes = location.startsWith("/chat");
+
+  if (!onboardingCompleted && location !== "/onboarding" && !allowPreOnboardingRoutes) {
     return <Redirect to="/onboarding" />;
   }
 
@@ -112,6 +115,7 @@ function Router() {
         <Route path="/all-insights"><ProtectedRoute><AppAuthenticatedLayout><AllInsights /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/goals-debts"><ProtectedRoute><AppAuthenticatedLayout><GoalsAndDebts /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/transactions"><ProtectedRoute><AppAuthenticatedLayout><Transactions /></AppAuthenticatedLayout></ProtectedRoute></Route>
+        <Route path="/finance"><ProtectedRoute><AppAuthenticatedLayout><FinanceOS /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/exports"><ProtectedRoute><AppAuthenticatedLayout><Exports /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/workflows"><ProtectedRoute><AppAuthenticatedLayout><Workflows /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/tasks"><ProtectedRoute><AppAuthenticatedLayout><Tasks /></AppAuthenticatedLayout></ProtectedRoute></Route>

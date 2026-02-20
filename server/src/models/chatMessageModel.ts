@@ -11,6 +11,8 @@ export interface IChatMessageMetadata {
   actionable?: boolean;
   plan?: Record<string, unknown>;
   toolCalls?: Array<Record<string, unknown>>;
+  autopilotRunId?: string;
+  autopilotRunStatus?: string;
   detailedAnalysis?: Record<string, unknown>;
   workflowTrace?: Array<{
     agent: string;
@@ -86,6 +88,8 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
         type: [Schema.Types.Mixed],
         default: []
       },
+      autopilotRunId: String,
+      autopilotRunStatus: String,
       detailedAnalysis: {
         type: Schema.Types.Mixed,
         default: {}

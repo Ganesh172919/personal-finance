@@ -2,7 +2,8 @@ import type mongoose from "mongoose";
 
 import type { MutationSource } from "../types/provenance";
 
-export type ConnectorKey = "bank_stub" | "transactions_csv" | "receipts_ocr";
+export type BuiltinConnectorKey = "bank_stub" | "transactions_csv" | "receipts_ocr";
+export type ConnectorKey = BuiltinConnectorKey | (string & {});
 
 export type ConnectorCatalogEntry = {
   connector_key: ConnectorKey;

@@ -11,9 +11,11 @@ const roleRank: Record<ToolCatalogRole, number> = {
   owner: 3,
 };
 
-const registry = new Map<ToolCallInput["tool"], ToolHandler>();
+const registry = new Map<string, ToolHandler>();
+const builtinTools = new Set<string>();
 
 for (const handler of builtinToolHandlers) {
+  builtinTools.add(handler.tool);
   registry.set(handler.tool, handler);
 }
 
@@ -22,7 +24,7 @@ export const listToolCatalog = (): ToolCatalogEntry[] => {
 };
 
 export const getToolHandler = (tool: ToolCallInput["tool"]): ToolHandler => {
-  const handler = registry.get(tool);
+  const handler = registry.get(String(tool));
   if (!handler) {
     throw new HttpError(400, "TOOL_UNSUPPORTED", "Unsupported tool call");
   }
@@ -39,9 +41,29 @@ export const enforceToolRole = (params: {
 };
 
 export const registerTool = (handler: ToolHandler) => {
+  if (builtinTools.has(handler.tool)) {
+    throw new Error(`Cannot override builtin tool: ${handler.tool}`);
+  }
   if (registry.has(handler.tool)) {
     throw new Error(`Tool already registered: ${handler.tool}`);
   }
   registry.set(handler.tool, handler);
 };
 
+export const upsertTool = (handler: ToolHandler) => {
+  if (builtinTools.has(handler.tool)) {
+    throw new Error(`Cannot override builtin tool: ${handler.tool}`);
+  }
+  registry.set(handler.tool, handler);
+};
+
+export const unregisterTool = (tool: string) => {
+  const normalized = String(tool || "").trim();
+  if (!normalized) {
+    return false;
+  }
+  if (builtinTools.has(normalized)) {
+    return false;
+  }
+  return registry.delete(normalized);
+};

@@ -22,7 +22,6 @@ import publicShareRoutes from "./routes/publicShareRoutes";
 import { requestContext } from "./middleware/requestContext";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { getEnv } from "./config/env";
-import { createRedisRateLimitStore } from "./config/rateLimitStore";
 import { httpLogger, logger } from "./config/logger";
 import { metricsHandler, metricsMiddleware } from "./observability/metrics";
 import { csrfProtection } from "./middleware/csrfProtection";
@@ -49,7 +48,6 @@ export const createApp = () => {
     standardHeaders: true,
     legacyHeaders: false,
     passOnStoreError: true,
-    store: createRedisRateLimitStore("rl_api:"),
     keyGenerator: (req, _res) => {
       const apiKeyOrgId = (req as any).apiKey?.orgId;
       if (apiKeyOrgId) {

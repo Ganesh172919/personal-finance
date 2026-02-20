@@ -297,6 +297,25 @@
         $ref: "../components/index.yaml#/responses/Unauthorized"
       "403":
         $ref: "../components/index.yaml#/responses/Forbidden"
+/api/v1/workflows/templates:
+  get:
+    summary: List workflow templates (built-in + installed plugins)
+    operationId: listWorkflowTemplates
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Workflow templates available to the org.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ListWorkflowTemplatesResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
 /api/v1/workflows/{id}/run:
   post:
     summary: Run a workflow (queued when Redis is enabled)
@@ -1232,6 +1251,32 @@
           application/json:
             schema:
               $ref: "../components/index.yaml#/schemas/CsrfTokenResponse"
+/api/v1/auth/google:
+  get:
+    summary: Start Google OAuth login
+    operationId: authGoogle
+    responses:
+      "302":
+        description: Redirect to Google OAuth consent screen.
+      "501":
+        description: Google OAuth is not configured.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ErrorResponse"
+/api/v1/auth/google/callback:
+  get:
+    summary: Google OAuth callback
+    operationId: authGoogleCallback
+    responses:
+      "302":
+        description: Redirect to the client app after login.
+      "501":
+        description: Google OAuth is not configured.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ErrorResponse"
 /api/v1/auth/register:
   post:
     summary: Register a new user
@@ -1504,6 +1549,59 @@
         $ref: "../components/index.yaml#/responses/BadRequest"
       "401":
         $ref: "../components/index.yaml#/responses/Unauthorized"
+/api/v1/financial-profiles/{userId}:
+  get:
+    summary: Get a user's financial profile (deprecated)
+    operationId: getFinancialProfileByUserId
+    deprecated: true
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/UserIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Financial profile.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+  put:
+    summary: Update a user's financial profile (deprecated)
+    operationId: updateFinancialProfileByUserId
+    deprecated: true
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/UserIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    responses:
+      "200":
+        description: Updated profile.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
 /api/v1/agent-outputs/recent:
   get:
     summary: List recent agent outputs
@@ -2034,6 +2132,716 @@
         $ref: "../components/index.yaml#/responses/Unauthorized"
       "404":
         $ref: "../components/index.yaml#/responses/NotFound"
+  delete:
+    summary: Delete a debt record
+    operationId: deleteDebt
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/DebtIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "200":
+        description: Debt deleted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+
+/api/v1/finance/accounts:
+  get:
+    summary: List finance accounts
+    operationId: financeListAccounts
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Accounts.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ListAccountsResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+  post:
+    summary: Create a finance account (admin)
+    operationId: financeCreateAccount
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/CreateAccountRequest"
+    responses:
+      "201":
+        description: Account created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/CreateAccountResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+
+/api/v1/finance/accounts/{id}:
+  patch:
+    summary: Update a finance account (admin)
+    operationId: financeUpdateAccount
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/UpdateAccountRequest"
+    responses:
+      "200":
+        description: Account updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/UpdateAccountResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+
+/api/v1/finance/merchants:
+  get:
+    summary: List merchants
+    operationId: financeListMerchants
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+    responses:
+      "200":
+        description: Merchants.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ListMerchantsResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+  post:
+    summary: Upsert merchant (admin)
+    operationId: financeUpsertMerchant
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/UpsertMerchantRequest"
+    responses:
+      "201":
+        description: Merchant upserted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/UpsertMerchantResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+
+/api/v1/finance/budgets/{periodKey}/allocations:
+  get:
+    summary: List budget allocations for a period
+    operationId: financeListBudgetAllocations
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/PeriodKeyPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+    responses:
+      "200":
+        description: Allocations.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ListBudgetAllocationsResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+  put:
+    summary: Upsert a budget allocation (admin)
+    operationId: financeUpsertBudgetAllocation
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/PeriodKeyPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/UpsertBudgetAllocationRequest"
+    responses:
+      "200":
+        description: Allocation upserted.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/UpsertBudgetAllocationResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+
+/api/v1/finance/budgets/{periodKey}/envelopes:
+  get:
+    summary: Get budget envelopes (planned vs spent)
+    operationId: financeGetBudgetEnvelopes
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/PeriodKeyPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Envelope summary.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/BudgetEnvelopesResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+
+/api/v1/finance/recurring/candidates:
+  get:
+    summary: Detect recurring candidates
+    operationId: financeListRecurringCandidates
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: days_back
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 30
+          maximum: 730
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+      - name: min_occurrences
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 3
+          maximum: 24
+    responses:
+      "200":
+        description: Recurring candidates.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/RecurringCandidatesResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+
+/api/v1/finance/recurring:
+  get:
+    summary: List recurring rules
+    operationId: financeListRecurringRules
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+    responses:
+      "200":
+        description: Recurring rules.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ListRecurringRulesResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+  post:
+    summary: Create recurring rule (admin)
+    operationId: financeCreateRecurringRule
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/CreateRecurringRuleRequest"
+    responses:
+      "201":
+        description: Rule created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/CreateRecurringRuleResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+
+/api/v1/finance/recurring/{id}:
+  patch:
+    summary: Update recurring rule (admin)
+    operationId: financeUpdateRecurringRule
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/UpdateRecurringRuleRequest"
+    responses:
+      "200":
+        description: Rule updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/UpdateRecurringRuleResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+
+/api/v1/finance/forecast:
+  get:
+    summary: Get a baseline forecast projection
+    operationId: financeGetForecast
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: period_key
+        in: query
+        required: false
+        schema:
+          $ref: "../components/index.yaml#/schemas/PeriodKey"
+      - name: months
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 24
+      - name: top_categories
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 50
+    responses:
+      "200":
+        description: Forecast projection.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ForecastResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+
+/api/v1/tools/simulate:
+  post:
+    summary: Simulate a tool call
+    operationId: toolsSimulate
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/ToolsSimulateRequest"
+    responses:
+      "200":
+        description: Tool simulation result.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ToolsSimulateResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+
+/api/v1/tools/execute:
+  post:
+    summary: Execute a tool call (idempotent)
+    operationId: toolsExecute
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/ToolsExecuteRequest"
+    responses:
+      "200":
+        description: Tool execution result.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ToolsExecuteResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "402":
+        $ref: "../components/index.yaml#/responses/PaymentRequired"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "409":
+        $ref: "../components/index.yaml#/responses/Conflict"
+
+/api/v1/integrations/transactions_csv/import:
+  post:
+    summary: Import transactions from CSV (admin)
+    operationId: integrationsTransactionsCsvImport
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            $ref: "../components/index.yaml#/schemas/TransactionsCsvImportRequest"
+    responses:
+      "200":
+        description: CSV import dry-run result.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/TransactionsCsvImportResponse"
+      "201":
+        description: CSV import completed.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/TransactionsCsvImportResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "402":
+        $ref: "../components/index.yaml#/responses/PaymentRequired"
+      "403":
+        $ref: "../components/index.yaml#/responses/Forbidden"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+
+/api/v1/notifications:
+  get:
+    summary: List in-app notifications
+    operationId: notificationsList
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [unread, read]
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+    responses:
+      "200":
+        description: Notifications.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/ListNotificationsResponse"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+
+/api/v1/notifications/{id}/read:
+  post:
+    summary: Mark notification as read
+    operationId: notificationsMarkRead
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    responses:
+      "200":
+        description: Notification updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/MarkNotificationReadResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+
+/api/v1/autopilot/plan:
+  post:
+    summary: Create an autopilot plan (AI)
+    operationId: autopilotPlan
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/AutopilotPlanRequest"
+    responses:
+      "201":
+        description: Autopilot run created.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AutopilotRunResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "402":
+        $ref: "../components/index.yaml#/responses/PaymentRequired"
+
+/api/v1/autopilot/simulate:
+  post:
+    summary: Simulate tool calls for an autopilot run
+    operationId: autopilotSimulate
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/AutopilotRunIdRequest"
+    responses:
+      "200":
+        description: Autopilot run updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AutopilotRunResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+
+/api/v1/autopilot/approve:
+  post:
+    summary: Approve tool calls for an autopilot run
+    operationId: autopilotApprove
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/AutopilotApproveRequest"
+    responses:
+      "200":
+        description: Autopilot run updated.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AutopilotRunResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+
+/api/v1/autopilot/execute:
+  post:
+    summary: Execute approved tool calls for an autopilot run
+    operationId: autopilotExecute
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../components/index.yaml#/schemas/AutopilotRunIdRequest"
+    responses:
+      "200":
+        description: Autopilot run executed.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AutopilotRunResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+
+/api/v1/autopilot/runs/{id}:
+  get:
+    summary: Get an autopilot run
+    operationId: autopilotGetRun
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/ObjectIdPath"
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Autopilot run.
+        content:
+          application/json:
+            schema:
+              $ref: "../components/index.yaml#/schemas/AutopilotRunResponse"
+      "400":
+        $ref: "../components/index.yaml#/responses/BadRequest"
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
+      "404":
+        $ref: "../components/index.yaml#/responses/NotFound"
+
+/api/v1/events/stream:
+  get:
+    summary: Server-sent events stream (org scoped)
+    operationId: eventsStream
+    security:
+      - CookieAuth: []
+    parameters:
+      - $ref: "../components/index.yaml#/parameters/XOrgId"
+    responses:
+      "200":
+        description: Event stream (SSE).
+        content:
+          text/event-stream:
+            schema:
+              type: string
+      "401":
+        $ref: "../components/index.yaml#/responses/Unauthorized"
 /api/v1/chat/sessions:
   post:
     summary: Create a chat session
@@ -2654,28 +3462,6 @@
             schema:
               type: string
               format: binary
-      "400":
-        $ref: "../components/index.yaml#/responses/BadRequest"
-      "401":
-        $ref: "../components/index.yaml#/responses/Unauthorized"
-      "404":
-        $ref: "../components/index.yaml#/responses/NotFound"
-  delete:
-    summary: Delete a debt record
-    operationId: deleteDebt
-    security:
-      - CookieAuth: []
-    parameters:
-      - $ref: "../components/index.yaml#/parameters/DebtIdPath"
-      - $ref: "../components/index.yaml#/parameters/XOrgId"
-      - $ref: "../components/index.yaml#/parameters/XCsrfToken"
-    responses:
-      "200":
-        description: Debt deleted.
-        content:
-          application/json:
-            schema:
-              $ref: "../components/index.yaml#/schemas/LooseSuccessResponse"
       "400":
         $ref: "../components/index.yaml#/responses/BadRequest"
       "401":

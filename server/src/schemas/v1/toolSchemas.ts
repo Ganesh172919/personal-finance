@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { createWorkflowBodySchema } from "./workflowSchemas";
 import { createExportBodySchema } from "./exportSchemas";
+import { currencyCodeSchema, periodKeySchema } from "./financeSchemas";
 
 const objectIdRegex = /^[a-f\d]{24}$/i;
 const isoDateString = z
@@ -123,7 +124,102 @@ const notificationsSendEmailToolSchema = baseToolCallSchema
   })
   .strict();
 
-export const toolCallSchema = z.discriminatedUnion("tool", [
+const notificationsSendToolSchema = baseToolCallSchema
+  .extend({
+    tool: z.literal("notifications.send"),
+    args: z
+      .object({
+        channel: z.enum(["email", "in_app"]),
+        to: z.string().trim().email().optional(),
+        user_id: z.string().regex(objectIdRegex, "Invalid user_id").optional(),
+        subject: z.string().trim().min(2).max(160),
+        message: z.string().trim().min(2).max(5000),
+      })
+      .strict()
+      .superRefine((value, ctx) => {
+        if (value.channel === "in_app" && value.to) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "to is not allowed when channel=in_app",
+            path: ["to"],
+          });
+        }
+      }),
+  })
+  .strict();
+
+const financeLookupBaseArgsSchema = z
+  .object({
+    q: z.string().trim().min(1).max(160),
+    limit: z.number().int().min(1).max(50).optional(),
+  })
+  .strict();
+
+const financeLookupAccountToolSchema = baseToolCallSchema
+  .extend({
+    tool: z.literal("finance.lookupAccount"),
+    args: financeLookupBaseArgsSchema,
+  })
+  .strict();
+
+const financeLookupMerchantToolSchema = baseToolCallSchema
+  .extend({
+    tool: z.literal("finance.lookupMerchant"),
+    args: financeLookupBaseArgsSchema,
+  })
+  .strict();
+
+const financeLookupRecurringRuleToolSchema = baseToolCallSchema
+  .extend({
+    tool: z.literal("finance.lookupRecurringRule"),
+    args: financeLookupBaseArgsSchema,
+  })
+  .strict();
+
+const financeDetectRecurringCandidatesToolSchema = baseToolCallSchema
+  .extend({
+    tool: z.literal("finance.detectRecurringCandidates"),
+    args: z
+      .object({
+        days_back: z.number().int().min(30).max(730).optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+        min_occurrences: z.number().int().min(3).max(24).optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+const budgetsRecommendAllocationsToolSchema = baseToolCallSchema
+  .extend({
+    tool: z.literal("budgets.recommendAllocations"),
+    args: z
+      .object({
+        period_key: periodKeySchema,
+        days_back: z.number().int().min(30).max(730).optional(),
+        top_categories: z.number().int().min(1).max(100).optional(),
+        buffer_pct: z.number().min(0).max(50).optional(),
+        min_amount: z.number().min(0).optional(),
+        currency: currencyCodeSchema.optional(),
+        exclude_categories: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+const closeMonthRunToolSchema = baseToolCallSchema
+  .extend({
+    tool: z.literal("closeMonth.run"),
+    args: z
+      .object({
+        period_key: periodKeySchema,
+        include_export: z.boolean().optional(),
+        top_categories: z.number().int().min(0).max(50).optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+const builtinToolCallSchema = z.discriminatedUnion("tool", [
   transactionsCreateToolSchema,
   goalsUpsertToolSchema,
   debtsUpsertToolSchema,
@@ -132,7 +228,28 @@ export const toolCallSchema = z.discriminatedUnion("tool", [
   workflowsRunToolSchema,
   exportsCreateToolSchema,
   notificationsSendEmailToolSchema,
+  notificationsSendToolSchema,
+  financeLookupAccountToolSchema,
+  financeLookupMerchantToolSchema,
+  financeLookupRecurringRuleToolSchema,
+  financeDetectRecurringCandidatesToolSchema,
+  budgetsRecommendAllocationsToolSchema,
+  closeMonthRunToolSchema,
 ]);
+
+const pluginToolCallSchema = baseToolCallSchema
+  .extend({
+    tool: z
+      .string()
+      .trim()
+      .min(8)
+      .max(200)
+      .refine((value) => value.startsWith("plugin."), "Invalid plugin tool name"),
+    args: z.record(z.string(), z.unknown()).default({}),
+  })
+  .strict();
+
+export const toolCallSchema = z.union([builtinToolCallSchema, pluginToolCallSchema]);
 
 export type ToolCallInput = z.infer<typeof toolCallSchema>;
 
@@ -159,4 +276,3 @@ export const internalToolsBodySchema = z
     idempotency_key: z.string().trim().min(4).max(128).optional(),
   })
   .strict();
-

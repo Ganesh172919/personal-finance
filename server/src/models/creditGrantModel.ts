@@ -5,6 +5,7 @@ export const CREDIT_FEATURES = [
   "scenario_depth",
   "ocr_quota",
   "api_requests",
+  "autopilot_actions",
   "workflow_runs",
   "connector_sync_records",
   "marketplace_installs",
@@ -56,4 +57,3 @@ creditGrantSchema.index(
 
 const CreditGrantModel = model<ICreditGrantDocument>("CreditGrant", creditGrantSchema);
 export default CreditGrantModel;
-

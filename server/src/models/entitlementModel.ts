@@ -9,6 +9,7 @@ export interface IEntitlementLimitsOverride {
   ocr_quota?: number;
   export_access?: boolean;
   api_requests?: number;
+  autopilot_actions?: number;
   workflow_runs?: number;
   connector_sync_records?: number;
   marketplace_installs?: number;
@@ -48,6 +49,7 @@ const entitlementSchema = new Schema<IEntitlementDocument>(
       ocr_quota: { type: Number, min: 0 },
       export_access: { type: Boolean },
       api_requests: { type: Number, min: 0 },
+      autopilot_actions: { type: Number, min: 0 },
       workflow_runs: { type: Number, min: 0 },
       connector_sync_records: { type: Number, min: 0 },
       marketplace_installs: { type: Number, min: 0 },

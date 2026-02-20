@@ -14,6 +14,7 @@ export type PlanLimit = {
   ocr_quota: number;
   export_access: boolean;
   api_requests: number;
+  autopilot_actions: number;
   workflow_runs: number;
   connector_sync_records: number;
   marketplace_installs: number;
@@ -36,6 +37,7 @@ export const PLAN_CATALOG: Record<
       ocr_quota: 20,
       export_access: false,
       api_requests: 1000,
+      autopilot_actions: 25,
       workflow_runs: 50,
       connector_sync_records: 500,
       marketplace_installs: 1,
@@ -50,6 +52,7 @@ export const PLAN_CATALOG: Record<
       ocr_quota: 200,
       export_access: true,
       api_requests: 25_000,
+      autopilot_actions: 500,
       workflow_runs: 1_000,
       connector_sync_records: 50_000,
       marketplace_installs: 10,
@@ -64,6 +67,7 @@ export const PLAN_CATALOG: Record<
       ocr_quota: 1000,
       export_access: true,
       api_requests: 150_000,
+      autopilot_actions: 5_000,
       workflow_runs: 10_000,
       connector_sync_records: 400_000,
       marketplace_installs: 100,
@@ -78,6 +82,7 @@ export const PLAN_CATALOG: Record<
       ocr_quota: 4_000,
       export_access: true,
       api_requests: 1_000_000,
+      autopilot_actions: 50_000,
       workflow_runs: 100_000,
       connector_sync_records: 3_000_000,
       marketplace_installs: 1000,
@@ -118,6 +123,7 @@ const sumUsageByFeature = async (params: { orgId?: Types.ObjectId; userId: Types
     ocr_quota: 0,
     export_access: 0,
     api_requests: 0,
+    autopilot_actions: 0,
     workflow_runs: 0,
     connector_sync_records: 0,
     marketplace_installs: 0,
@@ -152,6 +158,10 @@ export const resolvePlanLimits = (entitlement: IEntitlementDocument): PlanLimit 
       typeof entitlement.limitsOverride?.api_requests === "number"
         ? entitlement.limitsOverride.api_requests
         : base.api_requests,
+    autopilot_actions:
+      typeof entitlement.limitsOverride?.autopilot_actions === "number"
+        ? entitlement.limitsOverride.autopilot_actions
+        : base.autopilot_actions,
     workflow_runs:
       typeof entitlement.limitsOverride?.workflow_runs === "number"
         ? entitlement.limitsOverride.workflow_runs
@@ -224,6 +234,7 @@ export const getResolvedEntitlements = async (params: { orgId?: Types.ObjectId; 
     ocr_quota: Math.max(0, limits.ocr_quota - usage.ocr_quota),
     export_access: limits.export_access,
     api_requests: Math.max(0, limits.api_requests - usage.api_requests),
+    autopilot_actions: Math.max(0, limits.autopilot_actions - usage.autopilot_actions),
     workflow_runs: Math.max(0, limits.workflow_runs - usage.workflow_runs),
     connector_sync_records: Math.max(0, limits.connector_sync_records - usage.connector_sync_records),
     marketplace_installs: Math.max(0, limits.marketplace_installs - usage.marketplace_installs),

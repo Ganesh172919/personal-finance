@@ -11,7 +11,7 @@ import UsageLedgerModel from "../models/usageLedgerModel";
 import UserModel from "../models/userModel";
 import { sendEmail } from "../utils/sendEmail";
 import { getCurrentPeriodKey } from "./entitlements";
-import { QUEUE_NAMES, getQueue } from "../worker/queues";
+import { aggregateUsageLedger } from "./usageLedger";
 
 const toDayKey = (value: Date) => value.toISOString().slice(0, 10);
 
@@ -35,25 +35,26 @@ export const enqueueDigestJobsForAllOrgs = async (params?: {
   const periodKey = params?.periodKey || getCurrentPeriodKey(asOf);
   const daysBack = clampDaysBack(params?.daysBack, env.DIGEST_EMAIL_DAYS_BACK);
 
-  const queue = getQueue(QUEUE_NAMES.digestEmail);
   const cursor = OrganizationModel.find().select({ _id: 1 }).lean().cursor();
 
   let enqueued = 0;
+  const runner = new PQueue({ concurrency: 3 });
   for await (const org of cursor) {
     const orgId = String((org as any)?._id || "");
     if (!orgId) continue;
 
-    await queue.add(
-      "digest-org",
-      { orgId, asOf: asOf.toISOString(), periodKey, daysBack },
-      {
-        jobId: `digest-org:${orgId}:${dayKey}`,
-        removeOnComplete: true,
-        removeOnFail: false,
-      }
+    runner.add(() =>
+      sendOrgDigestEmails({
+        orgId: new mongoose.Types.ObjectId(orgId),
+        asOf,
+        periodKey,
+        daysBack,
+      }).catch(() => null)
     );
     enqueued += 1;
   }
+
+  await runner.onIdle();
 
   logger.info(
     {
@@ -276,18 +277,6 @@ export const sendOrgDigestEmails = async (params: {
 
 export const enqueueUsageAggregation = async (params?: { periodKey?: string }) => {
   const periodKey = params?.periodKey?.trim() ? params.periodKey.trim() : getCurrentPeriodKey();
-  const queue = getQueue(QUEUE_NAMES.usageAggregation);
-  const jobId = `usage-aggregation:${periodKey}`;
-
-  await queue.add(
-    "usage-aggregation",
-    { periodKey },
-    {
-      jobId,
-      removeOnComplete: true,
-      removeOnFail: false,
-    }
-  );
-
-  return { queued: true, job_id: jobId, period_key: periodKey };
+  const aggregation = await aggregateUsageLedger({ periodKey });
+  return { queued: false, period_key: periodKey, updated: aggregation.updated };
 };

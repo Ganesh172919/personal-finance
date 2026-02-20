@@ -42,6 +42,8 @@ vi.mock("../services/aiCoreClient", async () => {
 
 import { createApp } from "../app";
 import { configurePassport } from "../config/passport";
+import { processAiCoreRequest } from "../services/aiCoreClient";
+import AutopilotRunModel from "../models/autopilotRunModel";
 import { createAuthedUser } from "./authHelpers";
 import { clearTestDb, startTestDb, stopTestDb } from "./testDb";
 
@@ -142,4 +144,81 @@ describe("chat v1 API", () => {
       .set("X-CSRF-Token", csrfToken)
       .expect(200);
   }, 15000);
+
+  it("persists an autopilot run when tool calls are present", async () => {
+    const mockedAi = vi.mocked(processAiCoreRequest);
+    mockedAi.mockImplementationOnce(async (_payload: any, requestId: string) => ({
+      success: true,
+      final_output: "Autopilot test output.",
+      agent: "master",
+      actionType: "review",
+      priority: "medium",
+      insights: [],
+      analysis_type: "comprehensive",
+      agents_involved: ["master"],
+      detailed_analysis: {},
+      workflow_trace: [],
+      fallback_used: false,
+      llm_call_count: 0,
+      request_id: requestId,
+      usage: {
+        tokens_in: 0,
+        tokens_out: 0,
+        cost_usd: 0,
+        models: ["gemini-test"],
+      },
+      plan: {
+        executive_summary: "Deterministic plan.",
+        key_metrics: {},
+        actions: {
+          next_7_days: [],
+          next_30_days: [],
+          next_12_months: [],
+        },
+        assumptions: [],
+        data_warnings: [],
+      },
+      tool_calls: [
+        {
+          id: "tool_test_1",
+          title: "Send in-app notification",
+          description: "Test autopilot run persistence via chat.",
+          requires_confirmation: true,
+          risk: "low",
+          tool: "notifications.send",
+          args: {
+            channel: "in_app",
+            subject: "Autopilot test",
+            message: "Hello from autopilot test",
+          },
+        },
+      ],
+    }));
+
+    const created = await request(app)
+      .post("/api/v1/chat/sessions")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({})
+      .expect(201);
+
+    const sessionId = String(created.body.id);
+
+    const sent = await request(app)
+      .post(`/api/v1/chat/sessions/${sessionId}/messages`)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ content: "Create a safe automation and ask for confirmation." })
+      .expect(200);
+
+    const runId = String(sent.body.assistantMessage?.metadata?.autopilotRunId || "");
+    expect(runId.length).toBeGreaterThan(10);
+    expect(sent.body.assistantMessage?.metadata?.toolCalls?.length).toBe(1);
+
+    const run = await AutopilotRunModel.findById(runId).lean();
+    expect(run).toBeTruthy();
+    expect(String((run as any)?.goal || "")).toContain("Create a safe automation");
+    expect(Array.isArray((run as any)?.toolCalls)).toBe(true);
+    expect((run as any)?.toolCalls?.length).toBe(1);
+  });
 });

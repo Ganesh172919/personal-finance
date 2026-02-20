@@ -8,6 +8,7 @@ export type PlanLimit = {
     ocr_quota: number;
     export_access: boolean;
     api_requests: number;
+    autopilot_actions: number;
     workflow_runs: number;
     connector_sync_records: number;
     marketplace_installs: number;

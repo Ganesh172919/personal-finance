@@ -3,9 +3,9 @@ import type { Request } from "express";
 import { getEnv } from "../config/env";
 import { HttpError } from "./httpError";
 
-const createUpload = (params: { maxBytes: number }) => {
+const createUpload = (params: { maxBytes: number; allowedMimes?: string[] }) => {
   const env = getEnv();
-  const allowed = new Set(env.UPLOAD_ALLOWED_MIME);
+  const allowed = new Set(params.allowedMimes || env.UPLOAD_ALLOWED_MIME);
 
   return multer({
     storage: multer.memoryStorage(),
@@ -29,4 +29,9 @@ export const receiptUpload = () => {
 export const journalUpload = () => {
   const env = getEnv();
   return createUpload({ maxBytes: env.JOURNAL_UPLOAD_MAX_BYTES });
+};
+
+export const csvUpload = () => {
+  const env = getEnv();
+  return createUpload({ maxBytes: env.CSV_UPLOAD_MAX_BYTES, allowedMimes: env.CSV_UPLOAD_ALLOWED_MIME });
 };

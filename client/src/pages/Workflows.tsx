@@ -18,6 +18,7 @@ import {
   ApiError,
   executeToolCall,
   listWorkflows,
+  listWorkflowTemplates,
   simulateToolCall,
   type CreateWorkflowRequest,
   type Workflow,
@@ -74,7 +75,29 @@ export default function WorkflowsPage() {
   const [location, navigate] = useLocation();
 
   const [activeTab, setActiveTab] = useState<"workflows" | "create" | "templates">("workflows");
-  const templates = useMemo(() => builtinWorkflowTemplates(), []);
+  const builtinTemplates = useMemo(() => builtinWorkflowTemplates(), []);
+
+  const templatesQuery = useQuery({
+    queryKey: ["v1/workflows/templates"],
+    queryFn: () => listWorkflowTemplates(),
+  });
+
+  const templates = useMemo(() => {
+    const pluginTemplates = (templatesQuery.data?.templates || []).map((t) => ({
+      id: t.template_key,
+      name: t.name,
+      description: t.description,
+      request: t.request as any,
+      source: "plugin" as const,
+      plugin_key: t.plugin_key,
+      plugin_version: t.plugin_version,
+    }));
+
+    return [
+      ...builtinTemplates.map((t) => ({ ...t, source: "builtin" as const })),
+      ...pluginTemplates,
+    ];
+  }, [builtinTemplates, templatesQuery.data?.templates]);
 
   const [draft, setDraft] = useState<CreateWorkflowRequest>(() => ({
     name: "New workflow",
@@ -555,11 +578,23 @@ export default function WorkflowsPage() {
               <CardDescription>Start from a proven workflow and customize.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              {templatesQuery.isError ? (
+                <div className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                  Couldn't load marketplace templates. Built-in templates are still available.
+                </div>
+              ) : null}
+
               {templates.map((t) => (
                 <div key={t.id} className="rounded-md border border-border p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                   <div>
                     <div className="text-sm font-medium text-foreground">{t.name}</div>
                     <div className="text-xs text-muted-foreground mt-1">{t.description}</div>
+                    {(t as any).source === "plugin" ? (
+                      <div className="text-[11px] text-muted-foreground mt-2">
+                        From plugin: {(t as any).plugin_key}
+                        {(t as any).plugin_version ? `@${(t as any).plugin_version}` : ""}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2 justify-end">
                     <Button

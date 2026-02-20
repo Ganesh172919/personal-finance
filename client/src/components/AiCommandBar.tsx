@@ -585,7 +585,7 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
                               <p className="text-sm font-medium text-foreground truncate">{toolCall.title}</p>
                               <p className="text-xs text-muted-foreground mt-1">{toolCall.description}</p>
                               <p className="text-[11px] text-muted-foreground mt-2">
-                                Tool: {toolCall.tool} Â· Risk: {toolCall.risk}
+                                Tool: {toolCall.tool} · Risk: {toolCall.risk}
                               </p>
                             </div>
                             <div className="flex flex-col gap-2 flex-shrink-0">

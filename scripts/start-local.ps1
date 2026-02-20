@@ -13,6 +13,42 @@ function Ensure-Dir {
   }
 }
 
+function Assert-NodeVersion {
+  $node = Get-Command node -ErrorAction SilentlyContinue
+  if (-not $node) {
+    throw "Node.js is required. Install Node.js 20+ and ensure node is on PATH."
+  }
+
+  $raw = & node --version 2>$null
+  if ($LASTEXITCODE -ne 0 -or -not $raw) {
+    throw "Unable to determine Node.js version. Ensure 'node --version' works."
+  }
+
+  $text = ([string]($raw | Select-Object -First 1)).Trim()
+  if ($text.StartsWith("v")) {
+    $text = $text.Substring(1)
+  }
+
+  $parts = $text.Split(".")
+  if ($parts.Length -lt 1) {
+    throw "Unexpected Node.js version format: $raw"
+  }
+
+  $major = 0
+  if (-not [int]::TryParse($parts[0], [ref]$major)) {
+    throw "Unexpected Node.js version format: $raw"
+  }
+
+  if ($major -lt 20) {
+    throw "Node.js 20+ is required. Found: v$text"
+  }
+
+  $npm = Get-Command npm -ErrorAction SilentlyContinue
+  if (-not $npm) {
+    throw "npm is required (comes with Node.js). Ensure npm is on PATH."
+  }
+}
+
 function Ensure-EnvFileFromExample {
   param(
     [Parameter(Mandatory = $true)][string]$TargetPath,
@@ -116,7 +152,7 @@ function Test-LocalPortOpen {
   param([Parameter(Mandatory = $true)][int]$Port)
 
   try {
-    return (Test-NetConnection -ComputerName "127.0.0.1" -Port $Port -InformationLevel Quiet)
+    return (Test-NetConnection -ComputerName "127.0.0.1" -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue)
   } catch {
     return $false
   }
@@ -138,53 +174,6 @@ function Wait-PortOpen {
   }
 
   throw "Timed out waiting for port $Port to accept connections"
-}
-
-function Ensure-DockerComposeServices {
-  param([Parameter(Mandatory = $true)][string[]]$Services)
-
-  $docker = Get-Command docker -ErrorAction SilentlyContinue
-  if (-not $docker) {
-    throw "Docker is required to auto-start infrastructure services ($($Services -join ', ')). Install Docker Desktop or run MongoDB/Redis locally."
-  }
-
-  $dockerDaemonReady = $false
-  try {
-    & docker info *> $null
-    $dockerDaemonReady = $LASTEXITCODE -eq 0
-  } catch {
-    $dockerDaemonReady = $false
-  }
-
-  if (-not $dockerDaemonReady) {
-    throw "Docker daemon is not available. Start Docker Desktop or run MongoDB/Redis locally."
-  }
-
-  $composeSubcommandOk = $false
-  try {
-    & docker compose version *> $null
-    $composeSubcommandOk = $LASTEXITCODE -eq 0
-  } catch {
-    $composeSubcommandOk = $false
-  }
-
-  if ($composeSubcommandOk) {
-    & docker compose up -d @Services *> $null
-    if ($LASTEXITCODE -ne 0) {
-      throw "docker compose up failed"
-    }
-    return
-  }
-
-  $dockerCompose = Get-Command docker-compose -ErrorAction SilentlyContinue
-  if (-not $dockerCompose) {
-    throw "Docker Compose not found. Install Docker Desktop or docker-compose."
-  }
-
-  & docker-compose up -d @Services *> $null
-  if ($LASTEXITCODE -ne 0) {
-    throw "docker-compose up failed"
-  }
 }
 
 function Stop-If-Running {
@@ -404,7 +393,6 @@ function Resolve-AiCorePython {
     }
 
     if (Test-PythonCommand -Command "py" -Prefix @("-3")) {
-      Write-Warning "Python 3.11 not found. Falling back to default Python 3 runtime for AI Core."
       return @{
         Command = "py"
         Prefix = @("-3")
@@ -497,6 +485,7 @@ function Ensure-AiCoreVenvPython {
 }
 
 Ensure-Dir -Path $tmpDir
+Assert-NodeVersion
 Ensure-EnvFileFromExample -TargetPath (Join-Path $repoRoot "server\\.env") -ExamplePath (Join-Path $repoRoot "server\\.env.example")
 Ensure-EnvFileFromExample -TargetPath (Join-Path $repoRoot "client\\.env") -ExamplePath (Join-Path $repoRoot "client\\.env.example")
 Ensure-EnvFileFromExample -TargetPath (Join-Path $repoRoot "server\\AI_Core\\.env") -ExamplePath (Join-Path $repoRoot "server\\AI_Core\\.env.example")
@@ -507,7 +496,6 @@ if (Test-Path $pidsPath) {
     if ($existing.server.pid) { Stop-If-Running -ProcessId ([int]$existing.server.pid) }
     if ($existing.client.pid) { Stop-If-Running -ProcessId ([int]$existing.client.pid) }
     if ($existing.ai_core.pid) { Stop-If-Running -ProcessId ([int]$existing.ai_core.pid) }
-    if ($existing.worker.pid) { Stop-If-Running -ProcessId ([int]$existing.worker.pid) }
   } catch {
     Write-Warning "Failed to parse existing $pidsPath. Continuing."
   }
@@ -521,8 +509,6 @@ $clientLog = Join-Path $tmpDir "client.log"
 $clientErrLog = Join-Path $tmpDir "client.err.log"
 $aiCoreLog = Join-Path $tmpDir "ai_core.log"
 $aiCoreErrLog = Join-Path $tmpDir "ai_core.err.log"
-$workerLog = Join-Path $tmpDir "worker.log"
-$workerErrLog = Join-Path $tmpDir "worker.err.log"
 
 Ensure-NodeDeps -ProjectPath (Join-Path $repoRoot "server") -RequiredPaths @("node_modules\\tsx\\dist\\cli.mjs")
 Ensure-NodeDeps -ProjectPath (Join-Path $repoRoot "client") -RequiredPaths @("node_modules\\vite\\bin\\vite.js")
@@ -533,47 +519,36 @@ Assert-AiCorePythonVersion -PythonConfig $aiCorePythonConfig
 $aiCoreVenvPython = Ensure-AiCoreVenvPython -PythonConfig $aiCorePythonConfig
 Ensure-AiCoreDeps -PythonConfig $aiCorePythonConfig -VenvPython $aiCoreVenvPython
 
-# MongoDB + Redis are optional for local startup.
-# Mongo: server falls back to in-memory MongoDB in non-production when the primary URI is unavailable.
+# MongoDB is optional for local startup.
+# If MONGO_URI is unset or Mongo isn't reachable, server falls back to in-memory MongoDB in non-production.
 if (-not (Test-LocalPortOpen -Port 27017)) {
-  Write-Host "MongoDB not detected on :27017. Attempting Docker Compose bootstrap..." -ForegroundColor Cyan
-  try {
-    Ensure-DockerComposeServices -Services @("mongodb")
-    Wait-PortOpen -Port 27017 -TimeoutSeconds 240
-  } catch {
-    Write-Warning "Could not auto-start MongoDB via Docker. Continuing; server will use non-production in-memory MongoDB fallback."
-  }
+  Write-Host "MongoDB not detected on :27017. Continuing (server will use in-memory MongoDB in development)." -ForegroundColor Yellow
 }
 
-$redisAvailable = $false
-if (Test-LocalPortOpen -Port 6379) {
-  $redisAvailable = $true
+# Plugin runtime is optional, but enables dynamic plugins/tools.
+$pluginRuntimeAvailable = $false
+if (Test-LocalPortOpen -Port 8788) {
+  $pluginRuntimeAvailable = $true
 } else {
-  Write-Host "Redis not detected on :6379. Attempting Docker Compose bootstrap..." -ForegroundColor Cyan
-  try {
-    Ensure-DockerComposeServices -Services @("redis")
-    Wait-PortOpen -Port 6379 -TimeoutSeconds 240
-    $redisAvailable = $true
-  } catch {
-    Write-Warning "Could not auto-start Redis via Docker. Continuing without Redis (worker disabled, in-memory fallbacks enabled)."
-  }
+  Write-Warning "Plugin runtime not reachable on :8788; plugins will be disabled for this session."
 }
 
-if ($redisAvailable) {
-  $env:REDIS_URL = "redis://127.0.0.1:6379"
-  Write-Host "Set REDIS_URL=$($env:REDIS_URL) for this session." -ForegroundColor Yellow
+if ($pluginRuntimeAvailable) {
+  $env:PLUGIN_RUNTIME_URL = "http://127.0.0.1:8788"
+  Write-Host "Set PLUGIN_RUNTIME_URL=$($env:PLUGIN_RUNTIME_URL) for this session." -ForegroundColor Yellow
 } else {
-  # Force-disable Redis for child processes even if .env has REDIS_URL set.
-  $env:REDIS_URL = ""
+  $env:PLUGIN_RUNTIME_URL = " "
 }
 
 # Force local dev mode for startup script workflows.
 $env:NODE_ENV = "development"
 
 if (-not (Is-Truthy -Value $env:ALLOW_SMTP_IN_LOCAL)) {
-  $env:EMAIL_USER = ""
-  $env:EMAIL_PASSWORD = ""
-  $env:EMAIL_FROM = ""
+  # Note: assigning empty string does not reliably override `.env` for child processes in Windows PowerShell.
+  # Use a whitespace sentinel (trimmed to empty by env parsing) so dotenv won't overwrite it.
+  $env:EMAIL_USER = " "
+  $env:EMAIL_PASSWORD = " "
+  $env:EMAIL_FROM = " "
   Write-Host "Using dev OTP mode for local auth. Set ALLOW_SMTP_IN_LOCAL=true to keep SMTP settings." -ForegroundColor Yellow
 }
 
@@ -582,7 +557,6 @@ Ensure-PortsAvailable -Ports @(3000, 5173, 8001)
 $serverProc = $null
 $clientProc = $null
 $aiProc = $null
-$workerProc = $null
 
 try {
   Write-Host "Starting server (Node)..." -ForegroundColor Cyan
@@ -621,36 +595,11 @@ try {
     -RedirectStandardError $aiCoreErrLog `
     -PassThru
 
-  $redisUrl = $env:REDIS_URL
-  if ($redisUrl -and $redisUrl.Trim().Length -gt 0) {
-    $env:WORKER_ENABLED = "true"
-    Write-Host "Starting worker (BullMQ)..." -ForegroundColor Cyan
-    $workerEntry = Join-Path $repoRoot "server\\node_modules\\tsx\\dist\\cli.mjs"
-    if (-not (Test-Path $workerEntry)) {
-      throw "Missing tsx entrypoint: $workerEntry"
-    }
-    $workerProc = Start-Process `
-      -FilePath "node.exe" `
-      -ArgumentList @($workerEntry, "src/worker.ts") `
-      -WorkingDirectory (Join-Path $repoRoot "server") `
-      -RedirectStandardOutput $workerLog `
-      -RedirectStandardError $workerErrLog `
-      -PassThru
-  } else {
-    Write-Host "REDIS_URL not set; skipping worker start. (Set REDIS_URL to enable BullMQ workers.)" -ForegroundColor Yellow
-  }
-
-  $workerPayload = $null
-  if ($workerProc) {
-    $workerPayload = @{ pid = $workerProc.Id; log = $workerLog; err = $workerErrLog }
-  }
-
   $payload = @{
     startedAt = $startedAt
     server = @{ pid = $serverProc.Id; log = $serverLog; err = $serverErrLog }
     client = @{ pid = $clientProc.Id; log = $clientLog; err = $clientErrLog }
     ai_core = @{ pid = $aiProc.Id; log = $aiCoreLog; err = $aiCoreErrLog; python = $aiCoreVenvPython }
-    worker = $workerPayload
   } | ConvertTo-Json -Depth 5
 
   $payload | Out-File -FilePath $pidsPath -Encoding utf8
@@ -663,7 +612,18 @@ try {
   if ($serverProc) { Stop-If-Running -ProcessId $serverProc.Id }
   if ($clientProc) { Stop-If-Running -ProcessId $clientProc.Id }
   if ($aiProc) { Stop-If-Running -ProcessId $aiProc.Id }
-  if ($workerProc) { Stop-If-Running -ProcessId $workerProc.Id }
+
+  Write-Host ""
+  Write-Host "Startup failed. Recent logs:" -ForegroundColor Red
+  if (Test-Path $serverErrLog) {
+    Write-Host "---- server.err.log (tail) ----" -ForegroundColor Yellow
+    Get-Content $serverErrLog -Tail 80 -ErrorAction SilentlyContinue
+  }
+  if (Test-Path $aiCoreErrLog) {
+    Write-Host "---- ai_core.err.log (tail) ----" -ForegroundColor Yellow
+    Get-Content $aiCoreErrLog -Tail 80 -ErrorAction SilentlyContinue
+  }
+
   throw
 }
 
@@ -675,7 +635,3 @@ Write-Host "  client:  $clientLog"
 Write-Host "  client err: $clientErrLog"
 Write-Host "  ai_core: $aiCoreLog"
 Write-Host "  ai_core err: $aiCoreErrLog"
-if ($workerProc) {
-  Write-Host "  worker: $workerLog"
-  Write-Host "  worker err: $workerErrLog"
-}

@@ -36,6 +36,9 @@ export function AiStatusDialog({
   const server = statusQuery.data?.server;
 
   const rateLimiter = (aiCore?.rate_limit_status as any)?.rate_limit_status;
+  const aiCoreBaseUrl = (aiCore as any)?.base_url as string | undefined;
+  const healthError = (aiCore as any)?.health_error as string | null | undefined;
+  const rateLimitError = (aiCore as any)?.rate_limit_error as string | null | undefined;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -75,7 +78,9 @@ export function AiStatusDialog({
 
             {!aiCore?.healthy ? (
               <p className="mt-2 text-xs text-muted-foreground">
-                Retry later: AI Core is unavailable or still starting up.
+                AI Core is unavailable{aiCoreBaseUrl ? ` (${aiCoreBaseUrl})` : ""}.
+                {healthError ? ` ${healthError}` : ""}
+                {rateLimitError ? ` ${rateLimitError}` : ""}
               </p>
             ) : null}
           </div>
@@ -98,4 +103,3 @@ export function AiStatusDialog({
     </Dialog>
   );
 }
-

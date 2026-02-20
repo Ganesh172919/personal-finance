@@ -14,9 +14,16 @@ import type { AuthUserResponse } from '../models/AuthUserResponse';
 import type { AutomationEventEmitRequest } from '../models/AutomationEventEmitRequest';
 import type { AutomationEventEmitResponse } from '../models/AutomationEventEmitResponse';
 import type { AutomationEventsCatalogResponse } from '../models/AutomationEventsCatalogResponse';
+import type { AutopilotApproveRequest } from '../models/AutopilotApproveRequest';
+import type { AutopilotPlanRequest } from '../models/AutopilotPlanRequest';
+import type { AutopilotRunIdRequest } from '../models/AutopilotRunIdRequest';
+import type { AutopilotRunResponse } from '../models/AutopilotRunResponse';
 import type { BillingCheckoutRequest } from '../models/BillingCheckoutRequest';
 import type { BillingCheckoutResponse } from '../models/BillingCheckoutResponse';
 import type { BillingPortalResponse } from '../models/BillingPortalResponse';
+import type { BudgetEnvelopesResponse } from '../models/BudgetEnvelopesResponse';
+import type { CreateAccountRequest } from '../models/CreateAccountRequest';
+import type { CreateAccountResponse } from '../models/CreateAccountResponse';
 import type { CreateApiKeyRequest } from '../models/CreateApiKeyRequest';
 import type { CreateApiKeyResponse } from '../models/CreateApiKeyResponse';
 import type { CreateExportRequest } from '../models/CreateExportRequest';
@@ -25,6 +32,8 @@ import type { CreateFinancialStoryShareRequest } from '../models/CreateFinancial
 import type { CreateFinancialStoryShareResponse } from '../models/CreateFinancialStoryShareResponse';
 import type { CreateOrgRequest } from '../models/CreateOrgRequest';
 import type { CreateOrgResponse } from '../models/CreateOrgResponse';
+import type { CreateRecurringRuleRequest } from '../models/CreateRecurringRuleRequest';
+import type { CreateRecurringRuleResponse } from '../models/CreateRecurringRuleResponse';
 import type { CreateWorkflowRequest } from '../models/CreateWorkflowRequest';
 import type { CreateWorkflowResponse } from '../models/CreateWorkflowResponse';
 import type { CsrfTokenResponse } from '../models/CsrfTokenResponse';
@@ -34,6 +43,7 @@ import type { FeatureFlagDeleteResponse } from '../models/FeatureFlagDeleteRespo
 import type { FeatureFlagsListResponse } from '../models/FeatureFlagsListResponse';
 import type { FeatureFlagUpsertRequest } from '../models/FeatureFlagUpsertRequest';
 import type { FeatureFlagUpsertResponse } from '../models/FeatureFlagUpsertResponse';
+import type { ForecastResponse } from '../models/ForecastResponse';
 import type { GetExportResponse } from '../models/GetExportResponse';
 import type { IntegrationConnectionResponse } from '../models/IntegrationConnectionResponse';
 import type { IntegrationHealthResponse } from '../models/IntegrationHealthResponse';
@@ -41,22 +51,31 @@ import type { IntegrationHistoryResponse } from '../models/IntegrationHistoryRes
 import type { IntegrationsListResponse } from '../models/IntegrationsListResponse';
 import type { IntegrationSyncRequest } from '../models/IntegrationSyncRequest';
 import type { IntegrationSyncResponse } from '../models/IntegrationSyncResponse';
+import type { ListAccountsResponse } from '../models/ListAccountsResponse';
 import type { ListApiKeysResponse } from '../models/ListApiKeysResponse';
+import type { ListBudgetAllocationsResponse } from '../models/ListBudgetAllocationsResponse';
 import type { ListExportsResponse } from '../models/ListExportsResponse';
+import type { ListMerchantsResponse } from '../models/ListMerchantsResponse';
+import type { ListNotificationsResponse } from '../models/ListNotificationsResponse';
+import type { ListRecurringRulesResponse } from '../models/ListRecurringRulesResponse';
 import type { ListWorkflowsResponse } from '../models/ListWorkflowsResponse';
+import type { ListWorkflowTemplatesResponse } from '../models/ListWorkflowTemplatesResponse';
 import type { LoginRequest } from '../models/LoginRequest';
 import type { LogoutResponse } from '../models/LogoutResponse';
 import type { LooseSuccessResponse } from '../models/LooseSuccessResponse';
 import type { MarketplaceCatalogResponse } from '../models/MarketplaceCatalogResponse';
 import type { MarketplaceInstallRequest } from '../models/MarketplaceInstallRequest';
 import type { MarketplaceInstallResponse } from '../models/MarketplaceInstallResponse';
+import type { MarkNotificationReadResponse } from '../models/MarkNotificationReadResponse';
 import type { OrgsMeResponse } from '../models/OrgsMeResponse';
 import type { PaginatedLooseSuccessResponse } from '../models/PaginatedLooseSuccessResponse';
+import type { PeriodKey } from '../models/PeriodKey';
 import type { PlansResponse } from '../models/PlansResponse';
 import type { PluginOperationResponse } from '../models/PluginOperationResponse';
 import type { PluginsListResponse } from '../models/PluginsListResponse';
 import type { PluginVersionUpdateRequest } from '../models/PluginVersionUpdateRequest';
 import type { PublicFinancialStoryShareResponse } from '../models/PublicFinancialStoryShareResponse';
+import type { RecurringCandidatesResponse } from '../models/RecurringCandidatesResponse';
 import type { ReferralRedeemRequest } from '../models/ReferralRedeemRequest';
 import type { ReferralRedeemResponse } from '../models/ReferralRedeemResponse';
 import type { ReferralsMeResponse } from '../models/ReferralsMeResponse';
@@ -67,8 +86,22 @@ import type { ResendVerificationResponse } from '../models/ResendVerificationRes
 import type { RevokeApiKeyResponse } from '../models/RevokeApiKeyResponse';
 import type { RunWorkflowRequest } from '../models/RunWorkflowRequest';
 import type { RunWorkflowResponse } from '../models/RunWorkflowResponse';
+import type { ToolsExecuteRequest } from '../models/ToolsExecuteRequest';
+import type { ToolsExecuteResponse } from '../models/ToolsExecuteResponse';
+import type { ToolsSimulateRequest } from '../models/ToolsSimulateRequest';
+import type { ToolsSimulateResponse } from '../models/ToolsSimulateResponse';
+import type { TransactionsCsvImportRequest } from '../models/TransactionsCsvImportRequest';
+import type { TransactionsCsvImportResponse } from '../models/TransactionsCsvImportResponse';
+import type { UpdateAccountRequest } from '../models/UpdateAccountRequest';
+import type { UpdateAccountResponse } from '../models/UpdateAccountResponse';
 import type { UpdateOrgSettingsRequest } from '../models/UpdateOrgSettingsRequest';
 import type { UpdateOrgSettingsResponse } from '../models/UpdateOrgSettingsResponse';
+import type { UpdateRecurringRuleRequest } from '../models/UpdateRecurringRuleRequest';
+import type { UpdateRecurringRuleResponse } from '../models/UpdateRecurringRuleResponse';
+import type { UpsertBudgetAllocationRequest } from '../models/UpsertBudgetAllocationRequest';
+import type { UpsertBudgetAllocationResponse } from '../models/UpsertBudgetAllocationResponse';
+import type { UpsertMerchantRequest } from '../models/UpsertMerchantRequest';
+import type { UpsertMerchantResponse } from '../models/UpsertMerchantResponse';
 import type { UsageEventIngestResponse } from '../models/UsageEventIngestResponse';
 import type { UsageEventRequest } from '../models/UsageEventRequest';
 import type { UsageLedgerResponse } from '../models/UsageLedgerResponse';
@@ -384,6 +417,27 @@ export class DefaultService {
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                401: `Unauthorized`,
+                403: `Forbidden`,
+            },
+        });
+    }
+    /**
+     * List workflow templates (built-in + installed plugins)
+     * @param xOrgId Optional organization id to select tenant context.
+     * @returns ListWorkflowTemplatesResponse Workflow templates available to the org.
+     * @throws ApiError
+     */
+    public static listWorkflowTemplates(
+        xOrgId?: string,
+    ): CancelablePromise<ListWorkflowTemplatesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/workflows/templates',
+            headers: {
+                'X-Org-Id': xOrgId,
+            },
             errors: {
                 401: `Unauthorized`,
                 403: `Forbidden`,
@@ -1325,6 +1379,36 @@ export class DefaultService {
         });
     }
     /**
+     * Start Google OAuth login
+     * @returns void
+     * @throws ApiError
+     */
+    public static authGoogle(): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/auth/google',
+            errors: {
+                302: `Redirect to Google OAuth consent screen.`,
+                501: `Google OAuth is not configured.`,
+            },
+        });
+    }
+    /**
+     * Google OAuth callback
+     * @returns void
+     * @throws ApiError
+     */
+    public static authGoogleCallback(): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/auth/google/callback',
+            errors: {
+                302: `Redirect to the client app after login.`,
+                501: `Google OAuth is not configured.`,
+            },
+        });
+    }
+    /**
      * Register a new user
      * @param requestBody
      * @returns RegisterResponse Registration accepted (email verification required).
@@ -1582,6 +1666,69 @@ export class DefaultService {
             errors: {
                 400: `Bad request`,
                 401: `Unauthorized`,
+            },
+        });
+    }
+    /**
+     * @deprecated
+     * Get a user's financial profile (deprecated)
+     * @param userId
+     * @param xOrgId Optional organization id to select tenant context.
+     * @returns LooseSuccessResponse Financial profile.
+     * @throws ApiError
+     */
+    public static getFinancialProfileByUserId(
+        userId: string,
+        xOrgId?: string,
+    ): CancelablePromise<LooseSuccessResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/financial-profiles/{userId}',
+            path: {
+                'userId': userId,
+            },
+            headers: {
+                'X-Org-Id': xOrgId,
+            },
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                404: `Not found`,
+            },
+        });
+    }
+    /**
+     * @deprecated
+     * Update a user's financial profile (deprecated)
+     * @param userId
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns LooseSuccessResponse Updated profile.
+     * @throws ApiError
+     */
+    public static updateFinancialProfileByUserId(
+        userId: string,
+        requestBody: Record<string, any>,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<LooseSuccessResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/financial-profiles/{userId}',
+            path: {
+                'userId': userId,
+            },
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                404: `Not found`,
             },
         });
     }
@@ -2129,6 +2276,733 @@ export class DefaultService {
                 400: `Bad request`,
                 401: `Unauthorized`,
                 404: `Not found`,
+            },
+        });
+    }
+    /**
+     * Delete a debt record
+     * @param debtId
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns LooseSuccessResponse Debt deleted.
+     * @throws ApiError
+     */
+    public static deleteDebt(
+        debtId: string,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<LooseSuccessResponse> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/v1/debts/{debtId}',
+            path: {
+                'debtId': debtId,
+            },
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                404: `Not found`,
+            },
+        });
+    }
+    /**
+     * List finance accounts
+     * @param xOrgId Optional organization id to select tenant context.
+     * @returns ListAccountsResponse Accounts.
+     * @throws ApiError
+     */
+    public static financeListAccounts(
+        xOrgId?: string,
+    ): CancelablePromise<ListAccountsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/finance/accounts',
+            headers: {
+                'X-Org-Id': xOrgId,
+            },
+            errors: {
+                401: `Unauthorized`,
+                403: `Forbidden`,
+            },
+        });
+    }
+    /**
+     * Create a finance account (admin)
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns CreateAccountResponse Account created.
+     * @throws ApiError
+     */
+    public static financeCreateAccount(
+        requestBody: CreateAccountRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<CreateAccountResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/finance/accounts',
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                403: `Forbidden`,
+            },
+        });
+    }
+    /**
+     * Update a finance account (admin)
+     * @param id
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns UpdateAccountResponse Account updated.
+     * @throws ApiError
+     */
+    public static financeUpdateAccount(
+        id: string,
+        requestBody: UpdateAccountRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<UpdateAccountResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/finance/accounts/{id}',
+            path: {
+                'id': id,
+            },
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                403: `Forbidden`,
+                404: `Not found`,
+            },
+        });
+    }
+    /**
+     * List merchants
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param q
+     * @param limit
+     * @returns ListMerchantsResponse Merchants.
+     * @throws ApiError
+     */
+    public static financeListMerchants(
+        xOrgId?: string,
+        q?: string,
+        limit?: number,
+    ): CancelablePromise<ListMerchantsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/finance/merchants',
+            headers: {
+                'X-Org-Id': xOrgId,
+            },
+            query: {
+                'q': q,
+                'limit': limit,
+            },
+            errors: {
+                401: `Unauthorized`,
+                403: `Forbidden`,
+            },
+        });
+    }
+    /**
+     * Upsert merchant (admin)
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns UpsertMerchantResponse Merchant upserted.
+     * @throws ApiError
+     */
+    public static financeUpsertMerchant(
+        requestBody: UpsertMerchantRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<UpsertMerchantResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/finance/merchants',
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                403: `Forbidden`,
+            },
+        });
+    }
+    /**
+     * List budget allocations for a period
+     * @param periodKey
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param limit
+     * @returns ListBudgetAllocationsResponse Allocations.
+     * @throws ApiError
+     */
+    public static financeListBudgetAllocations(
+        periodKey: string,
+        xOrgId?: string,
+        limit?: number,
+    ): CancelablePromise<ListBudgetAllocationsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/finance/budgets/{periodKey}/allocations',
+            path: {
+                'periodKey': periodKey,
+            },
+            headers: {
+                'X-Org-Id': xOrgId,
+            },
+            query: {
+                'limit': limit,
+            },
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+            },
+        });
+    }
+    /**
+     * Upsert a budget allocation (admin)
+     * @param periodKey
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns UpsertBudgetAllocationResponse Allocation upserted.
+     * @throws ApiError
+     */
+    public static financeUpsertBudgetAllocation(
+        periodKey: string,
+        requestBody: UpsertBudgetAllocationRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<UpsertBudgetAllocationResponse> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/v1/finance/budgets/{periodKey}/allocations',
+            path: {
+                'periodKey': periodKey,
+            },
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                403: `Forbidden`,
+            },
+        });
+    }
+    /**
+     * Get budget envelopes (planned vs spent)
+     * @param periodKey
+     * @param xOrgId Optional organization id to select tenant context.
+     * @returns BudgetEnvelopesResponse Envelope summary.
+     * @throws ApiError
+     */
+    public static financeGetBudgetEnvelopes(
+        periodKey: string,
+        xOrgId?: string,
+    ): CancelablePromise<BudgetEnvelopesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/finance/budgets/{periodKey}/envelopes',
+            path: {
+                'periodKey': periodKey,
+            },
+            headers: {
+                'X-Org-Id': xOrgId,
+            },
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+            },
+        });
+    }
+    /**
+     * Detect recurring candidates
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param daysBack
+     * @param limit
+     * @param minOccurrences
+     * @returns RecurringCandidatesResponse Recurring candidates.
+     * @throws ApiError
+     */
+    public static financeListRecurringCandidates(
+        xOrgId?: string,
+        daysBack?: number,
+        limit?: number,
+        minOccurrences?: number,
+    ): CancelablePromise<RecurringCandidatesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/finance/recurring/candidates',
+            headers: {
+                'X-Org-Id': xOrgId,
+            },
+            query: {
+                'days_back': daysBack,
+                'limit': limit,
+                'min_occurrences': minOccurrences,
+            },
+            errors: {
+                401: `Unauthorized`,
+            },
+        });
+    }
+    /**
+     * List recurring rules
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param limit
+     * @returns ListRecurringRulesResponse Recurring rules.
+     * @throws ApiError
+     */
+    public static financeListRecurringRules(
+        xOrgId?: string,
+        limit?: number,
+    ): CancelablePromise<ListRecurringRulesResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/finance/recurring',
+            headers: {
+                'X-Org-Id': xOrgId,
+            },
+            query: {
+                'limit': limit,
+            },
+            errors: {
+                401: `Unauthorized`,
+            },
+        });
+    }
+    /**
+     * Create recurring rule (admin)
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns CreateRecurringRuleResponse Rule created.
+     * @throws ApiError
+     */
+    public static financeCreateRecurringRule(
+        requestBody: CreateRecurringRuleRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<CreateRecurringRuleResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/finance/recurring',
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                403: `Forbidden`,
+            },
+        });
+    }
+    /**
+     * Update recurring rule (admin)
+     * @param id
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns UpdateRecurringRuleResponse Rule updated.
+     * @throws ApiError
+     */
+    public static financeUpdateRecurringRule(
+        id: string,
+        requestBody: UpdateRecurringRuleRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<UpdateRecurringRuleResponse> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/v1/finance/recurring/{id}',
+            path: {
+                'id': id,
+            },
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                403: `Forbidden`,
+                404: `Not found`,
+            },
+        });
+    }
+    /**
+     * Get a baseline forecast projection
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param periodKey
+     * @param months
+     * @param topCategories
+     * @returns ForecastResponse Forecast projection.
+     * @throws ApiError
+     */
+    public static financeGetForecast(
+        xOrgId?: string,
+        periodKey?: PeriodKey,
+        months?: number,
+        topCategories?: number,
+    ): CancelablePromise<ForecastResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/finance/forecast',
+            headers: {
+                'X-Org-Id': xOrgId,
+            },
+            query: {
+                'period_key': periodKey,
+                'months': months,
+                'top_categories': topCategories,
+            },
+            errors: {
+                401: `Unauthorized`,
+            },
+        });
+    }
+    /**
+     * Simulate a tool call
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns ToolsSimulateResponse Tool simulation result.
+     * @throws ApiError
+     */
+    public static toolsSimulate(
+        requestBody: ToolsSimulateRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<ToolsSimulateResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/tools/simulate',
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                403: `Forbidden`,
+            },
+        });
+    }
+    /**
+     * Execute a tool call (idempotent)
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns ToolsExecuteResponse Tool execution result.
+     * @throws ApiError
+     */
+    public static toolsExecute(
+        requestBody: ToolsExecuteRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<ToolsExecuteResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/tools/execute',
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                402: `Payment required`,
+                403: `Forbidden`,
+                409: `Conflict`,
+            },
+        });
+    }
+    /**
+     * Import transactions from CSV (admin)
+     * @param formData
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns TransactionsCsvImportResponse CSV import dry-run result.
+     * @throws ApiError
+     */
+    public static integrationsTransactionsCsvImport(
+        formData: TransactionsCsvImportRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<TransactionsCsvImportResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/integrations/transactions_csv/import',
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            formData: formData,
+            mediaType: 'multipart/form-data',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                402: `Payment required`,
+                403: `Forbidden`,
+                404: `Not found`,
+            },
+        });
+    }
+    /**
+     * List in-app notifications
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param status
+     * @param limit
+     * @returns ListNotificationsResponse Notifications.
+     * @throws ApiError
+     */
+    public static notificationsList(
+        xOrgId?: string,
+        status?: 'unread' | 'read',
+        limit?: number,
+    ): CancelablePromise<ListNotificationsResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/notifications',
+            headers: {
+                'X-Org-Id': xOrgId,
+            },
+            query: {
+                'status': status,
+                'limit': limit,
+            },
+            errors: {
+                401: `Unauthorized`,
+            },
+        });
+    }
+    /**
+     * Mark notification as read
+     * @param id
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns MarkNotificationReadResponse Notification updated.
+     * @throws ApiError
+     */
+    public static notificationsMarkRead(
+        id: string,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<MarkNotificationReadResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/notifications/{id}/read',
+            path: {
+                'id': id,
+            },
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                404: `Not found`,
+            },
+        });
+    }
+    /**
+     * Create an autopilot plan (AI)
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns AutopilotRunResponse Autopilot run created.
+     * @throws ApiError
+     */
+    public static autopilotPlan(
+        requestBody: AutopilotPlanRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<AutopilotRunResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/autopilot/plan',
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                402: `Payment required`,
+            },
+        });
+    }
+    /**
+     * Simulate tool calls for an autopilot run
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns AutopilotRunResponse Autopilot run updated.
+     * @throws ApiError
+     */
+    public static autopilotSimulate(
+        requestBody: AutopilotRunIdRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<AutopilotRunResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/autopilot/simulate',
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                404: `Not found`,
+            },
+        });
+    }
+    /**
+     * Approve tool calls for an autopilot run
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns AutopilotRunResponse Autopilot run updated.
+     * @throws ApiError
+     */
+    public static autopilotApprove(
+        requestBody: AutopilotApproveRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<AutopilotRunResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/autopilot/approve',
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                404: `Not found`,
+            },
+        });
+    }
+    /**
+     * Execute approved tool calls for an autopilot run
+     * @param requestBody
+     * @param xOrgId Optional organization id to select tenant context.
+     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
+     * @returns AutopilotRunResponse Autopilot run executed.
+     * @throws ApiError
+     */
+    public static autopilotExecute(
+        requestBody: AutopilotRunIdRequest,
+        xOrgId?: string,
+        xCsrfToken?: string,
+    ): CancelablePromise<AutopilotRunResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/autopilot/execute',
+            headers: {
+                'X-Org-Id': xOrgId,
+                'X-CSRF-Token': xCsrfToken,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                404: `Not found`,
+            },
+        });
+    }
+    /**
+     * Get an autopilot run
+     * @param id
+     * @param xOrgId Optional organization id to select tenant context.
+     * @returns AutopilotRunResponse Autopilot run.
+     * @throws ApiError
+     */
+    public static autopilotGetRun(
+        id: string,
+        xOrgId?: string,
+    ): CancelablePromise<AutopilotRunResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/autopilot/runs/{id}',
+            path: {
+                'id': id,
+            },
+            headers: {
+                'X-Org-Id': xOrgId,
+            },
+            errors: {
+                400: `Bad request`,
+                401: `Unauthorized`,
+                404: `Not found`,
+            },
+        });
+    }
+    /**
+     * Server-sent events stream (org scoped)
+     * @param xOrgId Optional organization id to select tenant context.
+     * @returns string Event stream (SSE).
+     * @throws ApiError
+     */
+    public static eventsStream(
+        xOrgId?: string,
+    ): CancelablePromise<string> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/events/stream',
+            headers: {
+                'X-Org-Id': xOrgId,
+            },
+            errors: {
+                401: `Unauthorized`,
             },
         });
     }
@@ -2813,36 +3687,6 @@ export class DefaultService {
             },
             headers: {
                 'X-Org-Id': xOrgId,
-            },
-            errors: {
-                400: `Bad request`,
-                401: `Unauthorized`,
-                404: `Not found`,
-            },
-        });
-    }
-    /**
-     * Delete a debt record
-     * @param debtId
-     * @param xOrgId Optional organization id to select tenant context.
-     * @param xCsrfToken Required for state-changing requests when CSRF is enabled.
-     * @returns LooseSuccessResponse Debt deleted.
-     * @throws ApiError
-     */
-    public static deleteDebt(
-        debtId: string,
-        xOrgId?: string,
-        xCsrfToken?: string,
-    ): CancelablePromise<LooseSuccessResponse> {
-        return __request(OpenAPI, {
-            method: 'DELETE',
-            url: '/api/v1/media/{fileId}',
-            path: {
-                'debtId': debtId,
-            },
-            headers: {
-                'X-Org-Id': xOrgId,
-                'X-CSRF-Token': xCsrfToken,
             },
             errors: {
                 400: `Bad request`,

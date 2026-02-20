@@ -119,9 +119,34 @@ export const sendEmail = async (options: EmailOptions): Promise<EmailSendResult>
 
     await transporter.sendMail(mailOptions);
   } catch (error) {
-    throw new Error(
-      `SMTP email delivery failed: ${error instanceof Error ? error.message : "unknown error"}`
+    const message = error instanceof Error ? error.message : "unknown error";
+    logger.error(
+      {
+        event: "email_smtp_failed",
+        to_domain: emailDomainOf(options.to),
+        message: String(message).slice(0, 300),
+      },
+      "SMTP email delivery failed"
     );
+
+    if (env.NODE_ENV !== "production") {
+      logger.info(
+        {
+          event: "email_console_mode",
+          to_domain: emailDomainOf(options.to),
+          subject_length: options.subject.length,
+          text_length: options.text.length,
+          has_html: Boolean(options.html),
+        },
+        "Email routed to console mode after SMTP failure"
+      );
+
+      cachedTransporter = null;
+      cachedTransportSignature = "";
+      return { mode: "console" };
+    }
+
+    throw new Error(`SMTP email delivery failed: ${message}`);
   }
   
   logger.info({ to_domain: emailDomainOf(options.to) }, "Email sent successfully");

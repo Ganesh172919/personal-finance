@@ -1,0 +1,54 @@
+from typing import Any, TypeVar
+
+from attrs import define as _attrs_define
+
+T = TypeVar("T", bound="AddOrgMemberResponseOrg")
+
+
+@_attrs_define
+class AddOrgMemberResponseOrg:
+    """
+    Attributes:
+        id (str):
+        name (str):
+        slug (str):
+    """
+
+    id: str
+    name: str
+    slug: str
+
+    def to_dict(self) -> dict[str, Any]:
+        id = self.id
+
+        name = self.name
+
+        slug = self.slug
+
+        field_dict: dict[str, Any] = {}
+        field_dict.update(
+            {
+                "id": id,
+                "name": name,
+                "slug": slug,
+            }
+        )
+
+        return field_dict
+
+    @classmethod
+    def from_dict(cls: type[T], src_dict: dict[str, Any]) -> T:
+        d = src_dict.copy()
+        id = d.pop("id")
+
+        name = d.pop("name")
+
+        slug = d.pop("slug")
+
+        add_org_member_response_org = cls(
+            id=id,
+            name=name,
+            slug=slug,
+        )
+
+        return add_org_member_response_org

@@ -7,6 +7,18 @@ const trim = (value: string) => value.trim();
 const emptyStringToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim().length === 0 ? undefined : value;
 
+const normalizeBaseUrl = (rawValue: string) => {
+  try {
+    const url = new URL(rawValue);
+    if (url.hostname === "localhost") {
+      url.hostname = "127.0.0.1";
+    }
+    return url.origin;
+  } catch {
+    return String(rawValue || "").replace(/\/$/, "");
+  }
+};
+
 const boolFromEnv = z.preprocess(value => {
   if (typeof value === "boolean") return value;
   if (typeof value !== "string") return undefined;
@@ -69,7 +81,7 @@ const envSchema = z
     JWT_SECRET: z.string().trim().min(1, "JWT_SECRET is required"),
     TRUST_PROXY: z.preprocess(emptyStringToUndefined, z.string().trim().optional()),
 
-    PYTHON_API_URL: z.string().url().default("http://localhost:8001"),
+    PYTHON_API_URL: z.string().url().default("http://localhost:8001").transform(normalizeBaseUrl),
     CLIENT_URL: z.string().url().default("http://localhost:5173"),
     CORS_ORIGINS: csv("http://localhost:5173"),
     COOKIE_SECURE: optionalBoolFromEnv,
@@ -94,15 +106,12 @@ const envSchema = z
     UPLOAD_ALLOWED_MIME: csvArray("image/jpeg,image/png,image/webp"),
     RECEIPT_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
     JOURNAL_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(4 * 1024 * 1024),
+    CSV_UPLOAD_ALLOWED_MIME: csvArray("text/csv,application/vnd.ms-excel,application/csv"),
+    CSV_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(15 * 1024 * 1024),
 
     METRICS_ENABLED: boolFromEnv.default(false),
     METRICS_TOKEN: optionalNonEmptyString,
 
-    REDIS_URL: optionalNonEmptyString,
-    WORKER_ENABLED: boolFromEnv.default(false),
-    WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(5),
-    USAGE_AGGREGATION_CRON: z.string().trim().min(1).default("0 * * * *"),
-    DIGEST_EMAIL_CRON: z.string().trim().min(1).default("0 8 * * *"),
     DIGEST_EMAIL_DAYS_BACK: z.coerce.number().int().min(1).max(31).default(7),
 
     TASKS_ENABLED: boolFromEnv.default(false),
@@ -139,6 +148,13 @@ const envSchema = z
     PLUGIN_RUNTIME_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
     PLUGIN_RUNTIME_ALLOW_INSECURE: optionalBoolFromEnv,
     PLUGIN_RUNTIME_ALLOW_LOCALHOST: optionalBoolFromEnv,
+    PLUGIN_RUNTIME_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+    PLUGIN_RUNTIME_TOKEN: z.preprocess(
+      emptyStringToUndefined,
+      z.string().trim().min(8).max(256).optional()
+    ),
+
+    TOOL_POLICY_TX_CONFIRM_ABOVE: z.coerce.number().positive().default(200),
 
     GOOGLE_CLIENT_ID: optionalNonEmptyString,
     GOOGLE_CLIENT_SECRET: optionalNonEmptyString,

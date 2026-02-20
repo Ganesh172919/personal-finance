@@ -209,6 +209,14 @@ Invoke-Step -Name "Server: typecheck + tests" -Workdir (Join-Path $repoRoot "ser
   if ($LASTEXITCODE -ne 0) { throw "Server tests failed" }
 }
 
+Invoke-Step -Name "SDK: generate + check" -Workdir (Join-Path $repoRoot "packages\\sdk-ts") -Action {
+  Ensure-NodeDeps -ProjectPath (Join-Path $repoRoot "packages\\sdk-ts")
+  npm run generate
+  if ($LASTEXITCODE -ne 0) { throw "SDK generation failed" }
+  npm run check
+  if ($LASTEXITCODE -ne 0) { throw "SDK typecheck failed" }
+}
+
 Invoke-Step -Name "Client: lint + build" -Workdir (Join-Path $repoRoot "client") -Action {
   Ensure-NodeDeps -ProjectPath (Join-Path $repoRoot "client")
   npm run lint
@@ -217,14 +225,6 @@ Invoke-Step -Name "Client: lint + build" -Workdir (Join-Path $repoRoot "client")
   if ($LASTEXITCODE -ne 0) { throw "Client npm audit failed" }
   npm run build
   if ($LASTEXITCODE -ne 0) { throw "Client build failed" }
-}
-
-Invoke-Step -Name "SDK: generate + check" -Workdir (Join-Path $repoRoot "packages\\sdk-ts") -Action {
-  Ensure-NodeDeps -ProjectPath (Join-Path $repoRoot "packages\\sdk-ts")
-  npm run generate
-  if ($LASTEXITCODE -ne 0) { throw "SDK generation failed" }
-  npm run check
-  if ($LASTEXITCODE -ne 0) { throw "SDK typecheck failed" }
 }
 
 $aiCorePython = Resolve-AiCorePython
@@ -237,6 +237,11 @@ Invoke-Step -Name "AI Core: ruff + pytest" -Workdir (Join-Path $repoRoot "server
 
   & $aiCorePython.Command @($aiCorePython.Prefix + @("-m", "pytest", "-q"))
   if ($LASTEXITCODE -ne 0) { throw "AI Core pytest failed" }
+}
+
+Invoke-Step -Name "SDK (py): compile" -Workdir (Join-Path $repoRoot "packages\\sdk-py") -Action {
+  & $aiCorePython.Command @($aiCorePython.Prefix + @("-m", "compileall", "-q", "finwise_sdk"))
+  if ($LASTEXITCODE -ne 0) { throw "Python SDK compile failed" }
 }
 
 if (-not $SkipLocalRun) {

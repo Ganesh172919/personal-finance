@@ -3,6 +3,32 @@ import axios from "axios";
 import { getAiCoreClientStatus } from "../services/aiCoreClient";
 import { getEnv } from "../config/env";
 
+const summarizeUpstreamError = (error: unknown) => {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const data = error.response?.data as any;
+    const detail = data?.detail || data?.message;
+    const code = (error as any)?.code;
+
+    if (detail && status) {
+      return `HTTP ${status}: ${String(detail)}`;
+    }
+    if (detail) {
+      return String(detail);
+    }
+    if (code) {
+      return `${String(code)}: ${error.message}`;
+    }
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+};
+
 export const getAiCoreStatus = async (req: Request, res: Response) => {
   const env = getEnv();
   const AI_CORE_BASE_URL = env.PYTHON_API_URL;
@@ -20,17 +46,23 @@ export const getAiCoreStatus = async (req: Request, res: Response) => {
     })
   ]);
 
+  const healthOk = healthResult.status === "fulfilled";
+  const rateLimitOk = rateLimitResult.status === "fulfilled";
+
   const health =
-    healthResult.status === "fulfilled" ? healthResult.value.data : { status: "unavailable" };
+    healthOk ? healthResult.value.data : { status: "unavailable" };
   const rateLimit =
-    rateLimitResult.status === "fulfilled" ? rateLimitResult.value.data : { success: false };
+    rateLimitOk ? rateLimitResult.value.data : { success: false };
 
   res.json({
     ai_core: {
-      healthy: healthResult.status === "fulfilled",
+      healthy: healthOk,
+      base_url: AI_CORE_BASE_URL,
       request_id: requestId,
       health,
-      rate_limit_status: rateLimit
+      health_error: healthOk ? null : summarizeUpstreamError(healthResult.reason),
+      rate_limit_status: rateLimit,
+      rate_limit_error: rateLimitOk ? null : summarizeUpstreamError(rateLimitResult.reason),
     },
     server: {
       ai_core_client: getAiCoreClientStatus()

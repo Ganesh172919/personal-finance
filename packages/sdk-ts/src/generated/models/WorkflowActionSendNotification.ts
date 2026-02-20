@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type WorkflowActionSendNotification = {
     type: 'send_notification';
-    channel?: 'email';
+    channel?: 'email' | 'in_app';
     subject: string;
     message: string;
 };

@@ -1,0 +1,37 @@
+{
+  "plugin_key": "finwise.sample",
+  "version": "1.0.0",
+  "publisher": "FinWise Labs",
+  "permissions": ["transactions:read"],
+  "entrypoints": {
+    "module": "dist/plugin.js"
+  },
+  "tools": [
+    {
+      "tool": "plugin.finwise.sample.echo",
+      "handler": "echo",
+      "title": "Echo (Sample Plugin)",
+      "description": "Echo back a message (fixture plugin tool).",
+      "risk_default": "low",
+      "requires_confirmation_default": false,
+      "required_role": "member",
+      "args_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["message"],
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        }
+      },
+      "args_example": {
+        "message": "hello"
+      }
+    }
+  ],
+  "connectors": []
+}
+

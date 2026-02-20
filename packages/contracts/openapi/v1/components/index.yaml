@@ -49,6 +49,13 @@ parameters:
     schema:
       type: string
       pattern: "^[a-f\\d]{24}$"
+  PeriodKeyPath:
+    name: periodKey
+    in: path
+    required: true
+    schema:
+      type: string
+      pattern: "^\\d{4}-\\d{2}$"
   GoalIdPath:
     name: goalId
     in: path
@@ -547,6 +554,7 @@ schemas:
           ocr_quota: { type: integer }
           export_access: { type: integer }
           api_requests: { type: integer }
+          autopilot_actions: { type: integer }
           workflow_runs: { type: integer }
           connector_sync_records: { type: integer }
           marketplace_installs: { type: integer }
@@ -557,6 +565,7 @@ schemas:
             ocr_quota,
             export_access,
             api_requests,
+            autopilot_actions,
             workflow_runs,
             connector_sync_records,
             marketplace_installs,
@@ -583,6 +592,7 @@ schemas:
           ocr_quota: { type: integer }
           export_access: { type: integer }
           api_requests: { type: integer }
+          autopilot_actions: { type: integer }
           workflow_runs: { type: integer }
           connector_sync_records: { type: integer }
           marketplace_installs: { type: integer }
@@ -593,6 +603,7 @@ schemas:
             ocr_quota,
             export_access,
             api_requests,
+            autopilot_actions,
             workflow_runs,
             connector_sync_records,
             marketplace_installs,
@@ -1553,6 +1564,7 @@ schemas:
       ocr_quota: { type: integer }
       export_access: { type: boolean }
       api_requests: { type: integer }
+      autopilot_actions: { type: integer }
       workflow_runs: { type: integer }
       connector_sync_records: { type: integer }
       marketplace_installs: { type: integer }
@@ -1563,6 +1575,7 @@ schemas:
         ocr_quota,
         export_access,
         api_requests,
+        autopilot_actions,
         workflow_runs,
         connector_sync_records,
         marketplace_installs,
@@ -1575,6 +1588,7 @@ schemas:
       scenario_depth: { type: integer }
       ocr_quota: { type: integer }
       api_requests: { type: integer }
+      autopilot_actions: { type: integer }
       workflow_runs: { type: integer }
       connector_sync_records: { type: integer }
       marketplace_installs: { type: integer }
@@ -1584,6 +1598,7 @@ schemas:
         scenario_depth,
         ocr_quota,
         api_requests,
+        autopilot_actions,
         workflow_runs,
         connector_sync_records,
         marketplace_installs,
@@ -1597,6 +1612,7 @@ schemas:
         ocr_quota,
         export_access,
         api_requests,
+        autopilot_actions,
         workflow_runs,
         connector_sync_records,
         marketplace_installs,
@@ -1636,6 +1652,7 @@ schemas:
           ocr_quota: { type: integer }
           export_access: { type: integer }
           api_requests: { type: integer }
+          autopilot_actions: { type: integer }
           workflow_runs: { type: integer }
           connector_sync_records: { type: integer }
           marketplace_installs: { type: integer }
@@ -1646,6 +1663,7 @@ schemas:
             ocr_quota,
             export_access,
             api_requests,
+            autopilot_actions,
             workflow_runs,
             connector_sync_records,
             marketplace_installs,
@@ -1752,7 +1770,7 @@ schemas:
     additionalProperties: false
     properties:
       type: { type: string, enum: [send_notification] }
-      channel: { type: string, enum: [email] }
+      channel: { type: string, enum: [email, in_app] }
       subject: { type: string }
       message: { type: string }
     required: [type, subject, message]
@@ -1840,6 +1858,33 @@ schemas:
       request_id:
         type: string
     required: [workflow, request_id]
+  WorkflowTemplate:
+    type: object
+    additionalProperties: false
+    properties:
+      template_key: { type: string }
+      plugin_key: { type: string }
+      plugin_version:
+        anyOf:
+          - type: "null"
+          - type: string
+      name: { type: string }
+      description: { type: string }
+      request:
+        $ref: "#/schemas/CreateWorkflowRequest"
+    required: [template_key, plugin_key, plugin_version, name, description, request]
+  ListWorkflowTemplatesResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      templates:
+        type: array
+        items:
+          $ref: "#/schemas/WorkflowTemplate"
+      request_id:
+        type: string
+    required: [org_id, templates, request_id]
   RunWorkflowRequest:
     type: object
     additionalProperties: false
@@ -1886,4 +1931,763 @@ schemas:
         $ref: "#/schemas/WorkflowRun"
       request_id: { type: string }
     required: [queued, run, request_id]
+
+  CurrencyCode:
+    type: string
+    pattern: "^[A-Z]{3}$"
+  PeriodKey:
+    type: string
+    pattern: "^\\d{4}-\\d{2}$"
+
+  AccountType:
+    type: string
+    enum: [checking, savings, credit, brokerage, cash]
+  AccountStatus:
+    type: string
+    enum: [active, closed]
+  Account:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      name: { type: string }
+      institution:
+        anyOf:
+          - type: "null"
+          - type: string
+      type: { $ref: "#/schemas/AccountType" }
+      currency: { $ref: "#/schemas/CurrencyCode" }
+      mask:
+        anyOf:
+          - type: "null"
+          - type: string
+      status: { $ref: "#/schemas/AccountStatus" }
+      metadata:
+        type: object
+        additionalProperties: true
+      created_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      updated_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+    required: [id, name, institution, type, currency, mask, status, metadata, created_at, updated_at]
+  ListAccountsResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      accounts:
+        type: array
+        items:
+          $ref: "#/schemas/Account"
+      request_id: { type: string }
+    required: [org_id, accounts, request_id]
+  CreateAccountRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      name: { type: string }
+      institution: { type: string }
+      type: { $ref: "#/schemas/AccountType" }
+      currency: { $ref: "#/schemas/CurrencyCode" }
+      mask: { type: string }
+      metadata:
+        type: object
+        additionalProperties: true
+    required: [name]
+  CreateAccountResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      account: { $ref: "#/schemas/Account" }
+      request_id: { type: string }
+    required: [org_id, account, request_id]
+  UpdateAccountRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      name: { type: string }
+      institution: { type: string }
+      type: { $ref: "#/schemas/AccountType" }
+      currency: { $ref: "#/schemas/CurrencyCode" }
+      mask: { type: string }
+      status: { $ref: "#/schemas/AccountStatus" }
+      metadata:
+        type: object
+        additionalProperties: true
+    required: []
+  UpdateAccountResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      account: { $ref: "#/schemas/Account" }
+      request_id: { type: string }
+    required: [org_id, account, request_id]
+
+  Merchant:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      name: { type: string }
+      normalized_name: { type: string }
+      category_default:
+        anyOf:
+          - type: "null"
+          - type: string
+      aliases:
+        type: array
+        items: { type: string }
+      metadata:
+        type: object
+        additionalProperties: true
+      created_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      updated_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+    required: [id, name, normalized_name, category_default, aliases, metadata, created_at, updated_at]
+  ListMerchantsResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      merchants:
+        type: array
+        items:
+          $ref: "#/schemas/Merchant"
+      request_id: { type: string }
+    required: [org_id, merchants, request_id]
+  UpsertMerchantRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      name: { type: string }
+      category_default: { type: string }
+      aliases:
+        type: array
+        items: { type: string }
+      metadata:
+        type: object
+        additionalProperties: true
+    required: [name]
+  UpsertMerchantResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      merchant: { $ref: "#/schemas/Merchant" }
+      request_id: { type: string }
+    required: [org_id, merchant, request_id]
+
+  BudgetAllocation:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      period_key: { $ref: "#/schemas/PeriodKey" }
+      category: { type: string }
+      amount: { type: number }
+      currency: { $ref: "#/schemas/CurrencyCode" }
+      metadata:
+        type: object
+        additionalProperties: true
+      created_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      updated_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+    required: [id, period_key, category, amount, currency, metadata, created_at, updated_at]
+  ListBudgetAllocationsResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      period_key: { $ref: "#/schemas/PeriodKey" }
+      allocations:
+        type: array
+        items:
+          $ref: "#/schemas/BudgetAllocation"
+      request_id: { type: string }
+    required: [org_id, period_key, allocations, request_id]
+  UpsertBudgetAllocationRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      category: { type: string }
+      amount: { type: number }
+      currency: { $ref: "#/schemas/CurrencyCode" }
+      metadata:
+        type: object
+        additionalProperties: true
+    required: [category, amount]
+  UpsertBudgetAllocationResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      period_key: { $ref: "#/schemas/PeriodKey" }
+      allocation: { $ref: "#/schemas/BudgetAllocation" }
+      request_id: { type: string }
+    required: [org_id, period_key, allocation, request_id]
+
+  RecurringRuleStatus:
+    type: string
+    enum: [active, disabled]
+  RecurringRule:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      status: { $ref: "#/schemas/RecurringRuleStatus" }
+      name: { type: string }
+      cron: { type: string }
+      merchant_id:
+        anyOf:
+          - type: "null"
+          - type: string
+      merchant_name:
+        anyOf:
+          - type: "null"
+          - type: string
+      category:
+        anyOf:
+          - type: "null"
+          - type: string
+      amount_min:
+        anyOf:
+          - type: "null"
+          - type: number
+      amount_max:
+        anyOf:
+          - type: "null"
+          - type: number
+      next_run_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      metadata:
+        type: object
+        additionalProperties: true
+      created_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      updated_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+    required:
+      [
+        id,
+        status,
+        name,
+        cron,
+        merchant_id,
+        merchant_name,
+        category,
+        amount_min,
+        amount_max,
+        next_run_at,
+        metadata,
+        created_at,
+        updated_at,
+      ]
+  ListRecurringRulesResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      rules:
+        type: array
+        items:
+          $ref: "#/schemas/RecurringRule"
+      request_id: { type: string }
+    required: [org_id, rules, request_id]
+  CreateRecurringRuleRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      name: { type: string }
+      cron: { type: string }
+      status: { $ref: "#/schemas/RecurringRuleStatus" }
+      merchant_id: { type: string }
+      merchant_name: { type: string }
+      category: { type: string }
+      amount_min: { type: number }
+      amount_max: { type: number }
+      next_run_at: { type: string, format: date-time }
+      metadata:
+        type: object
+        additionalProperties: true
+    required: [name, cron]
+  CreateRecurringRuleResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      rule: { $ref: "#/schemas/RecurringRule" }
+      request_id: { type: string }
+    required: [org_id, rule, request_id]
+  UpdateRecurringRuleRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      name: { type: string }
+      cron: { type: string }
+      status: { $ref: "#/schemas/RecurringRuleStatus" }
+      merchant_id:
+        anyOf:
+          - type: "null"
+          - type: string
+      merchant_name:
+        anyOf:
+          - type: "null"
+          - type: string
+      category:
+        anyOf:
+          - type: "null"
+          - type: string
+      amount_min:
+        anyOf:
+          - type: "null"
+          - type: number
+      amount_max:
+        anyOf:
+          - type: "null"
+          - type: number
+      next_run_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      metadata:
+        type: object
+        additionalProperties: true
+    required: []
+  UpdateRecurringRuleResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      rule: { $ref: "#/schemas/RecurringRule" }
+      request_id: { type: string }
+    required: [org_id, rule, request_id]
+
+  BudgetEnvelopeRow:
+    type: object
+    additionalProperties: false
+    properties:
+      category: { type: string }
+      planned: { type: number }
+      spent: { type: number }
+      remaining: { type: number }
+      currency: { $ref: "#/schemas/CurrencyCode" }
+      tx_count: { type: integer }
+      unbudgeted: { type: boolean }
+    required: [category, planned, spent, remaining, currency, tx_count, unbudgeted]
+  BudgetEnvelopesTotals:
+    type: object
+    additionalProperties: false
+    properties:
+      planned: { type: number }
+      spent: { type: number }
+      remaining: { type: number }
+      unbudgeted_spent: { type: number }
+    required: [planned, spent, remaining, unbudgeted_spent]
+  BudgetEnvelopesResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      period_key: { $ref: "#/schemas/PeriodKey" }
+      currency: { $ref: "#/schemas/CurrencyCode" }
+      totals: { $ref: "#/schemas/BudgetEnvelopesTotals" }
+      envelopes:
+        type: array
+        items:
+          $ref: "#/schemas/BudgetEnvelopeRow"
+      request_id: { type: string }
+    required: [org_id, period_key, currency, totals, envelopes, request_id]
+
+  RecurringRuleSuggestion:
+    type: object
+    additionalProperties: false
+    properties:
+      name: { type: string }
+      cron: { type: string }
+      status: { type: string, enum: [active] }
+      merchant_id: { type: string }
+      merchant_name: { type: string }
+      category: { type: string }
+      amount_min: { type: number }
+      amount_max: { type: number }
+    required: [name, cron, status]
+  RecurringCandidate:
+    type: object
+    additionalProperties: false
+    properties:
+      candidate_id: { type: string }
+      cadence: { type: string, enum: [weekly, monthly] }
+      confidence: { type: number }
+      occurrences: { type: integer }
+      first_seen_at: { type: string, format: date-time }
+      last_seen_at: { type: string, format: date-time }
+      interval_days_median: { type: integer }
+      amount_avg: { type: number }
+      amount_min: { type: number }
+      amount_max: { type: number }
+      amount_range_pct: { type: number }
+      category: { type: string }
+      merchant_id:
+        anyOf:
+          - type: "null"
+          - type: string
+      merchant_name:
+        anyOf:
+          - type: "null"
+          - type: string
+      description_sample: { type: string }
+      suggested_cron: { type: string }
+      suggested_rule: { $ref: "#/schemas/RecurringRuleSuggestion" }
+      rationale:
+        type: array
+        items: { type: string }
+    required:
+      [
+        candidate_id,
+        cadence,
+        confidence,
+        occurrences,
+        first_seen_at,
+        last_seen_at,
+        interval_days_median,
+        amount_avg,
+        amount_min,
+        amount_max,
+        amount_range_pct,
+        category,
+        merchant_id,
+        merchant_name,
+        description_sample,
+        suggested_cron,
+        suggested_rule,
+        rationale,
+      ]
+  RecurringCandidatesResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      days_back: { type: integer }
+      candidates:
+        type: array
+        items:
+          $ref: "#/schemas/RecurringCandidate"
+      request_id: { type: string }
+    required: [org_id, days_back, candidates, request_id]
+
+  ForecastCategoryRow:
+    type: object
+    additionalProperties: false
+    properties:
+      category: { type: string }
+      expense_monthly_avg: { type: number }
+    required: [category, expense_monthly_avg]
+  ForecastResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      currency: { $ref: "#/schemas/CurrencyCode" }
+      period_key: { $ref: "#/schemas/PeriodKey" }
+      months: { type: integer }
+      baseline:
+        type: object
+        additionalProperties: false
+        properties:
+          days_covered: { type: integer }
+          income_monthly_avg: { type: number }
+          expense_monthly_avg: { type: number }
+          net_monthly_avg: { type: number }
+        required: [days_covered, income_monthly_avg, expense_monthly_avg, net_monthly_avg]
+      recurring_rules:
+        type: object
+        additionalProperties: false
+        properties:
+          active_rules: { type: integer }
+          expense_expected_monthly: { type: number }
+          by_category:
+            type: array
+            items:
+              type: object
+              additionalProperties: false
+              properties:
+                category: { type: string }
+                expense_expected_monthly: { type: number }
+              required: [category, expense_expected_monthly]
+        required: [active_rules, expense_expected_monthly, by_category]
+      top_categories:
+        type: array
+        items:
+          $ref: "#/schemas/ForecastCategoryRow"
+      projection:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          properties:
+            period_key: { $ref: "#/schemas/PeriodKey" }
+            income: { type: number }
+            expense: { type: number }
+            net: { type: number }
+          required: [period_key, income, expense, net]
+      request_id: { type: string }
+    required: [org_id, currency, period_key, months, baseline, recurring_rules, top_categories, projection, request_id]
+
+  ToolRisk:
+    type: string
+    enum: [low, medium, high]
+  ToolCall:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      title: { type: string }
+      description: { type: string }
+      requires_confirmation: { type: boolean }
+      risk: { $ref: "#/schemas/ToolRisk" }
+      tool: { type: string }
+      args:
+        type: object
+        additionalProperties: true
+    required: [id, title, description, requires_confirmation, risk, tool, args]
+  ToolsSimulateRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      tool_call: { $ref: "#/schemas/ToolCall" }
+    required: [tool_call]
+  ToolsSimulateResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      ok: { type: boolean }
+      tool_call_id: { type: string }
+      tool: { type: string }
+      requires_confirmation: { type: boolean }
+      risk: { type: string }
+      preview:
+        type: object
+        additionalProperties: true
+      request_id: { type: string }
+    required: [ok, tool_call_id, tool, requires_confirmation, risk, preview, request_id]
+  ToolsExecuteRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      tool_call: { $ref: "#/schemas/ToolCall" }
+      confirm: { type: boolean }
+      idempotency_key: { type: string }
+    required: [tool_call]
+  ToolsExecuteResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      ok: { type: boolean }
+      tool_execution_id: { type: string }
+      tool_call_id: { type: string }
+      tool: { type: string }
+      idempotency_key: { type: string }
+      idempotent_replay: { type: boolean }
+      result:
+        type: object
+        additionalProperties: true
+      request_id: { type: string }
+    required: [ok, tool_execution_id, tool_call_id, tool, idempotency_key, idempotent_replay, result, request_id]
+
+  AutopilotRunStatus:
+    type: string
+    enum: [planned, simulated, awaiting_approval, approved, executing, succeeded, failed]
+  AutopilotRun:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      goal: { type: string }
+      status: { $ref: "#/schemas/AutopilotRunStatus" }
+      ai:
+        type: object
+        additionalProperties: true
+      tool_calls:
+        type: array
+        items:
+          $ref: "#/schemas/ToolCall"
+      simulations:
+        type: array
+        items:
+          type: object
+          additionalProperties: true
+      approvals:
+        type: object
+        additionalProperties: true
+      executions:
+        type: array
+        items:
+          type: object
+          additionalProperties: true
+      error:
+        anyOf:
+          - type: "null"
+          - type: string
+      created_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      updated_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+    required: [id, goal, status, ai, tool_calls, simulations, approvals, executions, error, created_at, updated_at]
+  AutopilotPlanRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      goal: { type: string }
+      options:
+        type: object
+        additionalProperties: false
+        properties:
+          narrative: { type: boolean }
+    required: [goal]
+  AutopilotRunIdRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      run_id: { type: string, pattern: "^[a-f\\d]{24}$" }
+    required: [run_id]
+  AutopilotApproveRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      run_id: { type: string, pattern: "^[a-f\\d]{24}$" }
+      approve_all: { type: boolean }
+      tool_call_ids:
+        type: array
+        items: { type: string }
+    required: [run_id]
+  AutopilotRunResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      ok: { type: boolean }
+      org_id: { type: string }
+      run: { $ref: "#/schemas/AutopilotRun" }
+      request_id: { type: string }
+    required: [ok, org_id, run, request_id]
+
+  NotificationStatus:
+    type: string
+    enum: [unread, read]
+  Notification:
+    type: object
+    additionalProperties: false
+    properties:
+      id: { type: string }
+      status: { $ref: "#/schemas/NotificationStatus" }
+      title: { type: string }
+      message: { type: string }
+      read_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      created_at:
+        anyOf:
+          - type: "null"
+          - type: string
+            format: date-time
+      metadata:
+        type: object
+        additionalProperties: true
+    required: [id, status, title, message, read_at, created_at, metadata]
+  ListNotificationsResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      notifications:
+        type: array
+        items:
+          $ref: "#/schemas/Notification"
+      request_id: { type: string }
+    required: [org_id, notifications, request_id]
+  MarkNotificationReadResponse:
+    type: object
+    additionalProperties: false
+    properties:
+      org_id: { type: string }
+      notification: { $ref: "#/schemas/Notification" }
+      request_id: { type: string }
+    required: [org_id, notification, request_id]
+
+  TransactionsCsvImportRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      file:
+        type: string
+        format: binary
+      mapping:
+        type: object
+        additionalProperties: false
+        properties:
+          amount: { type: string }
+          date: { type: string }
+          description: { type: string }
+          category: { type: string }
+          type: { type: string }
+          merchant: { type: string }
+        required: [amount, date]
+      account_id: { type: string, pattern: "^[a-f\\d]{24}$" }
+      dry_run: { type: boolean }
+    required: [file, mapping]
+  TransactionsCsvImportResponse:
+    type: object
+    additionalProperties: true
+    properties:
+      org_id: { type: string }
+      ok: { type: boolean }
+      import_id: { type: string }
+      file_name: { type: string }
+      parsed_rows: { type: integer }
+      valid_rows: { type: integer }
+      inserted: { type: integer }
+      duplicates: { type: integer }
+      merchants_touched: { type: integer }
+      dry_run: { type: boolean }
+      request_id: { type: string }
+    required: [org_id, ok, file_name, parsed_rows, valid_rows, inserted, duplicates, merchants_touched, dry_run, request_id]
 

@@ -37,7 +37,7 @@ describe("v1 workflows API", () => {
     csrfToken = csrf.body.csrf_token as string;
   });
 
-  it("creates and runs a workflow (inline fallback when REDIS_URL missing)", async () => {
+  it("creates and runs a workflow (inline)", async () => {
     const created = await request(app)
       .post("/api/v1/workflows")
       .set("Cookie", [cookie, csrfCookie])

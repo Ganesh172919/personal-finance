@@ -71,6 +71,14 @@ export function PlanAndUsageDialog() {
           formatNumber(entitlements.remaining.api_requests),
         ],
         [
+          "Autopilot actions",
+          formatNumber(entitlements.usage.autopilot_actions),
+          formatNumber(entitlements.base_limits.autopilot_actions),
+          formatNumber(entitlements.credits.autopilot_actions),
+          formatNumber(entitlements.limits.autopilot_actions),
+          formatNumber(entitlements.remaining.autopilot_actions),
+        ],
+        [
           "Workflow runs",
           formatNumber(entitlements.usage.workflow_runs),
           formatNumber(entitlements.base_limits.workflow_runs),
