@@ -1,6 +1,6 @@
 import { Suspense, lazy } from "react";
-import { Switch, Route, Redirect, useLocation } from "wouter";
-import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { Switch, Route, Redirect } from "wouter";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { Toaster } from "@/components/ui/Toaster";
 import { TooltipProvider } from "@/components/ui/ToolTip";
@@ -9,7 +9,8 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { Sidebar } from "@/components/Sidebar";
 import { FeatureLimitDialog } from "@/components/FeatureLimitDialog";
 import { PlanAndUsageDialog } from "@/components/PlanAndUsageDialog";
-import type { IFinancialProfile } from "@/types";
+import { useRealtimeEvents } from "@/hooks/useRealtimeEvents";
+
 
 const Login = lazy(() => import("@/pages/Login"));
 const Register = lazy(() => import("@/pages/Register"));
@@ -24,7 +25,6 @@ const Transactions = lazy(() => import("@/pages/Transactions"));
 const FinanceOS = lazy(() => import("@/pages/FinanceOS"));
 const GoalsAndDebts = lazy(() => import("@/pages/GoalsAndDebts"));
 const Onboarding = lazy(() => import("@/pages/Onboarding"));
-const ComingSoon = lazy(() => import("@/pages/ComingSoon"));
 const Notes = lazy(() => import("@/pages/Notes"));
 const Tasks = lazy(() => import("@/pages/Tasks"));
 const Receipts = lazy(() => import("@/pages/Receipts"));
@@ -35,34 +35,27 @@ const Exports = lazy(() => import("@/pages/Exports"));
 const Workflows = lazy(() => import("@/pages/Workflows"));
 const AcceptInvite = lazy(() => import("@/pages/AcceptInvite"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
+const GrowthStories = lazy(() => import("./pages/GrowthStories"));
+const GrowthStoryDetail = lazy(() => import("./pages/GrowthStoryDetail"));
+const Blogs = lazy(() => import("./pages/Blogs"));
+const BlogDetail = lazy(() => import("./pages/BlogDetail"));
+const Documentation = lazy(() => import("@/pages/Documentation"));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  const [location] = useLocation();
 
-  const { data: profile, isLoading: profileLoading } = useQuery<IFinancialProfile | null>({
-    queryKey: ["/api/financial-profiles/me"],
-    enabled: !!user,
-  });
-
-  if (loading || profileLoading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+          <p className="text-muted-foreground text-sm animate-pulse">Loading CognitionOS...</p>
+        </div>
+      </div>
+    );
   }
 
   if (!user) return <Redirect to="/login" />;
-
-  const localOnboardingCompleted = localStorage.getItem("onboarding_completed") === "true";
-  const hasServerOnboardingField =
-    !!profile && Object.prototype.hasOwnProperty.call(profile, "onboardingCompletedAt");
-  const onboardingCompleted = hasServerOnboardingField
-    ? Boolean(profile?.onboardingCompletedAt)
-    : localOnboardingCompleted;
-
-  const allowPreOnboardingRoutes = location.startsWith("/chat");
-
-  if (!onboardingCompleted && location !== "/onboarding" && !allowPreOnboardingRoutes) {
-    return <Redirect to="/onboarding" />;
-  }
 
   return <>{children}</>;
 }
@@ -93,7 +86,14 @@ function Router() {
   const { user } = useAuth();
   return (
     <Suspense
-      fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+            <p className="text-muted-foreground text-sm animate-pulse">Loading CognitionOS...</p>
+          </div>
+        </div>
+      }
     >
       <Switch>
         {/* Public Routes - Accessible to everyone */}
@@ -121,23 +121,31 @@ function Router() {
         <Route path="/tasks"><ProtectedRoute><AppAuthenticatedLayout><Tasks /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/receipts"><ProtectedRoute><AppAuthenticatedLayout><Receipts /></AppAuthenticatedLayout></ProtectedRoute></Route>
         <Route path="/onboarding"><ProtectedRoute><AppAuthenticatedLayout><Onboarding /></AppAuthenticatedLayout></ProtectedRoute></Route>
-        <Route path="/blogs">
-          <ProtectedRoute>
-            <AppAuthenticatedLayout>
-              <ComingSoon
-                title="Blogs"
-                description="Curated finance articles are being prepared for this release."
-              />
-            </AppAuthenticatedLayout>
-          </ProtectedRoute>
-        </Route>
         <Route path="/growth-stories">
           <ProtectedRoute>
             <AppAuthenticatedLayout>
-              <ComingSoon
-                title="Growth Stories"
-                description="Personalized learning journeys will be available in the next milestone."
-              />
+              <GrowthStories />
+            </AppAuthenticatedLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/growth-stories/:slug">
+          <ProtectedRoute>
+            <AppAuthenticatedLayout>
+              <GrowthStoryDetail />
+            </AppAuthenticatedLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/blogs">
+          <ProtectedRoute>
+            <AppAuthenticatedLayout>
+              <Blogs />
+            </AppAuthenticatedLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/blogs/:slug">
+          <ProtectedRoute>
+            <AppAuthenticatedLayout>
+              <BlogDetail />
             </AppAuthenticatedLayout>
           </ProtectedRoute>
         </Route>
@@ -162,6 +170,13 @@ function Router() {
             </AppAuthenticatedLayout>
           </ProtectedRoute>
         </Route>
+        <Route path="/docs">
+          <ProtectedRoute>
+            <AppAuthenticatedLayout>
+              <Documentation />
+            </AppAuthenticatedLayout>
+          </ProtectedRoute>
+        </Route>
 
         {/* Default redirect - Now goes to dashboard as primary interface */}
         <Route path="/">{user ? <Redirect to="/dashboard" /> : <Redirect to="/login" />}</Route>
@@ -172,17 +187,24 @@ function Router() {
   );
 }
 
+function RealtimeEventsProvider({ children }: { children: React.ReactNode }) {
+  useRealtimeEvents();
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <TooltipProvider>
-            <Toaster />
-            <FeatureLimitDialog />
-            <PlanAndUsageDialog />
-            <Router />
-          </TooltipProvider>
+          <RealtimeEventsProvider>
+            <TooltipProvider>
+              <Toaster />
+              <FeatureLimitDialog />
+              <PlanAndUsageDialog />
+              <Router />
+            </TooltipProvider>
+          </RealtimeEventsProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

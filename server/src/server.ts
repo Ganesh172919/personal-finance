@@ -7,6 +7,8 @@ import { processPendingDomainEvents } from "./services/domainEventTriggers";
 import { startPluginManager } from "./modules/plugins/pluginManager";
 import { startDomainEventFanout } from "./modules/realtime/domainEventFanout";
 import { startWorkflowScheduler } from "./services/workflowScheduler";
+import { closeRedis } from "./config/redis";
+import { initTelemetry, shutdownTelemetry } from "./config/telemetry";
 
 let server: ReturnType<ReturnType<typeof createApp>["listen"]> | null = null;
 let shuttingDown = false;
@@ -52,6 +54,8 @@ const shutdown = async (reason: string, exitCode = 0) => {
       workflowSchedulerStop = null;
     }
     await closeDB();
+    await closeRedis();
+    await shutdownTelemetry();
     logger.info("Graceful shutdown completed.");
     process.exit(exitCode);
   } catch (error) {
@@ -62,6 +66,10 @@ const shutdown = async (reason: string, exitCode = 0) => {
 
 async function start() {
   const env = getEnv();
+
+  // Initialize telemetry before anything else (must be first for auto-instrumentation)
+  initTelemetry();
+
   configurePassport();
   await connectDB();
 

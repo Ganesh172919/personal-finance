@@ -350,6 +350,89 @@ export const processAICommand = async (req: Request, res: Response) => {
   }
 };
 
+export const processAiStream = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as IUserDocument;
+    const { command, options } = req.body as any;
+    const { requestId } = req;
+    const orgId = requireOrgId(req);
+    const narrative = typeof options?.narrative === "boolean" ? options.narrative : false;
+
+    // Optional: enforce limits, but we can't easily record exact usage until stream ends.
+    await enforceFeatureLimit({
+      orgId,
+      userId: user._id,
+      feature: "monthly_ai_calls",
+      units: 1,
+      requestId,
+    });
+
+    const [profile, journalContext, orgSettings] = await Promise.all([
+      ensureProfileWithMigration({ orgId, userId: user._id }),
+      getJournalContextForAi({ orgId, userId: user._id }),
+      getOrgAiSettings(orgId),
+    ]);
+
+    const txResult = await fetchTransactionsForAi({ orgId, userId: user._id });
+
+    const { request: aiRequest } = buildProcessRequest({
+      userInput: command,
+      profile,
+      orgId: orgId.toString(),
+      userId: user._id.toString(),
+      orgSettings,
+      transactions: txResult.transactions,
+      totalTransactions: txResult.stats.totalTransactions,
+      sessionSummary: journalContext.summary || undefined,
+      narrative,
+    });
+
+    logger.info(`[requestId=${requestId}] Starting SSE proxy to Python AI Core`);
+
+    const { streamAiCoreRequest } = await import("../services/aiCoreClient");
+    
+    // Set up SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no"); // Important for Nginx if present
+
+    try {
+      const stream = await streamAiCoreRequest(aiRequest, requestId, { userId: user._id.toString() });
+      
+      // Pipe the Axios stream directly to the Express response
+      stream.pipe(res);
+
+      stream.on("error", (err: any) => {
+        logger.error(`[requestId=${requestId}] SSE proxy stream error`, err);
+        if (!res.headersSent) {
+          res.status(500).end();
+        } else {
+          // If already streaming, send an error event and close
+          res.write(`data: ${JSON.stringify({ phase: "error", message: "Stream interrupted" })}\n\n`);
+          res.end();
+        }
+      });
+    } catch (error: any) {
+      if (!res.headersSent) {
+        throw error; // Let outer catch block handle it
+      }
+      res.write(`data: ${JSON.stringify({ phase: "error", message: error.message })}\n\n`);
+      res.end();
+    }
+  } catch (error: any) {
+    logger.error(`[requestId=${req.requestId}] AI streaming error:`, error.message);
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to start AI stream",
+        error: error.message,
+        request_id: req.requestId
+      });
+    }
+  }
+};
+
 export const processWhatIfScenario = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;

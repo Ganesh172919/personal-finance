@@ -35,7 +35,7 @@ const journalEntrySchema = new Schema<IJournalEntryDocument>(
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     fileId: { type: Schema.Types.ObjectId, required: true, index: true },
     strokes: { type: Schema.Types.Mixed, required: false },
-    recognizedText: { type: String, required: true, default: "" },
+    recognizedText: { type: String, required: false, default: "" },
     confidence: { type: Schema.Types.Mixed, required: true, default: {} },
     parsedIntent: { type: Schema.Types.Mixed, required: true, default: {} },
   },

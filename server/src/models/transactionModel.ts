@@ -1,5 +1,6 @@
 import { Schema, model, Document, Types } from "mongoose";
 import type { MutationSource } from "../types/provenance";
+import { orgScopePlugin } from "../utils/orgScopePlugin";
 
 export type TransactionType = "income" | "expense" | "investment";
 
@@ -72,6 +73,9 @@ const transactionSchema = new Schema<ITransactionRecordDocument>(
   { timestamps: true }
 );
 
+// Org isolation guard (warns in dev if query lacks orgId)
+transactionSchema.plugin(orgScopePlugin);
+
 transactionSchema.index({ orgId: 1, userId: 1, date: -1 });
 transactionSchema.index({ orgId: 1, userId: 1, accountId: 1, date: -1 });
 transactionSchema.index({ orgId: 1, userId: 1, merchantId: 1, date: -1 });
@@ -80,6 +84,7 @@ transactionSchema.index({ orgId: 1, userId: 1, category: 1, date: -1 });
 transactionSchema.index({ orgId: 1, userId: 1, "source.origin": 1, date: -1 });
 transactionSchema.index({ orgId: 1, externalId: 1 }, { unique: true, sparse: true });
 transactionSchema.index({ legacyId: 1 }, { unique: true, sparse: true });
+transactionSchema.index({ orgId: 1, date: -1, amount: 1 }); // budget envelope aggregation
 
 const TransactionModel = model<ITransactionRecordDocument>("Transaction", transactionSchema);
 export default TransactionModel;

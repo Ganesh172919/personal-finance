@@ -1,5 +1,13 @@
 import { motion } from "framer-motion";
-import { Bell } from "lucide-react";
+import { Bell, ArrowRight, BookOpen, TrendingUp } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
+
+// Corrected Imports: All component imports now use PascalCase
+import { getBlogs, getFeaturedGrowthStories } from "@/lib/apiClient";
+import { BlogCard } from "@/components/BlogCard";
+import { GrowthStoryCard } from "@/components/GrowthStoryCard";
+import { IBlogPost, IGrowthStory } from "@/types/apiTypes";
 
 // Corrected Imports: All component imports now use PascalCase
 import { Button } from "@/components/ui/Button";
@@ -173,8 +181,112 @@ export default function Dashboard() {
             </div>
           </Card>
         </motion.div>
+
+        {/* --- Content Discovery Sections (Blogs & Growth Stories) --- */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 mt-8">
+            {/* Blogs Section */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 1.1 }}
+            >
+              <Card className="p-6 h-full flex flex-col">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <BookOpen className="w-5 h-5 text-primary" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground">Latest Insights</h3>
+                  </div>
+                  <Link href="/blogs">
+                    <Button variant="ghost" className="text-primary hover:text-primary/80 group text-sm font-medium">
+                      View all blogs <ArrowRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
+                    </Button>
+                  </Link>
+                </div>
+                
+                <ContentPreviewSection type="blogs" />
+              </Card>
+            </motion.div>
+
+            {/* Growth Stories Section */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 1.2 }}
+            >
+              <Card className="p-6 h-full flex flex-col">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-chart-2/10 rounded-lg">
+                      <TrendingUp className="w-5 h-5 text-chart-2" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground">Inspiring Journeys</h3>
+                  </div>
+                  <Link href="/growth-stories">
+                    <Button variant="ghost" className="text-chart-2 hover:text-chart-2/80 group text-sm font-medium">
+                      View all stories <ArrowRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
+                    </Button>
+                  </Link>
+                </div>
+                
+                <ContentPreviewSection type="stories" />
+              </Card>
+            </motion.div>
+        </div>
         </div>
       </div>
     </main>
   );
+}
+
+// Helper component for dashboard content previews
+function ContentPreviewSection({ type }: { type: 'blogs' | 'stories' }) {
+  const { data: blogData, isLoading: loadingBlogs } = useQuery({
+    queryKey: ["blogs", "latest-preview"],
+    queryFn: () => getBlogs({ limit: 2 }),
+    enabled: type === 'blogs'
+  });
+
+  const { data: storyData, isLoading: loadingStories } = useQuery({
+    queryKey: ["growth-stories", "featured-preview"],
+    queryFn: () => getFeaturedGrowthStories(2),
+    enabled: type === 'stories'
+  });
+
+  if (type === 'blogs') {
+    if (loadingBlogs) return <div className="space-y-4">{[1, 2].map(i => <div key={i} className="h-40 bg-muted/50 rounded-xl animate-pulse" />)}</div>;
+    
+    return (
+      <div className="space-y-4 flex-1">
+        {blogData?.posts?.slice(0, 2).map((post: IBlogPost) => (
+           <div key={post._id} className="relative group">
+              <BlogCard post={post} />
+              <Link href={`/blogs/${post.slug}`} className="absolute inset-0 z-10">
+                 <span className="sr-only">Read {post.title}</span>
+              </Link>
+           </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (type === 'stories') {
+    if (loadingStories) return <div className="space-y-4">{[1, 2].map(i => <div key={i} className="h-40 bg-muted/50 rounded-xl animate-pulse" />)}</div>;
+    
+    return (
+      <div className="space-y-4 flex-1">
+        {storyData?.stories?.slice(0, 2).map((story: IGrowthStory) => (
+           <div key={story._id} className="relative group">
+              <GrowthStoryCard story={story} />
+              <Link href={`/growth-stories/${story.slug}`} className="absolute inset-0 z-10">
+                 <span className="sr-only">Read {story.title}</span>
+              </Link>
+           </div>
+        ))}
+      </div>
+    );
+  }
+
+  return null;
 }

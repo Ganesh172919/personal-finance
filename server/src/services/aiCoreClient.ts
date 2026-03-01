@@ -340,6 +340,7 @@ export const processAiCoreRequest = async (
 
         markSuccess();
         recordAiCoreRequest({ endpoint: "process", durationMs: Date.now() - startedAt, fallbackUsed: false });
+        // NOTE: Usage tracking happens in the background. We don't block the response.
         return normalizeProcessResponse(data, requestId);
       } catch (error) {
         markFailure(env);
@@ -352,6 +353,51 @@ export const processAiCoreRequest = async (
       }
     },
   });
+};
+
+export const streamAiCoreRequest = async (
+  payload: AiCoreProcessRequest,
+  requestId: string,
+  options?: { userId?: string }
+): Promise<any> => {
+  const startedAt = Date.now();
+
+  const env = getEnv();
+
+  // For streaming, we throw errors instead of returning a fallback block
+  // This allows the controller to handle SSE fallback formatting
+  if (isCircuitOpen()) {
+    recordAiCoreRequest({ endpoint: "process_stream", durationMs: Date.now() - startedAt, fallbackUsed: true });
+    throw new Error("AI core circuit breaker open");
+  }
+
+  const healthy = await checkAiCoreHealth(env, requestId);
+  if (!healthy) {
+    markFailure(env);
+    recordAiCoreRequest({ endpoint: "process_stream", durationMs: Date.now() - startedAt, fallbackUsed: true });
+    const detail = lastHealthError ? `AI core health check failed: ${lastHealthError}` : "AI core health check failed";
+    throw new Error(detail);
+  }
+
+  try {
+    const http = getHttpClient();
+    // Return the response object directly (responseType: stream)
+    const response = await http.post("/api/agents/process/stream", payload, {
+      headers: {
+        "X-Request-Id": requestId,
+        Accept: "text/event-stream",
+      },
+      responseType: "stream",
+    });
+
+    markSuccess();
+    recordAiCoreRequest({ endpoint: "process_stream", durationMs: Date.now() - startedAt, fallbackUsed: false });
+    return response.data;
+  } catch (error) {
+    markFailure(env);
+    recordAiCoreRequest({ endpoint: "process_stream", durationMs: Date.now() - startedAt, fallbackUsed: true });
+    throw new Error(extractErrorReason(error));
+  }
 };
 
 export const processAiCoreScenario = async (

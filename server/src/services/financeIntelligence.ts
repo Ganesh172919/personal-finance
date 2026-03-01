@@ -6,6 +6,7 @@ import MerchantModel from "../models/merchantModel";
 import OrganizationModel from "../models/organizationModel";
 import RecurringRuleModel from "../models/recurringRuleModel";
 import TransactionModel from "../models/transactionModel";
+import { cacheGet, cacheSet } from "../config/redis";
 
 const clampInt = (value: unknown, fallback: number, min: number, max: number) => {
   const parsed = Number(value);
@@ -55,6 +56,10 @@ export const getBudgetEnvelopes = async (params: {
   orgId: mongoose.Types.ObjectId;
   periodKey: string;
 }) : Promise<BudgetEnvelopesResult> => {
+  const cacheKey = `env:${params.orgId.toString()}:${params.periodKey}`;
+  const cached = await cacheGet<BudgetEnvelopesResult>(cacheKey);
+  if (cached) return cached;
+
   const { start, end } = parsePeriodKey(params.periodKey);
 
   const org = await OrganizationModel.findById(params.orgId).select({ currency: 1 }).lean();
@@ -144,7 +149,7 @@ export const getBudgetEnvelopes = async (params: {
     { planned: 0, spent: 0, remaining: 0, unbudgeted_spent: 0 }
   );
 
-  return {
+  const result: BudgetEnvelopesResult = {
     org_id: params.orgId.toString(),
     period_key: params.periodKey,
     currency,
@@ -161,6 +166,9 @@ export const getBudgetEnvelopes = async (params: {
       remaining: Math.round(row.remaining * 100) / 100,
     })),
   };
+
+  await cacheSet(cacheKey, result, 300); // 5 min TTL
+  return result;
 };
 
 const normalizeRecurringKey = (value: string) => {

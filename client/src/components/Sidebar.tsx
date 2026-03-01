@@ -20,7 +20,8 @@ import {
   Building2,
   Workflow,
   Download,
-  Wallet
+  Wallet,
+  BookOpen
 } 
 from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -55,6 +56,7 @@ const navigationItems: NavigationItem[] = [
   { href: "/billing", icon: CreditCard, label: "Billing" },
   { href: "/blogs", icon: FileText, label: "Blogs" },
   { href: "/growth-stories", icon: TrendingUp, label: "Growth Stories" },
+  { href: "/docs", icon: BookOpen, label: "Documentation" },
   { href: "/notes", icon: StickyNote, label: "Note Taking", requiresFeature: "journal_enabled" },
 ];
 
@@ -87,13 +89,15 @@ export function Sidebar() {
     >
       {/* Logo and Brand */}
       <div className="p-6 border-b border-border">
-        <Link href="/dashboard" asChild>
-          <motion.a
-            className="flex items-center space-x-3 cursor-pointer"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+        >
+          <Link
+            href="/dashboard"
+            className="flex items-center space-x-3 cursor-pointer no-underline"
             data-testid="brand-logo"
           >
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
@@ -103,12 +107,12 @@ export function Sidebar() {
               <h1 className="text-lg font-semibold text-foreground">Personal Finance</h1>
               <p className="text-xs text-muted-foreground">AI Financial Strategist</p>
             </div>
-          </motion.a>
-        </Link>
+          </Link>
+        </motion.div>
       </div>
 
       {/* Navigation Menu */}
-      <nav className="flex-1 p-6 space-y-2" data-testid="navigation">
+      <nav className="flex-1 p-6 space-y-2 overflow-y-auto" data-testid="navigation">
         {visibleNavItems.map((item, index) => { 
           const isActive = location === item.href || location.startsWith(`${item.href}/`);
 
@@ -118,24 +122,23 @@ export function Sidebar() {
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.1 }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
             >
-              <Link href={item.href} asChild>
-                <motion.a
-                  className={`flex items-center space-x-3 p-3 rounded-lg transition-colors cursor-pointer ${
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-foreground hover:bg-accent hover:text-accent-foreground"
-                  }`}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  data-testid={`nav-${item.label
-                    .toLowerCase()
-                    .replace(/\s/g, "-")}`}
-                  aria-current={isActive ? "page" : undefined}
-                >
-                  <item.icon className="w-5 h-5" />
-                  <span className="font-medium">{item.label}</span>
-                </motion.a>
+              <Link
+                href={item.href}
+                className={`flex items-center space-x-3 p-3 rounded-lg transition-colors cursor-pointer no-underline ${
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "text-foreground hover:bg-accent hover:text-accent-foreground"
+                }`}
+                data-testid={`nav-${item.label
+                  .toLowerCase()
+                  .replace(/\s/g, "-")}`}
+                aria-current={isActive ? "page" : undefined}
+              >
+                <item.icon className="w-5 h-5" />
+                <span className="font-medium">{item.label}</span>
               </Link>
             </motion.div>
           );

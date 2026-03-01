@@ -7,6 +7,7 @@ import { HttpError } from "../middleware/httpError";
 import { recordUsageEvent } from "../observability/metrics";
 import { CREDIT_FEATURES, type CreditFeature } from "../models/creditGrantModel";
 import { sumCreditsByFeature } from "./credits";
+import { cacheGet, cacheSet, cacheDel } from "../config/redis";
 
 export type PlanLimit = {
   monthly_ai_calls: number;
@@ -255,9 +256,22 @@ export const getOrCreateEntitlement = async (params: { orgId?: Types.ObjectId; u
   return entitlement;
 };
 
-export const getResolvedEntitlements = async (params: { orgId?: Types.ObjectId; userId: Types.ObjectId }) => {
-  const entitlement = await getOrCreateEntitlement(params);
+export const getResolvedEntitlements = async (params: { orgId?: Types.ObjectId; userId: Types.ObjectId }): Promise<{
+  entitlement: IEntitlementDocument;
+  base_limits: PlanLimit;
+  credits: Record<CreditFeature, number>;
+  limits: PlanLimit;
+  usage: Record<string, number>;
+  remaining: Record<string, number | boolean>;
+  period_key: string;
+}> => {
   const periodKey = getCurrentPeriodKey();
+  const cacheKey = `ent:${params.orgId?.toString() ?? params.userId.toString()}:${periodKey}`;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cached = await cacheGet<any>(cacheKey);
+  if (cached) return cached;
+
+  const entitlement = await getOrCreateEntitlement(params);
   const baseLimits = resolvePlanLimits(entitlement);
   const usage = await sumUsageByFeature({ orgId: params.orgId, userId: params.userId, periodKey });
 
@@ -285,7 +299,7 @@ export const getResolvedEntitlements = async (params: { orgId?: Types.ObjectId; 
     marketplace_installs: Math.max(0, limits.marketplace_installs - usage.marketplace_installs),
   };
 
-  return {
+  const result = {
     entitlement,
     base_limits: baseLimits,
     credits,
@@ -294,6 +308,9 @@ export const getResolvedEntitlements = async (params: { orgId?: Types.ObjectId; 
     remaining,
     period_key: periodKey,
   };
+
+  await cacheSet(cacheKey, result, 60); // 60s TTL
+  return result;
 };
 
 export const enforceFeatureLimit = async (params: {
@@ -429,6 +446,10 @@ export const recordFeatureUsage = async (params: {
         { upsert: true }
       );
     }
+    // Invalidate entitlements cache on usage record
+    const entCacheKey = `ent:${params.orgId?.toString() ?? params.userId.toString()}:${periodKey}`;
+    await cacheDel(entCacheKey);
+
     return created;
   } catch (error: any) {
     if (error?.code === 11000 && params.idempotencyKey) {

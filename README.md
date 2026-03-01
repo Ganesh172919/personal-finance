@@ -28,6 +28,19 @@ A full-stack personal finance management application designed to help users trac
 - **File Handling:** Multer, CSV parsing (papaparse)
 - **Other Services:** Stripe (Payments), Nodemailer (Emails), PDFKit (Reporting)
 
+## 📚 Documentation
+
+| Document                               | Description                                          |
+| -------------------------------------- | ---------------------------------------------------- |
+| [Architecture](./docs/ARCHITECTURE.md) | System architecture, data flow, and design decisions |
+| [Setup Guide](./docs/SETUP.md)         | Environment setup & configuration                    |
+| [API Reference](./docs/API.md)         | Complete REST API endpoint reference                 |
+| [Database Models](./docs/DATABASE.md)  | All 44 Mongoose models & schema reference            |
+| [AI Core](./docs/AI_CORE.md)           | Multi-agent AI system documentation                  |
+| [Frontend](./docs/FRONTEND.md)         | React client architecture & component guide          |
+| [Deployment](./docs/DEPLOYMENT.md)     | Production deployment & operations guide             |
+| [Contributing](./docs/CONTRIBUTING.md) | Contribution guidelines & coding standards           |
+
 ## 📁 Project Structure
 
 The project is structured as a monorepo with separate client and server directories:

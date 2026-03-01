@@ -176,6 +176,10 @@ const envSchema = z
     EMAIL_PORT: optionalPortFromEnv,
     EMAIL_SECURE: optionalBoolFromEnv,
     EMAIL_REQUIRE_TLS: optionalBoolFromEnv,
+
+    // Infrastructure (optional)
+    REDIS_URL: optionalNonEmptyString,
+    OTEL_ENDPOINT: optionalNonEmptyString,
   });
 
 export type Env = Omit<z.infer<typeof envSchema>, "COOKIE_SECURE" | "TRUST_PROXY"> & {

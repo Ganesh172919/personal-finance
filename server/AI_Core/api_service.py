@@ -1073,5 +1073,244 @@ async def optimize_debt(request: UserProfileRequest):
         logger.error(f"Error optimizing debt: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/agents/process/stream")
+async def process_financial_request_stream(request: ProcessRequest, http_request: Request):
+    """SSE streaming variant of /api/agents/process.
+
+    Emits Server-Sent Events so the client can show live progress:
+      - phase:routing  — request accepted, routing to agents
+      - phase:trace    — each agent start/finish as it happens
+      - phase:complete — full result payload (same shape as ProcessResponse)
+      - phase:error    — if something went wrong
+
+    Falls back to a single error event if the workflow fails entirely.
+    """
+    import json as _json
+    from starlette.responses import StreamingResponse
+
+    request_id = getattr(http_request.state, "request_id", str(uuid4()))
+
+    async def event_generator():
+        # 1️⃣ Routing phase
+        yield f"data: {_json.dumps({'phase': 'routing', 'request_id': request_id})}\n\n"
+
+        try:
+            user_profile_dict = request.user_profile.model_dump() if request.user_profile else None
+
+            profile_instance = None
+            if user_profile_dict:
+                goals = [
+                    FinancialGoal(
+                        name=g["name"],
+                        target=g["target"],
+                        timeline_months=g["timeline_months"],
+                        priority=g.get("priority", 1),
+                    )
+                    for g in user_profile_dict.get("financial_goals", [])
+                ]
+                profile_instance = UserProfile(
+                    age=user_profile_dict["age"],
+                    annual_income=user_profile_dict["annual_income"],
+                    monthly_expenses=user_profile_dict["monthly_expenses"],
+                    savings=user_profile_dict["savings"],
+                    debts=user_profile_dict["debts"],
+                    financial_goals=goals,
+                    risk_tolerance=user_profile_dict["risk_tolerance"],
+                    investment_experience=user_profile_dict["investment_experience"],
+                    time_horizon=user_profile_dict["time_horizon"],
+                    transactions=user_profile_dict.get("transactions", []),
+                    currency=user_profile_dict.get("currency"),
+                    locale=user_profile_dict.get("locale"),
+                    timezone=user_profile_dict.get("timezone"),
+                )
+                profile_data_for_workflow = profile_instance.model_dump()
+            else:
+                profile_data_for_workflow = None
+
+            conversation_history = (
+                [msg.model_dump() for msg in request.conversation_history]
+                if request.conversation_history
+                else []
+            )
+            options = request.options.model_dump() if request.options else {"narrative": False}
+            org_id = (request.org_id or "").strip() if hasattr(request, "org_id") else ""
+            user_id = (request.user_id or "").strip() if hasattr(request, "user_id") else ""
+            session_summary = request.session_summary
+
+            # Memory retrieval
+            if _memory_store is not None and _extract_memories is not None and org_id and user_id:
+                try:
+                    memories = _memory_store.search(
+                        org_id=org_id,
+                        user_id=user_id,
+                        query=request.user_input,
+                        limit=int(getattr(settings, "MEMORY_TOP_K", 8)),
+                    )
+                    if memories:
+                        lines = [
+                            f"- {m.key}: {m.value} (confidence {m.confidence:.2f}, source {m.source})"
+                            for m in memories
+                        ]
+                        memory_block = "User memory (preferences/facts):\n" + "\n".join(lines)
+                        base = (session_summary or "").strip()
+                        session_summary = (base + "\n\n" + memory_block).strip() if base else memory_block
+                except Exception:
+                    pass
+
+            # 2️⃣ Yield a trace event for workflow start
+            yield f"data: {_json.dumps({'phase': 'trace', 'entry': {'agent': 'master', 'startedAt': nowIso(), 'status': 'running'}})}\n\n"
+
+            # Process through workflow (the heavy computation)
+            result = workflow.process_request(
+                request.user_input,
+                profile_data_for_workflow,
+                conversation_history=conversation_history,
+                session_summary=session_summary,
+                options=options,
+            )
+
+            # 3️⃣ Emit trace events for each agent that participated
+            workflow_trace = result.get("workflow_trace", []) or []
+            for entry in workflow_trace:
+                safe_entry = _simplify_for_json(entry)
+                yield f"data: {_json.dumps({'phase': 'trace', 'entry': safe_entry})}\n\n"
+
+            # Memory extraction (fire-and-forget)
+            if _memory_store is not None and _extract_memories is not None and org_id and user_id:
+                try:
+                    extracted = _extract_memories(request.user_input)
+                    _memory_store.upsert_many(org_id=org_id, user_id=user_id, records=extracted)
+                except Exception:
+                    pass
+
+            # Build the same response as the non-streaming endpoint
+            final_output = result.get("final_output", "")
+
+            def normalize_priority(value):
+                v = str(value or "medium").lower().strip()
+                return v if v in {"low", "medium", "high"} else "medium"
+
+            if isinstance(final_output, dict):
+                response_text = final_output.get("response", str(final_output))
+                agent = final_output.get("agent", "master")
+                action_type = final_output.get("actionType")
+                priority = normalize_priority(final_output.get("priority", "medium"))
+                fallback_used = bool(final_output.get("fallback_used")) or bool(result.get("fallback_used"))
+                plan_dict = final_output.get("plan") if isinstance(final_output.get("plan"), dict) else None
+                raw_insights = final_output.get("insights", [])
+                insights = []
+                if isinstance(raw_insights, list):
+                    for item in raw_insights:
+                        if isinstance(item, dict):
+                            insights.append({
+                                "agent": str(item.get("agent", "unknown")),
+                                "title": str(item.get("title", "Insight")),
+                                "description": str(item.get("description", "")),
+                                "actionType": str(item.get("actionType", "review")),
+                            })
+            else:
+                response_text = str(final_output)
+                agent = "financial_educator"
+                action_type = "start_learning"
+                priority = "medium"
+                insights = []
+                fallback_used = bool(result.get("fallback_used"))
+
+            agents_involved = []
+            for key, name in [
+                ("income_analysis", "income_expense_analyzer"),
+                ("budget_plan", "budget_planner"),
+                ("investment_advice", "investment_advisor"),
+                ("debt_optimization", "debt_optimizer"),
+                ("financial_education", "financial_educator"),
+            ]:
+                if result.get(key):
+                    agents_involved.append(name)
+            if not agents_involved:
+                agents_involved = [agent or "master"]
+
+            if workflow_trace:
+                traced = [e.get("agent") for e in workflow_trace if e.get("agent")]
+                if traced:
+                    agents_involved = list(dict.fromkeys(traced))
+
+            analysis_raw = result.get("current_analysis", {}).get("type", "comprehensive")
+            analysis_type = (
+                str(analysis_raw).split(".")[-1].lower()
+                if hasattr(analysis_raw, "name")
+                else str(analysis_raw).lower()
+            )
+
+            if plan_dict is not None:
+                plan = Plan.model_validate(plan_dict)
+            else:
+                plan = build_plan(
+                    PlanInputs(
+                        user_profile=profile_data_for_workflow,
+                        income_analysis=_simplify_for_json(result.get("income_analysis")),
+                        budget_plan=_simplify_for_json(result.get("budget_plan")),
+                        investment_advice=_simplify_for_json(result.get("investment_advice")),
+                        debt_optimization=_simplify_for_json(result.get("debt_optimization")),
+                        financial_education=_simplify_for_json(result.get("financial_education")),
+                    )
+                )
+
+            currency_code = "USD"
+            if profile_data_for_workflow and isinstance(profile_data_for_workflow, dict):
+                candidate = str(profile_data_for_workflow.get("currency") or "").strip().upper()
+                if len(candidate) == 3 and candidate.isalpha():
+                    currency_code = candidate
+
+            if not str(response_text).strip():
+                response_text = render_plan_markdown(plan, currency_code=currency_code)
+
+            # 4️⃣ Complete event with full result
+            complete_payload = {
+                "phase": "complete",
+                "result": _simplify_for_json({
+                    "success": True,
+                    "final_output": str(response_text),
+                    "agent": str(agent or "master"),
+                    "actionType": str(action_type) if action_type else None,
+                    "priority": normalize_priority(priority),
+                    "insights": insights,
+                    "analysis_type": str(analysis_type or "comprehensive"),
+                    "agents_involved": agents_involved,
+                    "workflow_trace": _simplify_for_json(workflow_trace),
+                    "fallback_used": bool(fallback_used),
+                    "llm_call_count": int(get_llm_call_count() or 0),
+                    "request_id": str(request_id),
+                    "plan": _simplify_for_json(plan.model_dump()),
+                    "usage": _simplify_for_json(get_llm_usage()),
+                }),
+            }
+            yield f"data: {_json.dumps(complete_payload)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            logger.error(f"[requestId={request_id}] Streaming error: {str(e)}", exc_info=True)
+            FALLBACK_TOTAL.labels(endpoint="process_stream").inc()
+            error_payload = {"phase": "error", "message": str(e)[:500], "request_id": request_id}
+            yield f"data: {_json.dumps(error_payload)}\n\n"
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Request-Id": request_id,
+        },
+    )
+
+
+def nowIso() -> str:
+    """Return current UTC time as ISO string."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)
+

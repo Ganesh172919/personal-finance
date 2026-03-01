@@ -3,6 +3,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import type { Request, Response, NextFunction } from "express";
 import passport from "./config/passport";
 import axios from "axios";
 
@@ -19,6 +20,8 @@ import configRoutes from "./routes/configRoutes";
 import v1Routes from "./routes/v1Routes";
 import internalToolsRoutes from "./routes/internalToolsRoutes";
 import publicShareRoutes from "./routes/publicShareRoutes";
+import blogRoutes from "./routes/blogRoutes";
+import growthStoryRoutes from "./routes/growthStoryRoutes";
 import { requestContext } from "./middleware/requestContext";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { getEnv } from "./config/env";
@@ -88,6 +91,16 @@ export const createApp = () => {
   app.use(
     helmet({
       crossOriginResourcePolicy: false,
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+          fontSrc: ["'self'", "https://fonts.gstatic.com"],
+          imgSrc: ["'self'", "data:", "blob:"],
+          connectSrc: ["'self'", ...CORS_ORIGINS.filter(o => o !== "*")],
+        },
+      },
     })
   );
 
@@ -103,6 +116,26 @@ export const createApp = () => {
     })
   );
   app.use(express.urlencoded({ extended: true, limit: REQUEST_SIZE_LIMIT }));
+  // Custom NoSQL-injection sanitizer (Express 5 compatible).
+  // express-mongo-sanitize v2 crashes on Express 5 because req.query is read-only.
+  const stripDollarDot = (obj: any): any => {
+    if (obj === null || typeof obj !== "object") return obj;
+    if (Array.isArray(obj)) return obj.map(stripDollarDot);
+    const clean: Record<string, any> = {};
+    for (const key of Object.keys(obj)) {
+      if (key.startsWith("$") || key.includes(".")) continue;
+      clean[key] = stripDollarDot(obj[key]);
+    }
+    return clean;
+  };
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    if (req.body && typeof req.body === "object") req.body = stripDollarDot(req.body);
+    if (req.params && typeof req.params === "object") {
+      const cleaned = stripDollarDot(req.params);
+      for (const k of Object.keys(cleaned)) (req.params as any)[k] = cleaned[k];
+    }
+    next();
+  });
   app.use(cookieParser());
   app.use(passport.initialize());
   app.use(requestContext);
@@ -114,6 +147,21 @@ export const createApp = () => {
   app.use(orgContext);
   app.use("/api", apiRateLimiter);
   app.use("/api", csrfProtection);
+
+  // Tighter rate limit on auth endpoints (brute-force protection)
+  const authRateLimiter = rateLimit({
+    windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
+    max: env.AUTH_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => String(req.ip || "unknown"),
+    message: {
+      message: "Too many authentication attempts, please try again later.",
+      code: "AUTH_RATE_LIMITED",
+    },
+  });
+  app.use("/api/v1/auth", authRateLimiter);
+  app.use("/api/auth", authRateLimiter);
 
   // Health checks (must stay before authenticated /api routers)
   app.get("/api/test", (_req, res) => {
@@ -144,6 +192,8 @@ export const createApp = () => {
   app.use("/api/v1/auth", authRoutes);
   app.use("/api/v1/config", configRoutes);
   app.use("/api/v1/public", publicShareRoutes);
+  app.use("/api/v1/blogs", blogRoutes);
+  app.use("/api/v1/growth-stories", growthStoryRoutes);
   app.use("/api/v1", v1Routes);
   if (env.MONETIZATION_ENABLED) {
     app.use("/api/v1", monetizationRoutes);

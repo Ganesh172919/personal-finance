@@ -186,6 +186,84 @@ export type Workflow = AnyRecord & {
   actions: WorkflowAction[];
 };
 export type CreateWorkflowResponse = AnyRecord & { workflow?: Workflow; request_id?: string };
-export type ListWorkflowsResponse = AnyRecord & { workflows: Workflow[]; request_id?: string };
 export type RunWorkflowRequest = AnyRecord;
 export type RunWorkflowResponse = AnyRecord & { run?: AnyRecord; request_id?: string };
+
+// Blogs
+export type BlogPostCategory = 'investing' | 'budgeting' | 'tax-planning' | 'debt-management' | 'retirement' | 'insurance' | 'real-estate' | 'market-news' | 'personal-growth';
+export type IBlogPost = AnyRecord & {
+  _id: string;
+  title: string;
+  slug: string;
+  excerpt: string;
+  content: string;
+  category: BlogPostCategory;
+  tags: string[];
+  coverImage: string;
+  author: {
+    name: string;
+    avatar: string;
+    bio: string;
+  };
+  readTime: number;
+  likes: number;
+  views: number;
+  isFeatured: boolean;
+  isPublished: boolean;
+  publishedAt: string;
+  userId?: string;
+  relatedPosts?: any[];
+  seoMeta?: {
+    metaTitle: string;
+    metaDescription: string;
+    keywords: string[];
+  };
+};
+export type ListBlogsResponse = AnyRecord & {
+  posts: IBlogPost[];
+  pagination: { page: number; limit: number; total: number; pages: number };
+};
+export type GetBlogResponse = AnyRecord & { post: IBlogPost };
+
+// Growth Stories
+export type GrowthStoryCategory = 'debt-freedom' | 'wealth-building' | 'early-retirement' | 'side-hustle' | 'tax-optimization' | 'family-finance' | 'student-finance';
+export type GrowthStoryDifficulty = 'beginner' | 'intermediate' | 'advanced';
+export type IGrowthStory = AnyRecord & {
+  _id: string;
+  title: string;
+  slug: string;
+  persona: string;
+  location: string;
+  summary: string;
+  challenge: string;
+  journey: string;
+  outcome: string;
+  timeline: string;
+  financialMetrics: {
+    startingNetWorth: number;
+    currentNetWorth: number;
+    monthlyIncome: number;
+    savingsRate: number;
+    debtPaidOff: number;
+    investmentReturns: number;
+  };
+  strategies: string[];
+  tags: string[];
+  category: GrowthStoryCategory;
+  difficulty: GrowthStoryDifficulty;
+  isVerified: boolean;
+  isFeatured: boolean;
+  isPublished: boolean;
+  coverImage: string;
+  likes: number;
+  views: number;
+  readTime: number;
+  userId?: string;
+  publishedAt: string;
+};
+export type ListGrowthStoriesResponse = AnyRecord & {
+  stories: IGrowthStory[];
+  pagination: { page: number; limit: number; total: number; pages: number };
+};
+export type GetGrowthStoryResponse = AnyRecord & { story: IGrowthStory };
+
