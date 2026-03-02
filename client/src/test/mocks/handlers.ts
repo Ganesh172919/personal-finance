@@ -4,10 +4,13 @@ import { http, HttpResponse } from "msw";
  * Default MSW request handlers for testing.
  * These mock the most commonly used API endpoints so component tests
  * don't need a running backend.
+ *
+ * NOTE: The client's `buildApiUrl()` normalizes all endpoints to `/api/v1/...`.
+ * These handlers MUST match those normalized paths.
  */
 export const handlers = [
   // Auth
-  http.get("/api/auth/profile", () => {
+  http.get("/api/v1/auth/profile", () => {
     return HttpResponse.json({
       id: "user-1",
       name: "Test User",
@@ -16,16 +19,16 @@ export const handlers = [
     });
   }),
 
-  http.get("/api/auth/csrf-token", () => {
-    return HttpResponse.json({ csrfToken: "test-csrf-token" });
+  http.get("/api/v1/auth/csrf", () => {
+    return HttpResponse.json({ csrf_token: "test-csrf-token" });
   }),
 
-  http.post("/api/auth/logout", () => {
+  http.post("/api/v1/auth/logout", () => {
     return HttpResponse.json({ ok: true });
   }),
 
   // Transactions
-  http.get("/api/transactions", () => {
+  http.get("/api/v1/transactions", () => {
     return HttpResponse.json({
       transactions: [
         {
@@ -50,7 +53,7 @@ export const handlers = [
   }),
 
   // Financial vitals / dashboard summary
-  http.get("/api/transactions/summary", () => {
+  http.get("/api/v1/transactions/summary", () => {
     return HttpResponse.json({
       totalIncome: 3500,
       totalExpenses: 1200,
@@ -95,3 +98,4 @@ export const handlers = [
     return HttpResponse.json({ records: [] });
   }),
 ];
+

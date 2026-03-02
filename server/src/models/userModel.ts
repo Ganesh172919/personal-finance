@@ -14,6 +14,11 @@ export interface IUser {
   emailVerificationTokenExpires?: Date;
   pendingReferralCode?: string;
   referralRedeemedAt?: Date;
+  // Two-Factor Authentication
+  twoFactorEnabled?: boolean;
+  twoFactorSecret?: string;
+  twoFactorPendingSecret?: string;
+  twoFactorBackupCodes?: string[];
 }
 
 export interface IUserDocument extends IUser, Document {
@@ -34,6 +39,11 @@ const userSchema = new Schema<IUserDocument>(
     emailVerificationTokenExpires: { type: Date, select: false },
     pendingReferralCode: { type: String, trim: true, uppercase: true, maxlength: 16 },
     referralRedeemedAt: { type: Date },
+    // Two-Factor Auth
+    twoFactorEnabled: { type: Boolean, default: false },
+    twoFactorSecret: { type: String, select: false },
+    twoFactorPendingSecret: { type: String, select: false },
+    twoFactorBackupCodes: { type: [String], select: false, default: undefined },
   },
   { timestamps: true }
 );

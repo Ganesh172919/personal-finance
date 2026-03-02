@@ -48,20 +48,19 @@ Key variables:
 | Variable                | Description                          | Example                             |
 | ----------------------- | ------------------------------------ | ----------------------------------- |
 | `PORT`                  | Server listen port                   | `3000`                              |
-| `MONGODB_URI`           | Mongo connection string              | `mongodb://localhost:27017/finwise` |
+| `MONGO_URI`             | Mongo connection string              | `mongodb://localhost:27017/finwise` |
 | `JWT_SECRET`            | Secret for signing JWTs              | (random 64-char string)             |
-| `JWT_EXPIRY`            | Token lifetime                       | `7d`                                |
 | `GOOGLE_CLIENT_ID`      | Google OAuth2 client ID              | (from GCP console)                  |
 | `GOOGLE_CLIENT_SECRET`  | Google OAuth2 client secret          | (from GCP console)                  |
 | `REDIS_URL`             | Redis connection URI                 | `redis://localhost:6379`            |
 | `STRIPE_SECRET_KEY`     | Stripe API secret key                | `sk_test_...`                       |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret        | `whsec_...`                         |
-| `SMTP_HOST`             | Email SMTP host                      | `smtp.gmail.com`                    |
-| `SMTP_PORT`             | Email SMTP port                      | `587`                               |
-| `SMTP_USER`             | Email sender address                 | `noreply@example.com`               |
-| `SMTP_PASS`             | Email sender password / app password | (app-specific password)             |
-| `AI_CORE_URL`           | AI Core Python service URL           | `http://localhost:8000`             |
-| `GEMINI_API_KEY`        | Google Gemini API key                | (from AI Studio)                    |
+| `EMAIL_HOST`            | Email SMTP host                      | `smtp.gmail.com`                    |
+| `EMAIL_PORT`            | Email SMTP port                      | `587`                               |
+| `EMAIL_USER`            | Email sender address                 | `noreply@example.com`               |
+| `EMAIL_PASSWORD`        | Email sender password / app password | (app-specific password)             |
+| `EMAIL_FROM`            | Email "From" header                  | `FinWise <noreply@example.com>`     |
+| `PYTHON_API_URL`        | AI Core Python service URL           | `http://localhost:8001`             |
 
 ### Start the Server
 

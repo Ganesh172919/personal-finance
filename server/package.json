@@ -15,7 +15,8 @@
     "test": "vitest",
     "test:watch": "vitest",
     "test:ci": "vitest run",
-    "seed:content": "tsx src/scripts/seedMockContent.ts"
+    "seed:content": "tsx src/scripts/seedMockContent.ts",
+    "generate:openapi": "tsx src/scripts/generateOpenApiPaths.ts"
   },
   "dependencies": {
     "@opentelemetry/auto-instrumentations-node": "^0.70.1",

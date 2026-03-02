@@ -430,11 +430,27 @@ class WhatIfScenarioRequest(BaseModel):
 async def health_check(request: Request):
     """Health check endpoint"""
     vision_status = get_vision_dependency_status()
+    from utils.provider_registry import _resolve_provider_name, get_provider_config
+    active_provider = _resolve_provider_name()
+    provider_config = get_provider_config(active_provider)
     return {
         "status": "healthy",
         "service": "FinWise AI Core",
+        "llm_provider": provider_config.display_name,
+        "llm_model": provider_config.default_model,
         "vision": vision_status,
         "request_id": request.state.request_id
+    }
+
+
+@app.get("/api/providers")
+async def list_llm_providers(request: Request):
+    """List all available LLM providers and their status."""
+    from utils.provider_registry import list_providers as _list_providers
+    providers = _list_providers()
+    return {
+        "providers": providers,
+        "request_id": request.state.request_id,
     }
 
 

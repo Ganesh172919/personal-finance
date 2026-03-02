@@ -156,7 +156,7 @@ I now consistently bill over ₹3,00,000 a month. My personal "salary" is still 
 
 async function seedData() {
   try {
-    await mongoose.connect(MONGODB_URI);
+    await mongoose.connect(MONGODB_URI as string);
     logger.info('Connected to MongoDB. Starting Growth Story seed...');
 
     const existingSlugs = await GrowthStory.find({}, 'slug').lean();

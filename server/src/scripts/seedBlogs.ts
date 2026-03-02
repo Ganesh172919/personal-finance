@@ -3,7 +3,7 @@ import { BlogPost } from '../models/blogPostModel';
 import { getEnv } from '../config/env';
 import { logger } from '../config/logger';
 
-const MONGODB_URI = getEnv().MONGODB_URI;
+const MONGODB_URI = getEnv().MONGO_URI;
 
 const mockAuthors = [
   {
@@ -311,7 +311,7 @@ Start small. Set a goal to save your first 1-month buffer, then build up from th
 async function seedData() {
   try {
     // Connect to MongoDB
-    await mongoose.connect(MONGODB_URI);
+    await mongoose.connect(MONGODB_URI as string);
     logger.info('Connected to MongoDB. Starting Blog Post seed...');
 
     // Clear existing data (optional, but good for resetting state)
@@ -347,7 +347,7 @@ async function seedData() {
     logger.info(`Successfully seeded ${insertedPosts.length} blog posts with relations.`);
     process.exit(0);
   } catch (error) {
-    logger.error('Error seeding blog posts:', error);
+    logger.error(`Error seeding blog posts: ${error}`);
     process.exit(1);
   }
 }

@@ -110,7 +110,6 @@ Google OAuth2 callback handler.
 | `category`  | string   | Filter by category  |
 | `startDate` | ISO date | Start of date range |
 | `endDate`   | ISO date | End of date range   |
-| `search`    | string   | Full-text search    |
 
 ### `POST /api/financial-data/transactions`
 
@@ -500,15 +499,14 @@ Serve a stored media file (GridFS).
 
 ## Error Response Format
 
-All errors follow a consistent shape:
+All errors follow a consistent flat shape:
 
 ```json
 {
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Human-readable description",
-    "details": [{ "field": "email", "message": "Invalid email format" }]
-  }
+  "message": "Human-readable description",
+  "code": "VALIDATION_ERROR",
+  "details": [{ "field": "email", "message": "Invalid email format" }],
+  "request_id": "req_abc123"
 }
 ```
 

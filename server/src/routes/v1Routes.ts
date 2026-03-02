@@ -192,8 +192,54 @@ import {
 } from "../controllers/v1/financeIntelligenceController";
 import { importTransactionsCsvEndpoint } from "../controllers/v1/transactionsCsvImportController";
 import { csvUpload } from "../middleware/uploads";
+import { search } from "../controllers/v1/searchController";
+import { globalSearchQuerySchema } from "../schemas/v1/searchSchemas";
+import {
+  listRules,
+  createRule,
+  updateRule,
+  deleteRule,
+} from "../controllers/v1/categoryRuleController";
+import {
+  createCategoryRuleBodySchema,
+  updateCategoryRuleBodySchema,
+  categoryRuleIdParamSchema,
+} from "../schemas/v1/categoryRuleSchemas";
 
 const router = Router();
+
+// ─── Global Search ────────────────────────────────────────
+router.get(
+  "/search",
+  passport.authenticate("jwt", { session: false }),
+  validate({ query: globalSearchQuerySchema }),
+  asyncRoute(search),
+);
+
+// ─── Category Rules (auto-categorization) ───────────────
+router.get(
+  "/category-rules",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(listRules),
+);
+router.post(
+  "/category-rules",
+  passport.authenticate("jwt", { session: false }),
+  validate({ body: createCategoryRuleBodySchema }),
+  asyncRoute(createRule),
+);
+router.patch(
+  "/category-rules/:id",
+  passport.authenticate("jwt", { session: false }),
+  validate({ params: categoryRuleIdParamSchema, body: updateCategoryRuleBodySchema }),
+  asyncRoute(updateRule),
+);
+router.delete(
+  "/category-rules/:id",
+  passport.authenticate("jwt", { session: false }),
+  validate({ params: categoryRuleIdParamSchema }),
+  asyncRoute(deleteRule),
+);
 
 router.get(
   "/orgs/me",
@@ -648,5 +694,60 @@ router.post(
   validate({ body: redeemReferralBodySchema }),
   asyncRoute(redeemReferral),
 );
+
+// ─── Two-Factor Authentication ────────────────────────────
+import {
+  setup2FA,
+  verify2FA,
+  disable2FA,
+  get2FAStatus,
+} from "../controllers/v1/twoFactorController";
+
+router.post("/auth/2fa/setup", passport.authenticate("jwt", { session: false }), asyncRoute(setup2FA));
+router.post("/auth/2fa/verify", passport.authenticate("jwt", { session: false }), asyncRoute(verify2FA));
+router.post("/auth/2fa/disable", passport.authenticate("jwt", { session: false }), asyncRoute(disable2FA));
+router.get("/auth/2fa/status", passport.authenticate("jwt", { session: false }), asyncRoute(get2FAStatus));
+
+// ─── Security Audit Logs ─────────────────────────────────
+import { getUserAuditLog, getOrgAuditLog } from "../services/auditService";
+
+router.get("/security/audit-log", passport.authenticate("jwt", { session: false }), asyncRoute(async (req: any, res: any) => {
+  const userId = req.user?._id;
+  if (!userId) return res.status(401).json({ message: "Unauthorized", code: "UNAUTHORIZED", request_id: req.requestId });
+
+  const limit = Math.min(parseInt(req.query?.limit || "50", 10) || 50, 200);
+  const actions = req.query?.actions ? String(req.query.actions).split(",") : undefined;
+  const logs = await getUserAuditLog(userId, { limit, actions: actions as any });
+
+  res.json({ audit_log: logs, request_id: req.requestId });
+}));
+
+router.get("/orgs/audit-log", passport.authenticate("jwt", { session: false }), asyncRoute(async (req: any, res: any) => {
+  const orgId = req.org?.orgId;
+  if (!orgId) return res.status(400).json({ message: "Organization context required", code: "MISSING_ORG_CONTEXT", request_id: req.requestId });
+
+  const limit = Math.min(parseInt(req.query?.limit || "100", 10) || 100, 500);
+  const severity = req.query?.severity;
+  const logs = await getOrgAuditLog(orgId, { limit, severity });
+
+  res.json({ audit_log: logs, request_id: req.requestId });
+}));
+
+// ─── Connector Health ────────────────────────────────────
+import { getConnectorHealthSummary } from "../services/connectorHealth";
+import mongoose from "mongoose";
+
+router.get("/integrations/health-summary", passport.authenticate("jwt", { session: false }), asyncRoute(async (req: any, res: any) => {
+  const orgId = req.org?.orgId;
+  if (!orgId) return res.status(400).json({ message: "Organization context required", code: "MISSING_ORG_CONTEXT", request_id: req.requestId });
+
+  const summary = await getConnectorHealthSummary(new mongoose.Types.ObjectId(String(orgId)));
+  res.json({ connectors: summary, request_id: req.requestId });
+}));
+
+// ─── Plugin Manifest Validation ──────────────────────────
+import { validatePluginManifest } from "../modules/plugins/permissionMiddleware";
+
+router.post("/plugins/validate-manifest", passport.authenticate("jwt", { session: false }), asyncRoute(validatePluginManifest));
 
 export default router;

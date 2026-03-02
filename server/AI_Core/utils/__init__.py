@@ -23,6 +23,12 @@ from .llm_wrapper import (
     create_llm,
     get_fallback_response,
 )
+from .provider_registry import (
+    list_providers,
+    get_provider_config,
+    create_chat_model,
+    PROVIDER_CONFIGS,
+)
 from .rate_limiter import (
     RateLimitError,
     RetryHandler,
@@ -67,6 +73,11 @@ __all__ = [
     "create_llm",
     "get_fallback_response",
     "FALLBACK_RESPONSES",
+    # Provider Registry
+    "list_providers",
+    "get_provider_config",
+    "create_chat_model",
+    "PROVIDER_CONFIGS",
     # Request metrics
     "begin_request_metrics",
     "record_llm_call",

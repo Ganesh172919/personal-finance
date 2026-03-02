@@ -39,15 +39,14 @@ python api_service.py  # Starts FastAPI on the configured port
 
 ### Server — Required
 
-| Variable      | Description                                              |
-| ------------- | -------------------------------------------------------- |
-| `NODE_ENV`    | Set to `production`                                      |
-| `PORT`        | Server listen port (default: `3000`)                     |
-| `MONGODB_URI` | Production MongoDB connection string (Atlas recommended) |
-| `JWT_SECRET`  | Strong, unique secret (min 64 chars)                     |
-| `JWT_EXPIRY`  | Token expiry (e.g., `7d`)                                |
-| `REDIS_URL`   | Production Redis connection URI                          |
-| `CORS_ORIGIN` | Frontend domain (e.g., `https://app.finwise.io`)         |
+| Variable       | Description                                              |
+| -------------- | -------------------------------------------------------- |
+| `NODE_ENV`     | Set to `production`                                      |
+| `PORT`         | Server listen port (default: `3000`)                     |
+| `MONGO_URI`    | Production MongoDB connection string (Atlas recommended) |
+| `JWT_SECRET`   | Strong, unique secret (min 64 chars)                     |
+| `REDIS_URL`    | Production Redis connection URI                          |
+| `CORS_ORIGINS` | Frontend domain (e.g., `https://app.finwise.io`)         |
 
 ### Server — External Services
 
@@ -57,12 +56,12 @@ python api_service.py  # Starts FastAPI on the configured port
 | `GOOGLE_CLIENT_SECRET`  | Google OAuth2 client secret   |
 | `STRIPE_SECRET_KEY`     | Stripe live secret key        |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
-| `SMTP_HOST`             | Production SMTP host          |
-| `SMTP_PORT`             | SMTP port                     |
-| `SMTP_USER`             | SMTP sender email             |
-| `SMTP_PASS`             | SMTP password                 |
-| `AI_CORE_URL`           | URL of the AI Core service    |
-| `GEMINI_API_KEY`        | Google Gemini API key         |
+| `EMAIL_HOST`            | Production SMTP host          |
+| `EMAIL_PORT`            | SMTP port                     |
+| `EMAIL_USER`            | SMTP sender email             |
+| `EMAIL_PASSWORD`        | SMTP password                 |
+| `EMAIL_FROM`            | Email "From" header           |
+| `PYTHON_API_URL`        | URL of the AI Core service    |
 
 ### Client — Required
 
@@ -82,7 +81,7 @@ In production, run three separate processes:
 │  Express API     │  │  BullMQ Worker   │  │  AI Core (Py)    │
 │  npm start       │  │  npm run         │  │  python           │
 │  port: 3000      │  │  worker:start    │  │  api_service.py  │
-│                  │  │                  │  │  port: 8000       │
+│                  │  │                  │  │  port: 8001       │
 └──────────────────┘  └──────────────────┘  └──────────────────┘
          │                    │                       │
          └────────────────────┴───────────────────────┘
@@ -118,7 +117,7 @@ WORKDIR /app
 COPY server/AI_Core/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY server/AI_Core/ .
-EXPOSE 8000
+EXPOSE 8001
 CMD ["python", "api_service.py"]
 ```
 
@@ -153,7 +152,7 @@ services:
       context: .
       dockerfile: Dockerfile.ai-core
     ports:
-      - "8000:8000"
+      - "8001:8001"
     env_file: .env.ai-core
 
   mongo:
@@ -178,10 +177,11 @@ volumes:
 
 The Express server exposes:
 
-| Endpoint          | Purpose                                       |
-| ----------------- | --------------------------------------------- |
-| `GET /api/config` | Returns app config (acts as a liveness check) |
-| `GET /metrics`    | Prometheus metrics (via `prom-client`)        |
+| Endpoint           | Purpose                                                            |
+| ------------------ | ------------------------------------------------------------------ |
+| `GET /healthz`     | Liveness probe (returns `ok`)                                      |
+| `GET /api/test`    | Returns greeting JSON (quick connectivity check)                   |
+| `GET /api/metrics` | Prometheus metrics (via `prom-client`, guarded by `METRICS_TOKEN`) |
 
 ---
 
@@ -195,7 +195,7 @@ The Express server exposes:
 
 ### Metrics
 
-- **Prometheus** metrics exposed at `/metrics` via `prom-client`
+- **Prometheus** metrics exposed at `/api/metrics` via `prom-client` (requires `METRICS_TOKEN`)
 - Tracks HTTP request durations, active connections, error rates
 
 ### Tracing

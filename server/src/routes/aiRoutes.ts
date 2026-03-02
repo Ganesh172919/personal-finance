@@ -33,6 +33,24 @@ router.use(passport.authenticate("jwt", { session: false }));
 router.post("/process-command", validate({ body: processCommandBodySchema }), asyncRoute(processAICommand));
 router.post("/scenarios/what-if", validate({ body: whatIfScenarioBodySchema }), asyncRoute(processWhatIfScenario));
 router.get("/ai-core/status", asyncRoute(getAiCoreStatus));
+router.get("/ai-core/providers", asyncRoute(async (req: any, res: any) => {
+  const { getEnv } = await import("../config/env");
+  const { default: axios } = await import("axios");
+  const env = getEnv();
+  try {
+    const result = await axios.get(`${env.PYTHON_API_URL}/api/providers`, {
+      timeout: env.AI_CORE_STATUS_TIMEOUT_MS,
+      headers: { "X-Request-Id": req.requestId },
+    });
+    res.json({ ...result.data, request_id: req.requestId });
+  } catch (err: any) {
+    res.status(502).json({
+      message: "AI Core providers endpoint unreachable",
+      code: "AI_CORE_UNAVAILABLE",
+      request_id: req.requestId,
+    });
+  }
+}));
 
 router.post("/financial-profiles/investments", validate({ body: addInvestmentBodySchema }), asyncRoute(addInvestment));
 

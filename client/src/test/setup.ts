@@ -1,1 +1,1 @@
-// Minimal setup — jest-dom matchers added per-file via direct import.
+import "@testing-library/jest-dom/vitest";

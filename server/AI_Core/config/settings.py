@@ -10,10 +10,24 @@ load_dotenv()
 class Settings:
     """Application settings configuration."""
 
-    # API Keys
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    # ─── Provider Selection ───────────────────────────────
+    # Set LLM_PROVIDER to one of: gemini, openrouter, groq, grok, together, mistral
+    # If not set, auto-detects from the first configured API key.
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").strip().lower() or None
 
-    # Model Configuration
+    # ─── API Keys (set whichever providers you want to use) ─
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip() or None
+    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip() or None
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip() or None
+    XAI_API_KEY = os.getenv("XAI_API_KEY", "").strip() or None
+    TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "").strip() or None
+    MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "").strip() or None
+
+    # ─── Model Override ───────────────────────────────────
+    # If set, overrides the provider's default model.
+    LLM_MODEL = os.getenv("LLM_MODEL", "").strip() or None
+
+    # Model Configuration (legacy — still used by create_llm fallback)
     _model_candidates_env = os.getenv(
         "MODEL_CANDIDATES",
         "gemini-2.5-flash,gemini-2.0-flash,gemini-1.5-flash"
@@ -74,12 +88,31 @@ class Settings:
 
     @classmethod
     def validate_api_key(cls):
-        """Validate API key when needed."""
-        if not cls.GEMINI_API_KEY:
+        """Validate that at least one API key is configured."""
+        keys = [
+            cls.GEMINI_API_KEY,
+            cls.OPENROUTER_API_KEY,
+            cls.GROQ_API_KEY,
+            cls.XAI_API_KEY,
+            cls.TOGETHER_API_KEY,
+            cls.MISTRAL_API_KEY,
+        ]
+        if not any(keys):
             raise ValueError(
-                "GEMINI_API_KEY environment variable is required. "
-                "Please create a .env file with your API key."
+                "No LLM API key is configured. Set at least one of: "
+                "GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, "
+                "XAI_API_KEY, TOGETHER_API_KEY, MISTRAL_API_KEY"
             )
+
+    @classmethod
+    def get_active_provider_info(cls) -> Dict[str, Any]:
+        """Get info about which provider is active and available."""
+        from utils.provider_registry import list_providers
+        return {
+            "configured_provider": cls.LLM_PROVIDER,
+            "configured_model": cls.LLM_MODEL,
+            "providers": list_providers(),
+        }
 
 
 settings = Settings()

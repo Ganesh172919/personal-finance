@@ -1,15 +1,26 @@
 ﻿"""
-LLM Wrapper with model failover, rate limiting, and graceful fallback handling.
+LLM Wrapper with multi-provider support, model failover, rate limiting,
+and graceful fallback handling.
+
+Supports: Gemini, OpenRouter, Groq, Grok (xAI), Together AI, Mistral.
+Provider selection is controlled by LLM_PROVIDER env var or auto-detected.
 """
 
 import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from config import settings
+from utils.provider_registry import (
+    create_chat_model,
+    get_provider_config,
+    list_providers,
+    _resolve_provider_name,
+    PROVIDER_CONFIGS,
+)
 from utils.rate_limiter import (
     RateLimitError,
     get_rate_limiter_status,
@@ -43,9 +54,11 @@ class ModelNotFoundError(AIProviderError):
 
 class RateLimitedLLM:
     """
-    A wrapper around ChatGoogleGenerativeAI that provides:
+    A wrapper around any LangChain BaseChatModel that provides:
+    - Multi-provider support (Gemini, OpenRouter, Groq, Grok, Together, Mistral)
     - Automatic rate limiting
     - Model failover on model-not-found errors
+    - Cross-provider failover when all models for a provider fail
     - Graceful fallback support for quota/access issues
     - Request-level LLM call counting
     """
@@ -57,9 +70,17 @@ class RateLimitedLLM:
         max_tokens: int = 1024,
         api_key: Optional[str] = None,
         model_candidates: Optional[List[str]] = None,
+        provider: Optional[str] = None,
     ):
-        primary = model or settings.MODEL_NAME
-        configured_candidates = model_candidates or settings.MODEL_CANDIDATES
+        self._provider_name = provider or _resolve_provider_name()
+        self._provider_config = PROVIDER_CONFIGS.get(self._provider_name)
+
+        if self._provider_config:
+            configured_candidates = model_candidates or self._provider_config.model_candidates
+            primary = model or self._provider_config.default_model
+        else:
+            configured_candidates = model_candidates or settings.MODEL_CANDIDATES
+            primary = model or settings.MODEL_NAME
 
         # Ensure primary model is first while preserving unique order
         deduped: List[str] = []
@@ -71,23 +92,40 @@ class RateLimitedLLM:
         self.active_model = self.model_candidates[0]
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.api_key = api_key or settings.GEMINI_API_KEY
+        self._api_key = api_key  # Override; normally resolved from env
 
-        self._llm_clients: Dict[str, ChatGoogleGenerativeAI] = {}
+        self._llm_clients: Dict[str, BaseChatModel] = {}
 
         # Track call statistics
         self._call_count = 0
         self._error_count = 0
         self._last_error: Optional[str] = None
 
-    def _client_for_model(self, model_name: str) -> ChatGoogleGenerativeAI:
-        if model_name not in self._llm_clients:
-            self._llm_clients[model_name] = ChatGoogleGenerativeAI(
-                model=model_name,
-                temperature=self.temperature,
-                google_api_key=self.api_key,
-            )
-        return self._llm_clients[model_name]
+    @property
+    def provider_name(self) -> str:
+        return self._provider_name
+
+    def _client_for_model(self, model_name: str) -> BaseChatModel:
+        cache_key = f"{self._provider_name}:{model_name}"
+        if cache_key not in self._llm_clients:
+            import os
+            # If an explicit api_key was passed, temporarily set the env var
+            env_key = self._provider_config.env_key if self._provider_config else "GEMINI_API_KEY"
+            original_val = os.environ.get(env_key, "")
+            if self._api_key:
+                os.environ[env_key] = self._api_key
+            try:
+                self._llm_clients[cache_key] = create_chat_model(
+                    provider_name=self._provider_name,
+                    model=model_name,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                )
+            finally:
+                if self._api_key and original_val is not None:
+                    os.environ[env_key] = original_val
+
+        return self._llm_clients[cache_key]
 
     def _extract_status_code(self, error: Exception) -> Optional[int]:
         message = str(error).lower()
@@ -103,7 +141,7 @@ class RateLimitedLLM:
         return int(match.group(1)) if match else None
 
     def _to_provider_error(self, raw_error: Exception, status_code: Optional[int], model_name: str) -> AIProviderError:
-        message = f"Model '{model_name}' failed: {raw_error}"
+        message = f"[{self._provider_name}] Model '{model_name}' failed: {raw_error}"
 
         if status_code == 429:
             return QuotaExceededError(message, status_code=status_code, model=model_name)
@@ -130,9 +168,14 @@ class RateLimitedLLM:
         Returns:
             LLM response object
         """
-        if not self.api_key:
+        # Check if any API key is configured
+        import os
+        env_key = self._provider_config.env_key if self._provider_config else "GEMINI_API_KEY"
+        effective_key = self._api_key or os.getenv(env_key, "").strip()
+
+        if not effective_key:
             raise AccessDeniedError(
-                "GEMINI_API_KEY is not configured; skipping upstream LLM call.",
+                f"{env_key} is not configured; skipping upstream LLM call.",
                 status_code=403,
                 model=self.active_model,
             )
@@ -151,18 +194,18 @@ class RateLimitedLLM:
 
                 if request_id:
                     logger.info(
-                        "[requestId=%s] LLM invoke model=%s timeoutSeconds=%s maxRetries=%s",
+                        "[requestId=%s] LLM invoke provider=%s model=%s timeoutSeconds=%s",
                         request_id,
+                        self._provider_name,
                         model_name,
                         timeout_seconds,
-                        max_retries,
                     )
                 else:
                     logger.info(
-                        "LLM invoke model=%s timeoutSeconds=%s maxRetries=%s",
+                        "LLM invoke provider=%s model=%s timeoutSeconds=%s",
+                        self._provider_name,
                         model_name,
                         timeout_seconds,
-                        max_retries,
                     )
 
                 invoke_kwargs: Dict[str, Any] = {}
@@ -175,29 +218,35 @@ class RateLimitedLLM:
 
                 usage_metadata = getattr(response, "usage_metadata", None)
                 if usage_metadata is not None:
-                    if request_id:
-                        logger.info("[requestId=%s] LLM usage_metadata=%s", request_id, usage_metadata)
-                    else:
-                        logger.info("LLM usage_metadata=%s", usage_metadata)
-
+                    logger.info("LLM usage_metadata=%s", usage_metadata)
                     try:
                         prompt_tokens = None
                         completion_tokens = None
                         total_tokens = None
 
                         if isinstance(usage_metadata, dict):
-                            prompt_tokens = usage_metadata.get("prompt_token_count") or usage_metadata.get("input_token_count")
-                            completion_tokens = usage_metadata.get("candidates_token_count") or usage_metadata.get("output_token_count")
-                            total_tokens = usage_metadata.get("total_token_count") or usage_metadata.get("total_tokens")
+                            prompt_tokens = (
+                                usage_metadata.get("prompt_token_count")
+                                or usage_metadata.get("input_token_count")
+                                or usage_metadata.get("prompt_tokens")
+                            )
+                            completion_tokens = (
+                                usage_metadata.get("candidates_token_count")
+                                or usage_metadata.get("output_token_count")
+                                or usage_metadata.get("completion_tokens")
+                            )
+                            total_tokens = (
+                                usage_metadata.get("total_token_count")
+                                or usage_metadata.get("total_tokens")
+                            )
 
                         record_llm_usage(
-                            model=model_name,
+                            model=f"{self._provider_name}/{model_name}",
                             prompt_tokens=int(prompt_tokens or 0) if prompt_tokens is not None else None,
                             completion_tokens=int(completion_tokens or 0) if completion_tokens is not None else None,
                             total_tokens=int(total_tokens or 0) if total_tokens is not None else None,
                         )
                     except Exception:
-                        # Usage metadata parsing should never fail the request.
                         pass
 
                 self.active_model = model_name
@@ -238,8 +287,12 @@ class RateLimitedLLM:
         Returns:
             Tuple of (response_object, fallback_used)
         """
-        if not self.api_key:
-            logger.info("LLM disabled (missing GEMINI_API_KEY). Returning deterministic fallback response.")
+        import os
+        env_key = self._provider_config.env_key if self._provider_config else "GEMINI_API_KEY"
+        effective_key = self._api_key or os.getenv(env_key, "").strip()
+
+        if not effective_key:
+            logger.info("LLM disabled (missing %s). Returning deterministic fallback response.", env_key)
             return self._create_fallback_response(fallback_response), True
 
         try:
@@ -264,6 +317,7 @@ class RateLimitedLLM:
     def get_stats(self) -> Dict[str, Any]:
         """Get call statistics for this LLM instance."""
         return {
+            "provider": self._provider_name,
             "active_model": self.active_model,
             "model_candidates": self.model_candidates,
             "total_calls": self._call_count,
@@ -276,17 +330,28 @@ class RateLimitedLLM:
         }
 
 
-def create_llm(agent_type: str = "default") -> RateLimitedLLM:
+def create_llm(agent_type: str = "default", provider: Optional[str] = None) -> RateLimitedLLM:
     """
     Factory function to create a rate-limited LLM for a specific agent type.
+
+    Args:
+        agent_type: The agent type for configuration lookup.
+        provider: Optional provider override (gemini, openrouter, groq, grok, together, mistral).
     """
     config = settings.get_agent_config(agent_type)
 
+    provider_name = provider or _resolve_provider_name()
+    provider_config = PROVIDER_CONFIGS.get(provider_name)
+
+    model = provider_config.default_model if provider_config else settings.MODEL_NAME
+    candidates = provider_config.model_candidates if provider_config else settings.MODEL_CANDIDATES
+
     return RateLimitedLLM(
-        model=settings.MODEL_NAME,
-        model_candidates=settings.MODEL_CANDIDATES,
+        model=model,
+        model_candidates=candidates,
         temperature=config.get("temperature", 0.1),
         max_tokens=config.get("max_tokens", 1024),
+        provider=provider_name,
     )
 
 

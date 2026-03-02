@@ -85,6 +85,10 @@ transactionSchema.index({ orgId: 1, userId: 1, "source.origin": 1, date: -1 });
 transactionSchema.index({ orgId: 1, externalId: 1 }, { unique: true, sparse: true });
 transactionSchema.index({ legacyId: 1 }, { unique: true, sparse: true });
 transactionSchema.index({ orgId: 1, date: -1, amount: 1 }); // budget envelope aggregation
+transactionSchema.index(
+  { description: "text", category: "text" },
+  { name: "txn_text_search", weights: { description: 3, category: 1 } },
+); // full-text search
 
 const TransactionModel = model<ITransactionRecordDocument>("Transaction", transactionSchema);
 export default TransactionModel;

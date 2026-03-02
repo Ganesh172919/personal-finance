@@ -1,114 +1,84 @@
-import { Request, Response } from 'express';
-import { blogService } from '../services/blogService';
-import { logger } from '../config/logger';
+import type { Request, Response } from "express";
+import { blogService } from "../services/blogService";
+import { HttpError } from "../middleware/httpError";
 
 export class BlogController {
   async getPosts(req: Request, res: Response) {
-    try {
-      const { page, limit, category, tag, sort, isFeatured, search } = req.query;
+    const { page, limit, category, tag, sort, isFeatured, search } = req.query as Record<string, string | undefined>;
 
-      const result = await blogService.getPosts({
-        page: page ? parseInt(page as string, 10) : undefined,
-        limit: limit ? parseInt(limit as string, 10) : undefined,
-        category: category as string,
-        tag: tag as string,
-        sort: sort as string,
-        isFeatured: isFeatured ? isFeatured === 'true' : undefined,
-        search: search as string,
-      });
+    const result = await blogService.getPosts({
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+      category,
+      tag,
+      sort,
+      isFeatured: isFeatured ? isFeatured === "true" : undefined,
+      search,
+    });
 
-      res.status(200).json(result);
-    } catch (error: any) {
-      logger.error(`Error in getPosts: ${error.message}`);
-      res.status(500).json({ error: 'Failed to fetch blog posts' });
-    }
+    res.json(result);
   }
 
   async getFeaturedPosts(req: Request, res: Response) {
-      try {
-          const { limit } = req.query;
-          const result = await blogService.getPosts({ 
-              isFeatured: true, 
-              limit: limit ? parseInt(limit as string, 10) : 5,
-              sort: 'newest'
-          });
-          res.status(200).json({ posts: result.posts });
-      } catch (error: any) {
-          logger.error(`Error in getFeaturedPosts: ${error.message}`);
-          res.status(500).json({ error: 'Failed to fetch featured posts' });
-      }
+    const { limit } = req.query as Record<string, string | undefined>;
+    const result = await blogService.getPosts({
+      isFeatured: true,
+      limit: limit ? parseInt(limit, 10) : 5,
+      sort: "newest",
+    });
+    res.json({ posts: result.posts });
   }
 
   async getPostBySlug(req: Request, res: Response) {
-    try {
-      const { slug } = req.params;
-      const post = await blogService.getPostBySlug(slug);
+    const { slug } = req.params;
+    const post = await blogService.getPostBySlug(String(slug));
 
-      if (!post) {
-        return res.status(404).json({ error: 'Post not found' });
-      }
-
-      res.status(200).json({ post });
-    } catch (error: any) {
-      logger.error(`Error in getPostBySlug: ${error.message}`);
-      res.status(500).json({ error: 'Failed to fetch blog post' });
+    if (!post) {
+      throw new HttpError(404, "NOT_FOUND", "Post not found");
     }
+
+    res.json({ post, request_id: req.requestId });
   }
 
-  async getCategories(req: Request, res: Response) {
-    try {
-      const categories = await blogService.getCategories();
-      res.status(200).json({ categories });
-    } catch (error: any) {
-      logger.error(`Error in getCategories: ${error.message}`);
-      res.status(500).json({ error: 'Failed to fetch categories' });
-    }
+  async getCategories(_req: Request, res: Response) {
+    const categories = await blogService.getCategories();
+    res.json({ categories });
   }
 
   async toggleLike(req: Request, res: Response) {
+    const { id } = req.params;
     try {
-      const { id } = req.params;
-      // In a real app, verify user is authenticated and hasn't already liked
-      const newLikesCount = await blogService.toggleLike(id);
-      res.status(200).json({ likes: newLikesCount });
+      const newLikesCount = await blogService.toggleLike(String(id));
+      res.json({ likes: newLikesCount, request_id: req.requestId });
     } catch (error: any) {
-      logger.error(`Error in toggleLike: ${error.message}`);
-      if (error.message === 'Post not found') {
-        res.status(404).json({ error: error.message });
-      } else {
-        res.status(500).json({ error: 'Failed to toggle like' });
+      if (error.message === "Post not found") {
+        throw new HttpError(404, "NOT_FOUND", "Post not found");
       }
+      throw error;
     }
   }
-  
+
   async createPost(req: Request, res: Response) {
-      try {
-          // Assume user info is attached by optionalJwtAuth or similar middleware
-          const userId = (req as any).user?._id;
-          
-          if (!userId) {
-              return res.status(401).json({ error: "Unauthorized. Must be logged in to create a post." });
-          }
+    const userId = (req as any).user?._id;
 
-          const postData = {
-              ...req.body,
-              userId,
-              // Defaulting some fields for user-submitted posts
-              author: req.body.author || {
-                  name: (req as any).user?.name || "Anonymous",
-                  avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=" + userId,
-                  bio: "Community Contributor"
-              },
-              isPublished: true, // You might want this false in a real app to require review
-              readTime: req.body.readTime || Math.ceil((req.body.content?.split(/\s+/).length || 0) / 200) || 5
-          };
+    if (!userId) {
+      throw new HttpError(401, "UNAUTHORIZED", "Must be logged in to create a post");
+    }
 
-          const newPost = await blogService.createPost(postData);
-          res.status(201).json({ post: newPost });
-      } catch (error: any) {
-          logger.error(`Error in createPost: ${error.message}`);
-          res.status(500).json({ error: "Failed to create blog post", details: error.message });
-      }
+    const postData = {
+      ...req.body,
+      userId,
+      author: req.body.author || {
+        name: (req as any).user?.name || "Anonymous",
+        avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=" + userId,
+        bio: "Community Contributor",
+      },
+      isPublished: true,
+      readTime: req.body.readTime || Math.ceil((req.body.content?.split(/\s+/).length || 0) / 200) || 5,
+    };
+
+    const newPost = await blogService.createPost(postData);
+    res.status(201).json({ post: newPost, request_id: req.requestId });
   }
 }
 

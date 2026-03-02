@@ -65,7 +65,7 @@ function AppAuthenticatedLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex bg-background">
       <Sidebar />
-      <div className="flex-1 flex flex-col overflow-auto">
+      <div className="flex-1 flex flex-col overflow-auto pb-20 lg:pb-0">
         {/* The child component (e.g., Dashboard) will render here */}
         {children}
       </div>

@@ -104,6 +104,13 @@ export const createApp = () => {
     })
   );
 
+  // Extra security headers (Permissions-Policy, cache‑control, HSTS)
+  const { securityHeaders } = require("./middleware/securityHeaders");
+  app.use(securityHeaders({
+    hsts: env.NODE_ENV === "production",
+    contentSecurityPolicy: "", // helmet already sets CSP above
+  }));
+
   app.use(
     express.json({
       limit: REQUEST_SIZE_LIMIT,

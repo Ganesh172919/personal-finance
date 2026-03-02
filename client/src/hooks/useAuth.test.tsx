@@ -58,7 +58,7 @@ describe("useAuth", () => {
 
   it("shows unauthenticated state when API returns 401", async () => {
     server.use(
-      http.get("/api/auth/profile", () => {
+      http.get("/api/v1/auth/profile", () => {
         return new HttpResponse(null, { status: 401 });
       }),
     );

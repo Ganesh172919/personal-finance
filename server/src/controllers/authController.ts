@@ -162,8 +162,28 @@ export const login = async (req: Request, res: Response) => {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   const normalizedPassword = String(password || "");
 
+  // Brute-force protection: check lockout before doing any DB work
+  const { accountLockout, lockoutKey } = require("../services/accountLockout");
+  const { auditFromRequest } = require("../services/auditService");
+  const key = lockoutKey(normalizedEmail, req.ip);
+  const lockStatus = accountLockout.isLocked(key);
+
+  if (lockStatus.locked) {
+    auditFromRequest(req, "account_locked", {
+      metadata: { email: normalizedEmail, remainingMs: lockStatus.remainingMs },
+    });
+    const minutes = Math.ceil(lockStatus.remainingMs / 60000);
+    throw new HttpError(
+      429,
+      "ACCOUNT_LOCKED",
+      `Account temporarily locked due to too many failed attempts. Try again in ${minutes} minute(s).`,
+    );
+  }
+
   const user = await UserModel.findOne({ email: normalizedEmail }).select("+password");
   if (!user || !user.password) {
+    accountLockout.recordFailure(key);
+    auditFromRequest(req, "login_failed", { metadata: { email: normalizedEmail, reason: "user_not_found" } });
     throw new HttpError(401, "INVALID_CREDENTIALS", "Invalid email or password.");
   }
 
@@ -173,6 +193,11 @@ export const login = async (req: Request, res: Response) => {
 
   const isPasswordValid = await bcrypt.compare(normalizedPassword, user.password);
   if (!isPasswordValid) {
+    accountLockout.recordFailure(key);
+    auditFromRequest(req, "login_failed", {
+      userId: user._id,
+      metadata: { email: normalizedEmail, reason: "wrong_password" },
+    });
     throw new HttpError(401, "INVALID_CREDENTIALS", "Invalid email or password.");
   }
 
@@ -184,12 +209,17 @@ export const login = async (req: Request, res: Response) => {
     );
   }
 
+  // Success — clear lockout counter
+  accountLockout.recordSuccess(key);
+  auditFromRequest(req, "login_success", { userId: user._id });
+
   generateAndSetToken(res, user._id.toString());
   res.status(200).json({
     id: user._id.toString(),
     name: user.name,
     email: user.email,
     photoURL: user.photoURL,
+    twoFactorEnabled: !!(user as any).twoFactorEnabled,
     request_id: req.requestId,
   });
 };
