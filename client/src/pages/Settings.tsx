@@ -1,0 +1,771 @@
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { User, Shield, Key, Settings as SettingsIcon, Copy, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useAppConfig } from "@/hooks/useAppConfig";
+import { useToast } from "@/hooks/useToast";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Label } from "@/components/ui/Label";
+import { Card } from "@/components/ui/Card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/Tabs";
+import { Badge } from "@/components/ui/Badge";
+import {
+  setup2FA,
+  verify2FA,
+  disable2FA,
+  get2FAStatus,
+  changePassword,
+  updateProfile
+} from "@/lib/api/settings";
+import { listApiKeys, createApiKey, revokeApiKey } from "@/lib/api/v1/apiKeys";
+import type { ApiKeyListItem } from "@/lib/api/v1/apiKeys";
+
+export default function Settings() {
+  const { user } = useAuth();
+  const configQuery = useAppConfig();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState("profile");
+
+  return (
+    <div className="p-6 space-y-6 max-w-5xl mx-auto">
+      <div>
+        <h1 className="text-3xl font-bold text-foreground">Settings</h1>
+        <p className="text-muted-foreground mt-1">Manage your account settings and preferences</p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="profile" className="flex items-center gap-2">
+            <User className="w-4 h-4" />
+            <span className="hidden sm:inline">Profile</span>
+          </TabsTrigger>
+          <TabsTrigger value="security" className="flex items-center gap-2">
+            <Shield className="w-4 h-4" />
+            <span className="hidden sm:inline">Security</span>
+          </TabsTrigger>
+          <TabsTrigger value="api-keys" className="flex items-center gap-2">
+            <Key className="w-4 h-4" />
+            <span className="hidden sm:inline">API Keys</span>
+          </TabsTrigger>
+          <TabsTrigger value="preferences" className="flex items-center gap-2">
+            <SettingsIcon className="w-4 h-4" />
+            <span className="hidden sm:inline">Preferences</span>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="profile" className="space-y-4 mt-6">
+          <ProfileSection user={user} toast={toast} />
+        </TabsContent>
+
+        <TabsContent value="security" className="space-y-4 mt-6">
+          <SecuritySection user={user} toast={toast} queryClient={queryClient} />
+        </TabsContent>
+
+        <TabsContent value="api-keys" className="space-y-4 mt-6">
+          <ApiKeysSection toast={toast} queryClient={queryClient} />
+        </TabsContent>
+
+        <TabsContent value="preferences" className="space-y-4 mt-6">
+          <PreferencesSection configQuery={configQuery} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ─── Profile Section ────────────────────────────────────
+
+function ProfileSection({ user, toast }: any) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [name, setName] = useState(user?.name || "");
+  const [email, setEmail] = useState(user?.email || "");
+  const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || "");
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await updateProfile({ name, email, phoneNumber });
+      toast({
+        title: "Profile updated",
+        description: "Your profile has been updated successfully.",
+      });
+      setIsEditing(false);
+      window.location.reload(); // Reload to update user context
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update profile",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setName(user?.name || "");
+    setEmail(user?.email || "");
+    setPhoneNumber(user?.phoneNumber || "");
+    setIsEditing(false);
+  };
+
+  return (
+    <Card className="p-6">
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold text-foreground">Profile Information</h2>
+          <p className="text-sm text-muted-foreground">Update your personal information</p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">Name</Label>
+            <Input
+              id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={!isEditing}
+              placeholder="Your name"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={!isEditing}
+              placeholder="your.email@example.com"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="phone">Phone Number</Label>
+            <Input
+              id="phone"
+              type="tel"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              disabled={!isEditing}
+              placeholder="+1 (555) 123-4567"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Authentication Provider</Label>
+            <div className="flex items-center gap-2">
+              <Badge variant={user?.authProvider === "google" ? "default" : "secondary"}>
+                {user?.authProvider === "google" ? "Google" : "Email"}
+              </Badge>
+              {user?.isEmailVerified && (
+                <Badge variant="outline" className="text-green-600 border-green-600">
+                  Verified
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          {!isEditing ? (
+            <Button onClick={() => setIsEditing(true)}>Edit Profile</Button>
+          ) : (
+            <>
+              <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving ? "Saving..." : "Save Changes"}
+              </Button>
+              <Button variant="outline" onClick={handleCancel} disabled={isSaving}>
+                Cancel
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ─── Security Section ───────────────────────────────────
+
+function SecuritySection({ user, toast, queryClient }: any) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
+  const { data: twoFactorStatus, isLoading: isLoadingStatus } = useQuery({
+    queryKey: ["2fa-status"],
+    queryFn: get2FAStatus,
+  });
+
+  const handleChangePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: "Error",
+        description: "New passwords do not match",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      toast({
+        title: "Error",
+        description: "Password must be at least 8 characters long",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await changePassword({ currentPassword, newPassword });
+      toast({
+        title: "Password changed",
+        description: "Your password has been updated successfully.",
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to change password",
+        variant: "destructive",
+      });
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  const canChangePassword = user?.authProvider === "email";
+
+  return (
+    <div className="space-y-4">
+      {canChangePassword && (
+        <Card className="p-6">
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Change Password</h2>
+              <p className="text-sm text-muted-foreground">Update your account password</p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="current-password">Current Password</Label>
+                <div className="relative">
+                  <Input
+                    id="current-password"
+                    type={showCurrentPassword ? "text" : "password"}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="new-password">New Password</Label>
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirm New Password</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                />
+              </div>
+            </div>
+
+            <Button
+              onClick={handleChangePassword}
+              disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}
+            >
+              {isChangingPassword ? "Changing..." : "Change Password"}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      <TwoFactorSection
+        enabled={twoFactorStatus?.enabled || false}
+        isLoading={isLoadingStatus}
+        toast={toast}
+        queryClient={queryClient}
+      />
+    </div>
+  );
+}
+
+// ─── Two-Factor Authentication ──────────────────────────
+
+function TwoFactorSection({ enabled, isLoading, toast, queryClient }: any) {
+  const [isSettingUp, setIsSettingUp] = useState(false);
+  const [setupData, setSetupData] = useState<any>(null);
+  const [verifyToken, setVerifyToken] = useState("");
+  const [disableToken, setDisableToken] = useState("");
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isDisabling, setIsDisabling] = useState(false);
+  const [showDisableDialog, setShowDisableDialog] = useState(false);
+
+  const handleSetup = async () => {
+    setIsSettingUp(true);
+    try {
+      const data = await setup2FA();
+      setSetupData(data);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to setup 2FA",
+        variant: "destructive",
+      });
+      setIsSettingUp(false);
+    }
+  };
+
+  const handleVerify = async () => {
+    setIsVerifying(true);
+    try {
+      const result = await verify2FA(verifyToken);
+      setBackupCodes(result.backup_codes || []);
+      toast({
+        title: "2FA Enabled",
+        description: "Two-factor authentication has been enabled successfully.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["2fa-status"] });
+      setVerifyToken("");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to verify token",
+        variant: "destructive",
+      });
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleDisable = async () => {
+    setIsDisabling(true);
+    try {
+      await disable2FA(disableToken);
+      toast({
+        title: "2FA Disabled",
+        description: "Two-factor authentication has been disabled.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["2fa-status"] });
+      setShowDisableDialog(false);
+      setDisableToken("");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to disable 2FA",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDisabling(false);
+    }
+  };
+
+  const handleCancelSetup = () => {
+    setSetupData(null);
+    setIsSettingUp(false);
+    setVerifyToken("");
+  };
+
+  if (isLoading) {
+    return (
+      <Card className="p-6">
+        <p className="text-muted-foreground">Loading 2FA status...</p>
+      </Card>
+    );
+  }
+
+  if (backupCodes.length > 0) {
+    return (
+      <Card className="p-6">
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Backup Codes</h2>
+            <p className="text-sm text-muted-foreground">
+              Save these codes in a secure location. You can use them to access your account if you lose your
+              authenticator device.
+            </p>
+          </div>
+          <div className="bg-muted p-4 rounded-md font-mono text-sm space-y-1">
+            {backupCodes.map((code, idx) => (
+              <div key={idx}>{code}</div>
+            ))}
+          </div>
+          <Button onClick={() => setBackupCodes([])}>Continue</Button>
+        </div>
+      </Card>
+    );
+  }
+
+  if (setupData && !enabled) {
+    return (
+      <Card className="p-6">
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Setup Two-Factor Authentication</h2>
+            <p className="text-sm text-muted-foreground">
+              Scan the QR code with your authenticator app (like Google Authenticator or Authy)
+            </p>
+          </div>
+
+          <div className="flex justify-center p-4 bg-white rounded-md">
+            <img src={setupData.uri} alt="2FA QR Code" className="w-48 h-48" />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="verify-token">Verification Code</Label>
+            <Input
+              id="verify-token"
+              value={verifyToken}
+              onChange={(e) => setVerifyToken(e.target.value)}
+              placeholder="Enter 6-digit code"
+              maxLength={6}
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <Button onClick={handleVerify} disabled={isVerifying || verifyToken.length !== 6}>
+              {isVerifying ? "Verifying..." : "Verify & Enable"}
+            </Button>
+            <Button variant="outline" onClick={handleCancelSetup}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  if (enabled && !showDisableDialog) {
+    return (
+      <Card className="p-6">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Two-Factor Authentication</h2>
+              <p className="text-sm text-muted-foreground">2FA is currently enabled for your account</p>
+            </div>
+            <Badge className="bg-green-600">Enabled</Badge>
+          </div>
+          <Button variant="destructive" onClick={() => setShowDisableDialog(true)}>
+            Disable 2FA
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  if (showDisableDialog) {
+    return (
+      <Card className="p-6">
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Disable Two-Factor Authentication</h2>
+            <p className="text-sm text-muted-foreground">
+              Enter a verification code from your authenticator app to disable 2FA
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="disable-token">Verification Code</Label>
+            <Input
+              id="disable-token"
+              value={disableToken}
+              onChange={(e) => setDisableToken(e.target.value)}
+              placeholder="Enter 6-digit code"
+              maxLength={6}
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <Button
+              variant="destructive"
+              onClick={handleDisable}
+              disabled={isDisabling || disableToken.length !== 6}
+            >
+              {isDisabling ? "Disabling..." : "Disable 2FA"}
+            </Button>
+            <Button variant="outline" onClick={() => setShowDisableDialog(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="p-6">
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold text-foreground">Two-Factor Authentication</h2>
+          <p className="text-sm text-muted-foreground">
+            Add an extra layer of security to your account by requiring a verification code in addition to your
+            password
+          </p>
+        </div>
+        <Button onClick={handleSetup} disabled={isSettingUp}>
+          {isSettingUp ? "Setting up..." : "Enable 2FA"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+// ─── API Keys Section ───────────────────────────────────
+
+function ApiKeysSection({ toast, queryClient }: any) {
+  const [newKeyName, setNewKeyName] = useState("");
+  const [newKeySecret, setNewKeySecret] = useState("");
+
+  const { data: apiKeysData, isLoading } = useQuery({
+    queryKey: ["api-keys"],
+    queryFn: listApiKeys,
+  });
+
+  const handleCreateKey = async () => {
+    if (!newKeyName.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a name for the API key",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const result = await createApiKey({ name: newKeyName, scopes: ["read", "write"] });
+      setNewKeySecret(result.api_key);
+      setNewKeyName("");
+      queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+      toast({
+        title: "API Key Created",
+        description: "Your API key has been created successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create API key",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRevokeKey = async (keyId: string, keyName: string) => {
+    if (!confirm(`Are you sure you want to revoke the API key "${keyName}"?`)) {
+      return;
+    }
+
+    try {
+      await revokeApiKey(keyId);
+      queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+      toast({
+        title: "API Key Revoked",
+        description: "The API key has been revoked successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to revoke API key",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCopyKey = (key: string) => {
+    navigator.clipboard.writeText(key);
+    toast({
+      title: "Copied",
+      description: "API key copied to clipboard",
+    });
+  };
+
+  if (newKeySecret) {
+    return (
+      <Card className="p-6">
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Your New API Key</h2>
+            <p className="text-sm text-muted-foreground">
+              Make sure to copy your API key now. You won't be able to see it again!
+            </p>
+          </div>
+
+          <div className="bg-muted p-4 rounded-md font-mono text-sm break-all">{newKeySecret}</div>
+
+          <div className="flex gap-3">
+            <Button onClick={() => handleCopyKey(newKeySecret)}>
+              <Copy className="w-4 h-4 mr-2" />
+              Copy to Clipboard
+            </Button>
+            <Button variant="outline" onClick={() => setNewKeySecret("")}>
+              Done
+            </Button>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-6">
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Create New API Key</h2>
+            <p className="text-sm text-muted-foreground">
+              API keys allow you to access the API programmatically
+            </p>
+          </div>
+
+          <div className="flex gap-3">
+            <Input
+              value={newKeyName}
+              onChange={(e) => setNewKeyName(e.target.value)}
+              placeholder="API key name (e.g., Production App)"
+              className="flex-1"
+            />
+            <Button onClick={handleCreateKey} disabled={!newKeyName.trim()}>
+              Create Key
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Your API Keys</h2>
+            <p className="text-sm text-muted-foreground">Manage your existing API keys</p>
+          </div>
+
+          {isLoading ? (
+            <p className="text-muted-foreground">Loading API keys...</p>
+          ) : !apiKeysData?.api_keys || apiKeysData.api_keys.length === 0 ? (
+            <p className="text-muted-foreground">No API keys yet. Create one to get started.</p>
+          ) : (
+            <div className="space-y-3">
+              {apiKeysData.api_keys.map((key: ApiKeyListItem) => (
+                <div
+                  key={key.id}
+                  className="flex items-center justify-between p-4 border border-border rounded-lg"
+                >
+                  <div className="flex-1">
+                    <div className="font-medium text-foreground">{key.name}</div>
+                    <div className="text-sm text-muted-foreground font-mono">{key.prefix}...</div>
+                    {key.last_used_at && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Last used: {new Date(key.last_used_at).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {key.revoked_at ? (
+                      <Badge variant="destructive">Revoked</Badge>
+                    ) : (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleRevokeKey(key.id, key.name)}
+                      >
+                        Revoke
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Preferences Section ────────────────────────────────
+
+function PreferencesSection({ configQuery }: any) {
+  const [currency, setCurrency] = useState(configQuery.data?.org?.currency || "USD");
+  const [locale, setLocale] = useState(configQuery.data?.org?.locale || "en-US");
+  const [timezone, setTimezone] = useState(configQuery.data?.org?.timezone || "America/New_York");
+
+  return (
+    <Card className="p-6">
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold text-foreground">Preferences</h2>
+          <p className="text-sm text-muted-foreground">
+            Customize your experience (managed at organization level)
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="currency">Currency</Label>
+            <Input
+              id="currency"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+              placeholder="USD"
+              maxLength={3}
+              disabled
+            />
+            <p className="text-xs text-muted-foreground">Currency settings are managed in the Organization page</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="locale">Locale</Label>
+            <Input id="locale" value={locale} onChange={(e) => setLocale(e.target.value)} disabled />
+            <p className="text-xs text-muted-foreground">Locale settings are managed in the Organization page</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="timezone">Timezone</Label>
+            <Input id="timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} disabled />
+            <p className="text-xs text-muted-foreground">Timezone settings are managed in the Organization page</p>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
