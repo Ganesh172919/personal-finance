@@ -25,7 +25,7 @@ import {
   BookOpen,
   Menu,
   X,
-  Search,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppConfig } from "@/hooks/useAppConfig";
@@ -65,6 +65,7 @@ const navigationItems: NavigationItem[] = [
   { href: "/growth-stories", icon: TrendingUp, label: "Growth Stories" },
   { href: "/docs", icon: BookOpen, label: "Documentation" },
   { href: "/notes", icon: StickyNote, label: "Note Taking", requiresFeature: "journal_enabled" },
+  { href: "/settings", icon: Settings, label: "Settings", mobilePin: true },
 ];
 
 // ─── Desktop Sidebar ────────────────────────────────────

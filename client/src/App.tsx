@@ -40,6 +40,7 @@ const GrowthStoryDetail = lazy(() => import("./pages/GrowthStoryDetail"));
 const Blogs = lazy(() => import("./pages/Blogs"));
 const BlogDetail = lazy(() => import("./pages/BlogDetail"));
 const Documentation = lazy(() => import("@/pages/Documentation"));
+const Settings = lazy(() => import("@/pages/Settings"));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -174,6 +175,13 @@ function Router() {
           <ProtectedRoute>
             <AppAuthenticatedLayout>
               <Documentation />
+            </AppAuthenticatedLayout>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/settings">
+          <ProtectedRoute>
+            <AppAuthenticatedLayout>
+              <Settings />
             </AppAuthenticatedLayout>
           </ProtectedRoute>
         </Route>
