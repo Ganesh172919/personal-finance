@@ -84,14 +84,11 @@
   --sidebar-ring: hsl(158 64% 52%);
 }
 
-
-
-
 /* Custom utility classes and animations */
 @layer utilities {
   .gradient-border {
-    background: linear-gradient(var(--background), var(--background))
-        padding-box,
+    background:
+      linear-gradient(var(--background), var(--background)) padding-box,
       linear-gradient(135deg, hsl(158 64% 52%), hsl(221 83% 53%)) border-box;
     border: 2px solid transparent;
   }
@@ -119,11 +116,7 @@
   }
 
   .chart-container {
-    background: linear-gradient(
-      135deg,
-      hsl(217 32% 17% / 0.5),
-      hsl(222 84% 5% / 0.8)
-    );
+    background: linear-gradient(135deg, var(--muted), var(--card));
     backdrop-filter: blur(10px);
   }
 }
@@ -135,7 +128,9 @@
     box-shadow: 0 0 5px hsl(158 64% 52% / 0.5);
   }
   50% {
-    box-shadow: 0 0 20px hsl(158 64% 52% / 0.8), 0 0 30px hsl(158 64% 52% / 0.6);
+    box-shadow:
+      0 0 20px hsl(158 64% 52% / 0.8),
+      0 0 30px hsl(158 64% 52% / 0.6);
   }
 }
 

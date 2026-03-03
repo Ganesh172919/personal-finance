@@ -1,6 +1,6 @@
-# FinWise AI Core
+# Personal Finance AI Core
 
-FastAPI-based AI orchestration layer for FinWise.
+FastAPI-based AI orchestration layer for Personal Finance.
 
 ## Runtime
 

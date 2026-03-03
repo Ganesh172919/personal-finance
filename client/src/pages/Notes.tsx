@@ -96,7 +96,16 @@ export default function Notes() {
       setRecognition(data);
       setInsights(null);
       await queryClient.invalidateQueries({ queryKey: ["/api/financial-journal/entries"] });
-      toast({ title: "Recognized", description: "Handwriting converted to text." });
+      if (data.recognized_text && data.recognized_text.trim()) {
+        toast({ title: "Recognized", description: "Handwriting converted to text." });
+      } else {
+        const warnings = data.warnings?.length ? data.warnings.join("; ") : "AI recognition service may not be configured.";
+        toast({
+          title: "Recognition incomplete",
+          description: `Entry saved but no text was recognized. ${warnings}`,
+          variant: "destructive",
+        });
+      }
     },
     onError: (error) => {
       toast({

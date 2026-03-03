@@ -32,6 +32,7 @@ import { optionalJwtAuth } from "./middleware/optionalJwtAuth";
 import { orgContext } from "./middleware/orgContext";
 import { legacyApiDeprecation } from "./middleware/legacyApiDeprecation";
 import { responseContext } from "./middleware/responseContext";
+import { securityHeaders } from "./middleware/securityHeaders";
 
 export const createApp = () => {
   const app = express();
@@ -85,7 +86,7 @@ export const createApp = () => {
         callback(new Error("Origin not allowed by CORS"));
       },
       credentials: true,
-    })
+    }),
   );
 
   app.use(
@@ -95,21 +96,26 @@ export const createApp = () => {
         directives: {
           defaultSrc: ["'self'"],
           scriptSrc: ["'self'", "'unsafe-inline'"],
-          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+          styleSrc: [
+            "'self'",
+            "'unsafe-inline'",
+            "https://fonts.googleapis.com",
+          ],
           fontSrc: ["'self'", "https://fonts.gstatic.com"],
           imgSrc: ["'self'", "data:", "blob:"],
-          connectSrc: ["'self'", ...CORS_ORIGINS.filter(o => o !== "*")],
+          connectSrc: ["'self'", ...CORS_ORIGINS.filter((o) => o !== "*")],
         },
       },
-    })
+    }),
   );
 
   // Extra security headers (Permissions-Policy, cache‑control, HSTS)
-  const { securityHeaders } = require("./middleware/securityHeaders");
-  app.use(securityHeaders({
-    hsts: env.NODE_ENV === "production",
-    contentSecurityPolicy: "", // helmet already sets CSP above
-  }));
+  app.use(
+    securityHeaders({
+      hsts: env.NODE_ENV === "production",
+      contentSecurityPolicy: "", // helmet already sets CSP above
+    }),
+  );
 
   app.use(
     express.json({
@@ -120,7 +126,7 @@ export const createApp = () => {
           (req as any).rawBody = buf;
         }
       },
-    })
+    }),
   );
   app.use(express.urlencoded({ extended: true, limit: REQUEST_SIZE_LIMIT }));
   // Custom NoSQL-injection sanitizer (Express 5 compatible).
@@ -136,14 +142,15 @@ export const createApp = () => {
     return clean;
   };
   app.use((req: Request, _res: Response, next: NextFunction) => {
-    if (req.body && typeof req.body === "object") req.body = stripDollarDot(req.body);
+    if (req.body && typeof req.body === "object")
+      req.body = stripDollarDot(req.body);
     if (req.params && typeof req.params === "object") {
       const cleaned = stripDollarDot(req.params);
       for (const k of Object.keys(cleaned)) (req.params as any)[k] = cleaned[k];
     }
     next();
   });
-  app.use(cookieParser());
+  app.use(cookieParser(env.COOKIE_SECRET));
   app.use(passport.initialize());
   app.use(requestContext);
   app.use(responseContext);
@@ -172,7 +179,7 @@ export const createApp = () => {
 
   // Health checks (must stay before authenticated /api routers)
   app.get("/api/test", (_req, res) => {
-    res.json({ message: "Hello from the FinWise Server!" });
+    res.json({ message: "Hello from the Personal Finance Server!" });
   });
   app.get("/healthz", (_req, res) => {
     res.status(200).send("ok");
@@ -189,7 +196,9 @@ export const createApp = () => {
 
       res.json({ python_service: response.data, request_id: req.requestId });
     } catch (_error) {
-      res.status(503).json({ python_service: "unavailable", request_id: req.requestId });
+      res
+        .status(503)
+        .json({ python_service: "unavailable", request_id: req.requestId });
     }
   });
 

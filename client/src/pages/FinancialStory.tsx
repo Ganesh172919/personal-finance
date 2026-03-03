@@ -20,6 +20,7 @@ import { IFinancialProfile, IFinancialGoal, IAgentOutput } from "@/types";
 import { GoalDetailModal } from "@/components/GoalDetailModal"; 
 import { useToast } from "@/hooks/useToast";
 import { createFinancialStoryShare } from "@/lib/apiClient";
+import { apiClient } from "@/lib/api/core";
 
 // Helper to get the correct icon for milestones
 const milestoneIcons: { [key: string]: typeof Star } = {
@@ -56,10 +57,15 @@ export default function FinancialStory() {
 
   const { data: profile, isLoading: isLoadingProfile } = useQuery<IFinancialProfile>({
     queryKey: ["/api/financial-profiles/me"],
+    queryFn: () => apiClient("/financial-profiles/me"),
   });
 
   const { data: insights, isLoading: isLoadingInsights } = useQuery<IAgentOutput[]>({
     queryKey: [`/api/agent-outputs/user`, userId],
+    queryFn: async () => {
+      const result = await apiClient("/agent-outputs/recent?limit=20");
+      return (result as any)?.outputs || [];
+    },
     enabled: !!userId,
   });
 

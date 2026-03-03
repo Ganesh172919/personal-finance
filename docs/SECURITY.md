@@ -1,8 +1,8 @@
-# FinWise Security Architecture
+# Personal Finance Security Architecture
 
 ## Threat Model
 
-FinWise handles **sensitive personal financial data** — income, debts, spending patterns, and investment goals. The security architecture follows defense-in-depth with OWASP API Security Top 10 coverage.
+Personal Finance handles **sensitive personal financial data** — income, debts, spending patterns, and investment goals. The security architecture follows defense-in-depth with OWASP API Security Top 10 coverage.
 
 ### Attack Surface
 
@@ -42,6 +42,12 @@ POST /api/v1/auth/2fa/verify      → { token: "123456" }       (verify TOTP)
 
 ```
 POST /api/v1/auth/2fa/disable     → { token: "123456" }       (requires TOTP or backup code)
+```
+
+### Status Check
+
+```
+GET /api/v1/auth/2fa/status        → { enabled: true/false }
 ```
 
 ### Implementation
@@ -152,3 +158,28 @@ Applied via Helmet + custom middleware:
 ```
 GET /api/v1/integrations/health-summary
 ```
+
+---
+
+## Cookie Security
+
+Cookie behavior is configurable for production deployment:
+
+| Variable           | Default | Description                          |
+| ------------------ | ------- | ------------------------------------ |
+| `COOKIE_SECRET`    | —       | Secret for signed cookies            |
+| `COOKIE_SECURE`    | auto    | Set Secure flag (auto in production) |
+| `COOKIE_SAME_SITE` | `lax`   | SameSite attribute                   |
+| `COOKIE_DOMAIN`    | —       | Cookie Domain scope                  |
+
+> `COOKIE_SAME_SITE=none` requires `COOKIE_SECURE=true`.
+
+---
+
+## API Versioning
+
+The canonical API surface is `/api/v1`. Legacy `/api` routes are maintained during a deprecation window and include `X-API-Deprecation` headers. All new features should target `/api/v1` exclusively.
+
+---
+
+_See also_: [MIDDLEWARE.md](./MIDDLEWARE.md) · [ENV_VARIABLES.md](./ENV_VARIABLES.md) · [PLUGIN_SYSTEM.md](./PLUGIN_SYSTEM.md)

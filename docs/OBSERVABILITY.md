@@ -1,4 +1,4 @@
-# FinWise — Observability Runbook
+# Personal Finance — Observability Runbook
 
 > How to answer "what's slow?" and "what's failing?" within minutes.
 
@@ -51,6 +51,16 @@ OTEL_ENDPOINT=http://localhost:4318
 
 View traces at: http://localhost:16686
 
+### 3. Health Endpoints
+
+| Endpoint                                  | Purpose                                       |
+| ----------------------------------------- | --------------------------------------------- |
+| `GET /healthz`                            | Liveness probe (returns `ok`)                 |
+| `GET /api/test`                           | Quick connectivity check                      |
+| `GET /api/python-health`                  | Python AI Core service health                 |
+| `GET /api/metrics`                        | Prometheus metrics (requires `METRICS_TOKEN`) |
+| `GET /api/v1/integrations/health-summary` | Connector health summary per org              |
+
 ---
 
 ## Key Metrics to Monitor
@@ -70,6 +80,8 @@ View traces at: http://localhost:16686
 | AI Core circuit breaker open events  | Service degradation |
 | `AI_CORE_TIMEOUT_MS` breaches        | Slow AI responses   |
 | `AI_CORE_MAX_CONCURRENCY` saturation | Capacity limit hit  |
+
+Circuit breaker config: `AI_CORE_CIRCUIT_FAILURE_THRESHOLD` (default 3), `AI_CORE_CIRCUIT_OPEN_MS` (default 30s), `AI_CORE_HEALTH_CACHE_MS` (default 5s). See [ENV_VARIABLES.md](./ENV_VARIABLES.md) for the full list.
 
 ### Business
 

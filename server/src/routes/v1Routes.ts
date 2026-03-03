@@ -205,8 +205,36 @@ import {
   updateCategoryRuleBodySchema,
   categoryRuleIdParamSchema,
 } from "../schemas/v1/categoryRuleSchemas";
+import {
+  listReminders,
+  createReminder,
+  toggleReminder,
+  deleteReminder,
+} from "../controllers/v1/calendarReminderController";
 
 const router = Router();
+
+// ─── Calendar Reminders ──────────────────────────────────
+router.get(
+  "/calendar-reminders",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(listReminders),
+);
+router.post(
+  "/calendar-reminders",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(createReminder),
+);
+router.patch(
+  "/calendar-reminders/:id/toggle",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(toggleReminder),
+);
+router.delete(
+  "/calendar-reminders/:id",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(deleteReminder),
+);
 
 // ─── Global Search ────────────────────────────────────────
 router.get(
@@ -231,7 +259,10 @@ router.post(
 router.patch(
   "/category-rules/:id",
   passport.authenticate("jwt", { session: false }),
-  validate({ params: categoryRuleIdParamSchema, body: updateCategoryRuleBodySchema }),
+  validate({
+    params: categoryRuleIdParamSchema,
+    body: updateCategoryRuleBodySchema,
+  }),
   asyncRoute(updateRule),
 );
 router.delete(
@@ -676,6 +707,79 @@ router.get(
   asyncRoute(getAnalyticsOverview),
 );
 
+// ─── Analytics Detail Endpoints ──────────────────────────
+import {
+  getSpendingHeatmap,
+  getCategoryTrends,
+  getIncomeExpenseSummary,
+  getAccountBalances,
+  getTopMerchants,
+} from "../controllers/v1/analyticsDetailController";
+
+router.get(
+  "/analytics/spending-heatmap",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(getSpendingHeatmap),
+);
+router.get(
+  "/analytics/category-trends",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(getCategoryTrends),
+);
+router.get(
+  "/analytics/income-expense",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(getIncomeExpenseSummary),
+);
+router.get(
+  "/analytics/account-balances",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(getAccountBalances),
+);
+router.get(
+  "/analytics/top-merchants",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(getTopMerchants),
+);
+
+// ─── Activity Feed ───────────────────────────────────────
+import { getActivityFeed } from "../controllers/v1/activityFeedController";
+
+router.get(
+  "/activity-feed",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(getActivityFeed),
+);
+
+// ─── Comments ────────────────────────────────────────────
+import {
+  listComments,
+  createComment,
+  updateComment,
+  deleteComment,
+} from "../controllers/v1/commentController";
+
+router.get(
+  "/comments",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(listComments),
+);
+router.post(
+  "/comments",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(createComment),
+);
+router.patch(
+  "/comments/:id",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(updateComment),
+);
+router.delete(
+  "/comments/:id",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(deleteComment),
+);
+
 router.post(
   "/shares/financial-story",
   passport.authenticate("jwt", { session: false }),
@@ -703,51 +807,111 @@ import {
   get2FAStatus,
 } from "../controllers/v1/twoFactorController";
 
-router.post("/auth/2fa/setup", passport.authenticate("jwt", { session: false }), asyncRoute(setup2FA));
-router.post("/auth/2fa/verify", passport.authenticate("jwt", { session: false }), asyncRoute(verify2FA));
-router.post("/auth/2fa/disable", passport.authenticate("jwt", { session: false }), asyncRoute(disable2FA));
-router.get("/auth/2fa/status", passport.authenticate("jwt", { session: false }), asyncRoute(get2FAStatus));
+router.post(
+  "/auth/2fa/setup",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(setup2FA),
+);
+router.post(
+  "/auth/2fa/verify",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(verify2FA),
+);
+router.post(
+  "/auth/2fa/disable",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(disable2FA),
+);
+router.get(
+  "/auth/2fa/status",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(get2FAStatus),
+);
 
 // ─── Security Audit Logs ─────────────────────────────────
 import { getUserAuditLog, getOrgAuditLog } from "../services/auditService";
 
-router.get("/security/audit-log", passport.authenticate("jwt", { session: false }), asyncRoute(async (req: any, res: any) => {
-  const userId = req.user?._id;
-  if (!userId) return res.status(401).json({ message: "Unauthorized", code: "UNAUTHORIZED", request_id: req.requestId });
+router.get(
+  "/security/audit-log",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(async (req: any, res: any) => {
+    const userId = req.user?._id;
+    if (!userId)
+      return res
+        .status(401)
+        .json({
+          message: "Unauthorized",
+          code: "UNAUTHORIZED",
+          request_id: req.requestId,
+        });
 
-  const limit = Math.min(parseInt(req.query?.limit || "50", 10) || 50, 200);
-  const actions = req.query?.actions ? String(req.query.actions).split(",") : undefined;
-  const logs = await getUserAuditLog(userId, { limit, actions: actions as any });
+    const limit = Math.min(parseInt(req.query?.limit || "50", 10) || 50, 200);
+    const actions = req.query?.actions
+      ? String(req.query.actions).split(",")
+      : undefined;
+    const logs = await getUserAuditLog(userId, {
+      limit,
+      actions: actions as any,
+    });
 
-  res.json({ audit_log: logs, request_id: req.requestId });
-}));
+    res.json({ audit_log: logs, request_id: req.requestId });
+  }),
+);
 
-router.get("/orgs/audit-log", passport.authenticate("jwt", { session: false }), asyncRoute(async (req: any, res: any) => {
-  const orgId = req.org?.orgId;
-  if (!orgId) return res.status(400).json({ message: "Organization context required", code: "MISSING_ORG_CONTEXT", request_id: req.requestId });
+router.get(
+  "/orgs/audit-log",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(async (req: any, res: any) => {
+    const orgId = req.org?.orgId;
+    if (!orgId)
+      return res
+        .status(400)
+        .json({
+          message: "Organization context required",
+          code: "MISSING_ORG_CONTEXT",
+          request_id: req.requestId,
+        });
 
-  const limit = Math.min(parseInt(req.query?.limit || "100", 10) || 100, 500);
-  const severity = req.query?.severity;
-  const logs = await getOrgAuditLog(orgId, { limit, severity });
+    const limit = Math.min(parseInt(req.query?.limit || "100", 10) || 100, 500);
+    const severity = req.query?.severity;
+    const logs = await getOrgAuditLog(orgId, { limit, severity });
 
-  res.json({ audit_log: logs, request_id: req.requestId });
-}));
+    res.json({ audit_log: logs, request_id: req.requestId });
+  }),
+);
 
 // ─── Connector Health ────────────────────────────────────
 import { getConnectorHealthSummary } from "../services/connectorHealth";
 import mongoose from "mongoose";
 
-router.get("/integrations/health-summary", passport.authenticate("jwt", { session: false }), asyncRoute(async (req: any, res: any) => {
-  const orgId = req.org?.orgId;
-  if (!orgId) return res.status(400).json({ message: "Organization context required", code: "MISSING_ORG_CONTEXT", request_id: req.requestId });
+router.get(
+  "/integrations/health-summary",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(async (req: any, res: any) => {
+    const orgId = req.org?.orgId;
+    if (!orgId)
+      return res
+        .status(400)
+        .json({
+          message: "Organization context required",
+          code: "MISSING_ORG_CONTEXT",
+          request_id: req.requestId,
+        });
 
-  const summary = await getConnectorHealthSummary(new mongoose.Types.ObjectId(String(orgId)));
-  res.json({ connectors: summary, request_id: req.requestId });
-}));
+    const summary = await getConnectorHealthSummary(
+      new mongoose.Types.ObjectId(String(orgId)),
+    );
+    res.json({ connectors: summary, request_id: req.requestId });
+  }),
+);
 
 // ─── Plugin Manifest Validation ──────────────────────────
 import { validatePluginManifest } from "../modules/plugins/permissionMiddleware";
 
-router.post("/plugins/validate-manifest", passport.authenticate("jwt", { session: false }), asyncRoute(validatePluginManifest));
+router.post(
+  "/plugins/validate-manifest",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(validatePluginManifest),
+);
 
 export default router;

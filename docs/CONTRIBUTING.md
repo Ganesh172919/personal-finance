@@ -1,6 +1,6 @@
-# FinWise — Contributing Guidelines
+# Personal Finance — Contributing Guidelines
 
-> How to contribute to the FinWise project, including coding standards, branching strategy, and PR process.
+> How to contribute to the Personal Finance project, including coding standards, branching strategy, and PR process.
 
 ---
 
@@ -105,11 +105,15 @@ test(server): add unit tests for billing service
 | Rule                                            | Why                                               |
 | ----------------------------------------------- | ------------------------------------------------- |
 | API client modules go in `client/src/lib/api/`  | Single source of truth for HTTP calls             |
+| V1 API modules go in `client/src/lib/api/v1/`   | Versioned API calls for `/api/v1` endpoints       |
 | Business logic goes in `server/src/services/`   | Controllers stay thin — orchestration only        |
 | Validation schemas go in `server/src/schemas/`  | Co-located with routes, shared across controllers |
-| New models go in `server/src/models/`           | One file per Mongoose model                       |
-| New pages go in `client/src/pages/`             | Lazy-loaded in `App.tsx`                          |
+| V1 schemas go in `server/src/schemas/v1/`       | Versioned validation schemas                      |
+| New models go in `server/src/models/`           | One file per Mongoose model (47 total)            |
+| New pages go in `client/src/pages/`             | Lazy-loaded in `App.tsx` (33 pages)               |
 | Reusable UI goes in `client/src/components/ui/` | Follow shadcn/ui patterns                         |
+| Category rules go in `server/src/services/`     | Auto-categorization via `categoryRuleService.ts`  |
+| Middleware goes in `server/src/middleware/`     | 13 middleware modules                             |
 
 ---
 

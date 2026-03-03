@@ -1,0 +1,11 @@
+SURVEY PART 5: COLLABORATION AND AUTOMATION WORKFLOWS
+
+1. Real-Time Collaboration
+Finance is often a shared responsibility. The platform supports multiple users on a single organization profile:
+- Activity Feed: A real-time stream mapping all enterprise actions and system events.
+- Comments and Annotations: Users can thread comments on specific transactions, goals, and budget items to foster discussion.
+- Notification Center: Push-like alerts using Server-Sent Events (SSE) keep users instantly updated.
+
+2. Automation Engine
+- Workflow Triggers: Event-driven architecture that triggers actions based on domain criteria (e.g., categorizing certain merchants automatically).
+- Autopilot: AI-generated financial plans follow a "simulate -> approve -> execute" pipeline, ensuring the AI cannot make unauthorized financial movements without human oversight.

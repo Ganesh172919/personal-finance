@@ -20,8 +20,8 @@ export default defineConfig(({ mode }) => {
         registerType: "autoUpdate",
         includeAssets: ["favicon.ico", "apple-touch-icon.png"],
         manifest: {
-          name: "FinWise — AI Financial Strategist",
-          short_name: "FinWise",
+          name: "Personal Finance — AI Financial Strategist",
+          short_name: "Personal Finance",
           description: "Your AI-powered finance co-pilot for budgeting, insights, and automation",
           theme_color: "#34d399",
           background_color: "#000000",

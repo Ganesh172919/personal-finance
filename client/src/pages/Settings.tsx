@@ -22,14 +22,15 @@ import { listApiKeys, createApiKey, revokeApiKey } from "@/lib/api/v1/apiKeys";
 import type { ApiKeyListItem } from "@/lib/api/v1/apiKeys";
 
 export default function Settings() {
-  const { user } = useAuth();
+  const { user, checkAuthStatus } = useAuth();
   const configQuery = useAppConfig();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("profile");
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl mx-auto">
+    <div className="flex-1 p-6 overflow-auto">
+    <div className="space-y-6 max-w-4xl mx-auto">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Settings</h1>
         <p className="text-muted-foreground mt-1">Manage your account settings and preferences</p>
@@ -56,7 +57,7 @@ export default function Settings() {
         </TabsList>
 
         <TabsContent value="profile" className="space-y-4 mt-6">
-          <ProfileSection user={user} toast={toast} />
+          <ProfileSection user={user} toast={toast} checkAuthStatus={checkAuthStatus} />
         </TabsContent>
 
         <TabsContent value="security" className="space-y-4 mt-6">
@@ -68,16 +69,17 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="preferences" className="space-y-4 mt-6">
-          <PreferencesSection configQuery={configQuery} />
+          <PreferencesSection configQuery={configQuery} toast={toast} queryClient={queryClient} />
         </TabsContent>
       </Tabs>
+    </div>
     </div>
   );
 }
 
 // ─── Profile Section ────────────────────────────────────
 
-function ProfileSection({ user, toast }: any) {
+function ProfileSection({ user, toast, checkAuthStatus }: any) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
@@ -93,7 +95,7 @@ function ProfileSection({ user, toast }: any) {
         description: "Your profile has been updated successfully.",
       });
       setIsEditing(false);
-      window.location.reload(); // Reload to update user context
+      await checkAuthStatus(); // Refresh user context without full reload
     } catch (error: any) {
       toast({
         title: "Error",
@@ -448,8 +450,18 @@ function TwoFactorSection({ enabled, isLoading, toast, queryClient }: any) {
             </p>
           </div>
 
-          <div className="flex justify-center p-4 bg-white rounded-md">
-            <img src={setupData.uri} alt="2FA QR Code" className="w-48 h-48" />
+          <div className="flex flex-col items-center gap-3 p-4 bg-white rounded-md">
+            <img
+              src={`https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl=${encodeURIComponent(setupData.uri)}&choe=UTF-8`}
+              alt="2FA QR Code"
+              className="w-48 h-48"
+            />
+            <div className="text-xs text-gray-500 text-center">
+              <p>Can't scan? Enter this key manually:</p>
+              <code className="text-xs font-mono bg-gray-100 px-2 py-1 rounded select-all">
+                {setupData.secret || setupData.uri?.match(/secret=([^&]+)/)?.[1] || ""}
+              </code>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -724,46 +736,149 @@ function ApiKeysSection({ toast, queryClient }: any) {
 
 // ─── Preferences Section ────────────────────────────────
 
-function PreferencesSection({ configQuery }: any) {
-  const [currency, setCurrency] = useState(configQuery.data?.org?.currency || "USD");
-  const [locale, setLocale] = useState(configQuery.data?.org?.locale || "en-US");
-  const [timezone, setTimezone] = useState(configQuery.data?.org?.timezone || "America/New_York");
+const CURRENCIES = [
+  { value: "INR", label: "₹ INR — Indian Rupee" },
+  { value: "USD", label: "$ USD — US Dollar" },
+  { value: "EUR", label: "€ EUR — Euro" },
+  { value: "GBP", label: "£ GBP — British Pound" },
+  { value: "JPY", label: "¥ JPY — Japanese Yen" },
+  { value: "AUD", label: "A$ AUD — Australian Dollar" },
+  { value: "CAD", label: "C$ CAD — Canadian Dollar" },
+  { value: "SGD", label: "S$ SGD — Singapore Dollar" },
+  { value: "AED", label: "د.إ AED — UAE Dirham" },
+  { value: "CHF", label: "CHF — Swiss Franc" },
+];
+
+const LOCALES = [
+  { value: "en-IN", label: "English (India)" },
+  { value: "en-US", label: "English (US)" },
+  { value: "en-GB", label: "English (UK)" },
+  { value: "en-AU", label: "English (Australia)" },
+  { value: "hi-IN", label: "Hindi (India)" },
+  { value: "de-DE", label: "German (Germany)" },
+  { value: "fr-FR", label: "French (France)" },
+  { value: "ja-JP", label: "Japanese (Japan)" },
+  { value: "zh-CN", label: "Chinese (China)" },
+];
+
+const TIMEZONES = [
+  { value: "Asia/Kolkata", label: "Asia/Kolkata (IST, UTC+5:30)" },
+  { value: "UTC", label: "UTC" },
+  { value: "America/New_York", label: "America/New_York (EST)" },
+  { value: "America/Chicago", label: "America/Chicago (CST)" },
+  { value: "America/Los_Angeles", label: "America/Los_Angeles (PST)" },
+  { value: "Europe/London", label: "Europe/London (GMT)" },
+  { value: "Europe/Berlin", label: "Europe/Berlin (CET)" },
+  { value: "Asia/Tokyo", label: "Asia/Tokyo (JST)" },
+  { value: "Asia/Singapore", label: "Asia/Singapore (SGT)" },
+  { value: "Australia/Sydney", label: "Australia/Sydney (AEST)" },
+  { value: "Asia/Dubai", label: "Asia/Dubai (GST)" },
+];
+
+function PreferencesSection({ configQuery, toast, queryClient }: any) {
+  const org = configQuery.data?.org;
+  const [currency, setCurrency] = useState(org?.currency || "USD");
+  const [locale, setLocale] = useState(org?.locale || "en-US");
+  const [timezone, setTimezone] = useState(org?.timezone || "UTC");
+  const [isSaving, setIsSaving] = useState(false);
+
+  const orgId = org?.id;
+  const hasChanges =
+    currency !== (org?.currency || "USD") ||
+    locale !== (org?.locale || "en-US") ||
+    timezone !== (org?.timezone || "UTC");
+
+  const handleSave = async () => {
+    if (!orgId) {
+      toast({ title: "Error", description: "No organization context found.", variant: "destructive" });
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const { apiClient } = await import("@/lib/api/core");
+      await apiClient(`/v1/orgs/${orgId}/settings`, {
+        method: "PATCH",
+        body: JSON.stringify({ currency, locale, timezone }),
+      });
+      toast({ title: "Preferences saved", description: "Your currency, locale, and timezone have been updated." });
+      await queryClient.invalidateQueries({ queryKey: ["/api/config/me"] });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to save preferences", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <Card className="p-6">
-      <div className="space-y-4">
+      <div className="space-y-6">
         <div>
           <h2 className="text-xl font-semibold text-foreground">Preferences</h2>
           <p className="text-sm text-muted-foreground">
-            Customize your experience (managed at organization level)
+            Customize your currency, locale, and timezone
           </p>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div className="space-y-2">
             <Label htmlFor="currency">Currency</Label>
-            <Input
+            <select
               id="currency"
               value={currency}
-              onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-              placeholder="USD"
-              maxLength={3}
-              disabled
-            />
-            <p className="text-xs text-muted-foreground">Currency settings are managed in the Organization page</p>
+              onChange={(e) => setCurrency(e.target.value)}
+              className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Used for formatting amounts across the app
+            </p>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="locale">Locale</Label>
-            <Input id="locale" value={locale} onChange={(e) => setLocale(e.target.value)} disabled />
-            <p className="text-xs text-muted-foreground">Locale settings are managed in the Organization page</p>
+            <select
+              id="locale"
+              value={locale}
+              onChange={(e) => setLocale(e.target.value)}
+              className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              {LOCALES.map((l) => (
+                <option key={l.value} value={l.value}>{l.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Controls number and date formatting
+            </p>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="timezone">Timezone</Label>
-            <Input id="timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} disabled />
-            <p className="text-xs text-muted-foreground">Timezone settings are managed in the Organization page</p>
+            <select
+              id="timezone"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              {TIMEZONES.map((tz) => (
+                <option key={tz.value} value={tz.value}>{tz.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Used for calendar and scheduling features
+            </p>
           </div>
+        </div>
+
+        <div className="flex justify-end">
+          <Button
+            onClick={handleSave}
+            disabled={isSaving || !hasChanges}
+          >
+            {isSaving ? "Saving..." : "Save Preferences"}
+          </Button>
         </div>
       </div>
     </Card>

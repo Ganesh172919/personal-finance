@@ -1,4 +1,4 @@
-# FinWise — Frontend Architecture
+# Personal Finance — Frontend Architecture
 
 > Guide to the React client application architecture, routing, state management, and component system.
 
@@ -33,19 +33,24 @@ client/src/
 │   ├── Sidebar.tsx         # Navigation sidebar
 │   ├── AiCommandBar.tsx    # AI command palette (⌘K)
 │   ├── Dashboard.test.tsx  # Component tests
-│   └── ... (26 feature components)
+│   └── ... (30 feature components)
 ├── features/               # Feature modules
 │   ├── chat/               # Chat UI components (8 files)
 │   ├── journaling/         # Financial journaling
 │   └── workflows/          # Workflow builder components
-├── hooks/                  # Custom React hooks (9 files)
+├── hooks/                  # Custom React hooks (13 files)
 ├── lib/                    # API layer & utilities
-│   ├── api/                # 14 domain-specific API modules
+│   ├── api/                # 16 root + 15 v1 domain-specific API modules
 │   ├── apiBase.ts          # Axios base configuration
+│   ├── apiClient.ts        # Re-export entry point
+│   ├── apiError.ts         # Error handling utilities
+│   ├── orgContext.ts       # Organization context helper
 │   ├── queryClient.ts      # React Query client config
+│   ├── runtimeLogger.ts    # Client-side runtime logger
+│   ├── url.ts              # URL utilities
 │   └── utils.ts            # General utilities
-├── pages/                  # Route-level page components (29 pages)
-├── stores/                 # Zustand state stores (5 stores)
+├── pages/                  # Route-level page components (33 pages)
+├── stores/                 # Zustand state stores (5 stores + test file)
 ├── types/                  # Shared TypeScript interfaces
 ├── App.tsx                 # Root app: providers + routing
 ├── main.tsx                # Vite entry point
@@ -93,6 +98,9 @@ All routes are defined in `App.tsx` using **Wouter**. Protected routes are wrapp
 | `/org`                  | `Organization`      | Organization settings & members   |
 | `/onboarding`           | `Onboarding`        | New user onboarding wizard        |
 | `/docs`                 | `Documentation`     | In-app documentation viewer       |
+| `/settings`             | `Settings`          | User profile & account settings   |
+| `/activity`             | `ActivityFeed`      | Organization activity stream      |
+| `/calendar`             | `FinancialCalendar` | Calendar view of financial events |
 
 ### Chat Routes (Full-screen layout)
 
@@ -127,16 +135,20 @@ React Query handles all server state. The query client is configured in `lib/que
 
 ## Custom Hooks
 
-| Hook                | File                   | Purpose                                               |
-| ------------------- | ---------------------- | ----------------------------------------------------- |
-| `useAuth`           | `useAuth.tsx`          | Authentication context (user, login, logout, loading) |
-| `useAIStream`       | `useAIStream.ts`       | Server-Sent Events streaming for AI responses         |
-| `useRealtimeEvents` | `useRealtimeEvents.ts` | SSE connection for real-time app events               |
-| `useAppConfig`      | `useAppConfig.ts`      | Fetches public app configuration                      |
-| `useOrgFormatters`  | `useOrgFormatters.ts`  | Currency & date formatting based on org settings      |
-| `useDebounce`       | `useDebounce.ts`       | Debounced value hook                                  |
-| `useToast`          | `useToast.tsx`         | Toast notification system                             |
-| `useMobile`         | `use-mobile.ts`        | Responsive viewport detection                         |
+| Hook                   | File                      | Purpose                                               |
+| ---------------------- | ------------------------- | ----------------------------------------------------- |
+| `useAuth`              | `useAuth.tsx`             | Authentication context (user, login, logout, loading) |
+| `useAIStream`          | `useAIStream.ts`          | Server-Sent Events streaming for AI responses         |
+| `useRealtimeEvents`    | `useRealtimeEvents.ts`    | SSE connection for real-time app events               |
+| `useAppConfig`         | `useAppConfig.ts`         | Fetches public app configuration                      |
+| `useOrgFormatters`     | `useOrgFormatters.ts`     | Currency & date formatting based on org settings      |
+| `useDebounce`          | `useDebounce.ts`          | Debounced value hook                                  |
+| `useToast`             | `useToast.tsx`            | Toast notification system                             |
+| `useMobile`            | `use-mobile.ts`           | Responsive viewport detection                         |
+| `useAccessibility`     | `useAccessibility.tsx`    | Accessibility helpers (ARIA, focus management)        |
+| `useKeyboardShortcuts` | `useKeyboardShortcuts.ts` | Global keyboard shortcut registration                 |
+| `useNotifications`     | `useNotifications.ts`     | Real-time notification subscription and management    |
+| `useVirtualList`       | `useVirtualList.ts`       | Virtualized list rendering for large datasets         |
 
 ---
 
@@ -159,8 +171,28 @@ Located in `lib/api/`, one module per domain:
 | `profile.ts`      | Financial profile                     |
 | `config.ts`       | App config                            |
 | `tools.ts`        | Tool simulation & execution           |
+| `settings.ts`     | User settings & preferences           |
 
 All modules use the shared `apiBase.ts` Axios instance with automatic JWT token attachment and error handling via `apiError.ts`.
+
+### V1 API Client Modules (`lib/api/v1/`)
+
+| Module             | Endpoints covered                          |
+| ------------------ | ------------------------------------------ |
+| `analytics.ts`     | Analytics overview and detail queries      |
+| `apiKeys.ts`       | API key CRUD and revocation                |
+| `autopilot.ts`     | Plan, simulate, approve, execute           |
+| `collaboration.ts` | Activity feed, comments, annotations       |
+| `exports.ts`       | Export creation, status, download          |
+| `finance.ts`       | Accounts, merchants, budgets, recurring    |
+| `invites.ts`       | Organization invite acceptance             |
+| `notifications.ts` | Notification listing and read status       |
+| `orgs.ts`          | Organization CRUD and settings             |
+| `platform.ts`      | Marketplace, plugins, integrations, events |
+| `referrals.ts`     | Referral codes and redemption              |
+| `shares.ts`        | Public share links                         |
+| `usage.ts`         | Usage ledger queries                       |
+| `workflows.ts`     | Workflow CRUD and execution                |
 
 ---
 
@@ -174,18 +206,36 @@ All modules use the shared `apiBase.ts` Axios instance with automatic JWT token 
 
 ### Feature Components
 
-| Component                 | Purpose                              |
-| ------------------------- | ------------------------------------ |
-| `AiCommandBar`            | Global AI command palette (⌘K)       |
-| `ActionableInsights`      | Financial insight cards with actions |
-| `SpendingAnalysis`        | Spending breakdown charts            |
-| `FinancialVitals`         | Key financial metrics dashboard      |
-| `GoalProgress`            | Goal tracking with progress bars     |
-| `InvestmentPortfolio`     | Portfolio allocation visualization   |
-| `ScenarioWidget`          | What-if scenario builder             |
-| `TasksWidget`             | Actionable task list                 |
-| `ReceiptOcrDialog`        | Receipt upload & OCR review          |
-| `AgentWorkflowVisualizer` | Visual workflow execution display    |
+| Component                      | Purpose                              |
+| ------------------------------ | ------------------------------------ |
+| `AiCommandBar`                 | Global AI command palette (⌘K)       |
+| `ActionableInsights`           | Financial insight cards with actions |
+| `SpendingAnalysis`             | Spending breakdown charts            |
+| `FinancialVitals`              | Key financial metrics dashboard      |
+| `GoalProgress`                 | Goal tracking with progress bars     |
+| `InvestmentPortfolio`          | Portfolio allocation visualization   |
+| `ScenarioWidget`               | What-if scenario builder             |
+| `TasksWidget`                  | Actionable task list                 |
+| `ReceiptOcrDialog`             | Receipt upload & OCR review          |
+| `AgentWorkflowVisualizer`      | Visual workflow execution display    |
+| `AiStatusDialog`               | AI Core status & health dialog       |
+| `AppErrorBoundary`             | Global React error boundary          |
+| `FeatureLimitDialog`           | Feature limit reached notification   |
+| `PlanAndUsageDialog`           | Plan details & usage overview        |
+| `QuickActions`                 | Dashboard quick action cards         |
+| `RecentActivity`               | Recent activity feed widget          |
+| `TaskApplyDialog`              | Task recommendation apply dialog     |
+| `InsightDetailModal`           | Detailed AI insight view             |
+| `GoalDetailModal`              | Financial goal detail view           |
+| `ReadingProgressBar`           | Blog/story reading progress          |
+| `FinancialTransformationChart` | Financial transformation timeline    |
+| `CommentThread`                | Threaded comment discussion UI       |
+| `NotificationCenter`           | Real-time notification panel         |
+| `FinancialCopilot`             | AI copilot assistant widget          |
+| `BlogCard`                     | Blog post preview card               |
+| `GrowthStoryCard`              | Growth story preview card            |
+| `LazyImage`                    | Progressive image loading component  |
+| `Sidebar`                      | Main navigation sidebar              |
 
 ---
 
@@ -196,7 +246,8 @@ All page components are **lazy-loaded** via `React.lazy()` + `<Suspense>`, ensur
 ```tsx
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const ChatPage = lazy(() => import("@/pages/ChatPage"));
-// ... all 29 pages
+const Settings = lazy(() => import("@/pages/Settings"));
+// ... all 33 pages
 ```
 
 ---

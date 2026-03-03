@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/ToolTip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Sidebar } from "@/components/Sidebar";
+import { FinancialCopilot } from "@/components/FinancialCopilot";
 import { FeatureLimitDialog } from "@/components/FeatureLimitDialog";
 import { PlanAndUsageDialog } from "@/components/PlanAndUsageDialog";
 import { useRealtimeEvents } from "@/hooks/useRealtimeEvents";
@@ -41,6 +42,9 @@ const Blogs = lazy(() => import("./pages/Blogs"));
 const BlogDetail = lazy(() => import("./pages/BlogDetail"));
 const Documentation = lazy(() => import("@/pages/Documentation"));
 const Settings = lazy(() => import("@/pages/Settings"));
+const Analytics = lazy(() => import("@/pages/Analytics"));
+const FinancialCalendar = lazy(() => import("@/pages/FinancialCalendar"));
+const ActivityFeed = lazy(() => import("@/pages/ActivityFeed"));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -50,7 +54,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-          <p className="text-muted-foreground text-sm animate-pulse">Loading CognitionOS...</p>
+          <p className="text-muted-foreground text-sm animate-pulse">Loading Personal Finance...</p>
         </div>
       </div>
     );
@@ -67,9 +71,9 @@ function AppAuthenticatedLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex bg-background">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-auto pb-20 lg:pb-0">
-        {/* The child component (e.g., Dashboard) will render here */}
         {children}
       </div>
+      <FinancialCopilot />
     </div>
   );
 }
@@ -91,7 +95,7 @@ function Router() {
         <div className="min-h-screen flex items-center justify-center bg-background">
           <div className="flex flex-col items-center gap-4">
             <div className="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-            <p className="text-muted-foreground text-sm animate-pulse">Loading CognitionOS...</p>
+            <p className="text-muted-foreground text-sm animate-pulse">Loading Personal Finance...</p>
           </div>
         </div>
       }
@@ -178,13 +182,10 @@ function Router() {
             </AppAuthenticatedLayout>
           </ProtectedRoute>
         </Route>
-        <Route path="/settings">
-          <ProtectedRoute>
-            <AppAuthenticatedLayout>
-              <Settings />
-            </AppAuthenticatedLayout>
-          </ProtectedRoute>
-        </Route>
+        <Route path="/settings"><ProtectedRoute><AppAuthenticatedLayout><Settings /></AppAuthenticatedLayout></ProtectedRoute></Route>
+        <Route path="/analytics"><ProtectedRoute><AppAuthenticatedLayout><Analytics /></AppAuthenticatedLayout></ProtectedRoute></Route>
+        <Route path="/calendar"><ProtectedRoute><AppAuthenticatedLayout><FinancialCalendar /></AppAuthenticatedLayout></ProtectedRoute></Route>
+        <Route path="/activity"><ProtectedRoute><AppAuthenticatedLayout><ActivityFeed /></AppAuthenticatedLayout></ProtectedRoute></Route>
 
         {/* Default redirect - Now goes to dashboard as primary interface */}
         <Route path="/">{user ? <Redirect to="/dashboard" /> : <Redirect to="/login" />}</Route>
@@ -195,10 +196,15 @@ function Router() {
   );
 }
 
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+
 function RealtimeEventsProvider({ children }: { children: React.ReactNode }) {
   useRealtimeEvents();
+  useKeyboardShortcuts();
   return <>{children}</>;
 }
+
+import { SkipToContent } from "@/hooks/useAccessibility";
 
 function App() {
   return (
@@ -207,6 +213,7 @@ function App() {
         <AuthProvider>
           <RealtimeEventsProvider>
             <TooltipProvider>
+              <SkipToContent />
               <Toaster />
               <FeatureLimitDialog />
               <PlanAndUsageDialog />

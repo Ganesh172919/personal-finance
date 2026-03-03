@@ -308,7 +308,7 @@ const buildMonthlySummaryPdf = async (params: {
   try {
     pdf.pipe(uploadStream);
 
-    pdf.fontSize(20).text("FinWise Monthly Summary", { align: "left" });
+    pdf.fontSize(20).text("Personal Finance Monthly Summary", { align: "left" });
     pdf.moveDown(0.5);
 
     pdf.fontSize(11).fillColor("#333");
@@ -342,7 +342,7 @@ const buildMonthlySummaryPdf = async (params: {
     }
 
     pdf.moveDown(1);
-    pdf.fontSize(9).fillColor("#666").text("Generated locally by FinWise. Verify numbers against your source statements.");
+    pdf.fontSize(9).fillColor("#666").text("Generated locally by Personal Finance. Verify numbers against your source statements.");
 
     await finalize();
   } catch (error) {

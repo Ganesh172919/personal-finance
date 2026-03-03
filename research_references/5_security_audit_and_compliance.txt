@@ -1,0 +1,7 @@
+SECURITY, AUDIT CAPABILITIES, AND COMPLIANCE IN FINTECH
+
+1. The Necessity of Immutable Audit Logs
+Academic studies in FinTech security emphasize that preventative measures (like passwords) are insufficient; detective measures are equally critical. Our platform's immutable Audit Log architecture aligns precisely with this. By logging 26 specific access and mutation events and enforcing a 365-day Time-To-Live (TTL), the system achieves non-repudiation. Users and administrators can cryptographically prove what action occurred and when, building extreme trust.
+
+2. Fail-Closed Sandboxing
+When allowing third-party code (Plugins) into a financial ecosystem, research recommends a "fail-closed" default-deny permission model. Our Sandbox architecture applies this concept at the middleware layer. This design pattern reduces the attack surface exponentially compared to traditional "all-or-nothing" standard scopes, ensuring that external intelligence does not become a vulnerability.

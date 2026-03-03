@@ -22,13 +22,13 @@ export const csrfProtection: RequestHandler = (req, res, next) => {
     return next();
   }
 
-  const hasJwtCookie = Boolean((req as any).cookies?.jwt);
+  const hasJwtCookie = Boolean(req.cookies?.jwt);
   if (!hasJwtCookie) {
     return next();
   }
 
   const cookieName = env.CSRF_COOKIE_NAME;
-  const cookieToken = (req as any).cookies?.[cookieName];
+  const cookieToken = req.cookies?.[cookieName];
   const headerToken = req.header("x-csrf-token");
 
   if (!cookieToken || !headerToken || cookieToken !== headerToken) {

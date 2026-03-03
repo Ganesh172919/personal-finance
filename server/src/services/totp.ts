@@ -16,7 +16,7 @@ import crypto from "crypto";
 const TOTP_DIGITS = 6;
 const TOTP_PERIOD = 30; // seconds
 const TOTP_ALGORITHM = "sha1";
-const TOTP_ISSUER = "FinWise";
+const TOTP_ISSUER = "Personal Finance";
 
 /**
  * Generate a random TOTP secret (base32 encoded).

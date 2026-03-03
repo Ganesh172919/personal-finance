@@ -1,6 +1,6 @@
-# FinWise — Database Models & Schema Reference
+# Personal Finance — Database Models & Schema Reference
 
-> All 44 Mongoose models used by the FinWise backend. The database is **MongoDB**, accessed via Mongoose 8.
+> All 47 Mongoose models used by the Personal Finance backend. The database is **MongoDB**, accessed via Mongoose 8.
 
 ---
 
@@ -31,6 +31,14 @@ Configured in `server/src/config/database.ts`. Connection string is read from th
 
 ---
 
+### Collaboration
+
+| Model       | File              | Key Fields                                                         |
+| ----------- | ----------------- | ------------------------------------------------------------------ |
+| **Comment** | `commentModel.ts` | `userId`, `orgId`, `targetType`, `targetId`, `content`, `parentId` |
+
+---
+
 ### Financial Data
 
 | Model                | File                       | Key Fields                                                                                               |
@@ -43,6 +51,14 @@ Configured in `server/src/config/database.ts`. Connection string is read from th
 | **Merchant**         | `merchantModel.ts`         | `orgId`, `name`, `category`, `logoUrl`                                                                   |
 | **MonthClose**       | `monthCloseModel.ts`       | `userId`, `orgId`, `periodKey`, `income`, `expenses`, `savings`, `netWorth`, `closedAt`                  |
 | **JournalEntry**     | `journalEntryModel.ts`     | `userId`, `orgId`, `content`, `mood`, `tags[]`, `financialImpact`                                        |
+
+---
+
+### Auto-Categorization
+
+| Model            | File                   | Key Fields                                                                        |
+| ---------------- | ---------------------- | --------------------------------------------------------------------------------- |
+| **CategoryRule** | `categoryRuleModel.ts` | `orgId`, `pattern`, `category`, `matchField`, `priority`, `isActive`, `createdBy` |
 
 ---
 
@@ -119,6 +135,7 @@ Configured in `server/src/config/database.ts`. Connection string is read from th
 | Model            | File                   | Key Fields                                                                                 |
 | ---------------- | ---------------------- | ------------------------------------------------------------------------------------------ |
 | **AuditEvent**   | `auditEventModel.ts`   | `orgId`, `actorId`, `action`, `resource`, `resourceId`, `metadata`, `ip`                   |
+| **AuditLog**     | `auditLogModel.ts`     | `userId`, `orgId`, `action`, `severity`, `metadata`, `ip`, `userAgent`, `ttl`              |
 | **DomainEvent**  | `domainEventModel.ts`  | `orgId`, `type`, `payload`, `processedAt`                                                  |
 | **Notification** | `notificationModel.ts` | `userId`, `title`, `body`, `type`, `isRead`, `link`                                        |
 | **FeatureFlag**  | `featureFlagModel.ts`  | `key`, `orgId`, `enabled`, `variant`, `conditions`                                         |
@@ -128,11 +145,15 @@ Configured in `server/src/config/database.ts`. Connection string is read from th
 
 ## Migration & Seeding Scripts
 
-| Script                   | Command                        | Purpose                                             |
-| ------------------------ | ------------------------------ | --------------------------------------------------- |
-| `migrateTransactions.ts` | `npm run migrate:transactions` | Add `orgId` and `accountId` to legacy transactions  |
-| `migrateOrgIds.ts`       | `npm run migrate:orgids`       | Backfill `orgId` across all user-scoped collections |
-| `seedMockContent.ts`     | `npm run seed:content`         | Seed demo blogs, growth stories, and sample data    |
+| Script                    | Command                        | Purpose                                             |
+| ------------------------- | ------------------------------ | --------------------------------------------------- |
+| `migrateTransactions.ts`  | `npm run migrate:transactions` | Add `orgId` and `accountId` to legacy transactions  |
+| `migrateOrgIds.ts`        | `npm run migrate:orgids`       | Backfill `orgId` across all user-scoped collections |
+| `seed.ts`                 | `npm run seed`                 | Core database seeding                               |
+| `seedMockContent.ts`      | `npm run seed:content`         | Seed demo blogs, growth stories, and sample data    |
+| `seedBlogs.ts`            | `npm run seed:blogs`           | Seed blog posts                                     |
+| `seedGrowthStories.ts`    | `npm run seed:stories`         | Seed growth story content                           |
+| `generateOpenApiPaths.ts` | `npm run openapi:generate`     | Generate OpenAPI path definitions from routes       |
 
 ---
 

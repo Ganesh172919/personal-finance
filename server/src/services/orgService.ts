@@ -31,7 +31,7 @@ export const ensurePersonalOrgForUser = async (userId: mongoose.Types.ObjectId) 
   const user = await UserModel.findById(userId).select({ name: 1, email: 1 }).lean();
   const display = user?.name || user?.email || "Personal";
 
-  const orgName = `${display}'s FinWise`;
+  const orgName = `${display}'s Personal Finance`;
 
   try {
     const org = await OrganizationModel.create({

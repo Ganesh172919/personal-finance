@@ -67,7 +67,7 @@ export default function Exports() {
 
   const [csvDateFrom, setCsvDateFrom] = useState("");
   const [csvDateTo, setCsvDateTo] = useState("");
-  const [csvTxType, setCsvTxType] = useState<"" | "income" | "expense" | "investment">("");
+  const [csvTxType, setCsvTxType] = useState<"all" | "income" | "expense" | "investment">("all");
   const [csvCategory, setCsvCategory] = useState("");
 
   const [pdfPeriodKey, setPdfPeriodKey] = useState(defaultPeriodKey);
@@ -109,7 +109,7 @@ export default function Exports() {
     const params: Record<string, unknown> = {};
     if (csvDateFrom.trim()) params.date_from = new Date(csvDateFrom).toISOString();
     if (csvDateTo.trim()) params.date_to = new Date(csvDateTo).toISOString();
-    if (csvTxType) params.tx_type = csvTxType;
+    if (csvTxType && csvTxType !== "all") params.tx_type = csvTxType;
     if (csvCategory.trim()) params.category = csvCategory.trim();
 
     createMutation.mutate({ type: "transactions_csv", params });
@@ -156,7 +156,7 @@ export default function Exports() {
                     <SelectValue placeholder="Any" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Any</SelectItem>
+                    <SelectItem value="all">Any</SelectItem>
                     <SelectItem value="income">income</SelectItem>
                     <SelectItem value="expense">expense</SelectItem>
                     <SelectItem value="investment">investment</SelectItem>

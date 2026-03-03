@@ -270,17 +270,17 @@ export const addOrgMember = async (req: Request, res: Response) => {
 
     await sendEmail({
       to: body.email,
-      subject: `You're invited to join ${String((org as any).name)} on FinWise`,
+      subject: `You're invited to join ${String((org as any).name)} on Personal Finance`,
       text: [
         `Hi,`,
         "",
-        `${String((user as any).name || (user as any).email || "A teammate")} invited you to join ${String((org as any).name)} on FinWise.`,
+        `${String((user as any).name || (user as any).email || "A teammate")} invited you to join ${String((org as any).name)} on Personal Finance.`,
         "",
         `Accept invite: ${acceptLink}`,
         "",
         `This invite expires at ${new Date((created.invite as any).expiresAt).toISOString()}.`,
         "",
-        "— FinWise",
+        "— Personal Finance",
       ].join("\n"),
     });
 

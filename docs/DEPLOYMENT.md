@@ -1,6 +1,6 @@
-# FinWise — Deployment & Production Guide
+# Personal Finance — Deployment & Production Guide
 
-> How to build, deploy, and run FinWise in production environments.
+> How to build, deploy, and run Personal Finance in production environments.
 
 ---
 
@@ -46,7 +46,7 @@ python api_service.py  # Starts FastAPI on the configured port
 | `MONGO_URI`    | Production MongoDB connection string (Atlas recommended) |
 | `JWT_SECRET`   | Strong, unique secret (min 64 chars)                     |
 | `REDIS_URL`    | Production Redis connection URI                          |
-| `CORS_ORIGINS` | Frontend domain (e.g., `https://app.finwise.io`)         |
+| `CORS_ORIGINS` | Frontend domain (e.g., `https://app.personalfinance.io`) |
 
 ### Server — External Services
 
@@ -65,10 +65,10 @@ python api_service.py  # Starts FastAPI on the configured port
 
 ### Client — Required
 
-| Variable                | Description                                         |
-| ----------------------- | --------------------------------------------------- |
-| `VITE_API_BASE_URL`     | Production API URL (e.g., `https://api.finwise.io`) |
-| `VITE_GOOGLE_CLIENT_ID` | Google OAuth2 client ID                             |
+| Variable                | Description                                                 |
+| ----------------------- | ----------------------------------------------------------- |
+| `VITE_API_BASE_URL`     | Production API URL (e.g., `https://api.personalfinance.io`) |
+| `VITE_GOOGLE_CLIENT_ID` | Google OAuth2 client ID                                     |
 
 ---
 
@@ -210,13 +210,17 @@ The Express server exposes:
 
 - [x] **Helmet** — Sets security HTTP headers
 - [x] **CORS** — Restricted to configured origins
-- [x] **Rate Limiting** — `express-rate-limit` on all routes
-- [x] **CSRF Protection** — Cookie-based CSRF tokens
-- [x] **Mongo Sanitization** — `express-mongo-sanitize` prevents NoSQL injection
+- [x] **Rate Limiting** — `express-rate-limit` on all routes + tighter auth limits
+- [x] **CSRF Protection** — Double-submit cookie pattern (configurable via `CSRF_ENABLED`)
+- [x] **Account Lockout** — 5 failed attempts, 15-min lockout window
+- [x] **Two-Factor Auth** — TOTP (RFC 6238) with backup codes
+- [x] **Security Audit Log** — 26 event types with severity levels and 365-day TTL
+- [x] **Mongo Sanitization** — Custom NoSQL injection sanitizer (Express 5 compatible)
 - [x] **Zod Validation** — All request payloads validated before processing
 - [x] **JWT Auth** — Passport.js JWT strategy with configurable expiry
 - [x] **API Key Auth** — Scoped API keys for programmatic access
 - [x] **Stripe Webhook Verification** — Signature-based validation
+- [x] **Plugin Sandbox** — Fail-closed permission enforcement
 
 ---
 
@@ -232,4 +236,10 @@ The Express server exposes:
 
 ---
 
-_See also_: [SETUP.md](./SETUP.md) · [ARCHITECTURE.md](./ARCHITECTURE.md)
+## API Migration (vNext)
+
+The canonical API surface is `/api/v1`. Legacy `/api` routes are maintained with deprecation headers. Configure `CORS_ORIGINS` and `CLIENT_URL` to match your production domain.
+
+---
+
+_See also_: [SETUP.md](./SETUP.md) · [ARCHITECTURE.md](./ARCHITECTURE.md) · [SECURITY.md](./SECURITY.md) · [ENV_VARIABLES.md](./ENV_VARIABLES.md)

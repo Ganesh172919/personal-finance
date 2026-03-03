@@ -1,4 +1,4 @@
-# FinWise — AI Core (Agent System)
+# Personal Finance — AI Core (Agent System)
 
 > Documentation for the Python-based multi-agent financial intelligence engine.
 
@@ -6,7 +6,7 @@
 
 ## Overview
 
-The **AI Core** lives in `server/AI_Core/` and provides the intelligent reasoning layer for FinWise. It uses **LangGraph** to orchestrate a directed graph of specialist agents, each powered by **Google Gemini**.
+The **AI Core** lives in `server/AI_Core/` and provides the intelligent reasoning layer for Personal Finance. It uses **LangGraph** to orchestrate a directed graph of specialist agents, each powered by **Google Gemini**.
 
 The Node.js server communicates with AI Core via HTTP through the `aiCoreClient` service (`server/src/services/aiCoreClient.ts`).
 
@@ -203,6 +203,19 @@ The Node.js server interacts with AI Core through several services:
 | `financeIntelligence` | `services/financeIntelligence.ts` | High-level AI feature orchestration              |
 | `toolCatalog`         | `services/toolCatalog.ts`         | Registry of tools available to agents            |
 | `toolExecutor`        | `services/toolExecutor.ts`        | Executes tool calls from agent responses         |
+
+### Resilience & Circuit Breaker
+
+The `aiCoreClient` implements a **circuit breaker** pattern to handle AI Core outages gracefully:
+
+| Config Variable                     | Default | Description                       |
+| ----------------------------------- | ------- | --------------------------------- |
+| `AI_CORE_CIRCUIT_FAILURE_THRESHOLD` | `3`     | Failures before circuit opens     |
+| `AI_CORE_CIRCUIT_OPEN_MS`           | `30000` | How long circuit stays open       |
+| `AI_CORE_HEALTH_CACHE_MS`           | `5000`  | Health response cache time        |
+| `AI_CORE_TIMEOUT_MS`                | `45000` | Request timeout                   |
+| `AI_CORE_MAX_CONCURRENCY`           | `8`     | Global concurrent request limit   |
+| `AI_CORE_MAX_CONCURRENCY_PER_USER`  | `2`     | Per-user concurrent request limit |
 
 ---
 

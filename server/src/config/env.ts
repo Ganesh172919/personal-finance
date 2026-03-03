@@ -79,6 +79,7 @@ const envSchema = z
     PORT: z.coerce.number().int().positive().default(3000),
     MONGO_URI: optionalNonEmptyString,
     JWT_SECRET: z.string().trim().min(1, "JWT_SECRET is required"),
+    COOKIE_SECRET: optionalNonEmptyString,
     TRUST_PROXY: z.preprocess(emptyStringToUndefined, z.string().trim().optional()),
 
     ASYNC_JOBS_ENABLED: optionalBoolFromEnv.default(false),

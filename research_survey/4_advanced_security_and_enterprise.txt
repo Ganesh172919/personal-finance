@@ -1,0 +1,11 @@
+SURVEY PART 4: ADVANCED SECURITY AND ENTERPRISE FEATURES
+
+1. Security Architecture
+As a financial platform, security is a primary concern. The application implements an enterprise-grade defense-in-depth model:
+- Two-Factor Authentication (2FA/TOTP): Uses mathematical algorithms (RFC 6238 TOTP) without relying on weak SMS-based 2FA, securing user accounts.
+- Immutable Audit Logging: Tracks 26 distinct event types across the system with severity levels. This ensures all actions (logins, permission changes, exports) are permanently recorded, preventing tampering.
+- CSRF & Rate Limiting: Employs a double-submit cookie pattern and strict request throttling to prevent automated attacks.
+
+2. Multi-Tenancy (Organizations)
+- Role-Based Access Control (RBAC): Users exist within 'Organizations', allowing couples or families to share a financial workspace with strict roles (Owner, Admin, Member).
+- Data Isolation: All financial models are strictly partitioned by `orgId` across the database.

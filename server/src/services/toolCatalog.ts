@@ -441,7 +441,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     required_role: "member",
     args_schema: toolArgsSchemas.notifications_send_email,
     args_example: {
-      subject: "FinWise reminder",
+      subject: "Personal Finance reminder",
       message: "Review your spending this week.",
     },
   },
@@ -455,7 +455,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     args_schema: toolArgsSchemas.notifications_send,
     args_example: {
       channel: "in_app",
-      subject: "FinWise update",
+      subject: "Personal Finance update",
       message: "You have new autopilot actions ready to review.",
     },
   },

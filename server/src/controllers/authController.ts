@@ -73,7 +73,7 @@ export const register = async (req: Request, res: Response) => {
 
   const emailResult = await sendEmail({
     to: email,
-    subject: "Your FinWise Email Verification Code",
+    subject: "Your Personal Finance Email Verification Code",
     text: `Your verification code is: ${verificationToken}`,
     html: `<p>Your verification code is: <strong>${verificationToken}</strong></p>`,
   });
@@ -140,7 +140,7 @@ export const resendVerification = async (req: Request, res: Response) => {
 
   const emailResult = await sendEmail({
     to: email,
-    subject: "Your New FinWise Verification Code",
+    subject: "Your New Personal Finance Verification Code",
     text: `Your new verification code is: ${verificationToken}`,
     html: `<p>Your new verification code is: <strong>${verificationToken}</strong></p>`,
   });
@@ -240,6 +240,60 @@ export const getProfile = (req: Request, res: Response) => {
     name: user.name,
     email: user.email,
     photoURL: user.photoURL,
+    phoneNumber: (user as any).phoneNumber || null,
+    authProvider: user.authProvider || "email",
+    isEmailVerified: user.isEmailVerified ?? false,
+    request_id: req.requestId,
+  });
+};
+
+// --- Update Profile ---
+export const updateProfile = async (req: Request, res: Response) => {
+  const user = req.user as IUserDocument;
+  const { name, phoneNumber } = req.body as { name?: string; phoneNumber?: string };
+
+  if (name !== undefined) user.name = String(name).trim();
+  if (phoneNumber !== undefined) (user as any).phoneNumber = String(phoneNumber).trim();
+
+  await user.save();
+
+  res.json({
+    user: {
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      photoURL: user.photoURL,
+      phoneNumber: (user as any).phoneNumber || null,
+    },
+    message: "Profile updated successfully",
+    request_id: req.requestId,
+  });
+};
+
+// --- Change Password ---
+export const changePassword = async (req: Request, res: Response) => {
+  const user = await UserModel.findById((req.user as IUserDocument)._id).select("+password");
+  if (!user || !user.password) {
+    throw new HttpError(400, "CANNOT_CHANGE_PASSWORD", "Cannot change password for this account.");
+  }
+
+  const { currentPassword, newPassword } = req.body as { currentPassword: string; newPassword: string };
+
+  const isValid = await bcrypt.compare(currentPassword, user.password);
+  if (!isValid) {
+    throw new HttpError(401, "INVALID_PASSWORD", "Current password is incorrect.");
+  }
+
+  if (newPassword.length < 8) {
+    throw new HttpError(400, "WEAK_PASSWORD", "New password must be at least 8 characters.");
+  }
+
+  user.password = await bcrypt.hash(newPassword, 12);
+  await user.save();
+
+  res.json({
+    success: true,
+    message: "Password changed successfully",
     request_id: req.requestId,
   });
 };

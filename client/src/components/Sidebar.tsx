@@ -1,8 +1,13 @@
 import { useState, useCallback } from "react";
 import { Link, useLocation } from "wouter";
+import { NotificationCenter, NotificationBell } from "@/components/NotificationCenter";
+import { useNotifications } from "@/hooks/useNotifications";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  Activity,
+  BarChart3,
   Brain,
+  CalendarDays,
   Gauge,
   PieChart,
   LogOut,
@@ -59,6 +64,9 @@ const navigationItems: NavigationItem[] = [
   { href: "/receipts", icon: ScanLine, label: "Receipts", requiresFeature: "receipts_ocr_enabled" },
   { href: "/portfolio", icon: PieChart, label: "Investment Portfolio" },
   { href: "/all-insights", icon: ListChecks, label: "All Insights" },
+  { href: "/analytics", icon: BarChart3, label: "Analytics" },
+  { href: "/calendar", icon: CalendarDays, label: "Calendar" },
+  { href: "/activity", icon: Activity, label: "Activity Feed" },
   { href: "/org", icon: Building2, label: "Organization" },
   { href: "/billing", icon: CreditCard, label: "Billing" },
   { href: "/blogs", icon: FileText, label: "Blogs" },
@@ -78,6 +86,8 @@ function DesktopSidebar({
   theme,
   toggleTheme,
   handleLogout,
+  onNotificationsOpen,
+  notificationUnreadCount,
 }: {
   visibleNavItems: NavigationItem[];
   location: string;
@@ -86,34 +96,39 @@ function DesktopSidebar({
   theme: string;
   toggleTheme: () => void;
   handleLogout: () => void;
+  onNotificationsOpen: () => void;
+  notificationUnreadCount: number;
 }) {
   return (
     <aside
       className="hidden lg:flex w-80 bg-card border-r border-border flex-col flex-shrink-0"
       data-testid="sidebar"
     >
-      {/* Logo */}
+      {/* Logo + Notification Bell */}
       <div className="p-6 border-b border-border">
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-        >
-          <Link
-            href="/dashboard"
-            className="flex items-center space-x-3 cursor-pointer no-underline"
-            data-testid="brand-logo"
+        <div className="flex items-center justify-between">
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
           >
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <Brain className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold text-foreground">Personal Finance</h1>
-              <p className="text-xs text-muted-foreground">AI Financial Strategist</p>
-            </div>
-          </Link>
-        </motion.div>
+            <Link
+              href="/dashboard"
+              className="flex items-center space-x-3 cursor-pointer no-underline"
+              data-testid="brand-logo"
+            >
+              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                <Brain className="w-4 h-4 text-primary-foreground" />
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-foreground">Personal Finance</h1>
+                <p className="text-xs text-muted-foreground">AI Financial Strategist</p>
+              </div>
+            </Link>
+          </motion.div>
+          <NotificationBell onClick={onNotificationsOpen} unreadCount={notificationUnreadCount} />
+        </div>
       </div>
 
       {/* Nav */}
@@ -283,7 +298,7 @@ function MobileDrawer({
                 <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                   <Brain className="w-4 h-4 text-primary-foreground" />
                 </div>
-                <span className="text-lg font-semibold text-foreground">FinWise</span>
+                <span className="text-lg font-semibold text-foreground">Personal Finance</span>
               </Link>
               <button
                 onClick={onClose}
@@ -357,6 +372,8 @@ export function Sidebar() {
     configQuery.isLoading ? "Loading plan…" : configQuery.data?.entitlements ? `${planTier} plan` : "free plan";
   const isMobile = useIsMobile();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const { unreadCount: notificationUnreadCount } = useNotifications({ enabled: !!user });
 
   const visibleNavItems = navigationItems.filter((item) => {
     if (!item.requiresFeature) return true;
@@ -382,6 +399,8 @@ export function Sidebar() {
     theme,
     toggleTheme,
     handleLogout,
+    onNotificationsOpen: () => setNotificationsOpen(true),
+    notificationUnreadCount,
   };
 
   return (
@@ -396,6 +415,9 @@ export function Sidebar() {
           <MobileDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} {...sharedProps} />
         </>
       )}
+
+      {/* Notification Center slide-out panel */}
+      <NotificationCenter isOpen={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
     </>
   );
 }

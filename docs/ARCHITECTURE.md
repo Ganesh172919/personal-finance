@@ -1,12 +1,12 @@
-# FinWise — System Architecture
+# Personal Finance — System Architecture
 
-> High-level architecture of the FinWise personal-finance platform.
+> High-level architecture of the Personal Finance personal-finance platform.
 
 ---
 
 ## Overview
 
-FinWise is a full-stack, AI-powered personal finance management platform. It is structured as a **monorepo** with three major subsystems:
+Personal Finance is a full-stack, AI-powered personal finance management platform. It is structured as a **monorepo** with three major subsystems:
 
 | Subsystem   | Language               | Runtime                           | Purpose                                              |
 | ----------- | ---------------------- | --------------------------------- | ---------------------------------------------------- |
@@ -79,8 +79,9 @@ personal-finance/
 │   │   ├── features/           # Feature modules (chat, journaling, workflows)
 │   │   ├── hooks/              # Custom React hooks (auth, AI stream, realtime)
 │   │   ├── lib/                # API client layer & utilities
-│   │   ├── pages/              # Route-level page components (29 pages)
-│   │   ├── stores/             # Zustand state stores
+│   │   ├── pages/              # Route-level page components (33 pages)
+│   │   ├── stores/             # Zustand state stores (6 stores)
+│   │   ├── test/               # Test setup & MSW mocks
 │   │   ├── types/              # Shared TypeScript interfaces
 │   │   ├── App.tsx             # Root app with routing & providers
 │   │   └── main.tsx            # Vite entry point
@@ -96,18 +97,30 @@ personal-finance/
 │   │   ├── vision/             # OCR & image analysis (receipts)
 │   │   └── main.py             # CLI entry point
 │   ├── src/
-│   │   ├── config/             # Database, env, Redis, passport, telemetry
-│   │   ├── controllers/        # 38 route controllers
-│   │   ├── middleware/         # 12 middleware modules
-│   │   ├── models/             # 44 Mongoose models
-│   │   ├── routes/             # 15 route files (70+ REST endpoints)
-│   │   ├── schemas/            # Zod validation schemas
-│   │   ├── services/           # 42 business-logic services
+│   │   ├── config/             # Database, env, Redis, passport, telemetry (6 files)
+│   │   ├── connectors/         # External service connectors (bank stub, CSV import)
+│   │   ├── controllers/        # 44 route controllers (13 root + 31 v1)
+│   │   ├── middleware/          # 13 middleware modules (auth, CSRF, rate limit, etc.)
+│   │   ├── models/             # 47 Mongoose models
+│   │   ├── modules/            # Domain modules (plugins, queue, realtime)
+│   │   ├── observability/      # Metrics & instrumentation
+│   │   ├── routes/             # 15 route files (100+ REST endpoints)
+│   │   ├── schemas/            # 34 Zod validation schemas (11 root + 23 v1)
+│   │   ├── services/           # 50 business-logic service files
 │   │   ├── scripts/            # Migration & seed scripts
+│   │   ├── test/               # 34 integration test files
+│   │   ├── types/              # Shared TypeScript types
+│   │   ├── utils/              # General utility functions
 │   │   ├── worker/             # BullMQ background workers
 │   │   └── server.ts           # Express app bootstrap
 │   └── package.json
 │
+├── packages/
+│   └── contracts/              # Shared OpenAPI specs & TypeScript contracts
+│       ├── openapi/            # OpenAPI path definitions
+│       └── typescript/         # Shared TS interfaces
+│
+├── docs/                       # Project documentation (16 guides)
 ├── research_references/        # Academic & research materials
 ├── research_survey/            # User research data
 └── README.md
@@ -140,4 +153,4 @@ personal-finance/
 
 ---
 
-_See also_: [SETUP.md](./SETUP.md) · [API.md](./API.md) · [DATABASE.md](./DATABASE.md) · [AI_CORE.md](./AI_CORE.md) · [FRONTEND.md](./FRONTEND.md) · [DEPLOYMENT.md](./DEPLOYMENT.md) · [CONTRIBUTING.md](./CONTRIBUTING.md)
+_See also_: [SETUP.md](./SETUP.md) · [API.md](./API.md) · [DATABASE.md](./DATABASE.md) · [AI_CORE.md](./AI_CORE.md) · [FRONTEND.md](./FRONTEND.md) · [MIDDLEWARE.md](./MIDDLEWARE.md) · [SERVICES.md](./SERVICES.md) · [PLUGIN_SYSTEM.md](./PLUGIN_SYSTEM.md) · [DEPLOYMENT.md](./DEPLOYMENT.md) · [CONTRIBUTING.md](./CONTRIBUTING.md)

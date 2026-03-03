@@ -11,10 +11,10 @@ import {
   verifyTotp,
   generateBackupCodes,
   hashBackupCode,
-} from "../services/totp";
-import { auditFromRequest } from "../services/auditService";
-import UserModel from "../models/userModel";
-import { HttpError } from "../middleware/httpError";
+} from "../../services/totp";
+import { auditFromRequest } from "../../services/auditService";
+import UserModel from "../../models/userModel";
+import { HttpError } from "../../middleware/httpError";
 
 /**
  * POST /api/v1/auth/2fa/setup

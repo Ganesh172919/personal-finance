@@ -209,7 +209,7 @@ export const sendOrgDigestEmails = async (params: {
     })
     .filter(Boolean) as Array<{ user: any; email: string; name: string }>;
 
-  const subject = `FinWise Digest — ${String((org as any).name)} — ${dayKey}`;
+  const subject = `Personal Finance Digest — ${String((org as any).name)} — ${dayKey}`;
   const appLink = env.CLIENT_URL || "http://localhost:5173";
   const rangeStartKey = toDayKey(rangeStart);
   const rangeEndKey = toDayKey(rangeEnd);
@@ -233,9 +233,9 @@ export const sendOrgDigestEmails = async (params: {
       "",
       `Org AI usage (${periodKey}): ${orgUsage.calls} calls, ${orgUsage.tokens_in} in / ${orgUsage.tokens_out} out tokens, est. cost ${formatUsd(orgUsage.cost_usd)}`,
       "",
-      `Open FinWise: ${appLink}`,
+      `Open Personal Finance: ${appLink}`,
       "",
-      "— FinWise",
+      "— Personal Finance",
     ].join("\n");
 
     sendQueue.add(async () => {

@@ -1,0 +1,10 @@
+SURVEY PART 6: MARKETPLACE AND PLUGIN ECOSYSTEM
+
+1. Architecture
+The Personal Finance application features an extensible Marketplace, allowing third-party developers to increase capabilities securely.
+- Plugin Manager: Handles lifecycle events (install, update, uninstall).
+- Sandboxed Runtime: Plugins run in an isolated environment, ensuring that third-party code cannot crash the core system.
+
+2. Permission Model
+- Fail-Closed Design: Plugins must declare needed permissions via a manifest (e.g., `transactions:read`). If a permission is not explicitly granted, the action is denied.
+- Runtime Verification: Every HTTP request from a plugin is intercepted and strictly validated against its active permission set.

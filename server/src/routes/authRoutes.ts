@@ -9,6 +9,8 @@ import {
   resendVerification,
   getCsrfToken,
   getProfile,
+  updateProfile,
+  changePassword,
   logout,
 } from "../controllers/authController";
 import { validate } from "../middleware/validate";
@@ -89,6 +91,18 @@ router.get(
   "/profile",
   passport.authenticate("jwt", { session: false }),
   asyncRoute(getProfile)
+);
+
+router.put(
+  "/profile",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(updateProfile)
+);
+
+router.post(
+  "/password",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(changePassword)
 );
 
 router.post("/logout", asyncRoute(logout));

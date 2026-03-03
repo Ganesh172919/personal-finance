@@ -9,3 +9,6 @@ export * from "./autopilot";
 export * from "./shares";
 export * from "./referrals";
 export * from "./finance";
+export * from "./notifications";
+export * from "./analytics";
+export * from "./collaboration";
