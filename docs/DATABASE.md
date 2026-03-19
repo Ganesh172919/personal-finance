@@ -1,6 +1,6 @@
 # Personal Finance — Database Models & Schema Reference
 
-> All 47 Mongoose models used by the Personal Finance backend. The database is **MongoDB**, accessed via Mongoose 8.
+> All 48 Mongoose models used by the Personal Finance backend. The database is **MongoDB**, accessed via Mongoose 8.
 
 ---
 
@@ -51,6 +51,14 @@ Configured in `server/src/config/database.ts`. Connection string is read from th
 | **Merchant**         | `merchantModel.ts`         | `orgId`, `name`, `category`, `logoUrl`                                                                   |
 | **MonthClose**       | `monthCloseModel.ts`       | `userId`, `orgId`, `periodKey`, `income`, `expenses`, `savings`, `netWorth`, `closedAt`                  |
 | **JournalEntry**     | `journalEntryModel.ts`     | `userId`, `orgId`, `content`, `mood`, `tags[]`, `financialImpact`                                        |
+
+---
+
+### Calendar
+
+| Model                | File                       | Key Fields                                                       |
+| -------------------- | -------------------------- | ---------------------------------------------------------------- |
+| **CalendarReminder** | `calendarReminderModel.ts` | `userId`, `orgId`, `date`, `title`, `description`, `isCompleted` |
 
 ---
 

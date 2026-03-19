@@ -1,202 +1,298 @@
-import { useState, useCallback } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { NotificationCenter, NotificationBell } from "@/components/NotificationCenter";
-import { useNotifications } from "@/hooks/useNotifications";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Activity,
   BarChart3,
+  BookOpen,
   Brain,
+  Building2,
   CalendarDays,
-  Gauge,
-  PieChart,
-  LogOut,
-  Moon,
-  Sun,
-  ListChecks,
-  ListTodo,
-  MessageSquare,
+  CreditCard,
+  Download,
   FileText,
+  Gauge,
+  ListTodo,
+  LogOut,
+  Menu,
+  MessageSquare,
+  PieChart,
   ReceiptText,
   ScanLine,
+  Settings,
+  StickyNote,
   Target,
   TrendingUp,
-  StickyNote,
-  CreditCard,
-  Building2,
-  Workflow,
-  Download,
   Wallet,
-  BookOpen,
-  Menu,
+  Workflow,
   X,
-  Settings,
+  type LucideIcon,
 } from "lucide-react";
+
+import { NotificationCenter, NotificationBell } from "@/components/NotificationCenter";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar";
+import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppConfig } from "@/hooks/useAppConfig";
-import { useTheme } from "./ThemeProvider";
-import { Button } from "@/components/ui/Button";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
-import { reportClientError } from "@/lib/runtimeLogger";
+import { useNotifications } from "@/hooks/useNotifications";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { reportClientError } from "@/lib/runtimeLogger";
+
+type NavigationSectionId = "daily" | "planning" | "workspace" | "library";
 
 type NavigationItem = {
   href: string;
-  icon: any;
+  icon: LucideIcon;
   label: string;
-  /** If set, only show when this feature flag is truthy. */
+  section: NavigationSectionId;
   requiresFeature?: "tasks_enabled" | "receipts_ocr_enabled" | "journal_enabled";
-  /** Items pinned to the mobile bottom bar. Max 5 recommended. */
   mobilePin?: boolean;
 };
 
-// Navigation items — `mobilePin: true` puts key items in the bottom bar on mobile.
-const navigationItems: NavigationItem[] = [
-  { href: "/chat", icon: MessageSquare, label: "AI Chat", mobilePin: true },
-  { href: "/dashboard", icon: Gauge, label: "Strategist's Desk", mobilePin: true },
-  { href: "/tasks", icon: ListTodo, label: "Tasks", requiresFeature: "tasks_enabled" },
-  { href: "/onboarding", icon: Brain, label: "Onboarding" },
-  { href: "/goals-debts", icon: Target, label: "Goals & Debts" },
-  { href: "/transactions", icon: ReceiptText, label: "Transactions", mobilePin: true },
-  { href: "/finance", icon: Wallet, label: "Finance OS", mobilePin: true },
-  { href: "/exports", icon: Download, label: "Exports" },
-  { href: "/workflows", icon: Workflow, label: "Workflows" },
-  { href: "/receipts", icon: ScanLine, label: "Receipts", requiresFeature: "receipts_ocr_enabled" },
-  { href: "/portfolio", icon: PieChart, label: "Investment Portfolio" },
-  { href: "/all-insights", icon: ListChecks, label: "All Insights" },
-  { href: "/analytics", icon: BarChart3, label: "Analytics" },
-  { href: "/calendar", icon: CalendarDays, label: "Calendar" },
-  { href: "/activity", icon: Activity, label: "Activity Feed" },
-  { href: "/org", icon: Building2, label: "Organization" },
-  { href: "/billing", icon: CreditCard, label: "Billing" },
-  { href: "/blogs", icon: FileText, label: "Blogs" },
-  { href: "/growth-stories", icon: TrendingUp, label: "Growth Stories" },
-  { href: "/docs", icon: BookOpen, label: "Documentation" },
-  { href: "/notes", icon: StickyNote, label: "Note Taking", requiresFeature: "journal_enabled" },
-  { href: "/settings", icon: Settings, label: "Settings", mobilePin: true },
+type GroupedNavigationSection = {
+  id: NavigationSectionId;
+  label: string;
+  description: string;
+  items: NavigationItem[];
+};
+
+const navigationSections: Omit<GroupedNavigationSection, "items">[] = [
+  {
+    id: "daily",
+    label: "Daily flow",
+    description: "The tools you will likely reach for first.",
+  },
+  {
+    id: "planning",
+    label: "Planning",
+    description: "Where strategy, goals, and forecasting live.",
+  },
+  {
+    id: "workspace",
+    label: "Workspace",
+    description: "Operations, admin, and team-level controls.",
+  },
+  {
+    id: "library",
+    label: "Library",
+    description: "Reference material and long-form learning.",
+  },
 ];
 
-// ─── Desktop Sidebar ────────────────────────────────────
+const navigationItems: NavigationItem[] = [
+  { href: "/chat", icon: MessageSquare, label: "AI Chat", section: "daily", mobilePin: true },
+  { href: "/dashboard", icon: Gauge, label: "Strategist's Desk", section: "daily", mobilePin: true },
+  { href: "/transactions", icon: ReceiptText, label: "Transactions", section: "daily", mobilePin: true },
+  { href: "/finance", icon: Wallet, label: "Finance OS", section: "daily", mobilePin: true },
+  { href: "/tasks", icon: ListTodo, label: "Tasks", section: "daily", requiresFeature: "tasks_enabled" },
+  { href: "/goals-debts", icon: Target, label: "Goals & Debts", section: "planning" },
+  { href: "/portfolio", icon: PieChart, label: "Investment Portfolio", section: "planning" },
+  { href: "/all-insights", icon: BarChart3, label: "All Insights", section: "planning" },
+  { href: "/analytics", icon: BarChart3, label: "Analytics", section: "planning" },
+  { href: "/calendar", icon: CalendarDays, label: "Calendar", section: "planning" },
+  { href: "/activity", icon: Activity, label: "Activity Feed", section: "planning" },
+  { href: "/onboarding", icon: Brain, label: "Onboarding", section: "workspace" },
+  { href: "/workflows", icon: Workflow, label: "Workflows", section: "workspace" },
+  { href: "/exports", icon: Download, label: "Exports", section: "workspace" },
+  { href: "/receipts", icon: ScanLine, label: "Receipts", section: "workspace", requiresFeature: "receipts_ocr_enabled" },
+  { href: "/org", icon: Building2, label: "Organization", section: "workspace" },
+  { href: "/billing", icon: CreditCard, label: "Billing", section: "workspace" },
+  { href: "/settings", icon: Settings, label: "Settings", section: "workspace", mobilePin: true },
+  { href: "/blogs", icon: FileText, label: "Blogs", section: "library" },
+  { href: "/growth-stories", icon: TrendingUp, label: "Growth Stories", section: "library" },
+  { href: "/docs", icon: BookOpen, label: "Documentation", section: "library" },
+  { href: "/notes", icon: StickyNote, label: "Note Taking", section: "library", requiresFeature: "journal_enabled" },
+];
+
+function BrandBlock({
+  planLabel,
+  onNotificationsOpen,
+  notificationUnreadCount,
+}: {
+  planLabel: string;
+  onNotificationsOpen: () => void;
+  notificationUnreadCount: number;
+}) {
+  return (
+    <div className="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-gradient-to-br from-primary/14 via-card to-chart-2/10 p-4 shadow-[0_18px_45px_-34px_rgba(15,23,42,0.7)]">
+      <div className="flex items-start justify-between gap-3">
+        <Link href="/dashboard" className="flex items-center gap-3 no-underline">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25">
+            <Brain className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-base font-semibold text-foreground">Personal Finance</h1>
+            <p className="text-xs text-muted-foreground">AI strategist workspace</p>
+          </div>
+        </Link>
+        <NotificationBell onClick={onNotificationsOpen} unreadCount={notificationUnreadCount} />
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-border/60 bg-background/75 px-3 py-2.5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+          Active workspace
+        </p>
+        <p className="mt-1 text-sm font-medium text-foreground">{planLabel}</p>
+      </div>
+    </div>
+  );
+}
+
+function NavigationSections({
+  groupedNavItems,
+  location,
+  onNavigate,
+}: {
+  groupedNavItems: GroupedNavigationSection[];
+  location: string;
+  onNavigate?: () => void;
+}) {
+  return (
+    <div className="space-y-6">
+      {groupedNavItems.map((section) => (
+        <section key={section.id} className="space-y-3">
+          <div className="px-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+              {section.label}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground/90">
+              {section.description}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            {section.items.map((item, index) => {
+              const isActive = location === item.href || location.startsWith(`${item.href}/`);
+
+              return (
+                <motion.div
+                  key={item.href}
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.04 }}
+                >
+                  <Link
+                    href={item.href}
+                    onClick={onNavigate}
+                    className={`group flex items-center gap-3 rounded-[calc(var(--radius)-4px)] border px-3 py-3 no-underline transition-all duration-200 ${
+                      isActive
+                        ? "border-primary/30 bg-primary text-primary-foreground shadow-[0_18px_32px_-24px_rgba(255,255,255,0.24)]"
+                        : "border-transparent text-foreground hover:border-border/70 hover:bg-accent/70 hover:shadow-[0_14px_26px_-22px_rgba(15,23,42,0.45)]"
+                    }`}
+                    aria-current={isActive ? "page" : undefined}
+                    data-testid={`nav-${item.label.toLowerCase().replace(/\s/g, "-")}`}
+                  >
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-2xl transition-colors ${
+                        isActive
+                          ? "bg-white/15 text-primary-foreground"
+                          : "bg-background/80 text-primary group-hover:bg-primary/10"
+                      }`}
+                    >
+                      <item.icon className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{item.label}</p>
+                      <p
+                        className={`truncate text-xs ${
+                          isActive ? "text-primary-foreground/75" : "text-muted-foreground"
+                        }`}
+                      >
+                        {section.label}
+                      </p>
+                    </div>
+                  </Link>
+                </motion.div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function UserPanel({
+  user,
+  planLabel,
+  handleLogout,
+}: {
+  user: any;
+  planLabel: string;
+  handleLogout: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 rounded-[calc(var(--radius)-2px)] border border-border/70 bg-card/85 p-3">
+        <Avatar className="h-11 w-11">
+          <AvatarImage src={user?.photoURL || ""} alt={user?.name || ""} />
+          <AvatarFallback>{user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
+        </Avatar>
+
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-foreground">{user?.name || "User"}</div>
+          <div className="truncate text-xs text-muted-foreground">{planLabel}</div>
+        </div>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-2xl"
+          onClick={handleLogout}
+          data-testid="button-logout"
+          aria-label="Log out"
+        >
+          <LogOut className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function DesktopSidebar({
-  visibleNavItems,
+  groupedNavItems,
   location,
   user,
   planLabel,
-  theme,
-  toggleTheme,
   handleLogout,
   onNotificationsOpen,
   notificationUnreadCount,
 }: {
-  visibleNavItems: NavigationItem[];
+  groupedNavItems: GroupedNavigationSection[];
   location: string;
   user: any;
   planLabel: string;
-  theme: string;
-  toggleTheme: () => void;
   handleLogout: () => void;
   onNotificationsOpen: () => void;
   notificationUnreadCount: number;
 }) {
   return (
     <aside
-      className="hidden lg:flex w-80 bg-card border-r border-border flex-col flex-shrink-0"
+      className="hidden w-[22rem] shrink-0 border-r border-sidebar-border/80 bg-sidebar/85 lg:flex lg:flex-col lg:backdrop-blur-xl"
       data-testid="sidebar"
     >
-      {/* Logo + Notification Bell */}
-      <div className="p-6 border-b border-border">
-        <div className="flex items-center justify-between">
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <Link
-              href="/dashboard"
-              className="flex items-center space-x-3 cursor-pointer no-underline"
-              data-testid="brand-logo"
-            >
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <Brain className="w-4 h-4 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-lg font-semibold text-foreground">Personal Finance</h1>
-                <p className="text-xs text-muted-foreground">AI Financial Strategist</p>
-              </div>
-            </Link>
-          </motion.div>
-          <NotificationBell onClick={onNotificationsOpen} unreadCount={notificationUnreadCount} />
-        </div>
+      <div className="border-b border-sidebar-border/70 p-5">
+        <BrandBlock
+          planLabel={planLabel}
+          onNotificationsOpen={onNotificationsOpen}
+          notificationUnreadCount={notificationUnreadCount}
+        />
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 p-6 space-y-2 overflow-y-auto" data-testid="navigation">
-        {visibleNavItems.map((item, index) => {
-          const isActive = location === item.href || location.startsWith(`${item.href}/`);
-          return (
-            <motion.div
-              key={item.href}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.05 }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <Link
-                href={item.href}
-                className={`flex items-center space-x-3 p-3 rounded-lg transition-colors cursor-pointer no-underline ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-foreground hover:bg-accent hover:text-accent-foreground"
-                }`}
-                data-testid={`nav-${item.label.toLowerCase().replace(/\s/g, "-")}`}
-                aria-current={isActive ? "page" : undefined}
-              >
-                <item.icon className="w-5 h-5" />
-                <span className="font-medium">{item.label}</span>
-              </Link>
-            </motion.div>
-          );
-        })}
+      <nav className="flex-1 overflow-y-auto px-4 py-5" data-testid="navigation">
+        <NavigationSections groupedNavItems={groupedNavItems} location={location} />
       </nav>
 
-      {/* Theme */}
-      <div className="p-6 border-t border-border">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={toggleTheme}
-          className="w-full justify-start"
-          data-testid="button-theme-toggle"
-        >
-          {theme === "dark" ? <Sun className="w-4 h-4 mr-2" /> : <Moon className="w-4 h-4 mr-2" />}
-          {theme === "dark" ? "Light Mode" : "Dark Mode"}
-        </Button>
-      </div>
-
-      {/* User */}
-      <div className="p-6 border-t border-border">
-        <div className="flex items-center space-x-3" data-testid="user-profile">
-          <Avatar className="w-10 h-10">
-            <AvatarImage src={user?.photoURL || ""} alt={user?.name || ""} />
-            <AvatarFallback>{user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
-          </Avatar>
-          <div className="flex-1">
-            <div className="font-medium text-sm text-foreground">{user?.name || "User"}</div>
-            <div className="text-xs text-muted-foreground">{planLabel}</div>
-          </div>
-          <Button variant="ghost" size="sm" onClick={handleLogout} data-testid="button-logout">
-            <LogOut className="w-4 h-4" />
-          </Button>
-        </div>
+      <div className="border-t border-sidebar-border/70 p-4">
+        <UserPanel
+          user={user}
+          planLabel={planLabel}
+          handleLogout={handleLogout}
+        />
       </div>
     </aside>
   );
 }
-
-// ─── Mobile Bottom Bar ──────────────────────────────────
 
 function MobileBottomBar({
   pinnedItems,
@@ -209,148 +305,115 @@ function MobileBottomBar({
 }) {
   return (
     <nav
-      className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-lg border-t border-border"
+      className="fixed bottom-3 left-3 right-3 z-50 rounded-[calc(var(--radius)+6px)] border border-border/70 bg-card/92 shadow-[0_22px_50px_-30px_rgba(15,23,42,0.7)] backdrop-blur-xl lg:hidden"
       data-testid="mobile-bottom-bar"
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
-      <div className="flex items-center justify-around px-2 h-16">
+      <div className="flex h-16 items-center justify-between px-2">
         {pinnedItems.map((item) => {
           const isActive = location === item.href || location.startsWith(`${item.href}/`);
+
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full no-underline transition-colors ${
-                isActive ? "text-primary" : "text-muted-foreground"
+              className={`flex h-full flex-1 flex-col items-center justify-center gap-1 rounded-2xl no-underline transition-colors ${
+                isActive ? "bg-primary/12 text-primary" : "text-muted-foreground"
               }`}
               aria-current={isActive ? "page" : undefined}
             >
-              <item.icon className="w-5 h-5" />
-              <span className="text-[10px] font-medium leading-tight">{item.label.split(" ")[0]}</span>
+              <item.icon className="h-5 w-5" />
+              <span className="text-[10px] font-semibold leading-tight">
+                {item.label.split(" ")[0]}
+              </span>
             </Link>
           );
         })}
-        {/* "More" / hamburger menu */}
+
         <button
           onClick={onMenuOpen}
-          className="flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-muted-foreground"
+          className="flex h-full flex-1 flex-col items-center justify-center gap-1 rounded-2xl text-muted-foreground transition-colors hover:bg-accent/70"
           aria-label="Open menu"
         >
-          <Menu className="w-5 h-5" />
-          <span className="text-[10px] font-medium leading-tight">More</span>
+          <Menu className="h-5 w-5" />
+          <span className="text-[10px] font-semibold leading-tight">More</span>
         </button>
       </div>
     </nav>
   );
 }
 
-// ─── Mobile Drawer ──────────────────────────────────────
-
 function MobileDrawer({
   isOpen,
   onClose,
-  visibleNavItems,
+  groupedNavItems,
   location,
   user,
   planLabel,
-  theme,
-  toggleTheme,
   handleLogout,
+  onNotificationsOpen,
+  notificationUnreadCount,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  visibleNavItems: NavigationItem[];
+  groupedNavItems: GroupedNavigationSection[];
   location: string;
   user: any;
   planLabel: string;
-  theme: string;
-  toggleTheme: () => void;
   handleLogout: () => void;
+  onNotificationsOpen: () => void;
+  notificationUnreadCount: number;
 }) {
   return (
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="lg:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-50 bg-slate-950/55 backdrop-blur-sm lg:hidden"
             onClick={onClose}
           />
 
-          {/* Panel */}
           <motion.aside
             initial={{ x: "-100%" }}
             animate={{ x: 0 }}
             exit={{ x: "-100%" }}
-            transition={{ type: "spring", damping: 28, stiffness: 300 }}
-            className="lg:hidden fixed top-0 left-0 bottom-0 z-50 w-80 max-w-[85vw] bg-card border-r border-border flex flex-col overflow-hidden"
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed inset-y-0 left-0 z-50 flex w-[22rem] max-w-[88vw] flex-col overflow-hidden border-r border-sidebar-border/80 bg-sidebar/95 backdrop-blur-xl lg:hidden"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <Link
-                href="/dashboard"
-                onClick={onClose}
-                className="flex items-center space-x-3 no-underline"
-              >
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                  <Brain className="w-4 h-4 text-primary-foreground" />
-                </div>
-                <span className="text-lg font-semibold text-foreground">Personal Finance</span>
-              </Link>
-              <button
-                onClick={onClose}
-                className="p-2 rounded-lg hover:bg-accent text-muted-foreground"
-                aria-label="Close menu"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            <div className="border-b border-sidebar-border/70 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <BrandBlock
+                  planLabel={planLabel}
+                  onNotificationsOpen={onNotificationsOpen}
+                  notificationUnreadCount={notificationUnreadCount}
+                />
+                <button
+                  onClick={onClose}
+                  className="mt-1 rounded-2xl border border-border/70 bg-background/80 p-2 text-muted-foreground"
+                  aria-label="Close menu"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
-            {/* Nav */}
-            <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-              {visibleNavItems.map((item) => {
-                const isActive = location === item.href || location.startsWith(`${item.href}/`);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={onClose}
-                    className={`flex items-center space-x-3 p-3 rounded-lg transition-colors cursor-pointer no-underline ${
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-foreground hover:bg-accent hover:text-accent-foreground"
-                    }`}
-                  >
-                    <item.icon className="w-5 h-5" />
-                    <span className="font-medium text-sm">{item.label}</span>
-                  </Link>
-                );
-              })}
+            <nav className="flex-1 overflow-y-auto px-4 py-5">
+              <NavigationSections
+                groupedNavItems={groupedNavItems}
+                location={location}
+                onNavigate={onClose}
+              />
             </nav>
 
-            {/* Footer */}
-            <div className="p-4 border-t border-border space-y-3">
-              <Button variant="ghost" size="sm" onClick={toggleTheme} className="w-full justify-start">
-                {theme === "dark" ? <Sun className="w-4 h-4 mr-2" /> : <Moon className="w-4 h-4 mr-2" />}
-                {theme === "dark" ? "Light Mode" : "Dark Mode"}
-              </Button>
-
-              <div className="flex items-center space-x-3">
-                <Avatar className="w-9 h-9">
-                  <AvatarImage src={user?.photoURL || ""} alt={user?.name || ""} />
-                  <AvatarFallback>{user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-foreground truncate">{user?.name || "User"}</div>
-                  <div className="text-xs text-muted-foreground">{planLabel}</div>
-                </div>
-                <Button variant="ghost" size="sm" onClick={handleLogout}>
-                  <LogOut className="w-4 h-4" />
-                </Button>
-              </div>
+            <div className="border-t border-sidebar-border/70 p-4">
+              <UserPanel
+                user={user}
+                planLabel={planLabel}
+                handleLogout={handleLogout}
+              />
             </div>
           </motion.aside>
         </>
@@ -359,28 +422,43 @@ function MobileDrawer({
   );
 }
 
-// ─── Exported Sidebar Component ─────────────────────────
-
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const configQuery = useAppConfig({ enabled: !!user });
   const features = configQuery.data?.features;
   const planTier = configQuery.data?.entitlements?.plan || "free";
-  const planLabel =
-    configQuery.isLoading ? "Loading plan…" : configQuery.data?.entitlements ? `${planTier} plan` : "free plan";
+  const planLabel = configQuery.isLoading
+    ? "Loading plan..."
+    : configQuery.data?.entitlements
+      ? `${planTier} plan`
+      : "free plan";
   const isMobile = useIsMobile();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const { unreadCount: notificationUnreadCount } = useNotifications({ enabled: !!user });
 
-  const visibleNavItems = navigationItems.filter((item) => {
-    if (!item.requiresFeature) return true;
-    return features ? Boolean((features as any)[item.requiresFeature]) : true;
-  });
+  const visibleNavItems = useMemo(
+    () =>
+      navigationItems.filter((item) => {
+        if (!item.requiresFeature) return true;
+        return features ? Boolean((features as any)[item.requiresFeature]) : true;
+      }),
+    [features]
+  );
 
-  const pinnedItems = visibleNavItems.filter((item) => item.mobilePin);
+  const groupedNavItems = useMemo(
+    () =>
+      navigationSections
+        .map((section) => ({
+          ...section,
+          items: visibleNavItems.filter((item) => item.section === section.id),
+        }))
+        .filter((section) => section.items.length > 0),
+    [visibleNavItems]
+  );
+
+  const pinnedItems = visibleNavItems.filter((item) => item.mobilePin).slice(0, 5);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -392,12 +470,10 @@ export function Sidebar() {
   }, [logout]);
 
   const sharedProps = {
-    visibleNavItems,
+    groupedNavItems,
     location,
     user,
     planLabel,
-    theme,
-    toggleTheme,
     handleLogout,
     onNotificationsOpen: () => setNotificationsOpen(true),
     notificationUnreadCount,
@@ -405,18 +481,23 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Desktop: classic sidebar */}
       <DesktopSidebar {...sharedProps} />
 
-      {/* Mobile: bottom bar + slide-out drawer */}
       {isMobile && (
         <>
-          <MobileBottomBar pinnedItems={pinnedItems} location={location} onMenuOpen={() => setDrawerOpen(true)} />
-          <MobileDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} {...sharedProps} />
+          <MobileBottomBar
+            pinnedItems={pinnedItems}
+            location={location}
+            onMenuOpen={() => setDrawerOpen(true)}
+          />
+          <MobileDrawer
+            isOpen={drawerOpen}
+            onClose={() => setDrawerOpen(false)}
+            {...sharedProps}
+          />
         </>
       )}
 
-      {/* Notification Center slide-out panel */}
       <NotificationCenter isOpen={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
     </>
   );

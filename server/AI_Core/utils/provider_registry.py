@@ -25,6 +25,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PROVIDER_PRIORITY = ["gemini", "openrouter", "groq", "grok", "together", "mistral"]
+
 
 # ─── OpenAI-compatible wrapper ────────────────────────────
 def _create_openai_compatible(
@@ -152,8 +154,7 @@ def _resolve_provider_name() -> str:
         return provider
 
     # Auto-detect: first provider with a configured API key wins
-    priority_order = ["gemini", "openrouter", "groq", "grok", "together", "mistral"]
-    for name in priority_order:
+    for name in DEFAULT_PROVIDER_PRIORITY:
         config = PROVIDER_CONFIGS[name]
         if os.getenv(config.env_key, "").strip():
             logger.info("Auto-detected LLM provider: %s (via %s)", name, config.env_key)
@@ -161,6 +162,40 @@ def _resolve_provider_name() -> str:
 
     # Default to gemini (may fail later if key is missing)
     return "gemini"
+
+
+def resolve_provider_chain(provider_name: Optional[str] = None) -> List[str]:
+    """
+    Resolve the provider failover order for the current environment.
+
+    The preferred provider is attempted first, then the remaining configured
+    providers are appended in priority order. If no provider API keys are
+    configured, the preferred provider is still returned so callers can emit a
+    clear configuration error.
+    """
+
+    preferred = (provider_name or _resolve_provider_name()).strip().lower()
+    env_priority = [
+        item.strip().lower()
+        for item in os.getenv("LLM_PROVIDER_PRIORITY", "").split(",")
+        if item.strip()
+    ]
+    priority_order = env_priority or DEFAULT_PROVIDER_PRIORITY
+
+    chain: List[str] = []
+    seen = set()
+
+    for name in [preferred, *priority_order]:
+        if name not in PROVIDER_CONFIGS or name in seen:
+            continue
+        seen.add(name)
+        if os.getenv(PROVIDER_CONFIGS[name].env_key, "").strip() or name == preferred:
+            chain.append(name)
+
+    if not chain and preferred in PROVIDER_CONFIGS:
+        chain.append(preferred)
+
+    return chain
 
 
 def create_chat_model(
@@ -229,6 +264,7 @@ def list_providers() -> List[Dict[str, Any]]:
     """List all available providers and their configuration status."""
     result = []
     active = _resolve_provider_name()
+    provider_chain = resolve_provider_chain(active)
     for name, config in PROVIDER_CONFIGS.items():
         api_key = os.getenv(config.env_key, "").strip()
         result.append({
@@ -236,6 +272,7 @@ def list_providers() -> List[Dict[str, Any]]:
             "display_name": config.display_name,
             "configured": bool(api_key),
             "active": name == active,
+            "in_failover_chain": name in provider_chain,
             "default_model": config.default_model,
             "model_candidates": config.model_candidates,
         })

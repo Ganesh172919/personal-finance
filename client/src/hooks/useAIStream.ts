@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { useAIStore, type WorkflowTraceEntry } from "@/stores/aiStore";
+import { createAiStreamRequest } from "@/services/aiStream";
 
 export type AIResponseChunk =
   | { phase: "routing"; request_id: string }
@@ -37,13 +38,7 @@ export function useAIStream() {
       abortRef.current = new AbortController();
 
       try {
-        const response = await fetch("/api/v1/ai/process/stream", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-          signal: abortRef.current.signal,
-          credentials: "include",
-        });
+        const response = await createAiStreamRequest(payload, abortRef.current.signal);
 
         if (!response.ok) {
           throw new Error(`Stream request failed: ${response.status}`);

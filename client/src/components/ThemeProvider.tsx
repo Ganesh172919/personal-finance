@@ -17,26 +17,25 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const root = window.document.documentElement;
-    const savedTheme =
-      (localStorage.getItem("finwise-theme") as Theme) || "dark";
-
-    setTheme(savedTheme);
     root.classList.remove("light", "dark");
-    root.classList.add(savedTheme);
+    root.classList.add("dark");
+    setTheme("dark");
+    localStorage.setItem("finwise-theme", "dark");
   }, []);
 
   const handleSetTheme = (newTheme: Theme) => {
     const root = window.document.documentElement;
+    const resolvedTheme: Theme = newTheme === "light" ? "dark" : newTheme;
 
     root.classList.remove("light", "dark");
-    root.classList.add(newTheme);
+    root.classList.add(resolvedTheme);
 
-    setTheme(newTheme);
-    localStorage.setItem("finwise-theme", newTheme);
+    setTheme(resolvedTheme);
+    localStorage.setItem("finwise-theme", resolvedTheme);
   };
 
   const toggleTheme = () => {
-    handleSetTheme(theme === "dark" ? "light" : "dark");
+    handleSetTheme("dark");
   };
 
   return (

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -140,8 +140,6 @@ export function CommentThread({
     if (!editingId || !editText.trim() || editMutation.isPending) return;
     editMutation.mutate({ id: editingId, text: editText.trim() });
   };
-
-  const Wrapper = compact ? "div" : "div";
 
   return (
     <div

@@ -1,118 +1,134 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { Clock, Eye, Heart, MapPin, Target } from "lucide-react";
-import { IGrowthStory } from "@/types/apiTypes";
-import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/Card";
+import { Clock, Eye, Heart, MapPin, Target, User } from "lucide-react";
+
+import { LazyImage } from "@/components/LazyImage";
 import { Badge } from "@/components/ui/Badge";
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/Card";
+import { resolveGrowthStoryCoverImage } from "@/lib/media";
+import { IGrowthStory } from "@/types/apiTypes";
+
 export interface GrowthStoryCardProps {
   story: IGrowthStory;
   featured?: boolean;
 }
 
 const DIFFICULTY_COLORS: Record<string, string> = {
-  'beginner': 'bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/20',
-  'intermediate': 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20',
-  'advanced': 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/20',
+  beginner: "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/20",
+  intermediate: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20",
+  advanced: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/20",
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
-  'debt-freedom': 'bg-chart-4 text-chart-4-foreground',
-  'wealth-building': 'bg-chart-2 text-chart-2-foreground',
-  'early-retirement': 'bg-chart-1 text-chart-1-foreground',
-  'side-hustle': 'bg-chart-3 text-chart-3-foreground',
-  'tax-optimization': 'bg-chart-5 text-chart-5-foreground',
-  'family-finance': 'bg-chart-1/80 text-chart-1-foreground',
-  'student-finance': 'bg-chart-4/80 text-chart-4-foreground',
+  "debt-freedom": "bg-chart-4 text-chart-4-foreground",
+  "wealth-building": "bg-chart-2 text-chart-2-foreground",
+  "early-retirement": "bg-chart-1 text-chart-1-foreground",
+  "side-hustle": "bg-chart-3 text-chart-3-foreground",
+  "tax-optimization": "bg-chart-5 text-chart-5-foreground",
+  "family-finance": "bg-chart-1/80 text-chart-1-foreground",
+  "student-finance": "bg-chart-4/80 text-chart-4-foreground",
 };
 
+const formatCategory = (category: string) =>
+  category
+    .split("-")
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
 export function GrowthStoryCard({ story, featured = false }: GrowthStoryCardProps) {
-  const netWorthDiff = (story.financialMetrics?.currentNetWorth || 0) - (story.financialMetrics?.startingNetWorth || 0);
+  const netWorthDiff =
+    (story.financialMetrics?.currentNetWorth || 0) - (story.financialMetrics?.startingNetWorth || 0);
+  const coverImage = resolveGrowthStoryCoverImage(story.coverImage);
+
   const formatCompactCurrency = (value: number) => {
-    if (value >= 10000000) return `₹${(value / 10000000).toFixed(1)}Cr`;
-    if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`;
-    if (value <= -100000) return `-₹${(Math.abs(value) / 100000).toFixed(1)}L`;
-    return `₹${(value / 1000).toFixed(0)}K`;
+    if (value >= 10000000) return `Rs. ${(value / 10000000).toFixed(1)}Cr`;
+    if (value >= 100000) return `Rs. ${(value / 100000).toFixed(1)}L`;
+    if (value <= -100000) return `-Rs. ${(Math.abs(value) / 100000).toFixed(1)}L`;
+    return `Rs. ${(value / 1000).toFixed(0)}K`;
   };
 
   if (featured) {
     return (
       <Link href={`/growth-stories/${story.slug}`}>
         <motion.div
-           whileHover={{ y: -5 }}
-           className="group cursor-pointer rounded-3xl overflow-hidden border border-border bg-card shadow-sm hover:shadow-xl transition-all duration-300"
+          whileHover={{ y: -5 }}
+          className="group cursor-pointer overflow-hidden rounded-3xl border border-border bg-card shadow-sm transition-all duration-300 hover:shadow-xl"
         >
-          <div className="grid grid-cols-1 md:grid-cols-5 h-full">
-            {/* Image Section */}
-            <div className="md:col-span-2 relative h-64 md:h-full overflow-hidden">
-               <div className="absolute inset-0 bg-gradient-to-r from-background/10 to-transparent z-10" />
-               <img 
-                 src={story.coverImage} 
-                 alt={story.title}
-                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-               />
-               <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
-                 <Badge className={`${CATEGORY_COLORS[story.category]} shadow-md`}>
-                    {story.category.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                 </Badge>
-                 <Badge variant="outline" className={`${DIFFICULTY_COLORS[story.difficulty]} backdrop-blur-md`}>
-                    {story.difficulty.charAt(0).toUpperCase() + story.difficulty.slice(1)}
-                 </Badge>
-               </div>
+          <div className="grid h-full grid-cols-1 md:grid-cols-5">
+            <div className="relative h-64 overflow-hidden md:col-span-2 md:h-full">
+              <div className="absolute inset-0 z-10 bg-gradient-to-r from-background/10 to-transparent" />
+              <LazyImage
+                src={coverImage}
+                fallbackSrc={coverImage}
+                alt={story.title}
+                className="h-full"
+                imageClassName="transition-transform duration-700 group-hover:scale-105"
+              />
+              <div className="absolute left-4 top-4 z-20 flex flex-col gap-2">
+                <Badge className={`${CATEGORY_COLORS[story.category]} shadow-md`}>
+                  {formatCategory(story.category)}
+                </Badge>
+                <Badge variant="outline" className={`${DIFFICULTY_COLORS[story.difficulty]} backdrop-blur-md`}>
+                  {story.difficulty.charAt(0).toUpperCase() + story.difficulty.slice(1)}
+                </Badge>
+              </div>
             </div>
 
-            {/* Content Section */}
-            <div className="md:col-span-3 p-6 md:p-8 flex flex-col justify-center">
-               <div className="flex items-center space-x-2 text-sm text-primary font-medium mb-3">
-                 <Target className="w-4 h-4" />
-                 <span>Featured Transformation</span>
-               </div>
-               
-               <h3 className="text-2xl md:text-3xl font-extrabold mb-4 leading-tight group-hover:text-primary transition-colors">
-                 {story.title}
-               </h3>
-               
-               <p className="text-muted-foreground mb-6 line-clamp-2 text-lg">
-                 {story.summary}
-               </p>
+            <div className="flex flex-col justify-center p-6 md:col-span-3 md:p-8">
+              <div className="mb-3 flex items-center space-x-2 text-sm font-medium text-primary">
+                <Target className="h-4 w-4" />
+                <span>Featured Transformation</span>
+              </div>
 
-               {/* Metrics Highlight */}
-               <div className="bg-muted/30 rounded-2xl p-4 mb-6 border border-border/50 flex flex-wrap gap-4 md:gap-8 justify-between items-center group-hover:bg-primary/5 transition-colors">
-                  <div className="flex flex-col">
-                     <span className="text-xs text-muted-foreground uppercase font-semibold tracking-wider mb-1">Starting Point</span>
-                     <span className="text-lg md:text-xl font-bold font-mono">
-                        {formatCompactCurrency(story.financialMetrics?.startingNetWorth || 0)}
-                     </span>
-                  </div>
-                  <div className="hidden sm:flex self-center">
-                     <span className="text-xl text-primary animate-pulse">→</span>
-                  </div>
-                  <div className="flex flex-col">
-                     <span className="text-xs text-muted-foreground uppercase font-semibold tracking-wider mb-1">Current Net Worth</span>
-                     <span className="text-lg md:text-xl font-bold font-mono text-primary">
-                        {formatCompactCurrency(story.financialMetrics?.currentNetWorth || 0)}
-                     </span>
-                  </div>
-                  <div className="flex flex-col mt-4 sm:mt-0 pt-4 sm:pt-0 border-t sm:border-t-0 sm:border-l border-border/50 sm:pl-8 w-full sm:w-auto">
-                     <span className="text-xs text-muted-foreground uppercase font-semibold tracking-wider mb-1">Timeline</span>
-                     <span className="text-lg md:text-xl font-bold flex items-center">
-                        <Clock className="w-4 h-4 mr-2 text-muted-foreground" />
-                        {story.timeline}
-                     </span>
-                  </div>
-               </div>
+              <h3 className="mb-4 text-2xl font-extrabold leading-tight transition-colors group-hover:text-primary md:text-3xl">
+                {story.title}
+              </h3>
 
-               {/* Meta Info */}
-               <div className="flex flex-wrap items-center justify-between gap-4 mt-auto">
-                 <div className="flex items-center space-x-1.5 text-sm font-medium">
-                   <div className="bg-primary/10 p-1.5 rounded-full">
-                       <span className="text-lg mx-1">👤</span>
-                   </div>
-                   <span>{story.persona}</span>
-                   <span className="text-muted-foreground flex items-center before:content-['•'] before:mx-2">
-                       <MapPin className="w-3.5 h-3.5 mr-1" /> {story.location}
-                   </span>
-                 </div>
-               </div>
+              <p className="mb-6 line-clamp-2 text-lg text-muted-foreground">{story.summary}</p>
+
+              <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/50 bg-muted/30 p-4 transition-colors group-hover:bg-primary/5 md:gap-8">
+                <div className="flex flex-col">
+                  <span className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Starting Point
+                  </span>
+                  <span className="font-mono text-lg font-bold md:text-xl">
+                    {formatCompactCurrency(story.financialMetrics?.startingNetWorth || 0)}
+                  </span>
+                </div>
+                <div className="hidden self-center sm:flex">
+                  <span className="animate-pulse text-xl text-primary">-&gt;</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Current Net Worth
+                  </span>
+                  <span className="font-mono text-lg font-bold text-primary md:text-xl">
+                    {formatCompactCurrency(story.financialMetrics?.currentNetWorth || 0)}
+                  </span>
+                </div>
+                <div className="mt-4 flex w-full flex-col border-t border-border/50 pt-4 sm:mt-0 sm:w-auto sm:border-l sm:border-t-0 sm:pl-8 sm:pt-0">
+                  <span className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Timeline
+                  </span>
+                  <span className="flex items-center text-lg font-bold md:text-xl">
+                    <Clock className="mr-2 h-4 w-4 text-muted-foreground" />
+                    {story.timeline}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-auto flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center space-x-1.5 text-sm font-medium">
+                  <div className="rounded-full bg-primary/10 p-1.5">
+                    <User className="mx-1 h-4 w-4 text-primary" />
+                  </div>
+                  <span>{story.persona}</span>
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <MapPin className="h-3.5 w-3.5" />
+                    {story.location}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </motion.div>
@@ -120,84 +136,96 @@ export function GrowthStoryCard({ story, featured = false }: GrowthStoryCardProp
     );
   }
 
-  // Standard Card
   return (
     <Link href={`/growth-stories/${story.slug}`}>
       <motion.div whileHover={{ y: -4 }}>
-        <Card className="h-full flex flex-col overflow-hidden group cursor-pointer border-border hover:shadow-lg transition-all duration-300">
-           {/* Image & Metric Overlay */}
-           <div className="relative h-48 overflow-hidden">
-             <img 
-               src={story.coverImage} 
-               alt={story.title}
-               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-             />
-             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-             
-             {/* Top badges */}
-             <div className="absolute top-3 left-3 flex gap-2">
-               <Badge className={`${CATEGORY_COLORS[story.category]} shadow-sm text-[10px] px-2 py-0`}>
-                 {story.category.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-               </Badge>
-             </div>
-             <div className="absolute top-3 right-3">
-                 <Badge variant="outline" className={`${DIFFICULTY_COLORS[story.difficulty]} text-[10px] px-2 py-0 bg-background/80 backdrop-blur-sm`}>
-                     {story.difficulty.charAt(0).toUpperCase() + story.difficulty.slice(1)}
-                 </Badge>
-             </div>
+        <Card className="group flex h-full cursor-pointer flex-col overflow-hidden border-border transition-all duration-300 hover:shadow-lg">
+          <div className="relative h-48 overflow-hidden">
+            <LazyImage
+              src={coverImage}
+              fallbackSrc={coverImage}
+              alt={story.title}
+              className="h-full"
+              imageClassName="transition-transform duration-500 group-hover:scale-105"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
-             {/* Bottom metrics on image */}
-             <div className="absolute bottom-3 left-3 pr-3 text-white">
-                <div className="flex items-end space-x-2">
-                    <span className="text-2xl font-bold font-mono tracking-tighter leading-none group-hover:text-primary transition-colors">
-                       {netWorthDiff > 0 ? '+' : ''}{formatCompactCurrency(netWorthDiff)}
-                    </span>
-                    <span className="text-xs opacity-80 pb-0.5">NW Growth</span>
-                </div>
-             </div>
-           </div>
+            <div className="absolute left-3 top-3 flex gap-2">
+              <Badge className={`${CATEGORY_COLORS[story.category]} px-2 py-0 text-[10px] shadow-sm`}>
+                {formatCategory(story.category)}
+              </Badge>
+            </div>
+            <div className="absolute right-3 top-3">
+              <Badge
+                variant="outline"
+                className={`${DIFFICULTY_COLORS[story.difficulty]} bg-background/80 px-2 py-0 text-[10px] backdrop-blur-sm`}
+              >
+                {story.difficulty.charAt(0).toUpperCase() + story.difficulty.slice(1)}
+              </Badge>
+            </div>
 
-           <CardHeader className="p-5 pb-2">
-              <div className="flex items-center text-xs text-muted-foreground mb-2 space-x-3">
-                 <span className="flex items-center"><MapPin className="w-3 h-3 mr-1" /> {story.location}</span>
-                 <span className="flex items-center"><Clock className="w-3 h-3 mr-1" /> {story.timeline}</span>
+            <div className="absolute bottom-3 left-3 pr-3 text-white">
+              <div className="flex items-end space-x-2">
+                <span className="font-mono text-2xl font-bold leading-none tracking-tighter transition-colors group-hover:text-primary">
+                  {netWorthDiff > 0 ? "+" : ""}
+                  {formatCompactCurrency(netWorthDiff)}
+                </span>
+                <span className="pb-0.5 text-xs opacity-80">NW Growth</span>
               </div>
-              <h3 className="text-xl font-bold leading-tight group-hover:text-primary transition-colors line-clamp-2">
-                 {story.title}
-              </h3>
-           </CardHeader>
+            </div>
+          </div>
 
-           <CardContent className="p-5 pt-0 flex-1">
-              <p className="text-muted-foreground text-sm line-clamp-2 mb-4">
-                 {story.summary}
-              </p>
-              
-              {/* Strategies Chips */}
-              <div className="flex flex-wrap gap-1.5 mt-auto">
-                 {story.strategies?.slice(0, 2).map(strategy => (
-                    <span key={strategy} className="text-[10px] bg-secondary text-secondary-foreground px-2 py-1 rounded-md border border-border/50">
-                       {strategy}
-                    </span>
-                 ))}
-                 {story.strategies?.length > 2 && (
-                    <span className="text-[10px] bg-muted text-muted-foreground px-2 py-1 rounded-md">
-                       +{story.strategies.length - 2} more
-                    </span>
-                 )}
-              </div>
-           </CardContent>
+          <CardHeader className="p-5 pb-2">
+            <div className="mb-2 flex items-center space-x-3 text-xs text-muted-foreground">
+              <span className="flex items-center">
+                <MapPin className="mr-1 h-3 w-3" /> {story.location}
+              </span>
+              <span className="flex items-center">
+                <Clock className="mr-1 h-3 w-3" /> {story.timeline}
+              </span>
+            </div>
+            <h3 className="line-clamp-2 text-xl font-bold leading-tight transition-colors group-hover:text-primary">
+              {story.title}
+            </h3>
+          </CardHeader>
 
-           <CardFooter className="p-4 pt-3 border-t border-border/50 bg-muted/10 flex items-center justify-between text-xs">
-              <div className="flex items-center space-x-2 font-medium">
-                 <span>👤</span>
-                 <span className="truncate max-w-[120px]">{story.persona}</span>
-              </div>
-              
-              <div className="flex items-center text-muted-foreground space-x-3">
-                  <span className="flex items-center"><Eye className="w-3.5 h-3.5 mr-1" />{story.views}</span>
-                  <span className="flex items-center"><Heart className="w-3.5 h-3.5 mr-1" />{story.likes}</span>
-              </div>
-           </CardFooter>
+          <CardContent className="flex-1 p-5 pt-0">
+            <p className="mb-4 line-clamp-2 text-sm text-muted-foreground">{story.summary}</p>
+
+            <div className="mt-auto flex flex-wrap gap-1.5">
+              {story.strategies?.slice(0, 2).map(strategy => (
+                <span
+                  key={strategy}
+                  className="rounded-md border border-border/50 bg-secondary px-2 py-1 text-[10px] text-secondary-foreground"
+                >
+                  {strategy}
+                </span>
+              ))}
+              {story.strategies?.length > 2 ? (
+                <span className="rounded-md bg-muted px-2 py-1 text-[10px] text-muted-foreground">
+                  +{story.strategies.length - 2} more
+                </span>
+              ) : null}
+            </div>
+          </CardContent>
+
+          <CardFooter className="flex items-center justify-between border-t border-border/50 bg-muted/10 p-4 pt-3 text-xs">
+            <div className="flex items-center space-x-2 font-medium">
+              <User className="h-3.5 w-3.5 text-primary" />
+              <span className="max-w-[120px] truncate">{story.persona}</span>
+            </div>
+
+            <div className="flex items-center space-x-3 text-muted-foreground">
+              <span className="flex items-center">
+                <Eye className="mr-1 h-3.5 w-3.5" />
+                {story.views}
+              </span>
+              <span className="flex items-center">
+                <Heart className="mr-1 h-3.5 w-3.5" />
+                {story.likes}
+              </span>
+            </div>
+          </CardFooter>
         </Card>
       </motion.div>
     </Link>

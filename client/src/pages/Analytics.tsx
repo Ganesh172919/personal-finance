@@ -2,67 +2,56 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
-  BarChart3,
-  TrendingUp,
-  TrendingDown,
-  Wallet,
-  PiggyBank,
-  ArrowUpRight,
   ArrowDownRight,
+  ArrowUpRight,
+  BarChart3,
   Building2,
-  ShoppingBag,
   Calendar,
+  PiggyBank,
+  ShoppingBag,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
 } from "lucide-react";
 import {
-  AreaChart,
   Area,
-  BarChart,
+  AreaChart,
   Bar,
-  XAxis,
-  YAxis,
+  BarChart,
   CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
   Cell,
   Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
+
+import { EmptyState } from "@/components/feedback/EmptyState";
+import { InlineLoader } from "@/components/feedback/InlineLoader";
+import { PageIntro } from "@/components/layout/PageIntro";
 import { Badge } from "@/components/ui/Badge";
-import { Separator } from "@/components/ui/Separator";
+import { Button } from "@/components/ui/Button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import {
-  getIncomeExpenseSummary,
-  getCategoryTrends,
   getAccountBalances,
+  getCategoryTrends,
+  getIncomeExpenseSummary,
   getTopMerchants,
   type IncomeExpenseMonth,
 } from "@/lib/api/v1/analytics";
 
-// ─── Constants ──────────────────────────────────────────
-
 const CHART_COLORS = [
-  "hsl(262, 83%, 58%)",  // violet
-  "hsl(173, 80%, 40%)",  // teal
-  "hsl(340, 75%, 55%)",  // rose
-  "hsl(43, 96%, 56%)",   // amber
-  "hsl(199, 89%, 48%)",  // sky
-  "hsl(142, 71%, 45%)",  // green
-  "hsl(25, 95%, 53%)",   // orange
-  "hsl(280, 65%, 60%)",  // purple
-  "hsl(0, 72%, 51%)",    // red
-  "hsl(210, 40%, 60%)",  // slate
-];
-
-const PIE_COLORS = [
-  "hsl(262, 83%, 58%)",
-  "hsl(173, 80%, 40%)",
-  "hsl(340, 75%, 55%)",
-  "hsl(43, 96%, 56%)",
-  "hsl(199, 89%, 48%)",
-  "hsl(142, 71%, 45%)",
-  "hsl(25, 95%, 53%)",
-  "hsl(280, 65%, 60%)",
+  "hsl(160 68% 42%)",
+  "hsl(204 86% 56%)",
+  "hsl(39 90% 57%)",
+  "hsl(4 74% 58%)",
+  "hsl(191 78% 42%)",
+  "hsl(215 16% 47%)",
+  "hsl(28 89% 58%)",
+  "hsl(173 61% 39%)",
 ];
 
 function formatCurrency(amount: number): string {
@@ -74,64 +63,114 @@ function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+function formatCompactCurrency(amount: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(amount);
+}
+
 function formatMonth(monthStr: string): string {
   const [year, month] = monthStr.split("-");
-  const date = new Date(parseInt(year), parseInt(month) - 1);
+  const date = new Date(Number.parseInt(year, 10), Number.parseInt(month, 10) - 1);
   return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 }
 
-// ─── Stat Card ──────────────────────────────────────────
+function AnalyticsTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) {
+    return null;
+  }
 
-function StatCard({
+  return (
+    <div className="rounded-xl border border-border/70 bg-popover/95 p-3 text-sm shadow-xl backdrop-blur">
+      <p className="mb-2 font-medium text-foreground">{label}</p>
+      <div className="space-y-1.5">
+        {payload.map((entry: any, index: number) => (
+          <div key={`${entry.name}-${index}`} className="flex items-center gap-2 text-xs">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: entry.color }} />
+            <span className="text-muted-foreground">{entry.name}</span>
+            <span className="font-medium text-foreground">{formatCurrency(entry.value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsStatCard({
   title,
   value,
   subtitle,
   icon: Icon,
-  trend,
+  tone,
   trendLabel,
-  color = "primary",
-  index = 0,
+  trendDirection,
+  delay,
 }: {
   title: string;
   value: string;
-  subtitle?: string;
-  icon: any;
-  trend?: "up" | "down" | "neutral";
+  subtitle: string;
+  icon: typeof TrendingUp;
+  tone: "income" | "expense" | "wealth" | "savings";
   trendLabel?: string;
-  color?: string;
-  index?: number;
+  trendDirection?: "up" | "down";
+  delay: number;
 }) {
+  const toneClasses = {
+    income: {
+      panel: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+      glow: "from-emerald-500/14 to-transparent",
+    },
+    expense: {
+      panel: "bg-rose-500/12 text-rose-700 dark:text-rose-300",
+      glow: "from-rose-500/14 to-transparent",
+    },
+    wealth: {
+      panel: "bg-sky-500/12 text-sky-700 dark:text-sky-300",
+      glow: "from-sky-500/14 to-transparent",
+    },
+    savings: {
+      panel: "bg-amber-500/12 text-amber-700 dark:text-amber-300",
+      glow: "from-amber-500/14 to-transparent",
+    },
+  }[tone];
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.1 }}
-    >
-      <Card className="relative overflow-hidden group hover:shadow-lg transition-shadow duration-300">
-        <div className="absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 rounded-full bg-gradient-to-br from-primary/5 to-transparent" />
-        <CardContent className="p-5">
-          <div className="flex items-start justify-between">
+    <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }}>
+      <Card className="relative overflow-hidden border-border/70 bg-card/90 shadow-[0_18px_45px_-34px_rgba(15,23,42,0.45)]">
+        <div className={`pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-br ${toneClasses.glow}`} />
+        <CardContent className="relative p-5">
+          <div className="flex items-start justify-between gap-4">
             <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
                 {title}
               </p>
-              <p className="text-2xl font-bold text-foreground tracking-tight">{value}</p>
-              {subtitle && (
-                <p className="text-xs text-muted-foreground">{subtitle}</p>
-              )}
+              <p className="text-2xl font-semibold tracking-tight text-foreground">{value}</p>
+              <p className="text-xs text-muted-foreground">{subtitle}</p>
             </div>
+
             <div className="flex flex-col items-end gap-2">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-${color}/10`}>
-                <Icon className={`w-5 h-5 text-${color}`} />
+              <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${toneClasses.panel}`}>
+                <Icon className="h-5 w-5" />
               </div>
-              {trend && trendLabel && (
-                <div className={`flex items-center gap-0.5 text-xs font-medium ${
-                  trend === "up" ? "text-emerald-500" : trend === "down" ? "text-rose-500" : "text-muted-foreground"
-                }`}>
-                  {trend === "up" ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+              {trendLabel ? (
+                <div
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ${
+                    trendDirection === "up"
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                      : "bg-rose-500/10 text-rose-600 dark:text-rose-300"
+                  }`}
+                >
+                  {trendDirection === "up" ? (
+                    <ArrowUpRight className="h-3 w-3" />
+                  ) : (
+                    <ArrowDownRight className="h-3 w-3" />
+                  )}
                   {trendLabel}
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
         </CardContent>
@@ -140,30 +179,26 @@ function StatCard({
   );
 }
 
-// ─── Custom Tooltip ─────────────────────────────────────
-
-function CustomTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
+function AnalyticsLoadingState() {
   return (
-    <div className="bg-popover border border-border rounded-lg shadow-xl p-3 text-sm">
-      <p className="font-medium text-foreground mb-1">{label}</p>
-      {payload.map((entry: any, i: number) => (
-        <div key={i} className="flex items-center gap-2 text-xs">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
-          <span className="text-muted-foreground">{entry.name}:</span>
-          <span className="font-medium text-foreground">{formatCurrency(entry.value)}</span>
-        </div>
-      ))}
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="h-36 rounded-[calc(var(--radius)+4px)] bg-muted/65 loading-shimmer" />
+        ))}
+      </div>
+      <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+        <div className="h-[24rem] rounded-[calc(var(--radius)+4px)] bg-muted/65 loading-shimmer" />
+        <div className="h-[24rem] rounded-[calc(var(--radius)+4px)] bg-muted/65 loading-shimmer" />
+      </div>
+      <InlineLoader label="Loading analytics workspace..." />
     </div>
   );
 }
 
-// ─── Page Component ─────────────────────────────────────
-
 export default function Analytics() {
   const [timeRange, setTimeRange] = useState(12);
 
-  // ─── Data Fetches ───────────────────────────────────────
   const incomeExpenseQuery = useQuery({
     queryKey: ["analytics", "income-expense", timeRange],
     queryFn: () => getIncomeExpenseSummary(timeRange),
@@ -188,358 +223,453 @@ export default function Analytics() {
     staleTime: 60_000,
   });
 
-  // ─── Computed Data ──────────────────────────────────────
   const incomeExpenseData = incomeExpenseQuery.data?.data ?? [];
   const latestMonth: IncomeExpenseMonth | undefined = incomeExpenseData[incomeExpenseData.length - 1];
   const prevMonth: IncomeExpenseMonth | undefined = incomeExpenseData[incomeExpenseData.length - 2];
-
-  const totalIncome = incomeExpenseData.reduce((sum, m) => sum + m.income, 0);
-  const totalExpense = incomeExpenseData.reduce((sum, m) => sum + m.expense, 0);
-  const avgSavingsRate = incomeExpenseData.length > 0
-    ? Math.round(incomeExpenseData.reduce((sum, m) => sum + m.savings_rate, 0) / incomeExpenseData.length)
-    : 0;
-
-  const spendingTrend = latestMonth && prevMonth
-    ? latestMonth.expense > prevMonth.expense ? "up" : "down"
-    : undefined;
-  const spendingChange = latestMonth && prevMonth && prevMonth.expense > 0
-    ? `${Math.abs(Math.round(((latestMonth.expense - prevMonth.expense) / prevMonth.expense) * 100))}%`
-    : undefined;
-
-  const netWorth = balancesQuery.data?.summary?.net_worth ?? 0;
+  const totalIncome = incomeExpenseData.reduce((sum, month) => sum + month.income, 0);
+  const totalExpense = incomeExpenseData.reduce((sum, month) => sum + month.expense, 0);
+  const avgSavingsRate =
+    incomeExpenseData.length > 0
+      ? Math.round(
+          incomeExpenseData.reduce((sum, month) => sum + month.savings_rate, 0) /
+            incomeExpenseData.length,
+        )
+      : 0;
   const accounts = balancesQuery.data?.accounts ?? [];
+  const netWorth = balancesQuery.data?.summary?.net_worth ?? 0;
 
-  // Category pie chart data
   const categoryData = categoryQuery.data?.data ?? [];
-  const allCategories = new Map<string, number>();
+  const aggregatedCategories = new Map<string, number>();
   for (const month of categoryData) {
-    for (const [cat, amount] of Object.entries(month.categories)) {
-      allCategories.set(cat, (allCategories.get(cat) || 0) + amount);
+    for (const [category, amount] of Object.entries(month.categories)) {
+      aggregatedCategories.set(category, (aggregatedCategories.get(category) || 0) + amount);
     }
   }
-  const pieData = Array.from(allCategories.entries())
+
+  const pieData = Array.from(aggregatedCategories.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([name, value]) => ({ name, value }));
 
   const merchants = merchantsQuery.data?.merchants ?? [];
 
-  // Chart-ready income/expense data
-  const chartData = incomeExpenseData.map((m) => ({
-    month: formatMonth(m.month),
-    Income: m.income,
-    Expense: m.expense,
-    Net: m.net,
+  const chartData = incomeExpenseData.map((month) => ({
+    month: formatMonth(month.month),
+    Income: month.income,
+    Expense: month.expense,
+    Net: month.net,
   }));
 
-  const isLoading = incomeExpenseQuery.isLoading && categoryQuery.isLoading && balancesQuery.isLoading;
+  const spendingTrend =
+    latestMonth && prevMonth ? (latestMonth.expense > prevMonth.expense ? "up" : "down") : undefined;
+  const spendingChange =
+    latestMonth && prevMonth && prevMonth.expense > 0
+      ? `${Math.abs(Math.round(((latestMonth.expense - prevMonth.expense) / prevMonth.expense) * 100))}%`
+      : undefined;
+
+  const savingsTrend =
+    latestMonth && prevMonth
+      ? latestMonth.savings_rate >= prevMonth.savings_rate
+        ? "up"
+        : "down"
+      : undefined;
+
+  const isLoading =
+    incomeExpenseQuery.isLoading ||
+    categoryQuery.isLoading ||
+    balancesQuery.isLoading ||
+    merchantsQuery.isLoading;
+
+  const hasAnyData =
+    incomeExpenseData.length > 0 || pieData.length > 0 || merchants.length > 0 || accounts.length > 0;
 
   return (
-    <div className="flex-1 overflow-auto">
-      {/* Header */}
-      <div className="px-6 lg:px-8 py-6 border-b border-border">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <motion.h1
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="text-2xl font-bold text-foreground flex items-center gap-3"
-            >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg shadow-violet-500/20">
-                <BarChart3 className="w-5 h-5 text-white" />
+    <div className="page-grid flex-1 overflow-auto">
+      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
+        <PageIntro
+          icon={BarChart3}
+          eyebrow="Insight Studio"
+          title="Financial analytics that highlight movement, not just totals"
+          description="Track whether your cash flow, category mix, and balances are getting healthier over time. Switch the window and use the charts to find drift before it becomes a pattern."
+          stats={[
+            {
+              label: "Coverage",
+              value: `${timeRange} month${timeRange === 1 ? "" : "s"}`,
+            },
+            {
+              label: "Accounts tracked",
+              value: String(accounts.length),
+            },
+            {
+              label: "Net worth snapshot",
+              value: formatCompactCurrency(netWorth),
+            },
+          ]}
+          actions={
+            <>
+              <div className="flex items-center gap-1 rounded-2xl border border-border/70 bg-background/80 p-1">
+                {[3, 6, 12].map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => setTimeRange(range)}
+                    className={`rounded-xl px-4 py-2 text-xs font-semibold transition-all ${
+                      timeRange === range
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    }`}
+                  >
+                    {range}M
+                  </button>
+                ))}
               </div>
-              Financial Analytics
-            </motion.h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Deep insights into your spending, income, and financial health
-            </p>
-          </div>
+              <Badge variant="outline" className="h-fit rounded-full px-3 py-2 text-xs">
+                Refreshes every minute
+              </Badge>
+            </>
+          }
+        />
 
-          {/* Time range selector */}
-          <div className="flex items-center gap-1 bg-muted/50 rounded-xl p-1">
-            {[3, 6, 12].map((range) => (
-              <button
-                key={range}
-                onClick={() => setTimeRange(range)}
-                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  timeRange === range
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                }`}
-              >
-                {range}M
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-            <p className="text-sm text-muted-foreground">Loading analytics…</p>
-          </div>
-        </div>
-      ) : (
-        <div className="px-6 lg:px-8 py-6 space-y-8">
-          {/* ─── Stat Cards ──────────────────────────────── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              title="Total Income"
-              value={formatCurrency(totalIncome)}
-              subtitle={`Last ${timeRange} months`}
-              icon={TrendingUp}
-              color="primary"
-              index={0}
+        {isLoading ? (
+          <AnalyticsLoadingState />
+        ) : !hasAnyData ? (
+          <Card className="surface-panel border-border/70 p-8">
+            <EmptyState
+              title="Not enough analytics data yet"
+              description="Add transactions and accounts to unlock trend lines, category breakdowns, and account comparisons here."
+              icon={BarChart3}
+              action={<Button onClick={() => setTimeRange(12)}>Keep 12-month view ready</Button>}
             />
-            <StatCard
-              title="Total Expenses"
-              value={formatCurrency(totalExpense)}
-              subtitle={latestMonth ? `${formatMonth(latestMonth.month)}: ${formatCurrency(latestMonth.expense)}` : undefined}
-              icon={TrendingDown}
-              trend={spendingTrend as "up" | "down" | undefined}
-              trendLabel={spendingChange}
-              color="primary"
-              index={1}
-            />
-            <StatCard
-              title="Net Worth"
-              value={formatCurrency(netWorth)}
-              subtitle={`${accounts.length} account${accounts.length !== 1 ? "s" : ""}`}
-              icon={Wallet}
-              color="primary"
-              index={2}
-            />
-            <StatCard
-              title="Avg Savings Rate"
-              value={`${avgSavingsRate}%`}
-              subtitle={latestMonth ? `This month: ${latestMonth.savings_rate}%` : undefined}
-              icon={PiggyBank}
-              trend={latestMonth && prevMonth ? (latestMonth.savings_rate > prevMonth.savings_rate ? "up" : "down") : undefined}
-              color="primary"
-              index={3}
-            />
-          </div>
+          </Card>
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <AnalyticsStatCard
+                title="Total income"
+                value={formatCurrency(totalIncome)}
+                subtitle={`Across the last ${timeRange} months`}
+                icon={TrendingUp}
+                tone="income"
+                delay={0}
+              />
+              <AnalyticsStatCard
+                title="Total expenses"
+                value={formatCurrency(totalExpense)}
+                subtitle={
+                  latestMonth
+                    ? `${formatMonth(latestMonth.month)} closed at ${formatCompactCurrency(latestMonth.expense)}`
+                    : "Waiting for monthly expense data"
+                }
+                icon={TrendingDown}
+                tone="expense"
+                trendLabel={spendingChange}
+                trendDirection={spendingTrend}
+                delay={0.08}
+              />
+              <AnalyticsStatCard
+                title="Net worth"
+                value={formatCurrency(netWorth)}
+                subtitle={`${accounts.length} account${accounts.length === 1 ? "" : "s"} represented`}
+                icon={Wallet}
+                tone="wealth"
+                delay={0.16}
+              />
+              <AnalyticsStatCard
+                title="Average savings rate"
+                value={`${avgSavingsRate}%`}
+                subtitle={
+                  latestMonth
+                    ? `Latest month landed at ${latestMonth.savings_rate}%`
+                    : "Waiting for monthly savings data"
+                }
+                icon={PiggyBank}
+                tone="savings"
+                trendLabel={latestMonth && prevMonth ? `${Math.abs(latestMonth.savings_rate - prevMonth.savings_rate)} pts` : undefined}
+                trendDirection={savingsTrend}
+                delay={0.24}
+              />
+            </div>
 
-          {/* ─── Income vs Expense Chart ─────────────────── */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-          >
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-primary" />
-                  Income vs Expenses
-                </CardTitle>
-                <CardDescription>Monthly comparison with net savings</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {chartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={320}>
-                    <AreaChart data={chartData}>
-                      <defs>
-                        <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0} />
-                        </linearGradient>
-                        <linearGradient id="expenseGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(340, 75%, 55%)" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="hsl(340, 75%, 55%)" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                      <XAxis dataKey="month" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
-                      <YAxis tick={{ fontSize: 11 }} className="fill-muted-foreground" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend />
-                      <Area type="monotone" dataKey="Income" stroke="hsl(142, 71%, 45%)" fill="url(#incomeGrad)" strokeWidth={2} />
-                      <Area type="monotone" dataKey="Expense" stroke="hsl(340, 75%, 55%)" fill="url(#expenseGrad)" strokeWidth={2} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
-                    No transaction data available
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* ─── Category Breakdown + Top Merchants ──────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Category Pie */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-            >
-              <Card className="h-full">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <ShoppingBag className="w-4 h-4 text-primary" />
-                    Spending by Category
-                  </CardTitle>
-                  <CardDescription>Where your money goes</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {pieData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                      <PieChart>
-                        <Pie
-                          data={pieData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={100}
-                          paddingAngle={3}
-                          dataKey="value"
-                          label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                          labelLine={false}
-                        >
-                          {pieData.map((_, idx) => (
-                            <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip content={<CustomTooltip />} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
-                      No category data available
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            {/* Top Merchants */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-            >
-              <Card className="h-full">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-primary" />
-                    Top Merchants
-                  </CardTitle>
-                  <CardDescription>Your most frequent spending destinations</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {merchants.length > 0 ? (
-                    <div className="space-y-3">
-                      {merchants.map((merchant, index) => {
-                        const maxTotal = merchants[0]?.total || 1;
-                        const pct = (merchant.total / maxTotal) * 100;
-                        return (
-                          <motion.div
-                            key={merchant.merchant_id}
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: 0.05 * index }}
-                            className="group"
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className="w-2 h-2 rounded-full"
-                                  style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
-                                />
-                                <span className="text-sm font-medium text-foreground truncate max-w-[160px]">
-                                  {merchant.name}
-                                </span>
-                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                                  {merchant.count}x
-                                </Badge>
-                              </div>
-                              <span className="text-sm font-semibold text-foreground">
-                                {formatCurrency(merchant.total)}
-                              </span>
-                            </div>
-                            <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
-                              <motion.div
-                                className="h-full rounded-full"
-                                style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
-                                initial={{ width: 0 }}
-                                animate={{ width: `${pct}%` }}
-                                transition={{ delay: 0.1 * index, duration: 0.5 }}
-                              />
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
-                      No merchant data available
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
-
-          {/* ─── Account Balances ────────────────────────── */}
-          {accounts.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
-            >
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Wallet className="w-4 h-4 text-primary" />
-                    Account Balances
-                  </CardTitle>
-                  <CardDescription>
-                    Assets: {formatCurrency(balancesQuery.data?.summary?.total_assets ?? 0)} •
-                    Liabilities: {formatCurrency(balancesQuery.data?.summary?.total_liabilities ?? 0)} •
-                    Net: {formatCurrency(netWorth)}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart
-                      data={accounts.map((a) => ({
-                        name: a.name,
-                        Balance: a.balance,
-                        fill: a.type === "credit" ? "hsl(340, 75%, 55%)" : "hsl(173, 80%, 40%)",
-                      }))}
-                      layout="vertical"
-                    >
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-border" horizontal={false} />
-                      <XAxis type="number" tick={{ fontSize: 11 }} className="fill-muted-foreground" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} className="fill-muted-foreground" width={120} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Bar dataKey="Balance" radius={[0, 4, 4, 0]}>
-                        {accounts.map((a, idx) => (
-                          <Cell
-                            key={idx}
-                            fill={a.type === "credit" ? "hsl(340, 75%, 55%)" : "hsl(173, 80%, 40%)"}
+            <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+              <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}>
+                <Card className="surface-panel h-full border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-primary" />
+                      Income vs expenses
+                    </CardTitle>
+                    <CardDescription>
+                      Compare inflow, outflow, and how much room is left over each month.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {chartData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={340}>
+                        <AreaChart data={chartData}>
+                          <defs>
+                            <linearGradient id="analytics-income" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(142 71% 45%)" stopOpacity={0.26} />
+                              <stop offset="95%" stopColor="hsl(142 71% 45%)" stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id="analytics-expense" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(340 75% 55%)" stopOpacity={0.24} />
+                              <stop offset="95%" stopColor="hsl(340 75% 55%)" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border/70" />
+                          <XAxis dataKey="month" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
+                          <YAxis
+                            tick={{ fontSize: 11 }}
+                            className="fill-muted-foreground"
+                            tickFormatter={(value) => formatCompactCurrency(value)}
                           />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
+                          <Tooltip content={<AnalyticsTooltip />} />
+                          <Legend />
+                          <Area
+                            type="monotone"
+                            dataKey="Income"
+                            stroke="hsl(142 71% 45%)"
+                            fill="url(#analytics-income)"
+                            strokeWidth={2.5}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="Expense"
+                            stroke="hsl(340 75% 55%)"
+                            fill="url(#analytics-expense)"
+                            strokeWidth={2.5}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <EmptyState
+                        title="No income and expense trend yet"
+                        description="Monthly trend lines will appear here after transaction history has enough dated entries."
+                        icon={Calendar}
+                        className="py-14"
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
 
-          <Separator />
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.08 }}
+              >
+                <Card className="surface-panel h-full border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <ShoppingBag className="h-4 w-4 text-primary" />
+                      Spending by category
+                    </CardTitle>
+                    <CardDescription>
+                      See which categories are consuming the biggest share of your spend.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {pieData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={340}>
+                        <PieChart>
+                          <Pie
+                            data={pieData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={65}
+                            outerRadius={108}
+                            paddingAngle={3}
+                            dataKey="value"
+                            label={({ name, percent }) =>
+                              `${name} ${(percent * 100).toFixed(0)}%`
+                            }
+                            labelLine={false}
+                          >
+                            {pieData.map((_, index) => (
+                              <Cell
+                                key={index}
+                                fill={CHART_COLORS[index % CHART_COLORS.length]}
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip content={<AnalyticsTooltip />} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <EmptyState
+                        title="Category signals are still forming"
+                        description="Once transactions include categories, this view will highlight where your money is concentrating."
+                        icon={ShoppingBag}
+                        className="py-14"
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            </div>
 
-          {/* Footer */}
-          <p className="text-xs text-muted-foreground text-center pb-4">
-            Analytics data is based on your transactions from the last {timeRange} months.
-            Data refreshes every minute.
-          </p>
-        </div>
-      )}
+            <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.12 }}
+              >
+                <Card className="surface-panel h-full border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Building2 className="h-4 w-4 text-primary" />
+                      Top merchants
+                    </CardTitle>
+                    <CardDescription>
+                      The merchants absorbing the most budget in this time window.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {merchants.length > 0 ? (
+                      <div className="space-y-4">
+                        {merchants.map((merchant, index) => {
+                          const maxTotal = merchants[0]?.total || 1;
+                          const width = (merchant.total / maxTotal) * 100;
+
+                          return (
+                            <motion.div
+                              key={merchant.merchant_id}
+                              initial={{ opacity: 0, x: -8 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: index * 0.05 }}
+                              className="space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="h-2.5 w-2.5 rounded-full"
+                                      style={{
+                                        backgroundColor:
+                                          CHART_COLORS[index % CHART_COLORS.length],
+                                      }}
+                                    />
+                                    <span className="truncate text-sm font-medium text-foreground">
+                                      {merchant.name}
+                                    </span>
+                                    <Badge variant="secondary" className="rounded-full text-[10px]">
+                                      {merchant.count}x
+                                    </Badge>
+                                  </div>
+                                </div>
+                                <span className="text-sm font-semibold text-foreground">
+                                  {formatCurrency(merchant.total)}
+                                </span>
+                              </div>
+                              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                                <motion.div
+                                  className="h-full rounded-full"
+                                  style={{
+                                    backgroundColor:
+                                      CHART_COLORS[index % CHART_COLORS.length],
+                                  }}
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${width}%` }}
+                                  transition={{ duration: 0.45, delay: index * 0.06 }}
+                                />
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <EmptyState
+                        title="No merchant leaderboard yet"
+                        description="Merchant rankings will show up once transactions with merchant names are available."
+                        icon={Building2}
+                        className="py-12"
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.16 }}
+              >
+                <Card className="surface-panel h-full border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Wallet className="h-4 w-4 text-primary" />
+                      Account balances
+                    </CardTitle>
+                    <CardDescription>
+                      Assets at a glance, with liabilities clearly separated.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {accounts.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={340}>
+                        <BarChart
+                          data={accounts.map((account) => ({
+                            name: account.name,
+                            Balance: account.balance,
+                            fill:
+                              account.type === "credit"
+                                ? "hsl(340 75% 55%)"
+                                : "hsl(173 80% 40%)",
+                          }))}
+                          layout="vertical"
+                        >
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            className="stroke-border/70"
+                            horizontal={false}
+                          />
+                          <XAxis
+                            type="number"
+                            tick={{ fontSize: 11 }}
+                            className="fill-muted-foreground"
+                            tickFormatter={(value) => formatCompactCurrency(value)}
+                          />
+                          <YAxis
+                            type="category"
+                            dataKey="name"
+                            tick={{ fontSize: 11 }}
+                            className="fill-muted-foreground"
+                            width={132}
+                          />
+                          <Tooltip content={<AnalyticsTooltip />} />
+                          <Bar dataKey="Balance" radius={[0, 5, 5, 0]}>
+                            {accounts.map((account, index) => (
+                              <Cell
+                                key={`${account.name}-${index}`}
+                                fill={
+                                  account.type === "credit"
+                                    ? "hsl(340 75% 55%)"
+                                    : "hsl(173 80% 40%)"
+                                }
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <EmptyState
+                        title="No account balances available"
+                        description="Link or create accounts to compare balances and liabilities here."
+                        icon={Wallet}
+                        className="py-14"
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            </div>
+
+            <p className="pb-4 text-center text-xs text-muted-foreground">
+              Analytics are based on transaction history across the last {timeRange} months and
+              refresh automatically on a rolling cadence.
+            </p>
+          </>
+        )}
+      </div>
     </div>
   );
 }

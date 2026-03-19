@@ -4,6 +4,9 @@ import { User, Shield, Key, Settings as SettingsIcon, Copy, Eye, EyeOff } from "
 import { useAuth } from "@/hooks/useAuth";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { useToast } from "@/hooks/useToast";
+import { EmptyState } from "@/components/feedback/EmptyState";
+import { InlineLoader } from "@/components/feedback/InlineLoader";
+import { PageIntro } from "@/components/layout/PageIntro";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
@@ -29,15 +32,22 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState("profile");
 
   return (
-    <div className="flex-1 p-6 overflow-auto">
-    <div className="space-y-6 max-w-4xl mx-auto">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Settings</h1>
-        <p className="text-muted-foreground mt-1">Manage your account settings and preferences</p>
-      </div>
+    <div className="page-grid flex-1 overflow-auto">
+      <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <PageIntro
+          icon={SettingsIcon}
+          eyebrow="Control Center"
+          title="Security, profile, and workspace preferences in one place"
+          description="Adjust the settings that define how your account works, how your team workspace is formatted, and how external tools can connect."
+          stats={[
+            { label: "Signed in as", value: user?.email || "Unknown" },
+            { label: "Auth provider", value: user?.authProvider === "google" ? "Google" : "Email" },
+            { label: "Workspace plan", value: configQuery.data?.entitlements?.plan || "free" },
+          ]}
+        />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-4 rounded-[calc(var(--radius)-4px)] border border-border/70 bg-card/85 p-1">
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <User className="w-4 h-4" />
             <span className="hidden sm:inline">Profile</span>
@@ -71,8 +81,8 @@ export default function Settings() {
         <TabsContent value="preferences" className="space-y-4 mt-6">
           <PreferencesSection configQuery={configQuery} toast={toast} queryClient={queryClient} />
         </TabsContent>
-      </Tabs>
-    </div>
+        </Tabs>
+      </div>
     </div>
   );
 }
@@ -411,8 +421,8 @@ function TwoFactorSection({ enabled, isLoading, toast, queryClient }: any) {
 
   if (isLoading) {
     return (
-      <Card className="p-6">
-        <p className="text-muted-foreground">Loading 2FA status...</p>
+      <Card className="surface-panel p-6">
+        <InlineLoader label="Loading two-factor authentication status..." className="py-4" />
       </Card>
     );
   }
@@ -661,7 +671,7 @@ function ApiKeysSection({ toast, queryClient }: any) {
 
   return (
     <div className="space-y-4">
-      <Card className="p-6">
+      <Card className="surface-panel p-6">
         <div className="space-y-4">
           <div>
             <h2 className="text-xl font-semibold text-foreground">Create New API Key</h2>
@@ -684,7 +694,7 @@ function ApiKeysSection({ toast, queryClient }: any) {
         </div>
       </Card>
 
-      <Card className="p-6">
+      <Card className="surface-panel p-6">
         <div className="space-y-4">
           <div>
             <h2 className="text-xl font-semibold text-foreground">Your API Keys</h2>
@@ -692,9 +702,13 @@ function ApiKeysSection({ toast, queryClient }: any) {
           </div>
 
           {isLoading ? (
-            <p className="text-muted-foreground">Loading API keys...</p>
+            <InlineLoader label="Loading API keys..." className="py-6" />
           ) : !apiKeysData?.api_keys || apiKeysData.api_keys.length === 0 ? (
-            <p className="text-muted-foreground">No API keys yet. Create one to get started.</p>
+            <EmptyState
+              title="No API keys yet"
+              description="Create a key when you are ready to automate against the API. You can revoke any key here later."
+              icon={Key}
+            />
           ) : (
             <div className="space-y-3">
               {apiKeysData.api_keys.map((key: ApiKeyListItem) => (

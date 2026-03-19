@@ -3,12 +3,13 @@ import mongoose from "mongoose";
 import { ZodError } from "zod";
 import { HttpError } from "./httpError";
 import { logger } from "../config/logger";
+import { sendErrorResponse } from "../utils/apiResponse";
 
 export const notFoundHandler = (req: Request, res: Response) => {
-  res.status(404).json({
+  sendErrorResponse(res, 404, {
     message: "Route not found",
     code: "NOT_FOUND",
-    request_id: req.requestId
+    requestId: req.requestId,
   });
 };
 
@@ -18,49 +19,49 @@ export const errorHandler = (err: unknown, req: Request, res: Response, _next: N
   }
 
   if (err instanceof HttpError) {
-    res.status(err.statusCode).json({
+    sendErrorResponse(res, err.statusCode, {
       message: err.message,
       code: err.code,
       details: err.details,
-      request_id: req.requestId
+      requestId: req.requestId,
     });
     return;
   }
 
   if (err instanceof ZodError) {
-    res.status(400).json({
+    sendErrorResponse(res, 400, {
       message: "Invalid request payload",
       code: "VALIDATION_ERROR",
       details: err.flatten(),
-      request_id: req.requestId
+      requestId: req.requestId,
     });
     return;
   }
 
   if (err instanceof mongoose.Error.ValidationError) {
-    res.status(400).json({
+    sendErrorResponse(res, 400, {
       message: "Data validation failed",
       code: "DB_VALIDATION_ERROR",
       details: err.errors,
-      request_id: req.requestId
+      requestId: req.requestId,
     });
     return;
   }
 
   if (err instanceof mongoose.Error.CastError) {
-    res.status(400).json({
+    sendErrorResponse(res, 400, {
       message: "Invalid identifier format",
       code: "INVALID_ID",
       details: err.message,
-      request_id: req.requestId
+      requestId: req.requestId,
     });
     return;
   }
 
   logger.error({ err, requestId: req.requestId }, "Unhandled error");
-  res.status(500).json({
+  sendErrorResponse(res, 500, {
     message: "Internal server error",
     code: "INTERNAL_SERVER_ERROR",
-    request_id: req.requestId
+    requestId: req.requestId,
   });
 };

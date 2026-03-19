@@ -1,7 +1,8 @@
 import { Request, Response } from "express";
 import axios from "axios";
-import { getAiCoreClientStatus } from "../services/aiCoreClient";
+
 import { getEnv } from "../config/env";
+import { getAiCoreClientStatus } from "../services/aiCoreClient";
 
 const summarizeUpstreamError = (error: unknown) => {
   if (axios.isAxiosError(error)) {
@@ -35,24 +36,28 @@ export const getAiCoreStatus = async (req: Request, res: Response) => {
   const STATUS_TIMEOUT_MS = env.AI_CORE_STATUS_TIMEOUT_MS;
   const requestId = req.requestId;
 
-  const [healthResult, rateLimitResult] = await Promise.allSettled([
+  const [healthResult, rateLimitResult, providersResult] = await Promise.allSettled([
     axios.get(`${AI_CORE_BASE_URL}/health`, {
       timeout: STATUS_TIMEOUT_MS,
-      headers: { "X-Request-Id": requestId }
+      headers: { "X-Request-Id": requestId },
     }),
     axios.get(`${AI_CORE_BASE_URL}/api/rate-limit/status`, {
       timeout: STATUS_TIMEOUT_MS,
-      headers: { "X-Request-Id": requestId }
-    })
+      headers: { "X-Request-Id": requestId },
+    }),
+    axios.get(`${AI_CORE_BASE_URL}/api/providers`, {
+      timeout: STATUS_TIMEOUT_MS,
+      headers: { "X-Request-Id": requestId },
+    }),
   ]);
 
   const healthOk = healthResult.status === "fulfilled";
   const rateLimitOk = rateLimitResult.status === "fulfilled";
+  const providersOk = providersResult.status === "fulfilled";
 
-  const health =
-    healthOk ? healthResult.value.data : { status: "unavailable" };
-  const rateLimit =
-    rateLimitOk ? rateLimitResult.value.data : { success: false };
+  const health = healthOk ? healthResult.value.data : { status: "unavailable" };
+  const rateLimit = rateLimitOk ? rateLimitResult.value.data : { success: false };
+  const providers = providersOk ? providersResult.value.data : { providers: [] };
 
   res.json({
     ai_core: {
@@ -63,9 +68,11 @@ export const getAiCoreStatus = async (req: Request, res: Response) => {
       health_error: healthOk ? null : summarizeUpstreamError(healthResult.reason),
       rate_limit_status: rateLimit,
       rate_limit_error: rateLimitOk ? null : summarizeUpstreamError(rateLimitResult.reason),
+      providers,
+      providers_error: providersOk ? null : summarizeUpstreamError(providersResult.reason),
     },
     server: {
-      ai_core_client: getAiCoreClientStatus()
-    }
+      ai_core_client: getAiCoreClientStatus(),
+    },
   });
 };

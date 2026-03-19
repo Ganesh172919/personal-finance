@@ -1,97 +1,138 @@
 # Auto-generated OpenAPI v1 paths contract.
-# This file documents all mounted /api/v1 routes (path + method).
-# Run: npx tsx server/src/scripts/generateOpenApiPaths.ts to regenerate.
+# DO NOT EDIT MANUALLY — regenerate with:
+#   npx tsx server/src/scripts/generateOpenApiPaths.ts
 
-# --- Auth (mount: /api/v1/auth) ---
-/api/v1/auth/providers:
+/api/v1/activity-feed:
   get:
-/api/v1/auth/csrf:
+/api/v1/agent-outputs/{id}:
   get:
-/api/v1/auth/register:
+/api/v1/agent-outputs/{id}/feedback:
   post:
-/api/v1/auth/login:
-  post:
-/api/v1/auth/verify-email:
-  post:
-/api/v1/auth/resend-verification:
-  post:
-/api/v1/auth/google:
+/api/v1/agent-outputs/recent:
   get:
-/api/v1/auth/google/callback:
+/api/v1/agent-outputs/user/{userId}:
   get:
-/api/v1/auth/profile:
+/api/v1/ai-core/providers:
   get:
-/api/v1/auth/logout:
+/api/v1/ai-core/status:
+  get:
+/api/v1/ai/command:
   post:
-
-# --- Config (mount: /api/v1/config) ---
-/api/v1/config/me:
-  get:
-
-# --- Public Shares (mount: /api/v1/public) ---
-/api/v1/public/shares/financial-story/{token}:
-  get:
-
-# --- v1Routes (mount: /api/v1) ---
-/api/v1/search:
-  get:
-/api/v1/category-rules:
-  get:
+/api/v1/ai/scenario:
   post:
-/api/v1/category-rules/{id}:
-  patch:
-  delete:
-/api/v1/orgs/me:
+/api/v1/ai/stream:
+  post:
+/api/v1/analytics/account-balances:
   get:
-/api/v1/orgs:
-  post:
-/api/v1/orgs/{orgId}/members:
-  post:
-/api/v1/orgs/{orgId}/settings:
-  patch:
-/api/v1/org-invites/accept:
-  post:
+/api/v1/analytics/category-trends:
+  get:
+/api/v1/analytics/income-expense:
+  get:
+/api/v1/analytics/overview:
+  get:
+/api/v1/analytics/spending-heatmap:
+  get:
+/api/v1/analytics/top-merchants:
+  get:
 /api/v1/api-keys:
   get:
   post:
 /api/v1/api-keys/{id}/revoke:
   post:
-/api/v1/usage/ledger:
+/api/v1/audit/events:
   get:
+/api/v1/auth/2fa/disable:
+  post:
+/api/v1/auth/2fa/setup:
+  post:
+/api/v1/auth/2fa/status:
+  get:
+/api/v1/auth/2fa/verify:
+  post:
+/api/v1/auth/csrf:
+  get:
+/api/v1/auth/google:
+  get:
+/api/v1/auth/google/callback:
+  get:
+/api/v1/auth/login:
+  post:
+/api/v1/auth/logout:
+  post:
+/api/v1/auth/password:
+  post:
+/api/v1/auth/profile:
+  get:
+  put:
+/api/v1/auth/providers:
+  get:
+/api/v1/auth/register:
+  post:
+/api/v1/auth/resend-verification:
+  post:
+/api/v1/auth/verify-email:
+  post:
+/api/v1/automation/events:
+  get:
+/api/v1/automation/events/emit:
+  post:
+/api/v1/autopilot/approve:
+  post:
+/api/v1/autopilot/execute:
+  post:
+/api/v1/autopilot/plan:
+  post:
+/api/v1/autopilot/runs/{id}:
+  get:
+/api/v1/autopilot/simulate:
+  post:
 /api/v1/billing/checkout:
   post:
 /api/v1/billing/portal:
   get:
 /api/v1/billing/webhook:
   post:
-/api/v1/workflows/templates:
-  get:
-/api/v1/workflows:
+/api/v1/calendar-reminders:
   get:
   post:
-/api/v1/workflows/{id}/run:
-  post:
-/api/v1/finance/accounts:
-  get:
-  post:
-/api/v1/finance/accounts/{id}:
+/api/v1/calendar-reminders/{id}:
+  delete:
+/api/v1/calendar-reminders/{id}/toggle:
   patch:
-/api/v1/finance/merchants:
+/api/v1/category-rules:
   get:
   post:
-/api/v1/finance/budgets/{periodKey}/allocations:
-  get:
-  put:
-/api/v1/finance/budgets/{periodKey}/envelopes:
-  get:
-/api/v1/finance/recurring/candidates:
-  get:
-/api/v1/finance/recurring:
-  get:
-  post:
-/api/v1/finance/recurring/{id}:
+/api/v1/category-rules/{id}:
   patch:
-/api/v1/finance/forecast:
+  delete:
+/api/v1/chat/sessions:
+  get:
+  post:
+/api/v1/chat/sessions/{sessionId}:
+  get:
+  patch:
+  delete:
+/api/v1/chat/sessions/{sessionId}/messages:
+  get:
+  post:
+/api/v1/comments:
+  get:
+  post:
+/api/v1/comments/{id}:
+  patch:
+  delete:
+/api/v1/config/me:
+  get:
+/api/v1/dashboard/summary:
+  get:
+/api/v1/debts:
+  post:
+/api/v1/debts/{debtId}:
+  patch:
+  delete:
+/api/v1/entitlements/me:
+  get:
+/api/v1/events/stream:
   get:
 /api/v1/exports:
   get:
@@ -100,156 +141,33 @@
   get:
 /api/v1/exports/{id}/download:
   get:
-/api/v1/audit/events:
-  get:
-/api/v1/tools/simulate:
-  post:
-/api/v1/tools/execute:
-  post:
-/api/v1/ai/command:
-  post:
-/api/v1/ai/stream:
-  post:
-/api/v1/ai/scenario:
-  post:
-/api/v1/autopilot/plan:
-  post:
-/api/v1/autopilot/simulate:
-  post:
-/api/v1/autopilot/approve:
-  post:
-/api/v1/autopilot/execute:
-  post:
-/api/v1/autopilot/runs/{id}:
-  get:
-/api/v1/events/stream:
-  get:
-/api/v1/notifications:
-  get:
-/api/v1/notifications/{id}/read:
-  post:
-/api/v1/marketplace/catalog:
-  get:
-/api/v1/marketplace/install:
-  post:
-/api/v1/plugins:
-  get:
-/api/v1/plugins/{id}/update:
-  post:
-/api/v1/plugins/{id}/uninstall:
-  post:
-/api/v1/integrations:
-  get:
-/api/v1/integrations/transactions_csv/import:
-  post:
-/api/v1/integrations/{id}/health:
-  get:
-/api/v1/integrations/{id}/connect:
-  post:
-/api/v1/integrations/{id}/disconnect:
-  post:
-/api/v1/integrations/{id}/history:
-  get:
-/api/v1/integrations/{id}/sync:
-  post:
-/api/v1/automation/events:
-  get:
-/api/v1/automation/events/emit:
-  post:
 /api/v1/feature-flags:
   get:
 /api/v1/feature-flags/{key}:
   put:
   delete:
-/api/v1/analytics/overview:
+/api/v1/finance/accounts:
   get:
-/api/v1/shares/financial-story:
   post:
-/api/v1/referrals/me:
-  get:
-/api/v1/referrals/redeem:
-  post:
-
-# --- AI Routes (mount: /api/v1) ---
-/api/v1/process-command:
-  post:
-/api/v1/scenarios/what-if:
-  post:
-/api/v1/ai-core/status:
-  get:
-/api/v1/ai-core/providers:
-  get:
-/api/v1/financial-profiles/investments:
-  post:
-/api/v1/financial-profiles/me:
+/api/v1/finance/accounts/{id}:
+  patch:
+/api/v1/finance/budgets/{periodKey}/allocations:
   get:
   put:
-/api/v1/financial-profiles/{userId}:
+/api/v1/finance/budgets/{periodKey}/envelopes:
   get:
-  put:
-/api/v1/agent-outputs/recent:
+/api/v1/finance/forecast:
   get:
-/api/v1/agent-outputs/{id}:
+/api/v1/finance/merchants:
   get:
-/api/v1/agent-outputs/{id}/feedback:
   post:
-/api/v1/agent-outputs/user/{userId}:
+/api/v1/finance/recurring:
   get:
-
-# --- Chat Routes (mount: /api/v1/chat) ---
-/api/v1/chat/sessions:
   post:
-  get:
-/api/v1/chat/sessions/{sessionId}:
-  get:
-  delete:
+/api/v1/finance/recurring/{id}:
   patch:
-/api/v1/chat/sessions/{sessionId}/messages:
+/api/v1/finance/recurring/candidates:
   get:
-  post:
-
-# --- Financial Data Routes (mount: /api/v1) ---
-/api/v1/transactions:
-  post:
-  get:
-/api/v1/transactions/import:
-  post:
-/api/v1/transactions/recent:
-  get:
-/api/v1/transactions/summary:
-  get:
-/api/v1/dashboard/summary:
-  get:
-/api/v1/portfolio/summary:
-  get:
-/api/v1/transactions/{id}:
-  patch:
-  delete:
-/api/v1/goals:
-  post:
-/api/v1/goals/{goalId}:
-  patch:
-  delete:
-/api/v1/debts:
-  post:
-/api/v1/debts/{debtId}:
-  patch:
-  delete:
-
-# --- Receipt Routes (mount: /api/v1) ---
-/api/v1/receipts/parse:
-  post:
-/api/v1/receipts/{id}/confirm:
-  post:
-/api/v1/receipts:
-  get:
-/api/v1/receipts/{id}:
-  get:
-  delete:
-
-# --- Journal Routes (mount: /api/v1) ---
-/api/v1/financial-journal/recognize-handwriting:
-  post:
 /api/v1/financial-journal/entries:
   get:
 /api/v1/financial-journal/entries/{id}:
@@ -257,21 +175,95 @@
   patch:
 /api/v1/financial-journal/entries/{id}/insights:
   post:
-
-# --- Media Routes (mount: /api/v1) ---
+/api/v1/financial-journal/recognize-handwriting:
+  post:
+/api/v1/financial-profiles/{userId}:
+  get:
+  put:
+/api/v1/financial-profiles/investments:
+  post:
+/api/v1/financial-profiles/me:
+  get:
+  put:
+/api/v1/goals:
+  post:
+/api/v1/goals/{goalId}:
+  patch:
+  delete:
+/api/v1/integrations:
+  get:
+/api/v1/integrations/{id}/connect:
+  post:
+/api/v1/integrations/{id}/disconnect:
+  post:
+/api/v1/integrations/{id}/health:
+  get:
+/api/v1/integrations/{id}/history:
+  get:
+/api/v1/integrations/{id}/sync:
+  post:
+/api/v1/integrations/health-summary:
+  get:
+/api/v1/integrations/transactions_csv/import:
+  post:
+/api/v1/marketplace/catalog:
+  get:
+/api/v1/marketplace/install:
+  post:
 /api/v1/media/{fileId}:
   get:
-
-# --- Monetization Routes (mount: /api/v1) ---
+/api/v1/notifications:
+  get:
+/api/v1/notifications/{id}/read:
+  post:
+/api/v1/org-invites/accept:
+  post:
+/api/v1/orgs:
+  post:
+/api/v1/orgs/{orgId}/members:
+  post:
+/api/v1/orgs/{orgId}/settings:
+  patch:
+/api/v1/orgs/audit-log:
+  get:
+/api/v1/orgs/me:
+  get:
 /api/v1/plans:
   get:
-/api/v1/entitlements/me:
+/api/v1/plugins:
   get:
-/api/v1/usage-events:
+/api/v1/plugins/{id}/uninstall:
   post:
-
-# --- Task Routes (mount: /api/v1/tasks) ---
-/api/v1/tasks/from-plan:
+/api/v1/plugins/{id}/update:
+  post:
+/api/v1/plugins/validate-manifest:
+  post:
+/api/v1/portfolio/summary:
+  get:
+/api/v1/process-command:
+  post:
+/api/v1/public/shares/financial-story/{token}:
+  get:
+/api/v1/receipts:
+  get:
+/api/v1/receipts/{id}:
+  get:
+  delete:
+/api/v1/receipts/{id}/confirm:
+  post:
+/api/v1/receipts/parse:
+  post:
+/api/v1/referrals/me:
+  get:
+/api/v1/referrals/redeem:
+  post:
+/api/v1/scenarios/what-if:
+  post:
+/api/v1/search:
+  get:
+/api/v1/security/audit-log:
+  get:
+/api/v1/shares/financial-story:
   post:
 /api/v1/tasks:
   get:
@@ -280,27 +272,32 @@
   patch:
 /api/v1/tasks/{id}/apply:
   post:
-
-# --- Two-Factor Authentication (Phase 5) ---
-/api/v1/auth/2fa/setup:
+/api/v1/tasks/from-plan:
   post:
-/api/v1/auth/2fa/verify:
+/api/v1/tools/execute:
   post:
-/api/v1/auth/2fa/disable:
+/api/v1/tools/simulate:
   post:
-/api/v1/auth/2fa/status:
+/api/v1/transactions:
   get:
-
-# --- Security Audit Log (Phase 5) ---
-/api/v1/security/audit-log:
-  get:
-/api/v1/orgs/audit-log:
-  get:
-
-# --- Connector Health (Phase 4) ---
-/api/v1/integrations/health-summary:
-  get:
-
-# --- Plugin Validation (Phase 4) ---
-/api/v1/plugins/validate-manifest:
   post:
+/api/v1/transactions/{id}:
+  patch:
+  delete:
+/api/v1/transactions/import:
+  post:
+/api/v1/transactions/recent:
+  get:
+/api/v1/transactions/summary:
+  get:
+/api/v1/usage-events:
+  post:
+/api/v1/usage/ledger:
+  get:
+/api/v1/workflows:
+  get:
+  post:
+/api/v1/workflows/{id}/run:
+  post:
+/api/v1/workflows/templates:
+  get:

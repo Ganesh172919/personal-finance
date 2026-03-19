@@ -6,22 +6,6 @@ import rateLimit from "express-rate-limit";
 import type { Request, Response, NextFunction } from "express";
 import passport from "./config/passport";
 import axios from "axios";
-
-import authRoutes from "./routes/authRoutes";
-import aiRoutes from "./routes/aiRoutes";
-import chatRoutes from "./routes/chatRoutes";
-import financialDataRoutes from "./routes/financialDataRoutes";
-import taskRoutes from "./routes/taskRoutes";
-import receiptRoutes from "./routes/receiptRoutes";
-import financialJournalRoutes from "./routes/financialJournalRoutes";
-import mediaRoutes from "./routes/mediaRoutes";
-import monetizationRoutes from "./routes/monetizationRoutes";
-import configRoutes from "./routes/configRoutes";
-import v1Routes from "./routes/v1Routes";
-import internalToolsRoutes from "./routes/internalToolsRoutes";
-import publicShareRoutes from "./routes/publicShareRoutes";
-import blogRoutes from "./routes/blogRoutes";
-import growthStoryRoutes from "./routes/growthStoryRoutes";
 import { requestContext } from "./middleware/requestContext";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { getEnv } from "./config/env";
@@ -33,6 +17,8 @@ import { orgContext } from "./middleware/orgContext";
 import { legacyApiDeprecation } from "./middleware/legacyApiDeprecation";
 import { responseContext } from "./middleware/responseContext";
 import { securityHeaders } from "./middleware/securityHeaders";
+import { mountCanonicalApiRoutes, mountLegacyApiRoutes } from "./routes/routeRegistry";
+import { sendErrorResponse } from "./utils/apiResponse";
 
 export const createApp = () => {
   const app = express();
@@ -70,9 +56,12 @@ export const createApp = () => {
 
       return String(req.ip || "unknown");
     },
-    message: {
-      message: "Too many requests, please try again shortly.",
-      code: "RATE_LIMITED",
+    handler: (req, res) => {
+      sendErrorResponse(res, 429, {
+        message: "Too many requests, please try again shortly.",
+        code: "RATE_LIMITED",
+        requestId: req.requestId,
+      });
     },
   });
 
@@ -102,7 +91,7 @@ export const createApp = () => {
             "https://fonts.googleapis.com",
           ],
           fontSrc: ["'self'", "https://fonts.gstatic.com"],
-          imgSrc: ["'self'", "data:", "blob:"],
+          imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
           connectSrc: ["'self'", ...CORS_ORIGINS.filter((o) => o !== "*")],
         },
       },
@@ -169,9 +158,12 @@ export const createApp = () => {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => String(req.ip || "unknown"),
-    message: {
-      message: "Too many authentication attempts, please try again later.",
-      code: "AUTH_RATE_LIMITED",
+    handler: (req, res) => {
+      sendErrorResponse(res, 429, {
+        message: "Too many authentication attempts, please try again later.",
+        code: "AUTH_RATE_LIMITED",
+        requestId: req.requestId,
+      });
     },
   });
   app.use("/api/v1/auth", authRateLimiter);
@@ -204,42 +196,10 @@ export const createApp = () => {
 
   // Canonical /api/v1 surface:
   // mount v1 before /api because `/api` prefix also matches `/api/v1/*` in Express.
-  app.use("/api/internal/tools", internalToolsRoutes);
-  app.use("/api/v1/auth", authRoutes);
-  app.use("/api/v1/config", configRoutes);
-  app.use("/api/v1/public", publicShareRoutes);
-  app.use("/api/v1/blogs", blogRoutes);
-  app.use("/api/v1/growth-stories", growthStoryRoutes);
-  app.use("/api/v1", v1Routes);
-  if (env.MONETIZATION_ENABLED) {
-    app.use("/api/v1", monetizationRoutes);
-  }
-  // vNext shims: mount legacy feature routers under /api/v1 (keep /api routes intact for one release cycle).
-  app.use("/api/v1", aiRoutes);
-  app.use("/api/v1/chat", chatRoutes);
-  app.use("/api/v1", financialDataRoutes);
-  app.use("/api/v1", receiptRoutes);
-  app.use("/api/v1", financialJournalRoutes);
-  app.use("/api/v1", mediaRoutes);
-  if (env.TASKS_ENABLED) {
-    app.use("/api/v1/tasks", taskRoutes);
-  }
+  mountCanonicalApiRoutes(app, env);
 
   // Legacy /api routes (kept during deprecation window)
-  app.use("/api/auth", authRoutes);
-  app.use("/api/config", configRoutes);
-  if (env.MONETIZATION_ENABLED) {
-    app.use("/api", monetizationRoutes);
-  }
-  app.use("/api", aiRoutes);
-  app.use("/api/chat", chatRoutes);
-  app.use("/api", financialDataRoutes);
-  app.use("/api", receiptRoutes);
-  app.use("/api", financialJournalRoutes);
-  app.use("/api", mediaRoutes);
-  if (env.TASKS_ENABLED) {
-    app.use("/api/tasks", taskRoutes);
-  }
+  mountLegacyApiRoutes(app, env);
 
   // Prometheus metrics (guarded by METRICS_TOKEN)
   app.get("/api/metrics", metricsHandler);

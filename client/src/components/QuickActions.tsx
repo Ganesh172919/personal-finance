@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { PlusCircle, Target, FileText, Link2, LucideIcon } from "lucide-react";
+import { ArrowRight, FileText, Link2, LucideIcon, PlusCircle, Target } from "lucide-react";
 import { useLocation } from "wouter";
 
 interface QuickAction {
@@ -42,7 +42,15 @@ export function QuickActions() {
 
   return (
     <Card className="p-6">
-      <h3 className="text-lg font-semibold mb-6 text-foreground">Quick Actions</h3>
+      <div className="mb-6 space-y-1">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">
+          Quick actions
+        </p>
+        <h3 className="text-lg font-semibold text-foreground">Jump straight into a task</h3>
+        <p className="text-sm text-muted-foreground">
+          Use these shortcuts when you already know the next move.
+        </p>
+      </div>
       <div className="grid grid-cols-2 gap-4">
         {actions.map((action) => (
           <motion.div
@@ -52,13 +60,23 @@ export function QuickActions() {
           >
             <Button
               variant="outline"
-              className="w-full h-auto py-4 flex flex-col gap-2 items-center justify-center border-border hover:bg-accent hover:text-accent-foreground"
+              className="group h-auto w-full flex-col items-start gap-4 rounded-[calc(var(--radius)-2px)] px-4 py-4 text-left"
               onClick={action.onClick}
               disabled={action.disabled}
               title={action.title}
             >
-              <action.icon className="h-6 w-6 mb-1" />
-              <span className="text-sm font-medium">{action.label}</span>
+              <div className="flex w-full items-center justify-between">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                  <action.icon className="h-5 w-5" />
+                </div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1" />
+              </div>
+              <div className="space-y-1">
+                <span className="block text-sm font-semibold text-foreground">{action.label}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {action.disabled ? "Available soon" : "Open now"}
+                </span>
+              </div>
             </Button>
           </motion.div>
         ))}

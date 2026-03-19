@@ -2,7 +2,11 @@ import { motion } from "framer-motion";
 import Papa from "papaparse";
 import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, ReceiptText, ScanLine, Upload } from "lucide-react";
 
+import { EmptyState } from "@/components/feedback/EmptyState";
+import { InlineLoader } from "@/components/feedback/InlineLoader";
+import { PageIntro } from "@/components/layout/PageIntro";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ReceiptOcrDialog } from "@/components/ReceiptOcrDialog";
@@ -175,6 +179,14 @@ export default function Transactions() {
     return [...allTransactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [data?.transactions]);
 
+  const visibleIncome = transactions
+    .filter((transaction) => transaction.type === "income")
+    .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
+  const visibleOutflow = transactions
+    .filter((transaction) => transaction.type !== "income")
+    .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
+  const activeFiltersCount = [typeFilter !== "all", Boolean(categoryFilter), Boolean(fromFilter), Boolean(toFilter)].filter(Boolean).length;
+
   const formatAmount = (amount: number, type: TransactionType) => {
     const prefix = type === "income" ? "+" : "-";
     return `${prefix}${formatMoney(Math.abs(amount), { maximumFractionDigits: 0 })}`;
@@ -325,16 +337,28 @@ export default function Transactions() {
   };
 
   return (
-    <div className="flex-1 p-6 overflow-auto" data-testid="transactions-page">
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between gap-4 mb-2">
-          <h1 className="text-3xl font-bold text-foreground">Transactions</h1>
-          <div className="flex gap-2">
-            <ReceiptOcrDialog currencyHint={currency} />
-            <Dialog open={importOpen} onOpenChange={setImportOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline">Import CSV</Button>
-              </DialogTrigger>
+    <div className="page-grid flex-1 overflow-auto" data-testid="transactions-page">
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <PageIntro
+          icon={ReceiptText}
+          eyebrow="Cash Flow Ledger"
+          title="Transactions that are easier to review, filter, and clean up"
+          description="Keep income, expenses, and investments in one working ledger. Import in bulk, scan receipts, and tighten filters when you need to isolate a pattern quickly."
+          stats={[
+            { label: "Visible entries", value: String(transactions.length) },
+            { label: "Visible income", value: formatMoney(visibleIncome, { maximumFractionDigits: 0 }) },
+            { label: "Visible outflow", value: formatMoney(visibleOutflow, { maximumFractionDigits: 0 }) },
+          ]}
+          actions={
+            <>
+              <ReceiptOcrDialog currencyHint={currency} />
+              <Dialog open={importOpen} onOpenChange={setImportOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="rounded-full">
+                    <Upload className="mr-2 h-4 w-4" />
+                    Import CSV
+                  </Button>
+                </DialogTrigger>
               <DialogContent className="max-w-3xl">
                 <DialogHeader>
                   <DialogTitle>Import transactions</DialogTitle>
@@ -472,15 +496,31 @@ export default function Transactions() {
                   </div>
                 </div>
               </DialogContent>
-            </Dialog>
+              </Dialog>
 
-            <Button onClick={startCreate}>Add Transaction</Button>
+              <Button onClick={startCreate} className="rounded-full">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Transaction
+              </Button>
+            </>
+          }
+        />
+
+        <Card className="surface-panel p-4">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Refine the ledger view</h2>
+              <p className="text-sm text-muted-foreground">
+                Narrow the list by type, category, and date range.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground">
+                {activeFiltersCount} active filter{activeFiltersCount === 1 ? "" : "s"}
+              </span>
+            </div>
           </div>
-        </div>
 
-        <p className="text-muted-foreground mb-6">Review and manage your income, expense, and investment entries.</p>
-
-        <Card className="p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
             <div>
               <label className="text-sm font-medium">Type</label>
@@ -574,7 +614,7 @@ export default function Transactions() {
         </Card>
 
         {isFormOpen && (
-          <Card className="p-6 mb-6">
+          <Card className="surface-panel p-6">
             <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleSubmit}>
               <div>
                 <label className="text-sm font-medium">Type</label>
@@ -654,11 +694,27 @@ export default function Transactions() {
           </Card>
         )}
 
-        <Card className="p-6">
+        <Card className="surface-panel p-6">
           {isLoading ? (
-            <div className="text-center py-8 text-muted-foreground">Loading transactions...</div>
+            <InlineLoader label="Loading transactions..." />
           ) : transactions.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">No transactions found yet.</div>
+            <EmptyState
+              title="No transactions found"
+              description={
+                activeFiltersCount > 0
+                  ? "Your current filters are hiding all entries. Clear a filter or widen the date range to bring transactions back into view."
+                  : "Start with a manual entry, a CSV import, or a receipt scan to build the ledger."
+              }
+              icon={activeFiltersCount > 0 ? ReceiptText : ScanLine}
+              action={
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button onClick={startCreate}>Add Transaction</Button>
+                  <Button variant="outline" onClick={() => setImportOpen(true)}>
+                    Import CSV
+                  </Button>
+                </div>
+              }
+            />
           ) : (
             <div className="space-y-3">
               {transactions.map((transaction, index) => {

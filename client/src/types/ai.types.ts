@@ -82,12 +82,32 @@ export interface ProcessAICommandResponse {
   cache_hit?: boolean;
 }
 
+export interface AiCoreProviderStatus {
+  name: string;
+  display_name: string;
+  configured: boolean;
+  active: boolean;
+  in_failover_chain?: boolean;
+  default_model: string;
+  model_candidates: string[];
+}
+
 export interface AiCoreStatusResponse {
   ai_core: {
     healthy: boolean;
+    base_url?: string;
     request_id?: string;
-    health?: unknown;
+    health?: {
+      provider_chain?: string[];
+      [key: string]: unknown;
+    };
+    health_error?: string | null;
     rate_limit_status?: unknown;
+    rate_limit_error?: string | null;
+    providers?: {
+      providers?: AiCoreProviderStatus[];
+    };
+    providers_error?: string | null;
   };
   server: {
     ai_core_client: unknown;

@@ -99,9 +99,9 @@ personal-finance/
 │   ├── src/
 │   │   ├── config/             # Database, env, Redis, passport, telemetry (6 files)
 │   │   ├── connectors/         # External service connectors (bank stub, CSV import)
-│   │   ├── controllers/        # 44 route controllers (13 root + 31 v1)
+│   │   ├── controllers/        # 45 route controllers (13 root + 32 v1)
 │   │   ├── middleware/          # 13 middleware modules (auth, CSRF, rate limit, etc.)
-│   │   ├── models/             # 47 Mongoose models
+│   │   ├── models/             # 48 Mongoose models
 │   │   ├── modules/            # Domain modules (plugins, queue, realtime)
 │   │   ├── observability/      # Metrics & instrumentation
 │   │   ├── routes/             # 15 route files (100+ REST endpoints)
@@ -120,7 +120,7 @@ personal-finance/
 │       ├── openapi/            # OpenAPI path definitions
 │       └── typescript/         # Shared TS interfaces
 │
-├── docs/                       # Project documentation (16 guides)
+├── docs/                       # Project documentation (27 guides)
 ├── research_references/        # Academic & research materials
 ├── research_survey/            # User research data
 └── README.md

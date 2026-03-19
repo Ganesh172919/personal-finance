@@ -10,7 +10,6 @@ interface Metric {
   label: string;
   value: string;
   change: string;
-  color: string;
   isPositive: boolean;
 }
 
@@ -29,7 +28,6 @@ export function FinancialVitals() {
           label: "Cash Flow",
           value: formatMoney(0, { maximumFractionDigits: 0 }),
           change: "No data",
-          color: "hsl(158 64% 52%)",
           isPositive: true,
         },
         {
@@ -37,7 +35,6 @@ export function FinancialVitals() {
           label: "Savings Rate",
           value: "0%",
           change: "No data",
-          color: "hsl(221 83% 53%)",
           isPositive: true,
         },
         {
@@ -45,7 +42,6 @@ export function FinancialVitals() {
           label: "Total Savings",
           value: formatMoney(0, { maximumFractionDigits: 0 }),
           change: "No data",
-          color: "hsl(46 95% 53%)",
           isPositive: true,
         },
         {
@@ -53,7 +49,6 @@ export function FinancialVitals() {
           label: "Goals Progress",
           value: "0%",
           change: "No goals",
-          color: "hsl(271 81% 56%)",
           isPositive: true,
         },
       ];
@@ -70,7 +65,6 @@ export function FinancialVitals() {
         label: "Cash Flow",
         value: formatMoney(cashFlow, { maximumFractionDigits: 0 }),
         change: cashFlow > 0 ? "Positive cash flow" : "Negative cash flow",
-        color: "hsl(158 64% 52%)",
         isPositive: cashFlow > 0,
       },
       {
@@ -78,7 +72,6 @@ export function FinancialVitals() {
         label: "Savings Rate",
         value: `${savingsRate.toFixed(1)}%`,
         change: savingsRate > 20 ? "Above target" : "Below target",
-        color: "hsl(221 83% 53%)",
         isPositive: savingsRate > 20,
       },
       {
@@ -89,7 +82,6 @@ export function FinancialVitals() {
           summary.savings.emergency_fund_months === null
             ? "Emergency runway unavailable"
             : `${summary.savings.emergency_fund_months.toFixed(1)} months runway`,
-        color: "hsl(46 95% 53%)",
         isPositive: true,
       },
       {
@@ -97,7 +89,6 @@ export function FinancialVitals() {
         label: "Goals Progress",
         value: `${goalsProgress.toFixed(0)}%`,
         change: `${goalsOnTrack} goals on track`,
-        color: "hsl(271 81% 56%)",
         isPositive: goalsProgress > 50,
       },
     ];
@@ -115,23 +106,19 @@ export function FinancialVitals() {
           transition={{ delay: index * 0.1 }}
           data-testid={`vital-${metric.label.toLowerCase().replace(/\s/g, "-")}`}
         >
-          <Card className="p-6 hover:shadow-lg transition-shadow cursor-pointer">
-            <div className="flex items-center justify-between mb-4">
-              <div
-                className="w-10 h-10 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: `${metric.color}20` }}
-              >
-                <metric.icon
-                  className="w-5 h-5"
-                  style={{ color: metric.color }}
-                />
+          <Card className="group relative cursor-pointer overflow-hidden p-6">
+            <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/8 to-transparent opacity-80 blur-2xl transition-opacity duration-300 group-hover:opacity-100" />
+            <div className="relative flex items-center justify-between mb-5">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/60 bg-white/5 text-foreground">
+                <metric.icon className="h-5 w-5" />
               </div>
-              <span className="text-xs text-muted-foreground">{metric.label}</span>
+              <span className="rounded-full bg-background/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                {metric.label}
+              </span>
             </div>
-            <div className="space-y-1">
+            <div className="relative space-y-2">
               <motion.div
-                className="text-2xl font-bold"
-                style={{ color: metric.color }}
+                className="text-3xl font-bold tracking-tight text-foreground"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: index * 0.2 + 0.5 }}
@@ -139,7 +126,13 @@ export function FinancialVitals() {
               >
                 {metric.value}
               </motion.div>
-              <div className="text-xs text-muted-foreground">{metric.change}</div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ backgroundColor: metric.isPositive ? "hsl(0 0% 100%)" : "hsl(0 0% 50%)" }}
+                />
+                {metric.change}
+              </div>
             </div>
           </Card>
         </motion.div>

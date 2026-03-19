@@ -430,7 +430,7 @@ class WhatIfScenarioRequest(BaseModel):
 async def health_check(request: Request):
     """Health check endpoint"""
     vision_status = get_vision_dependency_status()
-    from utils.provider_registry import _resolve_provider_name, get_provider_config
+    from utils.provider_registry import _resolve_provider_name, get_provider_config, resolve_provider_chain
     active_provider = _resolve_provider_name()
     provider_config = get_provider_config(active_provider)
     return {
@@ -438,6 +438,7 @@ async def health_check(request: Request):
         "service": "FinWise AI Core",
         "llm_provider": provider_config.display_name,
         "llm_model": provider_config.default_model,
+        "provider_chain": resolve_provider_chain(active_provider),
         "vision": vision_status,
         "request_id": request.state.request_id
     }
@@ -1329,4 +1330,3 @@ def nowIso() -> str:
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)
-

@@ -15,6 +15,8 @@ import { Badge } from "@/components/ui/Badge";
 import { useToast } from "@/hooks/useToast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/Alert";
 import { ReadingProgressBar } from "@/components/ReadingProgressBar";
+import { LazyImage } from "@/components/LazyImage";
+import { resolveAuthorAvatar, resolveBlogCoverImage } from "@/lib/media";
 
 const CATEGORY_COLORS: Record<string, string> = {
   'investing': 'bg-chart-1 text-chart-1-foreground',
@@ -110,6 +112,8 @@ export default function BlogDetail() {
 
   const post = data.post;
   const publishedDate = post.publishedAt ? formatDistanceToNow(new Date(post.publishedAt), { addSuffix: true }) : '';
+  const coverImage = resolveBlogCoverImage(post.coverImage);
+  const authorAvatar = resolveAuthorAvatar(post.author.avatar, post.author.name);
 
   return (
     <div className="flex-1 overflow-auto bg-background relative" data-testid="blog-detail-page">
@@ -150,7 +154,7 @@ export default function BlogDetail() {
           <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground border-y border-border py-4">
              <div className="flex items-center space-x-3">
                <Avatar className="h-10 w-10 border border-border">
-                 <AvatarImage src={post.author.avatar} alt={post.author.name} />
+                 <AvatarImage src={authorAvatar} alt={post.author.name} />
                  <AvatarFallback>{post.author.name.charAt(0)}</AvatarFallback>
                </Avatar>
                <div className="text-left leading-tight">
@@ -176,10 +180,11 @@ export default function BlogDetail() {
            transition={{ delay: 0.1 }}
            className="w-full relative aspect-video rounded-3xl overflow-hidden mb-12 shadow-xl border border-border/50"
         >
-          <img 
-            src={post.coverImage} 
-            alt={post.title} 
-            className="w-full h-full object-cover"
+          <LazyImage
+            src={coverImage}
+            fallbackSrc={coverImage}
+            alt={post.title}
+            className="h-full"
           />
         </motion.div>
 

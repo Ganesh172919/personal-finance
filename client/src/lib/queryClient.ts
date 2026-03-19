@@ -28,10 +28,30 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: 30_000,
-      retry: false,
+      retry: (failureCount, error) => {
+        if (failureCount >= 2) {
+          return false;
+        }
+
+        if (error instanceof ApiError) {
+          return error.status >= 500;
+        }
+
+        return true;
+      },
     },
     mutations: {
-      retry: false,
+      retry: (failureCount, error) => {
+        if (failureCount >= 1) {
+          return false;
+        }
+
+        if (error instanceof ApiError) {
+          return error.status >= 500;
+        }
+
+        return true;
+      },
     },
   },
 });

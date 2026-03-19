@@ -3,9 +3,11 @@ import { Clock, Eye, Heart, TrendingUp } from "lucide-react";
 import { Link } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { IBlogPost } from "@/types/apiTypes";
-import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/Card";
+import { Card, CardFooter, CardHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar";
+import { LazyImage } from "@/components/LazyImage";
+import { resolveAuthorAvatar, resolveBlogCoverImage } from "@/lib/media";
 
 interface BlogCardProps {
   post: IBlogPost;
@@ -30,6 +32,8 @@ const getCategoryLabel = (cat: string) => {
 
 export function BlogCard({ post, featured = false }: BlogCardProps) {
   const publishedDate = post.publishedAt ? formatDistanceToNow(new Date(post.publishedAt), { addSuffix: true }) : '';
+  const coverImage = resolveBlogCoverImage(post.coverImage);
+  const authorAvatar = resolveAuthorAvatar(post.author.avatar, post.author.name);
 
   if (featured) {
     return (
@@ -39,10 +43,12 @@ export function BlogCard({ post, featured = false }: BlogCardProps) {
           className="group block relative overflow-hidden rounded-2xl cursor-pointer"
         >
           <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/60 to-transparent z-10" />
-          <img
-            src={post.coverImage}
+          <LazyImage
+            src={coverImage}
+            fallbackSrc={coverImage}
             alt={post.title}
-            className="w-full h-[400px] object-cover transition-transform duration-700 group-hover:scale-105"
+            className="h-[400px]"
+            imageClassName="transition-transform duration-700 group-hover:scale-105"
           />
           <div className="absolute bottom-0 left-0 w-full p-8 z-20 flex flex-col justify-end">
             <div className="flex items-center space-x-3 mb-4">
@@ -65,7 +71,7 @@ export function BlogCard({ post, featured = false }: BlogCardProps) {
             <div className="flex items-center justify-between mt-auto">
               <div className="flex items-center space-x-3">
                 <Avatar className="h-10 w-10 border-2 border-white/20">
-                  <AvatarImage src={post.author.avatar} alt={post.author.name} />
+                  <AvatarImage src={authorAvatar} alt={post.author.name} />
                   <AvatarFallback>{post.author.name.charAt(0)}</AvatarFallback>
                 </Avatar>
                 <div>
@@ -90,10 +96,12 @@ export function BlogCard({ post, featured = false }: BlogCardProps) {
       <motion.div whileHover={{ y: -4 }}>
         <Card className="h-full flex flex-col overflow-hidden group cursor-pointer border-border hover:shadow-lg transition-all duration-300 hover:border-border/80">
           <div className="relative h-48 overflow-hidden">
-            <img
-              src={post.coverImage}
+            <LazyImage
+              src={coverImage}
+              fallbackSrc={coverImage}
               alt={post.title}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              className="h-full"
+              imageClassName="transition-transform duration-500 group-hover:scale-105"
             />
             <div className="absolute top-4 left-4">
               <Badge className={`${CATEGORY_COLORS[post.category] || 'bg-primary'} shadow-sm`}>
@@ -115,7 +123,7 @@ export function BlogCard({ post, featured = false }: BlogCardProps) {
             <div className="flex items-center justify-between w-full">
                <div className="flex items-center space-x-2">
                  <Avatar className="h-8 w-8 border border-border">
-                   <AvatarImage src={post.author.avatar} alt={post.author.name} />
+                   <AvatarImage src={authorAvatar} alt={post.author.name} />
                    <AvatarFallback>{post.author.name.charAt(0)}</AvatarFallback>
                  </Avatar>
                  <div className="flex flex-col">

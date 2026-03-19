@@ -1,5 +1,5 @@
-﻿"""
-LLM Wrapper with multi-provider support, model failover, rate limiting,
+"""
+LLM wrapper with multi-provider support, model failover, rate limiting,
 and graceful fallback handling.
 
 Supports: Gemini, OpenRouter, Groq, Grok (xAI), Together AI, Mistral.
@@ -7,6 +7,7 @@ Provider selection is controlled by LLM_PROVIDER env var or auto-detected.
 """
 
 import logging
+import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -15,17 +16,12 @@ from langchain_core.messages import BaseMessage
 
 from config import settings
 from utils.provider_registry import (
-    create_chat_model,
-    get_provider_config,
-    list_providers,
-    _resolve_provider_name,
     PROVIDER_CONFIGS,
+    _resolve_provider_name,
+    create_chat_model,
+    resolve_provider_chain,
 )
-from utils.rate_limiter import (
-    RateLimitError,
-    get_rate_limiter_status,
-    with_rate_limit_and_retry,
-)
+from utils.rate_limiter import RateLimitError, get_rate_limiter_status, with_rate_limit_and_retry
 from utils.request_metrics import get_request_id, record_llm_call, record_llm_usage
 
 logger = logging.getLogger(__name__)
@@ -58,7 +54,7 @@ class RateLimitedLLM:
     - Multi-provider support (Gemini, OpenRouter, Groq, Grok, Together, Mistral)
     - Automatic rate limiting
     - Model failover on model-not-found errors
-    - Cross-provider failover when all models for a provider fail
+    - Cross-provider failover when a provider is unavailable or quota-bound
     - Graceful fallback support for quota/access issues
     - Request-level LLM call counting
     """
@@ -72,57 +68,79 @@ class RateLimitedLLM:
         model_candidates: Optional[List[str]] = None,
         provider: Optional[str] = None,
     ):
-        self._provider_name = provider or _resolve_provider_name()
-        self._provider_config = PROVIDER_CONFIGS.get(self._provider_name)
-
-        if self._provider_config:
-            configured_candidates = model_candidates or self._provider_config.model_candidates
-            primary = model or self._provider_config.default_model
-        else:
-            configured_candidates = model_candidates or settings.MODEL_CANDIDATES
-            primary = model or settings.MODEL_NAME
-
-        # Ensure primary model is first while preserving unique order
-        deduped: List[str] = []
-        for candidate in [primary, *configured_candidates]:
-            if candidate and candidate not in deduped:
-                deduped.append(candidate)
-
-        self.model_candidates = deduped
-        self.active_model = self.model_candidates[0]
+        self.preferred_provider = provider or _resolve_provider_name()
+        self.provider_candidates = resolve_provider_chain(self.preferred_provider)
+        self.active_provider = self.provider_candidates[0] if self.provider_candidates else self.preferred_provider
+        self.preferred_model = model
+        self.preferred_model_candidates = model_candidates or []
+        self.active_model = ""
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self._api_key = api_key  # Override; normally resolved from env
-
+        self._api_key = api_key
         self._llm_clients: Dict[str, BaseChatModel] = {}
 
-        # Track call statistics
         self._call_count = 0
         self._error_count = 0
         self._last_error: Optional[str] = None
 
+        initial_candidates = self._model_candidates_for_provider(self.active_provider)
+        self.active_model = initial_candidates[0] if initial_candidates else ""
+
     @property
     def provider_name(self) -> str:
-        return self._provider_name
+        return self.active_provider
 
-    def _client_for_model(self, model_name: str) -> BaseChatModel:
-        cache_key = f"{self._provider_name}:{model_name}"
+    def _provider_config(self, provider_name: str):
+        return PROVIDER_CONFIGS.get(provider_name)
+
+    def _get_api_key(self, provider_name: str) -> str:
+        provider_config = self._provider_config(provider_name)
+        if not provider_config:
+            return ""
+        if self._api_key and provider_name == self.preferred_provider:
+            return self._api_key
+        return os.getenv(provider_config.env_key, "").strip()
+
+    def _model_candidates_for_provider(self, provider_name: str) -> List[str]:
+        provider_config = self._provider_config(provider_name)
+
+        if provider_config:
+            if provider_name == self.preferred_provider:
+                configured_candidates = self.preferred_model_candidates or provider_config.model_candidates
+                primary = self.preferred_model or provider_config.default_model
+            else:
+                configured_candidates = provider_config.model_candidates
+                primary = provider_config.default_model
+        else:
+            configured_candidates = self.preferred_model_candidates or settings.MODEL_CANDIDATES
+            primary = self.preferred_model or settings.MODEL_NAME
+
+        deduped: List[str] = []
+        for candidate in [primary, *configured_candidates]:
+            if candidate and candidate not in deduped:
+                deduped.append(candidate)
+        return deduped
+
+    def _client_for_model(self, provider_name: str, model_name: str) -> BaseChatModel:
+        cache_key = f"{provider_name}:{model_name}"
         if cache_key not in self._llm_clients:
-            import os
-            # If an explicit api_key was passed, temporarily set the env var
-            env_key = self._provider_config.env_key if self._provider_config else "GEMINI_API_KEY"
+            provider_config = self._provider_config(provider_name)
+            env_key = provider_config.env_key if provider_config else "GEMINI_API_KEY"
             original_val = os.environ.get(env_key, "")
-            if self._api_key:
-                os.environ[env_key] = self._api_key
+            override_api_key = self._api_key if provider_name == self.preferred_provider else None
+
+            if override_api_key:
+                os.environ[env_key] = override_api_key
+
             try:
                 self._llm_clients[cache_key] = create_chat_model(
-                    provider_name=self._provider_name,
+                    provider_name=provider_name,
                     model=model_name,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
                 )
             finally:
-                if self._api_key and original_val is not None:
+                if override_api_key:
                     os.environ[env_key] = original_val
 
         return self._llm_clients[cache_key]
@@ -140,8 +158,10 @@ class RateLimitedLLM:
         match = re.search(r"\b(403|404|429|500|502|503)\b", message)
         return int(match.group(1)) if match else None
 
-    def _to_provider_error(self, raw_error: Exception, status_code: Optional[int], model_name: str) -> AIProviderError:
-        message = f"[{self._provider_name}] Model '{model_name}' failed: {raw_error}"
+    def _to_provider_error(
+        self, provider_name: str, raw_error: Exception, status_code: Optional[int], model_name: str
+    ) -> AIProviderError:
+        message = f"[{provider_name}] Model '{model_name}' failed: {raw_error}"
 
         if status_code == 429:
             return QuotaExceededError(message, status_code=status_code, model=model_name)
@@ -152,147 +172,141 @@ class RateLimitedLLM:
 
         return AIProviderError(message, status_code=status_code, model=model_name)
 
+    def _log_invoke_attempt(self, provider_name: str, model_name: str) -> None:
+        timeout_seconds = getattr(settings, "LLM_TIMEOUT_SECONDS", None)
+        request_id = get_request_id()
+
+        if request_id:
+            logger.info(
+                "[requestId=%s] LLM invoke provider=%s model=%s timeoutSeconds=%s",
+                request_id,
+                provider_name,
+                model_name,
+                timeout_seconds,
+            )
+        else:
+            logger.info(
+                "LLM invoke provider=%s model=%s timeoutSeconds=%s",
+                provider_name,
+                model_name,
+                timeout_seconds,
+            )
+
     @with_rate_limit_and_retry
     def invoke(
         self,
         messages: List[BaseMessage],
         fallback_response: Optional[str] = None,
     ) -> Any:
-        """
-        Invoke the LLM with rate limiting and model failover.
-
-        Args:
-            messages: List of messages to send to the LLM
-            fallback_response: Unused in invoke; kept for compatibility.
-
-        Returns:
-            LLM response object
-        """
-        # Check if any API key is configured
-        import os
-        env_key = self._provider_config.env_key if self._provider_config else "GEMINI_API_KEY"
-        effective_key = self._api_key or os.getenv(env_key, "").strip()
-
-        if not effective_key:
-            raise AccessDeniedError(
-                f"{env_key} is not configured; skipping upstream LLM call.",
-                status_code=403,
-                model=self.active_model,
-            )
+        del fallback_response
 
         last_error: Optional[AIProviderError] = None
 
-        for idx, model_name in enumerate(self.model_candidates):
-            try:
-                self._call_count += 1
-                record_llm_call()
+        for provider_index, provider_name in enumerate(self.provider_candidates):
+            api_key = self._get_api_key(provider_name)
+            model_candidates = self._model_candidates_for_provider(provider_name)
 
-                client = self._client_for_model(model_name)
-                timeout_seconds = getattr(settings, "LLM_TIMEOUT_SECONDS", None)
-                max_retries = getattr(settings, "LLM_MAX_RETRIES", None)
-                request_id = get_request_id()
-
-                if request_id:
-                    logger.info(
-                        "[requestId=%s] LLM invoke provider=%s model=%s timeoutSeconds=%s",
-                        request_id,
-                        self._provider_name,
-                        model_name,
-                        timeout_seconds,
-                    )
-                else:
-                    logger.info(
-                        "LLM invoke provider=%s model=%s timeoutSeconds=%s",
-                        self._provider_name,
-                        model_name,
-                        timeout_seconds,
-                    )
-
-                invoke_kwargs: Dict[str, Any] = {}
-                if timeout_seconds is not None:
-                    invoke_kwargs["timeout"] = timeout_seconds
-                if max_retries is not None:
-                    invoke_kwargs["max_retries"] = max_retries
-
-                response = client.invoke(messages, **invoke_kwargs)
-
-                usage_metadata = getattr(response, "usage_metadata", None)
-                if usage_metadata is not None:
-                    logger.info("LLM usage_metadata=%s", usage_metadata)
-                    try:
-                        prompt_tokens = None
-                        completion_tokens = None
-                        total_tokens = None
-
-                        if isinstance(usage_metadata, dict):
-                            prompt_tokens = (
-                                usage_metadata.get("prompt_token_count")
-                                or usage_metadata.get("input_token_count")
-                                or usage_metadata.get("prompt_tokens")
-                            )
-                            completion_tokens = (
-                                usage_metadata.get("candidates_token_count")
-                                or usage_metadata.get("output_token_count")
-                                or usage_metadata.get("completion_tokens")
-                            )
-                            total_tokens = (
-                                usage_metadata.get("total_token_count")
-                                or usage_metadata.get("total_tokens")
-                            )
-
-                        record_llm_usage(
-                            model=f"{self._provider_name}/{model_name}",
-                            prompt_tokens=int(prompt_tokens or 0) if prompt_tokens is not None else None,
-                            completion_tokens=int(completion_tokens or 0) if completion_tokens is not None else None,
-                            total_tokens=int(total_tokens or 0) if total_tokens is not None else None,
-                        )
-                    except Exception:
-                        pass
-
-                self.active_model = model_name
-                return response
-
-            except Exception as exc:
-                status_code = self._extract_status_code(exc)
-                provider_error = self._to_provider_error(exc, status_code, model_name)
-                last_error = provider_error
+            if not api_key:
+                last_error = AccessDeniedError(
+                    f"{provider_name} is not configured; skipping provider.",
+                    status_code=403,
+                    model=model_candidates[0] if model_candidates else None,
+                )
                 self._error_count += 1
-                self._last_error = str(provider_error)
+                self._last_error = str(last_error)
+                continue
 
-                # Fail over only on model-not-found when alternatives exist
-                if isinstance(provider_error, ModelNotFoundError) and idx < len(self.model_candidates) - 1:
-                    next_model = self.model_candidates[idx + 1]
-                    logger.warning(
-                        "Model failover triggered: '%s' unavailable (404). Switching to '%s'.",
-                        model_name,
-                        next_model,
-                    )
-                    continue
+            for model_index, model_name in enumerate(model_candidates):
+                try:
+                    self._call_count += 1
+                    record_llm_call()
+                    self._log_invoke_attempt(provider_name, model_name)
 
-                raise provider_error
+                    client = self._client_for_model(provider_name, model_name)
+                    timeout_seconds = getattr(settings, "LLM_TIMEOUT_SECONDS", None)
+                    max_retries = getattr(settings, "LLM_MAX_RETRIES", None)
+
+                    invoke_kwargs: Dict[str, Any] = {}
+                    if timeout_seconds is not None:
+                        invoke_kwargs["timeout"] = timeout_seconds
+                    if max_retries is not None:
+                        invoke_kwargs["max_retries"] = max_retries
+
+                    response = client.invoke(messages, **invoke_kwargs)
+
+                    usage_metadata = getattr(response, "usage_metadata", None)
+                    if usage_metadata is not None:
+                        try:
+                            prompt_tokens = None
+                            completion_tokens = None
+                            total_tokens = None
+
+                            if isinstance(usage_metadata, dict):
+                                prompt_tokens = (
+                                    usage_metadata.get("prompt_token_count")
+                                    or usage_metadata.get("input_token_count")
+                                    or usage_metadata.get("prompt_tokens")
+                                )
+                                completion_tokens = (
+                                    usage_metadata.get("candidates_token_count")
+                                    or usage_metadata.get("output_token_count")
+                                    or usage_metadata.get("completion_tokens")
+                                )
+                                total_tokens = usage_metadata.get("total_token_count") or usage_metadata.get("total_tokens")
+
+                            record_llm_usage(
+                                model=f"{provider_name}/{model_name}",
+                                prompt_tokens=int(prompt_tokens or 0) if prompt_tokens is not None else None,
+                                completion_tokens=int(completion_tokens or 0) if completion_tokens is not None else None,
+                                total_tokens=int(total_tokens or 0) if total_tokens is not None else None,
+                            )
+                        except Exception:
+                            pass
+
+                    self.active_provider = provider_name
+                    self.active_model = model_name
+                    return response
+
+                except Exception as exc:
+                    status_code = self._extract_status_code(exc)
+                    provider_error = self._to_provider_error(provider_name, exc, status_code, model_name)
+                    last_error = provider_error
+                    self._error_count += 1
+                    self._last_error = str(provider_error)
+
+                    if isinstance(provider_error, ModelNotFoundError) and model_index < len(model_candidates) - 1:
+                        next_model = model_candidates[model_index + 1]
+                        logger.warning(
+                            "Model failover triggered: provider=%s unavailable_model=%s next_model=%s",
+                            provider_name,
+                            model_name,
+                            next_model,
+                        )
+                        continue
+
+                    if provider_index < len(self.provider_candidates) - 1:
+                        next_provider = self.provider_candidates[provider_index + 1]
+                        logger.warning(
+                            "Provider failover triggered: provider=%s model=%s next_provider=%s error=%s",
+                            provider_name,
+                            model_name,
+                            next_provider,
+                            provider_error,
+                        )
+                    break
 
         if last_error:
             raise last_error
 
-        raise AIProviderError("LLM invocation failed with no specific error")
+        raise AccessDeniedError("No configured LLM providers are available.", status_code=403)
 
     def invoke_with_fallback(
         self,
         messages: List[BaseMessage],
         fallback_response: str,
     ) -> Tuple[Any, bool]:
-        """
-        Invoke the LLM with a guaranteed fallback response.
-
-        Returns:
-            Tuple of (response_object, fallback_used)
-        """
-        import os
-        env_key = self._provider_config.env_key if self._provider_config else "GEMINI_API_KEY"
-        effective_key = self._api_key or os.getenv(env_key, "").strip()
-
-        if not effective_key:
-            logger.info("LLM disabled (missing %s). Returning deterministic fallback response.", env_key)
+        if not any(self._get_api_key(provider_name) for provider_name in self.provider_candidates):
+            logger.info("LLM disabled (no provider API keys configured). Returning deterministic fallback response.")
             return self._create_fallback_response(fallback_response), True
 
         try:
@@ -306,8 +320,6 @@ class RateLimitedLLM:
             return self._create_fallback_response(fallback_response), True
 
     def _create_fallback_response(self, content: str):
-        """Create a minimal response object for fallback scenarios."""
-
         class FallbackResponse:
             def __init__(self, text: str):
                 self.content = text
@@ -315,11 +327,12 @@ class RateLimitedLLM:
         return FallbackResponse(content)
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get call statistics for this LLM instance."""
         return {
-            "provider": self._provider_name,
+            "preferred_provider": self.preferred_provider,
+            "active_provider": self.active_provider,
+            "provider_candidates": self.provider_candidates,
             "active_model": self.active_model,
-            "model_candidates": self.model_candidates,
+            "model_candidates": self._model_candidates_for_provider(self.active_provider),
             "total_calls": self._call_count,
             "error_count": self._error_count,
             "success_rate": (
@@ -331,13 +344,6 @@ class RateLimitedLLM:
 
 
 def create_llm(agent_type: str = "default", provider: Optional[str] = None) -> RateLimitedLLM:
-    """
-    Factory function to create a rate-limited LLM for a specific agent type.
-
-    Args:
-        agent_type: The agent type for configuration lookup.
-        provider: Optional provider override (gemini, openrouter, groq, grok, together, mistral).
-    """
     config = settings.get_agent_config(agent_type)
 
     provider_name = provider or _resolve_provider_name()
@@ -355,7 +361,6 @@ def create_llm(agent_type: str = "default", provider: Optional[str] = None) -> R
     )
 
 
-# Fallback responses for different agent types
 FALLBACK_RESPONSES = {
     "analysis_type": "comprehensive",
     "financial_education": """
@@ -399,5 +404,4 @@ I couldn't generate a full AI narrative right now, but here is a safe action pla
 
 
 def get_fallback_response(response_type: str) -> str:
-    """Get a fallback response for a specific type."""
     return FALLBACK_RESPONSES.get(response_type, FALLBACK_RESPONSES["synthesis"])

@@ -184,7 +184,10 @@ export type Workflow = AnyRecord & {
   enabled: boolean;
   trigger: WorkflowTrigger;
   actions: WorkflowAction[];
+  created_at?: string;
+  updated_at?: string;
 };
+export type ListWorkflowsResponse = AnyRecord & { workflows: Workflow[]; request_id?: string };
 export type CreateWorkflowResponse = AnyRecord & { workflow?: Workflow; request_id?: string };
 export type RunWorkflowRequest = AnyRecord;
 export type RunWorkflowResponse = AnyRecord & { run?: AnyRecord; request_id?: string };
@@ -266,4 +269,3 @@ export type ListGrowthStoriesResponse = AnyRecord & {
   pagination: { page: number; limit: number; total: number; pages: number };
 };
 export type GetGrowthStoryResponse = AnyRecord & { story: IGrowthStory };
-
