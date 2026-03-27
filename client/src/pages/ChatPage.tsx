@@ -1,123 +1,206 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "wouter";
-import { Menu, X, Brain, Gauge, BookOpen, FileText, TrendingUp } from "lucide-react";
-import { ChatContainer, ChatHistorySidebar } from "@/features/chat";
-import { useChatStore } from "@/stores/chatStore";
-import { Button } from "@/components/ui/Button";
-import { useAuth } from "@/hooks/useAuth";
-import { useTheme } from "@/components/ThemeProvider";
+import { Link, useLocation, useParams } from "wouter";
+import {
+  Bot,
+  BrainCircuit,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Plus,
+  ShieldCheck,
+  Workflow,
+  X,
+} from "lucide-react";
+
+import { AiStatusDialog } from "@/components/AiStatusDialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { ChatContainer, ChatHistorySidebar } from "@/features/chat";
+import { useAuth } from "@/hooks/useAuth";
+import { useChatStore } from "@/stores/chatStore";
+
+const capabilityHighlights = [
+  {
+    icon: BrainCircuit,
+    label: "Multi-agent reasoning",
+    description: "Budget, debt, portfolio, and educator paths can contribute to the same answer.",
+  },
+  {
+    icon: Workflow,
+    label: "Autopilot-ready actions",
+    description: "Tool previews and workflow creation stay simulation-first before execution.",
+  },
+  {
+    icon: ShieldCheck,
+    label: "Provider visibility",
+    description: "Inspect failover chain, request metadata, and circuit-breaker health from the UI.",
+  },
+];
 
 export default function ChatPage() {
   const params = useParams();
   const sessionId = params.sessionId as string | undefined;
-  const { loadSessions } = useChatStore();
+  const [, navigate] = useLocation();
+  const { loadSessions, createSession } = useChatStore();
   const { user, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
   useEffect(() => {
-    loadSessions();
+    void loadSessions();
   }, [loadSessions]);
 
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login");
+  };
+
+  const handleNewSession = async () => {
+    await createSession();
+    navigate("/chat");
+    setShowMobileSidebar(false);
+  };
+
   return (
-    <div className="flex flex-col h-screen bg-background">
-      {/* Top Navigation Bar */}
-      <header className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          {/* Mobile menu toggle */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="lg:hidden"
-            onClick={() => setShowMobileSidebar(!showMobileSidebar)}
-          >
-            {showMobileSidebar ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </Button>
-          
-          {/* Logo */}
-          <Link href="/dashboard">
-            <div className="flex items-center gap-2 cursor-pointer">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <Brain className="w-4 h-4 text-primary-foreground" />
+    <div className="relative flex h-screen flex-col bg-background">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute left-8 top-0 h-72 w-72 rounded-full bg-white/6 blur-3xl" />
+        <div className="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-chart-2/10 blur-3xl" />
+      </div>
+
+      <header className="relative border-b border-border/70 bg-background/85 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1400px] flex-col gap-4 px-4 py-4 lg:px-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex items-start gap-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="mt-1 rounded-2xl lg:hidden"
+                onClick={() => setShowMobileSidebar((value) => !value)}
+                aria-label="Toggle chat history"
+              >
+                {showMobileSidebar ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              </Button>
+
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Link
+                    href="/dashboard"
+                    className="flex items-center gap-3 rounded-[calc(var(--radius)-6px)] border border-border/70 bg-card/75 px-3 py-2 no-underline"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+                      <Bot className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-foreground">Personal Finance</div>
+                      <div className="text-xs text-muted-foreground">AI strategist chat</div>
+                    </div>
+                  </Link>
+
+                  <Badge className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-primary">
+                    Live agent workspace
+                  </Badge>
+                </div>
+
+                <div className="space-y-2">
+                  <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                    Collaborate with your finance agents in one place
+                  </h1>
+                  <p className="max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
+                    Ask a question, review the workflow trace, inspect provider failover, and move from
+                    analysis to action without leaving the conversation.
+                  </p>
+                </div>
+
+                <div className="hidden grid-cols-1 gap-3 md:grid md:grid-cols-3">
+                  {capabilityHighlights.map((item) => (
+                    <div
+                      key={item.label}
+                      className="rounded-[calc(var(--radius)-6px)] border border-border/70 bg-card/70 p-3"
+                    >
+                      <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-2xl bg-background/80 text-primary">
+                        <item.icon className="h-4 w-4" />
+                      </div>
+                      <div className="text-sm font-semibold text-foreground">{item.label}</div>
+                      <div className="mt-1 text-xs leading-5 text-muted-foreground">{item.description}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <span className="font-semibold text-foreground hidden sm:inline">Personal Finance</span>
             </div>
-          </Link>
-        </div>
 
-        <div className="flex items-center gap-2">
-          {/* Navigation Links */}
-          <div className="flex items-center gap-2 mr-2">
-            <Link href="/dashboard">
-              <Button variant="ghost" size="sm" className="flex items-center gap-2 bg-transparent hover:bg-accent">
-                <Gauge className="w-4 h-4" />
-                <span className="hidden lg:inline">Dashboard</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <AiStatusDialog />
+
+              <Button variant="outline" onClick={handleNewSession} className="rounded-2xl">
+                <Plus className="mr-2 h-4 w-4" />
+                New session
               </Button>
-            </Link>
-            
-            <Link href="/financial-story">
-              <Button variant="ghost" size="sm" className="flex items-center gap-2 bg-transparent hover:bg-accent">
-                <BookOpen className="w-4 h-4" /> 
-                <span className="hidden lg:inline">Story</span>
-              </Button>
-            </Link>
 
-            <Link href="/blogs">
-              <Button variant="ghost" size="sm" className="flex items-center gap-2 bg-transparent hover:bg-accent">
-                <FileText className="w-4 h-4" />
-                <span className="hidden lg:inline">Blogs</span>
-              </Button>
-            </Link>
+              <Link href="/workflows">
+                <Button variant="ghost" className="rounded-2xl">
+                  <Workflow className="mr-2 h-4 w-4" />
+                  Workflows
+                </Button>
+              </Link>
 
-            <Link href="/growth-stories">
-              <Button variant="ghost" size="sm" className="flex items-center gap-2 bg-transparent hover:bg-accent">
-                <TrendingUp className="w-4 h-4" />
-                <span className="hidden lg:inline">Learning</span>
-              </Button>
-            </Link>
-          </div>
+              <Link href="/dashboard">
+                <Button variant="ghost" className="rounded-2xl">
+                  <LayoutDashboard className="mr-2 h-4 w-4" />
+                  Dashboard
+                </Button>
+              </Link>
 
-          {/* Theme Toggle */}
-          <Button variant="ghost" size="sm" onClick={toggleTheme}>
-            {theme === "dark" ? "🌙" : "☀️"}
-          </Button>
-
-          {/* User Profile */}
-          <div className="flex items-center gap-2">
-            <Avatar className="w-8 h-8">
-              <AvatarImage src={user?.photoURL || ""} alt={user?.name || ""} />
-              <AvatarFallback>{user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
-            </Avatar>
-            <Button variant="ghost" size="sm" onClick={logout} className="hidden sm:flex">
-              Logout
-            </Button>
+              <div className="ml-1 flex items-center gap-3 rounded-[calc(var(--radius)-6px)] border border-border/70 bg-card/75 px-3 py-2">
+                <Avatar className="h-9 w-9">
+                  <AvatarImage src={user?.photoURL || ""} alt={user?.name || ""} />
+                  <AvatarFallback>{user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 max-w-[160px]">
+                  <div className="truncate text-sm font-medium text-foreground">{user?.name || "Workspace user"}</div>
+                  <div className="truncate text-xs text-muted-foreground">{user?.email || "Signed in"}</div>
+                </div>
+                <Button variant="ghost" size="icon" className="rounded-2xl" onClick={handleLogout} aria-label="Log out">
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Chat History Sidebar - Desktop */}
-        <aside className="w-80 border-r border-border hidden lg:flex flex-col">
+      <div className="relative flex min-h-0 flex-1 gap-4 p-4 lg:p-6">
+        <aside className="hidden w-80 shrink-0 overflow-hidden rounded-[calc(var(--radius)+4px)] border border-border/70 surface-panel lg:flex lg:flex-col">
           <ChatHistorySidebar />
         </aside>
 
-        {/* Mobile Sidebar Overlay */}
-        {showMobileSidebar && (
+        {showMobileSidebar ? (
           <div className="fixed inset-0 z-50 lg:hidden">
-            <div 
-              className="absolute inset-0 bg-black/50" 
-              onClick={() => setShowMobileSidebar(false)}
-            />
-            <aside className="absolute left-0 top-0 h-full w-80 bg-background border-r border-border shadow-lg">
-              <ChatHistorySidebar onSessionSelect={() => setShowMobileSidebar(false)} />
+            <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setShowMobileSidebar(false)} />
+            <aside className="absolute inset-y-0 left-0 flex w-80 max-w-[88vw] flex-col overflow-hidden border-r border-border/70 bg-background/95 shadow-[0_28px_60px_-36px_rgba(15,23,42,0.85)]">
+              <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
+                <div>
+                  <div className="text-sm font-semibold text-foreground">Conversation history</div>
+                  <div className="text-xs text-muted-foreground">Switch threads or start a fresh session.</div>
+                </div>
+                <Button variant="ghost" size="icon" className="rounded-2xl" onClick={() => setShowMobileSidebar(false)}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="border-b border-border/70 px-4 py-3">
+                <Button className="w-full rounded-2xl" onClick={handleNewSession}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New session
+                </Button>
+              </div>
+              <div className="min-h-0 flex-1">
+                <ChatHistorySidebar onSessionSelect={() => setShowMobileSidebar(false)} />
+              </div>
             </aside>
           </div>
-        )}
+        ) : null}
 
-        {/* Chat Container */}
-        <main className="flex-1 min-w-0 flex flex-col">
+        <main className="min-w-0 flex-1 overflow-hidden rounded-[calc(var(--radius)+4px)] border border-border/70 surface-panel">
           <ChatContainer sessionId={sessionId} />
         </main>
       </div>

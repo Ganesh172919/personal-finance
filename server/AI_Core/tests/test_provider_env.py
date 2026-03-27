@@ -1,7 +1,16 @@
 import pytest
 
-from config.settings import Settings
+from config.settings import Settings, resolve_env_file_candidates
 from utils.provider_registry import resolve_provider_chain
+
+
+def test_resolve_env_file_candidates_lists_server_then_ai_core():
+    candidates = resolve_env_file_candidates()
+
+    assert candidates[0].name == ".env"
+    assert candidates[0].parent.name == "server"
+    assert candidates[1].name == ".env"
+    assert candidates[1].parent.name == "AI_Core"
 
 
 def test_validate_api_key_raises_when_missing(monkeypatch):

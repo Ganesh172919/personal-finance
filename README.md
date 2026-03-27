@@ -1,12 +1,22 @@
 # Personal Finance
 
-Personal Finance is a full-stack money management platform with:
+Personal Finance is a local-first full-stack finance workspace with a React client, an Express API, and a Python AI Core. It combines budgeting, transactions, collaboration, automation, and a real multi-agent finance assistant that routes requests through specialist agents before returning a final plan.
 
-- A React client for dashboards, analytics, chat, content, and workflows
-- An Express API for finance data, auth, organizations, automation, and realtime events
-- A Python AI Core for multi-agent financial reasoning, OCR, and tool-driven guidance
+## What The Project Does
 
-This repository is organized as a single workspace so the client, server, shared contracts, and AI runtime can evolve together.
+- Tracks transactions, budgets, debts, goals, exports, journals, receipts, and financial summaries.
+- Supports secure onboarding, email verification, Google OAuth, organizations, invites, comments, notifications, and activity feeds.
+- Runs AI chat, financial analysis, scenario reasoning, receipt/OCR flows, workflow automation, and autopilot planning.
+- Includes marketplace and plugin foundations for extensibility.
+
+## What Was Improved In This Local Build
+
+- Fixed AI Core environment loading so provider keys in `server/.env` are picked up correctly by the Python service.
+- Verified the multi-agent flow executes end-to-end through master routing, specialist analysis, synthesis, and tool calls.
+- Fixed local auth friction by treating `localhost` and `127.0.0.1` as equivalent development origins.
+- Upgraded the onboarding and chat UX, including redesigned register and verify-email screens.
+- Made local email verification faster by surfacing the OTP in non-production.
+- Added regression coverage for the local origin alias handling.
 
 ## Architecture
 
@@ -14,38 +24,45 @@ This repository is organized as a single workspace so the client, server, shared
 personal-finance/
 |- client/                 React + Vite application
 |- server/                 Express + TypeScript API
-|  |- AI_Core/             Python FastAPI + LangGraph AI service
+|  |- AI_Core/             FastAPI + LangGraph AI service
 |- packages/contracts/     Shared OpenAPI and TypeScript contracts
-|- docs/                   Project documentation
+|- docs/                   Architecture and implementation guides
+|- research_survey/        Survey-style project summaries
+|- research_references/    Paper-style and reference summaries
 ```
 
-High-level request flow:
+## Verified AI Flow
 
-1. The client calls the Express API through typed API helpers and React Query.
-2. The server handles auth, org context, validation, persistence, and SSE events.
-3. AI-related requests are forwarded to the AI Core over HTTP.
-4. The AI Core routes work across specialist agents and provider/model failover chains.
-5. Responses are cached and reflected back into the UI through query invalidation and realtime events.
+The AI pipeline is working locally:
 
-## Major capabilities
+1. The client sends a finance prompt through the Express API.
+2. The server resolves auth, org context, validation, and profile shaping.
+3. The Python AI Core selects an available provider chain from `server/.env`.
+4. The master agent routes work to specialist agents such as:
+   - `income_expense_analyzer`
+   - `budget_planner`
+   - `investment_advisor`
+   - `debt_optimizer`
+   - `financial_educator`
+5. The workflow ends with synthesis and returns `workflow_trace`, `agents_involved`, and tool activity metadata.
 
-- Personal finance tracking: transactions, goals, debts, budgets, analytics, exports
-- Collaborative workspaces: organizations, invites, comments, activity, notifications
-- AI features: chat, insights, scenarios, financial stories, OCR, handwriting parsing
-- Automation: workflows, domain events, background jobs, scheduled processing
-- Content: blogs and growth stories with detail pages and media support
+Current local provider failover order, when keys are configured:
 
-## Local development
+```text
+gemini -> openrouter -> groq -> grok -> together
+```
 
-### Prerequisites
+## Local Setup
 
-- Node.js 18+
-- npm 9+
-- MongoDB 6+
-- Redis 7+
-- Python 3.11+ for AI features
+### 1. Start the server
 
-### Client
+```bash
+cd server
+npm install
+npm run dev
+```
+
+### 2. Start the client
 
 ```bash
 cd client
@@ -53,22 +70,7 @@ npm install
 npm run dev
 ```
 
-### Server
-
-```bash
-cd server
-npm install
-npm run dev
-```
-
-Optional worker:
-
-```bash
-cd server
-npm run worker:dev
-```
-
-### AI Core
+### 3. Start the AI Core
 
 ```bash
 cd server/AI_Core
@@ -78,12 +80,67 @@ pip install -r requirements.txt
 python api_service.py
 ```
 
-## Validation commands
+### 4. Open the app
+
+Use either of these local URLs:
+
+- `http://localhost:5173`
+- `http://127.0.0.1:5173`
+
+## Environment Notes
+
+- `server/.env` is the main local configuration file for the Node server and AI provider keys.
+- The AI Core now reads provider settings from `server/.env` first, then falls back to `server/AI_Core/.env`.
+- If `LLM_PROVIDER` is blank, the AI Core automatically chooses the first configured provider.
+- In local development, email verification still runs, but the OTP is also surfaced in the UI so onboarding does not depend on inbox access.
+
+## Example Local Usage
+
+1. Open the app and create an account.
+2. Copy the six-digit OTP shown on the verify screen and finish onboarding.
+3. Go to the chat workspace and ask a finance question such as:
+
+```text
+I earn 90000 per month, spend 55000, and have a 12% loan balance. What should I do over the next 6 months?
+```
+
+4. Review the AI answer, workflow status, and agent trace.
+5. Create a workflow or autopilot plan from the dashboard and monitor the run history.
+
+## Sample Output
+
+Typical AI response metadata from a successful local run:
+
+```json
+{
+  "success": true,
+  "provider": "gemini",
+  "agents_involved": [
+    "master_agent",
+    "income_expense_analyzer",
+    "budget_planner",
+    "investment_advisor",
+    "debt_optimizer",
+    "master_synthesis"
+  ],
+  "workflow_trace": [
+    { "agent": "master_agent" },
+    { "agent": "income_expense_analyzer" },
+    { "agent": "budget_planner" },
+    { "agent": "investment_advisor" },
+    { "agent": "debt_optimizer" },
+    { "agent": "master_synthesis" }
+  ]
+}
+```
+
+## Validation Commands
 
 Client:
 
 ```bash
 cd client
+npm test
 npm run build
 ```
 
@@ -92,6 +149,7 @@ Server:
 ```bash
 cd server
 npm run check
+npm run test:ci
 ```
 
 AI Core:
@@ -101,43 +159,27 @@ cd server/AI_Core
 pytest tests/test_provider_env.py
 ```
 
-## Documentation index
+## Key Local Features
 
-Core guides:
+- Financial dashboard and analytics
+- Multi-agent AI chat and plan synthesis
+- Workflow automation and scheduler support
+- Autopilot planning and execution surfaces
+- Organizations, invites, and collaboration flows
+- Receipt and journal ingestion paths
+- Plugin marketplace and permission sandbox
+- Shared OpenAPI contracts and typed frontend access
 
-- [Setup](./docs/SETUP.md)
+## Documentation
+
 - [Architecture](./docs/ARCHITECTURE.md)
-- [API](./docs/API.md)
-- [Database](./docs/DATABASE.md)
-- [Frontend](./docs/FRONTEND.md)
 - [AI Core](./docs/AI_CORE.md)
-- [Services](./docs/SERVICES.md)
-- [Middleware](./docs/MIDDLEWARE.md)
-- [Testing](./docs/TESTING.md)
-- [Deployment](./docs/DEPLOYMENT.md)
-- [Environment variables](./docs/ENV_VARIABLES.md)
-
-Focused project guides:
-
-- [Complete project onboarding](./docs/COMPLETE_PROJECT_ONBOARDING.md)
-- [AI providers and failover](./docs/AI_PROVIDERS_AND_FAILOVER.md)
-- [Dashboard, theming, and media](./docs/DASHBOARD_AND_THEME.md)
-
-Project references:
-
-- [Contributing](./docs/CONTRIBUTING.md)
-- [Changelog](./docs/CHANGELOG.md)
-- [Observability](./docs/OBSERVABILITY.md)
+- [Workflows](./docs/WORKFLOWS.md)
+- [Plugin System](./docs/PLUGIN_SYSTEM.md)
 - [Security](./docs/SECURITY.md)
-- [Plugin system](./docs/PLUGIN_SYSTEM.md)
-
-## Recent implementation notes
-
-- The dashboard is intentionally simplified around financial vitals and AI-generated insights.
-- The UI theme is now standardized around a dark monochrome visual system.
-- Blog and growth-story images use normalized media helpers and stronger fallback handling.
-- The AI Core supports provider-level failover across Gemini, OpenRouter, Groq, Grok, Together, and Mistral when configured.
+- [Setup](./docs/SETUP.md)
+- [Environment Variables](./docs/ENV_VARIABLES.md)
 
 ## License
 
-This project is licensed under the MIT License unless noted otherwise in repository contents.
+This project is licensed under the MIT License unless noted otherwise in the repository.

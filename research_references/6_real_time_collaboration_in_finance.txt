@@ -1,7 +1,23 @@
-REAL-TIME COLLABORATION AND ITS IMPACT ON FINANCIAL PLANNING
+REAL-TIME COLLABORATION AND SHARED FINANCIAL OPERATIONS
 
-1. The Shift to Multi-Tenant Finance
-Most traditional personal finance literature assumes a single independent user. However, sociological studies reveal that personal finance is frequently a household endeavor. Our platform's transition to a multi-tenant "Organization" model directly addresses this. By enabling Role-Based Access Control (RBAC) and shared ledgers, the platform maps to real-world sociological financial structures rather than forcing users into individual silos.
+1. Collaboration Is A Product Requirement
+Finance decisions often involve more than one person. The repository acknowledges this by building collaboration around organizations rather than assuming a single isolated user.
 
-2. Asynchronous and Synchronous Planning
-Features like threaded annotations on individual transactions and a live Activity Feed reduce Information Asymmetry between partners or financial advisors. Research suggests that high transparency and clear communication tools directly correlate with higher goal-achievement rates in household finance, validating our inclusion of dedicated social collaboration features within a financial tracker.
+2. Collaboration Features In The Repo
+The server and data model layers include support for:
+- organizations and org members
+- invite flows
+- activity feeds
+- comments
+- notifications
+- shared workflow execution
+- share-link style distribution paths
+
+3. Why This Matters
+Shared financial planning needs more than read-only access. People need context, review loops, and visible actions. Activity feeds and notifications make system behavior easier to follow, while comments create a place for discussion inside the finance workflow instead of outside it.
+
+4. Connection To Automation
+The workflow engine and autopilot flows extend collaboration further. Financial work can be scheduled, reviewed, approved, and executed in structured stages. That turns the application into a small finance operations workspace, not just a private tracker.
+
+5. Portfolio Relevance
+This collaboration layer increases the project’s credibility. It shows that the application has been designed with realistic product behavior in mind, including the messy reality that financial planning is often shared, reviewed, and negotiated.

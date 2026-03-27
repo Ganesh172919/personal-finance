@@ -126,10 +126,27 @@ export const enqueueWorkflowRun = async (params: {
         status: "queued",
         idempotencyKey,
         requestId: params.requestId,
-      }).then((doc) => {
-        createdRun = true;
-        return doc.toObject();
-      });
+      })
+        .then((doc) => {
+          createdRun = true;
+          return doc.toObject();
+        })
+        .catch(async (error: any) => {
+          if (error?.code !== 11000 || !idempotencyKey) {
+            throw error;
+          }
+
+          const duplicate = await WorkflowRunModel.findOne({
+            workflowId: params.workflowId,
+            idempotencyKey,
+          }).lean();
+
+          if (!duplicate) {
+            throw error;
+          }
+
+          return duplicate;
+        });
 
   if (createdRun) {
     await recordFeatureUsage({

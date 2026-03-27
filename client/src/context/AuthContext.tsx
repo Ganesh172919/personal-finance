@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { apiClient, fetchCsrfToken } from "@/services/api";
+import { ApiError, apiClient, fetchCsrfToken } from "@/services/api";
 import { reportClientError, reportClientWarning } from "@/lib/runtimeLogger";
 
 interface User {
@@ -49,6 +49,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("userId", profile.id);
       }
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setUser(null);
+        localStorage.removeItem("userId");
+        return;
+      }
+
       reportClientError("Failed to fetch user profile", error);
       setUser(null);
       localStorage.removeItem("userId");

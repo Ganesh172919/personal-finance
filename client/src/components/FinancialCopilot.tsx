@@ -210,7 +210,7 @@ export function FinancialCopilot() {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={() => setIsOpen(true)}
-            className="fixed bottom-6 right-6 z-50 lg:bottom-8 lg:right-8 w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-xl shadow-violet-500/30 flex items-center justify-center transition-shadow hover:shadow-2xl hover:shadow-violet-500/40"
+            className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-2xl border border-border/70 bg-gradient-to-br from-primary to-chart-3 text-primary-foreground shadow-xl shadow-black/25 transition-shadow hover:shadow-2xl hover:shadow-black/35 lg:bottom-8 lg:right-8"
             aria-label="Open AI Copilot"
             data-testid="copilot-fab"
           >
@@ -227,23 +227,23 @@ export function FinancialCopilot() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ type: "spring", damping: 25, stiffness: 350 }}
-            className="fixed bottom-6 right-6 z-50 lg:bottom-8 lg:right-8 w-[380px] max-w-[calc(100vw-48px)] flex flex-col bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+            className="fixed bottom-6 right-6 z-50 flex w-[380px] max-w-[calc(100vw-48px)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl lg:bottom-8 lg:right-8"
             style={{ maxHeight: isMinimized ? "56px" : "520px" }}
             data-testid="copilot-panel"
           >
             {/* Header */}
             <div
-              className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-500/10 to-purple-600/10 border-b border-border cursor-pointer"
+              className="flex cursor-pointer items-center justify-between border-b border-border bg-gradient-to-r from-primary/12 to-chart-3/10 px-4 py-3"
               onClick={() => isMinimized && setIsMinimized(false)}
             >
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-                  <Sparkles className="w-4 h-4 text-white" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-chart-3 text-primary-foreground">
+                  <Sparkles className="w-4 h-4" />
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-foreground">AI Copilot</p>
                   <p className="text-[10px] text-muted-foreground">
-                    {pageContext.label} context • Quick financial insights
+                    {pageContext.label} context • Page-aware finance help
                   </p>
                 </div>
               </div>
@@ -288,8 +288,8 @@ export function FinancialCopilot() {
                       <div className="space-y-4">
                         {/* Welcome */}
                         <div className="text-center py-3">
-                          <div className="w-12 h-12 mx-auto rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-600/20 flex items-center justify-center mb-3">
-                            <MessageSquare className="w-6 h-6 text-violet-500" />
+                          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-chart-3/15">
+                            <MessageSquare className="w-6 h-6 text-primary" />
                           </div>
                           <p className="text-sm font-medium text-foreground">
                             How can I help?
@@ -357,8 +357,8 @@ export function FinancialCopilot() {
                         className="flex justify-start"
                       >
                         <div className="bg-muted rounded-2xl rounded-bl-md px-4 py-3 flex items-center gap-2">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-500" />
-                          <span className="text-xs text-muted-foreground">Thinking…</span>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                          <span className="text-xs text-muted-foreground">Thinking...</span>
                         </div>
                       </motion.div>
                     )}
@@ -380,7 +380,7 @@ export function FinancialCopilot() {
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder="Ask about your finances…"
+                      placeholder="Ask about your finances..."
                       className="flex-1 bg-muted/50 rounded-xl px-3.5 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus:bg-muted transition-colors"
                       disabled={askMutation.isPending}
                       data-testid="copilot-input"
@@ -389,7 +389,7 @@ export function FinancialCopilot() {
                       type="submit"
                       size="icon"
                       disabled={!input.trim() || askMutation.isPending}
-                      className="h-9 w-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white shadow-sm"
+                      className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-chart-3 text-primary-foreground shadow-sm hover:from-white hover:to-chart-2"
                       data-testid="copilot-send"
                     >
                       <Send className="w-4 h-4" />

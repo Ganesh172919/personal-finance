@@ -19,6 +19,25 @@ const normalizeBaseUrl = (rawValue: string) => {
   }
 };
 
+const localOriginAliases = (origin: string) => {
+  try {
+    const url = new URL(origin);
+    const aliases = new Set<string>([url.origin]);
+
+    if (url.hostname === "localhost") {
+      url.hostname = "127.0.0.1";
+      aliases.add(url.origin);
+    } else if (url.hostname === "127.0.0.1") {
+      url.hostname = "localhost";
+      aliases.add(url.origin);
+    }
+
+    return [...aliases];
+  } catch {
+    return [String(origin || "").replace(/\/$/, "")];
+  }
+};
+
 const boolFromEnv = z.preprocess(value => {
   if (typeof value === "boolean") return value;
   if (typeof value !== "string") return undefined;
@@ -262,6 +281,15 @@ export const getEnv = (): Env => {
     throw new Error("EMAIL_PORT is required when EMAIL_HOST is configured.");
   }
 
+  const corsOrigins = Array.from(
+    new Set(
+      [
+        ...parsed.data.CORS_ORIGINS,
+        parsed.data.CLIENT_URL,
+      ].flatMap(origin => (origin === "*" ? ["*"] : localOriginAliases(origin)))
+    )
+  );
+
   return {
     ...parsed.data,
     TASKS_ENABLED: tasksEnabled,
@@ -273,5 +301,6 @@ export const getEnv = (): Env => {
     PLUGIN_RUNTIME_ALLOW_LOCALHOST: pluginAllowLocalhostComputed,
     BILLING_PROVIDER: billingProviderComputed,
     ORG_LEGACY_BACKFILL_ENABLED: orgLegacyBackfillComputed,
+    CORS_ORIGINS: corsOrigins,
   };
 };

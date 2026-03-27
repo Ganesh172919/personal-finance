@@ -1,50 +1,70 @@
 SURVEY PART 2: TECHNICAL ARCHITECTURE AND TECHNOLOGY STACK
 
 1. High-Level Architecture
-The platform utilizes a "Modular 3-Tier Architecture" designed for security, scalability, and clean separation of concerns.
+The repository follows a modular multi-service layout:
+- `client/`: React + Vite single-page application
+- `server/`: Express + TypeScript API and business logic
+- `server/AI_Core/`: FastAPI + LangGraph AI service
+- `packages/contracts/`: shared OpenAPI contract assets
+- `docs/`: implementation and operational documentation
 
-A. Frontend (Client Layer)
-- URL: http://localhost:5173
-- Core Framework: React + TypeScript (via Vite).
-- UI/UX Ecosystem:
-  - Styling: Tailwind CSS (Utility-first styling).
-  - Components: shadcn/ui (Premium, accessible component library).
-  - Animations: Framer Motion (Smooth layout transitions).
-  - Routing: Use of `wouter` for a lightweight, hook-based routing solution.
-- State Management: 
-  - Server State: React Query (TanStack Query) for caching and data fetching.
-  - Client State: React Context for Authentication (`useAuth`).
+2. Frontend Stack
+The client is built with:
+- React + TypeScript
+- Vite for development and bundling
+- Wouter for routing
+- Tailwind CSS for styling
+- shadcn/ui-style component primitives
+- Framer Motion for motion and transitions
+- React Hook Form + Zod for forms and validation
 
-B. Backend (Server Layer)
-- URL: http://localhost:3000
-- Runtime: Node.js + Express.
-- Role: Secure Gateway and Orchestrator.
-- Database: MongoDB + Mongoose.
-  - Documents include `userModel`, `financialProfileModel` (complex nested structures), and `agentOutputModel`.
-- Security Implementation:
-  - Authentication: Passport.js with JWT Strategy.
-  - Token Storage: httpOnly cookies (prevents client-side access/XSS).
-- Data Flow: Validates user input -> Constructs sanitized `user_profile` -> Requests AI analysis.
+The UI covers login, registration, verification, dashboard, chat, documentation, content, and additional product surfaces.
 
-C. AI Core (Microservice Layer)
-- URL: http://localhost:8001
-- Runtime: Python (3.10+).
-- API Framework: FastAPI (Asynchronous, high-performance).
-- Workflow Engine: LangGraph (by LangChain).
-  - Defines a "stateful workflow graph" (`workflow.py`).
-  - Routes queries to specific agents based on semantic intent.
-- Model Provider: Google Gemini.
+3. Backend Stack
+The server layer is built with:
+- Node.js + Express 5
+- TypeScript
+- MongoDB + Mongoose
+- Passport for JWT and Google OAuth strategies
+- Zod-based request validation
+- Rate limiting, CSRF protection, security headers, request context, and org context middleware
 
-2. System Communication Flow
-1. User Interaction: User asks a question in the React Client.
-2. API Call: Client sends request to Node.js Backend (`/api/agent-outputs/user/:id`).
-3. Verification: Backend verifies JWT, retrieves User & Financial Profile from MongoDB.
-4. AI Request: Backend forwards anonymized profile + query to FastAPI AI Core.
-5. AI Processing: LangGraph routes the query through the agent network.
-6. Response: AI returns a structured JSON plan + metadata.
-7. Storage & Display: Node.js saves the result; Client renders it as an interactive card.
+The server acts as the secure orchestration layer for auth, organizations, financial data, workflows, exports, plugins, and AI integration.
 
-3. Project Structure
-The repository is divided into two distinct roots:
-- `client/`: Contains all frontend logic, components, features, and services.
-- `server/`: Houses both the Node.js backend (`src/`) and the detailed Python AI Core (`AI_Core/`).
+4. AI Core Stack
+The AI Core is built with:
+- Python
+- FastAPI
+- LangGraph workflow orchestration
+- Provider registry and failover utilities
+
+The AI workflow includes the following core agents:
+- `master_agent`
+- `income_expense_analyzer`
+- `budget_planner`
+- `investment_advisor`
+- `debt_optimizer`
+- `financial_educator`
+- `master_synthesis`
+
+5. Provider And Model Routing
+The AI Core supports provider failover using configured keys. In the current local setup, the provider chain resolves as:
+- gemini
+- openrouter
+- groq
+- grok
+- together
+
+This makes the local build more resilient and better suited for experimentation and demos.
+
+6. End-To-End Request Flow
+The operational flow is:
+1. The client issues a request using its API helpers.
+2. The server validates auth, input, org access, and request context.
+3. Financial or AI data is prepared in a normalized server-side shape.
+4. The server forwards AI work to the Python AI Core.
+5. The AI Core determines the analysis type, runs the relevant agents, and synthesizes the result.
+6. The response returns with metadata such as provider info, agents involved, workflow trace, and tool activity.
+
+7. Shared Contracts And Documentation
+The codebase also includes shared OpenAPI definitions under `packages/contracts/openapi` and extensive reference material in `docs/`, making the project easier to understand, extend, and present.

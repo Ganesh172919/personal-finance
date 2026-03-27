@@ -1,26 +1,33 @@
 SURVEY PART 1: PROJECT OVERVIEW AND PROBLEM DOMAIN
 
-1. Introduction
-The "Personal Finance Management Platform" is a comprehensive mini-project designed to function as an intelligent "financial co-pilot." It represents a shift from passive tracking to active strategy optimization.
-- Project Type: Web Application with AI Microservice
-- Core Identity: Smart, Actionable, Personalized.
+1. Project Summary
+Personal Finance is a full-stack financial planning workspace built for local use. It combines a React frontend, an Express API, MongoDB-backed business logic, and a Python AI Core that runs a multi-agent financial analysis workflow.
 
-2. Problem Statement: The Limitations of Traditional Apps
-The project addresses key deficiencies in the current market of personal finance applications:
-- Passive Tracking: Most apps merely record transactions without offering insight.
-- Data Overload: Users are presented with raw data but left to interpret it themselves.
-- Lack of Synthesis: Apps cannot combine data from debt, income, and savings to answer holistic questions.
-- Inability to Plan: Users cannot ask forward-looking questions like, "Based on my current spending and savings, can I afford a ₹50,000 vacation in 6 months?"
+The project is not just a budget tracker. It is designed to help users move from raw financial data to guided action through dashboards, AI chat, workflows, collaboration features, and automations.
 
-3. Proposed Solution: The Multi-Agent Approach
-To solve these problems, the platform moves beyond standard chatbots or monolithic AI models.
-- "Master Strategist" Architecture: The system employs a team of specialized agents coordinated by a lead agent.
-- Decomposition of Problems: Complex financial inquiries are broken down. A question about a vacation isn't just a "yes/no"—it involves the Budget Agent (can I save?), the Debt Agent (should I pay off debt first?), and the Master Agent (synthesizing the advice).
-- Human-Centric Design: The goal is to provide a "cohesive and actionable plan," not just a chart.
+2. Problem Domain
+Many personal finance applications stop at recording data. They show transactions, balances, and charts, but they do not reliably answer higher-value questions such as:
+- Where is money leaking month to month?
+- Should the user prioritize debt repayment or investing?
+- Can a future goal be funded without breaking the current budget?
+- How should shared financial work happen inside a family or small team?
 
-4. Project Team
-The project is developed by a team of four:
-- M. Jagadeeswar Reddy (23BDS033)
-- J. Ganesh Kumar Reddy (23BDS024)
-- B. Varshith (23BDS011)
-- Hari (23BEC021)
+This project targets that gap by combining traditional finance tooling with structured AI reasoning and operational features around trust, automation, and collaboration.
+
+3. Core Product Direction
+The repository supports a finance platform with several layers of value:
+- Personal finance operations: transactions, budgets, exports, journals, receipts, and analytics
+- Decision support: AI-assisted chat, specialist financial analysis, and what-if style reasoning
+- Collaboration: organizations, invites, comments, activity feeds, and notifications
+- Automation: workflows, domain events, scheduled jobs, and autopilot planning
+- Extensibility: marketplace, plugins, and connector-oriented runtime support
+
+4. Why The Multi-Agent Layer Matters
+The most distinctive part of the project is the AI Core. Instead of routing every request to one generic model prompt, the system uses a master agent plus specialist agents. This creates a more structured pipeline for financial reasoning and makes it easier to expose trace data such as the agents involved, the workflow steps, and the provider used.
+
+5. Current Local State
+The project is now aligned for stronger local execution:
+- The AI Core correctly loads provider keys from `server/.env`
+- Local auth works across both `localhost` and `127.0.0.1`
+- Email verification remains in the flow, but the OTP is surfaced in development
+- The onboarding and chat UX are more polished for demo and portfolio use

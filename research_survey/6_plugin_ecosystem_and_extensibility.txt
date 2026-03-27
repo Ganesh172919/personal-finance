@@ -1,10 +1,38 @@
-SURVEY PART 6: MARKETPLACE AND PLUGIN ECOSYSTEM
+SURVEY PART 6: PLUGIN ECOSYSTEM AND EXTENSIBILITY
 
-1. Architecture
-The Personal Finance application features an extensible Marketplace, allowing third-party developers to increase capabilities securely.
-- Plugin Manager: Handles lifecycle events (install, update, uninstall).
-- Sandboxed Runtime: Plugins run in an isolated environment, ensuring that third-party code cannot crash the core system.
+1. Extensibility Strategy
+The repository includes a clear plugin and marketplace direction. This makes the application more than a fixed internal tool. It can evolve by adding new capabilities through plugin installs, connector-style integrations, and workflow templates.
 
-2. Permission Model
-- Fail-Closed Design: Plugins must declare needed permissions via a manifest (e.g., `transactions:read`). If a permission is not explicitly granted, the action is denied.
-- Runtime Verification: Every HTTP request from a plugin is intercepted and strictly validated against its active permission set.
+2. Main Plugin Components
+The server plugin system includes:
+- `pluginManager.ts` for lifecycle handling
+- `runtimeClient.ts` for external runtime communication
+- `permissionSandbox.ts` for permission evaluation
+- `permissionMiddleware.ts` for request-time enforcement
+- plugin install and marketplace models for persistence
+
+3. Marketplace Behavior
+The marketplace layer supports:
+- catalog browsing
+- plugin installation
+- plugin update and uninstall flows
+- manifest validation
+- local fallback catalog entries for development
+
+The fallback catalog is especially useful for a local-first project because it gives the plugin system a visible working surface even without a remote marketplace backend.
+
+4. Permission Model
+The permission model is explicit and fail-closed. A plugin must declare what it wants to do, and the server verifies whether those permissions are granted for the current organization. High-risk capabilities can therefore be handled more carefully than read-only ones.
+
+5. Workflow Template Integration
+The workflow system can source templates from installed plugins. This is a strong architectural choice because it lets the plugin ecosystem contribute practical automation, not just isolated tools.
+
+6. Why This Matters For The Project
+For a portfolio application, the plugin system demonstrates architectural maturity:
+- service boundaries
+- runtime isolation
+- policy enforcement
+- future connector support
+- reusable product extension points
+
+It shows that the project is structured to grow, not just to deliver a single hard-coded experience.

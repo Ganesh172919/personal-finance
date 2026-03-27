@@ -1,11 +1,27 @@
-SURVEY PART 4: ADVANCED SECURITY AND ENTERPRISE FEATURES
+SURVEY PART 4: ADVANCED SECURITY AND ENTERPRISE-STYLE FOUNDATIONS
 
-1. Security Architecture
-As a financial platform, security is a primary concern. The application implements an enterprise-grade defense-in-depth model:
-- Two-Factor Authentication (2FA/TOTP): Uses mathematical algorithms (RFC 6238 TOTP) without relying on weak SMS-based 2FA, securing user accounts.
-- Immutable Audit Logging: Tracks 26 distinct event types across the system with severity levels. This ensures all actions (logins, permission changes, exports) are permanently recorded, preventing tampering.
-- CSRF & Rate Limiting: Employs a double-submit cookie pattern and strict request throttling to prevent automated attacks.
+1. Defense-In-Depth Security
+Because the project handles sensitive financial information, the server implements layered protections instead of relying on a single control. The codebase includes:
+- JWT auth with HttpOnly cookies
+- optional Google OAuth
+- configurable CSRF protection
+- per-route and auth-specific rate limits
+- account lockout for repeated login failures
+- request size limits and schema validation
+- NoSQL-oriented request sanitization
+- security headers through Helmet and custom middleware
 
-2. Multi-Tenancy (Organizations)
-- Role-Based Access Control (RBAC): Users exist within 'Organizations', allowing couples or families to share a financial workspace with strict roles (Owner, Admin, Member).
-- Data Isolation: All financial models are strictly partitioned by `orgId` across the database.
+2. Organization And Tenant Isolation
+The platform is organization-aware. Many models use `orgId`, and org context is resolved server-side. The repository also includes an org-scope plugin for Mongoose-backed isolation patterns. This is important because collaboration features only remain safe if tenant boundaries are enforced consistently.
+
+3. Audit And Accountability
+The project includes audit models and audit services that track significant actions such as login outcomes, profile updates, org changes, export events, and plugin permission denials. This provides observability and trust signals that are especially relevant in finance-oriented software.
+
+4. Two-Factor And Session Hardening
+The repository includes 2FA-oriented surfaces and backup-code style security support in the wider auth system. Even when a local build does not enable every advanced path, the codebase clearly aims at a stronger authentication story than a basic demo app.
+
+5. Plugin Risk Management
+Plugins are isolated through a fail-closed permission model, runtime validation, and per-organization installation records. This matters because extensibility is valuable only if third-party logic cannot bypass core controls.
+
+6. Local Robustness Improvements
+For the local project build, one practical hardening improvement was especially important: the server now treats `localhost` and `127.0.0.1` as equivalent development origins. This removes avoidable onboarding failures while preserving explicit origin allowlisting.

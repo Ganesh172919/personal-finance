@@ -1,11 +1,34 @@
-SURVEY PART 5: COLLABORATION AND AUTOMATION WORKFLOWS
+SURVEY PART 5: COLLABORATION, ORGANIZATIONS, AND AUTOMATION
 
-1. Real-Time Collaboration
-Finance is often a shared responsibility. The platform supports multiple users on a single organization profile:
-- Activity Feed: A real-time stream mapping all enterprise actions and system events.
-- Comments and Annotations: Users can thread comments on specific transactions, goals, and budget items to foster discussion.
-- Notification Center: Push-like alerts using Server-Sent Events (SSE) keep users instantly updated.
+1. Collaboration Model
+The platform is not limited to a single-user ledger. The server includes organizations, organization members, invites, comments, notifications, activity feeds, and share-oriented models. This allows the application to support joint financial planning and team-style review loops.
 
-2. Automation Engine
-- Workflow Triggers: Event-driven architecture that triggers actions based on domain criteria (e.g., categorizing certain merchants automatically).
-- Autopilot: AI-generated financial plans follow a "simulate -> approve -> execute" pipeline, ensuring the AI cannot make unauthorized financial movements without human oversight.
+2. Why Collaboration Fits Finance
+Real financial planning often involves more than one person. Families, couples, or advisors may need visibility into the same accounts, tasks, or decisions. The repository reflects this through org-aware APIs, invite flows, role handling, and activity tracking.
+
+3. Workflow Automation
+The workflow engine is a major operational feature in the codebase. It supports:
+- manual triggers
+- cron schedules
+- domain-event triggers
+- idempotent workflow runs
+- task creation
+- notifications
+- export job generation
+
+This gives the system a business-process layer on top of the core CRUD and AI features.
+
+4. Domain Events And Background Execution
+The server includes domain event polling, fanout handling, and worker-oriented execution paths. This allows workflows and other actions to react to changes in application state instead of depending entirely on user-driven clicks.
+
+5. Autopilot Flow
+Autopilot adds a structured lifecycle for AI-assisted action:
+- plan
+- simulate
+- approve
+- execute
+
+This is important because finance actions should be reviewed before they are applied. The product therefore treats AI as an assistant inside an approval process, not as an unchecked automation layer.
+
+6. Product Value
+The combination of collaboration and automation gives the application a stronger product identity. It moves the repository closer to a finance operations workspace instead of a one-user dashboard.

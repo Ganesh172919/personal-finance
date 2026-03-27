@@ -77,15 +77,12 @@ export const register = async (req: Request, res: Response) => {
     text: `Your verification code is: ${verificationToken}`,
     html: `<p>Your verification code is: <strong>${verificationToken}</strong></p>`,
   });
-  const smokeTestMode = req.header("x-smoke-test") === "1";
 
   res.status(201).json({
     message: "Registration successful. Please check your email for a verification code.",
     request_id: req.requestId,
-    dev_otp:
-      env.NODE_ENV !== "production" && (emailResult.mode === "console" || smokeTestMode)
-        ? verificationToken
-        : undefined,
+    delivery_mode: emailResult.mode,
+    dev_otp: env.NODE_ENV !== "production" ? verificationToken : undefined,
   });
 };
 
@@ -144,15 +141,12 @@ export const resendVerification = async (req: Request, res: Response) => {
     text: `Your new verification code is: ${verificationToken}`,
     html: `<p>Your new verification code is: <strong>${verificationToken}</strong></p>`,
   });
-  const smokeTestMode = req.header("x-smoke-test") === "1";
 
   res.status(200).json({
     message: "Verification code resent successfully.",
     request_id: req.requestId,
-    dev_otp:
-      env.NODE_ENV !== "production" && (emailResult.mode === "console" || smokeTestMode)
-        ? verificationToken
-        : undefined,
+    delivery_mode: emailResult.mode,
+    dev_otp: env.NODE_ENV !== "production" ? verificationToken : undefined,
   });
 };
 

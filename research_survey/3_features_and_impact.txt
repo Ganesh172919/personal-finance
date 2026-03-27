@@ -1,39 +1,46 @@
-SURVEY PART 3: FEATURES, CAPABILITIES, AND USER JOURNEY
+SURVEY PART 3: FEATURES, CAPABILITIES, AND PRODUCT IMPACT
 
-1. User Journey and Workflow
- The application provides a complete flow from onboarding to advanced planning:
- - Step 1: User Onboarding (Secure account creation).
- - Step 2: Data Ingestion (Real-time processing of income, expense, and debt data).
- - Step 3: AI Analysis (The "AgentWorkflowVisualizer" shows the AI "thinking" in real-time).
- - Step 4: Strategic Output (User receives a comprehensive financial plan).
+1. User-Facing Feature Areas
+The project includes several major product surfaces:
+- Authentication and onboarding
+- Financial dashboard and analytics
+- AI chat and analysis
+- Workflow automation and autopilot
+- Organizations and collaboration
+- Receipts, exports, journals, and supporting content
 
-2. Specialized Agent Ecosystem (The "Brain")
- The system is not a single model, but a team of specialized agents:
- - MasterFinancialStrategistAgent: The "boss" agent. Decomposes queries, delegates tasks, and synthesizes the final report.
- - IncomeExpenseAnalyzerAgent: Deep-dives into transaction history to find spending patterns.
- - BudgetPlannerAgent: Constructs optimized budgets (e.g., applying the 50/30/20 rule).
- - InvestmentAdvisorAgent: Recommends asset allocation based on the user's calculated risk tolerance.
- - DebtOptimizerAgent: Strategies debt repayment (e.g., Snowball vs. Avalanche methods).
- - FinancialEducatorAgent: Translates complex financial jargon into clear concepts.
+2. Onboarding And Access
+Users can register, verify email, log in, and retrieve a profile. The local build now keeps the full verification flow intact while exposing the OTP in development for smoother demos and testing.
 
-3. Detailed Feature Set
- - "Strategist's Desk" Dashboard: A live view of financial vitals (Cash Flow, Savings Rate, Goal Progress).
- - Interactive Insight Cards: AI-generated suggestions that are "clickable," opening detailed markdown-rendered reports (e.g., "🎯 YOUR COMPREHENSIVE FINANCIAL PLAN").
- - Natural Language Command Bar: Allows users to "chat" with their finances naturally.
- - What-If Scenarios: A simulation engine to test major decisions (buying a car, salary changes) before they happen.
- - AgentWorkflowVisualizer: A sidebar widget that brings transparency to the AI, showing the network diagram as agents activate.
- - History & Tracking: Dedicated pages to review past advice and track long-term goal progress.
+3. Finance Workspace
+The application includes a financial dashboard and multiple server-side finance models for transactions, budgets, recurring rules, month close data, categories, goals, and usage tracking. This makes it more than a chat demo; it is a structured finance product with persistence and operational state.
 
-4. Security and Data Integrity
- - Authentication: Industry-standard security using `Passport.js`.
- - Transport Security: JWTs are handled strictly via `httpOnly` cookies, ensuring tokens are never exposed to client-side JavaScript.
- - Data Privacy: The Backend acts as a firewall, ensuring only necessary, sanitized data reaches the AI service.
+4. AI Product Surface
+The AI experience is one of the strongest portfolio elements in the repository:
+- A dedicated chat experience
+- AI status and provider visibility
+- Multi-agent routing based on financial intent
+- Workflow trace metadata for transparency
+- Tool call support and synthesis output
 
-5. The Science Behind: Why Agents Over Chatbots?
- Recent research highlights that "Agentic Workflows" significantly outperform standard LLMs in high-stakes domains like finance.
- - Reasoning vs. Prediction: Agents break down problems ("Decomposition"), allowing for precise calculation rather than probabilistic guessing.
- - Reduced Hallucination: By isolating contexts (e.g., the Budget Agent only sees budget data), the risk of the AI "inventing" numbers is drastically reduced.
- - Decision Support: "Collaborative Verification" (agents checking each other's work) mimics a human financial committee, providing more balanced and robust advice than a single model could.
+This design lets the app explain not only the answer, but also the route taken to produce it.
 
-6. Significance
- This platform demonstrates that high-level financial planning can be democratized through AI. By offering transparency (Visualizer), depth (Specialized Agents), and security (Tiered Architecture), it bridges the gap between simple trackers and human financial advisors.
+5. Automation And Operational Features
+The workflow engine supports:
+- manual runs
+- cron-based scheduling
+- event-triggered automation
+- task creation, notifications, and exports
+
+Autopilot extends this idea into a controlled finance workflow with plan, simulate, approve, and execute stages.
+
+6. Content And Storytelling
+The repository also contains blog, growth story, and media-oriented features. These help position the application as a richer product platform rather than a single-screen financial calculator.
+
+7. Product Impact
+From a portfolio perspective, the project demonstrates:
+- full-stack application structure
+- AI orchestration beyond simple prompt wrappers
+- real auth and org-aware backend behavior
+- extensibility through plugins and templates
+- enough UI depth to feel like a product, not just a prototype
