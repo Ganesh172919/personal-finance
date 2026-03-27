@@ -27,6 +27,7 @@ import chatRoutes from "../routes/chatRoutes.js";
 import financialDataRoutes from "../routes/financialDataRoutes.js";
 import receiptRoutes from "../routes/receiptRoutes.js";
 import financialJournalRoutes from "../routes/financialJournalRoutes.js";
+import fileRoutes from "../routes/fileRoutes.js";
 import mediaRoutes from "../routes/mediaRoutes.js";
 import monetizationRoutes from "../routes/monetizationRoutes.js";
 import taskRoutes from "../routes/taskRoutes.js";
@@ -87,6 +88,7 @@ const mounts: RouterMount[] = [
   { prefix: "/api/v1", router: aiRoutes },
   { prefix: "/api/v1/chat", router: chatRoutes },
   { prefix: "/api/v1", router: financialDataRoutes },
+  { prefix: "/api/v1/files", router: fileRoutes },
   { prefix: "/api/v1", router: receiptRoutes },
   { prefix: "/api/v1", router: financialJournalRoutes },
   { prefix: "/api/v1", router: mediaRoutes },

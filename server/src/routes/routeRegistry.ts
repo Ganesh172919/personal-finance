@@ -9,6 +9,7 @@ import chatRoutes from "./chatRoutes";
 import configRoutes from "./configRoutes";
 import financialDataRoutes from "./financialDataRoutes";
 import financialJournalRoutes from "./financialJournalRoutes";
+import fileRoutes from "./fileRoutes";
 import growthStoryRoutes from "./growthStoryRoutes";
 import internalToolsRoutes from "./internalToolsRoutes";
 import mediaRoutes from "./mediaRoutes";
@@ -48,6 +49,7 @@ export const getCanonicalApiRoutes = (env: Env): MountedRoute[] => {
     { path: "/api/v1", router: aiRoutes },
     { path: "/api/v1/chat", router: chatRoutes },
     { path: "/api/v1", router: financialDataRoutes },
+    { path: "/api/v1/files", router: fileRoutes },
     { path: "/api/v1", router: receiptRoutes },
     { path: "/api/v1", router: financialJournalRoutes },
     { path: "/api/v1", router: mediaRoutes },
@@ -74,6 +76,7 @@ export const getLegacyApiRoutes = (env: Env): MountedRoute[] => {
     { path: "/api", router: aiRoutes },
     { path: "/api/chat", router: chatRoutes },
     { path: "/api", router: financialDataRoutes },
+    { path: "/api/files", router: fileRoutes },
     { path: "/api", router: receiptRoutes },
     { path: "/api", router: financialJournalRoutes },
     { path: "/api", router: mediaRoutes },

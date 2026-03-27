@@ -4,6 +4,14 @@
 
 import type { Plan, ToolCall } from "@/types/ai.types";
 
+export interface IChatAttachment {
+  workspaceFileId: string;
+  fileId: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export interface IChatSession {
   id: string;
   title: string;
@@ -13,6 +21,7 @@ export interface IChatSession {
 }
 
 export interface IChatMessageMetadata {
+  attachments?: IChatAttachment[];
   analysisType?: string;
   agentsInvolved?: string[];
   priority?: 'low' | 'medium' | 'high';

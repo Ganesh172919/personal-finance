@@ -4,6 +4,7 @@ import ChatMessageModel, { IChatMessageDocument } from "../models/chatMessageMod
 import AiResponseCacheModel from "../models/aiResponseCacheModel";
 import AgentOutputModel from "../models/agentOutputModel";
 import AutopilotRunModel from "../models/autopilotRunModel";
+import WorkspaceFileModel from "../models/workspaceFileModel";
 import { IUserDocument } from "../models/userModel";
 import OrganizationModel from "../models/organizationModel";
 import mongoose from "mongoose";
@@ -44,6 +45,37 @@ const getOrgAiSettings = async (orgId: mongoose.Types.ObjectId) => {
     locale: String((org as any)?.locale || "en-US"),
     timezone: String((org as any)?.timezone || "UTC"),
   };
+};
+
+const mapWorkspaceFileAttachment = (file: any) => ({
+  workspaceFileId: String(file._id),
+  fileId: String(file.fileId),
+  originalName: String(file.originalName),
+  mimeType: String(file.mimeType),
+  sizeBytes: Number(file.sizeBytes || 0),
+});
+
+const buildWorkspaceFileContext = (files: Array<any>) => {
+  if (!files.length) return "";
+
+  return files
+    .map((file, index) => {
+      const extractedText = String(file.extractedText || "").trim();
+      const extractionWarnings = Array.isArray(file.extractionWarnings)
+        ? file.extractionWarnings.map((warning: unknown) => String(warning)).filter(Boolean)
+        : [];
+
+      return [
+        `Attachment ${index + 1}: ${String(file.originalName)}`,
+        `Mime type: ${String(file.mimeType)} | Kind: ${String(file.kind || "other")} | Size: ${Number(file.sizeBytes || 0)} bytes`,
+        extractionWarnings.length ? `Warnings: ${extractionWarnings.join("; ")}` : "",
+        "Extracted content:",
+        extractedText ? extractedText.slice(0, 2_500) : "No extracted text available.",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
 };
 
 /**
@@ -338,8 +370,11 @@ export async function sendMessage(req: Request, res: Response) {
     if (!sessionId) {
       return res.status(400).json({ message: "Invalid session ID" });
     }
-    const { content, options } = req.body as any;
+    const { content, options, fileIds } = req.body as any;
     const narrative = typeof options?.narrative === "boolean" ? options.narrative : false;
+    const requestedFileIds = Array.isArray(fileIds)
+      ? fileIds.filter((value: unknown) => typeof value === "string" && mongoose.Types.ObjectId.isValid(String(value)))
+      : [];
 
     if (!content || typeof content !== "string" || content.trim().length === 0) {
       return res.status(400).json({ message: "Message content is required" });
@@ -368,6 +403,26 @@ export async function sendMessage(req: Request, res: Response) {
       return res.status(404).json({ message: "Session not found" });
     }
 
+    const workspaceFiles = requestedFileIds.length
+      ? await WorkspaceFileModel.find({
+          _id: {
+            $in: requestedFileIds.map((value: string) => new mongoose.Types.ObjectId(value)),
+          },
+          orgId,
+          userId: user._id,
+        }).lean()
+      : [];
+
+    if (requestedFileIds.length && workspaceFiles.length !== requestedFileIds.length) {
+      return res.status(404).json({ message: "One or more attached files were not found" });
+    }
+
+    const attachments = workspaceFiles.map(mapWorkspaceFileAttachment);
+    const attachmentContext = buildWorkspaceFileContext(workspaceFiles);
+    const aiUserInput = attachmentContext
+      ? `${content.trim()}\n\nAttached workspace files:\n${attachmentContext}`
+      : content.trim();
+
     const historyDocs = await ChatMessageModel.find({ orgId, sessionId: session._id })
       .sort({ createdAt: -1 })
       .limit(6)
@@ -386,7 +441,8 @@ export async function sendMessage(req: Request, res: Response) {
       sessionId: session._id,
       userId: user._id,
       role: "user",
-      content: content.trim()
+      content: content.trim(),
+      metadata: attachments.length ? { attachments } : undefined,
     });
 
     // Get the user's financial profile for AI context
@@ -422,7 +478,7 @@ export async function sendMessage(req: Request, res: Response) {
         sessionId: session._id.toString(),
         sessionMessageCount: session.messageCount,
         sessionSummaryUpdatedAt,
-        content: content.trim()
+        content: aiUserInput
       });
       aiCacheKey = cacheKey;
 
@@ -441,7 +497,7 @@ export async function sendMessage(req: Request, res: Response) {
         const orgSettings = await getOrgAiSettings(orgId);
 
          const { request: aiRequest, stats } = buildProcessRequest({
-           userInput: content.trim(),
+           userInput: aiUserInput,
            profile: financialProfile,
            orgId: orgId.toString(),
            userId: user._id.toString(),
@@ -486,6 +542,7 @@ export async function sendMessage(req: Request, res: Response) {
             requestId: aiResponse.request_id || requestId,
             actionLinkId: aiResponse.request_id || requestId,
             linkedTaskIds: [],
+            attachments,
             aiCoreDurationMs: aiDurationMs,
             cacheHit: false
           };
@@ -722,6 +779,7 @@ export async function sendMessage(req: Request, res: Response) {
         sessionId: userMessage.sessionId.toString(),
         role: userMessage.role,
         content: userMessage.content,
+        metadata: userMessage.metadata,
         createdAt: userMessage.createdAt
       },
       assistantMessage: {
@@ -743,5 +801,131 @@ export async function sendMessage(req: Request, res: Response) {
     }
     logger.error({ error }, `[requestId=${req.requestId}] Error sending message`);
     return res.status(500).json({ message: "Failed to send message", request_id: req.requestId });
+  }
+}
+
+export async function getConversationInsights(req: Request, res: Response) {
+  try {
+    const user = req.user as IUserDocument;
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const orgId = requireOrgId(req);
+
+    const sessions = await ChatSessionModel.find({
+      orgId,
+      userId: user._id,
+      isArchived: false,
+      messageCount: { $gt: 0 },
+    })
+      .sort({ lastMessageAt: -1 })
+      .limit(8)
+      .lean();
+
+    if (!sessions.length) {
+      return res.json({
+        success: true,
+        response: "Start a chat to generate conversation insights.",
+        plan: undefined,
+        analysis_type: "conversation_insights",
+        agents_involved: [],
+        workflow_trace: [],
+        fallback_used: false,
+        llm_call_count: 0,
+        request_id: req.requestId,
+        sessions_considered: 0,
+      });
+    }
+
+    const [profile, journalContext, orgSettings, txResult] = await Promise.all([
+      ensureProfileWithMigration({ orgId, userId: user._id }),
+      getJournalContextForAi({ orgId, userId: user._id }),
+      getOrgAiSettings(orgId),
+      fetchTransactionsForAi({ orgId, userId: user._id }),
+    ]);
+
+    const summarySections = await Promise.all(
+      sessions.map(async (session) => {
+        if (session.summary && String(session.summary).trim()) {
+          return [
+            `Session title: ${String(session.title)}`,
+            `Last updated: ${new Date(session.lastMessageAt).toISOString()}`,
+            `Summary: ${String(session.summary).trim()}`,
+          ].join("\n");
+        }
+
+        const recentMessages = await ChatMessageModel.find({
+          orgId,
+          sessionId: session._id,
+        })
+          .sort({ createdAt: -1 })
+          .limit(6)
+          .lean();
+
+        const deterministicSummary = buildDeterministicChatSummary(
+          recentMessages
+            .reverse()
+            .map((message) => ({
+              role: message.role as "user" | "assistant",
+              content: String(message.content),
+            }))
+        );
+
+        return [
+          `Session title: ${String(session.title)}`,
+          `Last updated: ${new Date(session.lastMessageAt).toISOString()}`,
+          `Summary: ${deterministicSummary || "No summary available."}`,
+        ].join("\n");
+      })
+    );
+
+    const prompt = [
+      "You are reviewing a user's finance conversations across multiple chat sessions.",
+      "Create one concise, insight-dense response with these sections:",
+      "1. Conversation pulse",
+      "2. Repeated themes",
+      "3. Recommended next moves",
+      "4. Suggested next prompt",
+      "",
+      "Rules:",
+      "- Focus on recurring priorities, blind spots, and patterns.",
+      "- Keep it practical and action-oriented.",
+      "- Avoid restating the same advice twice.",
+      "",
+      "Conversation summaries:",
+      summarySections.join("\n\n---\n\n"),
+    ].join("\n");
+
+    const { request: aiRequest } = buildProcessRequest({
+      userInput: prompt,
+      profile,
+      orgId: orgId.toString(),
+      userId: user._id.toString(),
+      orgSettings,
+      transactions: txResult.transactions,
+      totalTransactions: txResult.stats.totalTransactions,
+      sessionSummary: journalContext.summary || undefined,
+      narrative: true,
+    });
+
+    const aiResponse = await processAiCoreRequest(aiRequest, req.requestId, { userId: user._id.toString() });
+    const { plan: normalizedPlan } = normalizeAiPlan(aiResponse.plan);
+
+    return res.json({
+      success: true,
+      response: aiResponse.final_output,
+      plan: normalizedPlan,
+      analysis_type: "conversation_insights",
+      agents_involved: aiResponse.agents_involved,
+      workflow_trace: aiResponse.workflow_trace || [],
+      fallback_used: aiResponse.fallback_used || false,
+      llm_call_count: aiResponse.llm_call_count || 0,
+      request_id: aiResponse.request_id || req.requestId,
+      sessions_considered: sessions.length,
+    });
+  } catch (error) {
+    logger.error({ error }, `[requestId=${req.requestId}] Error generating conversation insights`);
+    return res.status(500).json({ message: "Failed to generate conversation insights", request_id: req.requestId });
   }
 }

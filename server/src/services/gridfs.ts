@@ -4,7 +4,7 @@ import { HttpError } from "../middleware/httpError";
 
 const BUCKET_NAME = "uploads";
 
-export type GridFsPurpose = "receipt" | "journal" | "export";
+export type GridFsPurpose = "receipt" | "journal" | "export" | "workspace_file";
 
 export type GridFsMetadata = {
   userId?: string;

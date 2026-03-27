@@ -47,7 +47,7 @@ export function ChatSuggestions({ onSelect }: ChatSuggestionsProps) {
         </div>
         <h2 className="text-2xl font-bold mb-2">How can I help you today?</h2>
         <p className="text-muted-foreground max-w-md">
-          Ask me anything about your finances - from budgeting advice to investment strategies.
+          Ask a finance question, upload supporting files in the composer, and let the multi-agent workflow build a grounded answer.
         </p>
       </motion.div>
 

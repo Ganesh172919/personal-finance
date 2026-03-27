@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { User, Wand2, Copy, CheckCircle, ListTodo, ThumbsDown, ThumbsUp } from "lucide-react";
+import { User, Wand2, Copy, CheckCircle, ListTodo, Paperclip, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -23,6 +23,7 @@ import {
 import { useToast } from "@/hooks/useToast";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import type { ToolCall } from "@/types/ai.types";
+import { buildApiUrl } from "@/lib/apiBase";
 
 interface ChatMessageProps {
   message: IChatMessage;
@@ -244,6 +245,10 @@ export function ChatMessage({ message }: ChatMessageProps) {
     feedbackMutation.mutate({ agentOutputId, rating });
   };
 
+  const handleOpenAttachment = (fileId: string) => {
+    window.open(buildApiUrl(`/media/${fileId}`), "_blank", "noopener,noreferrer");
+  };
+
   const handlePreviewToolCall = (toolCall: ToolCall) => {
     simulateToolMutation.mutate(toolCall);
   };
@@ -350,6 +355,22 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </div>
           )}
         </div>
+
+        {message.metadata?.attachments?.length ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {message.metadata.attachments.map((attachment) => (
+              <button
+                key={attachment.workspaceFileId}
+                type="button"
+                onClick={() => handleOpenAttachment(attachment.fileId)}
+                className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+                <span className="max-w-[220px] truncate">{attachment.originalName}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         {!isUser && message.metadata?.plan?.key_metrics && (
           <div className="mt-2 w-full grid grid-cols-2 md:grid-cols-5 gap-2">

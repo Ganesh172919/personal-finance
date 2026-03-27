@@ -62,3 +62,12 @@ export const csvUpload = () => {
   const env = getEnv();
   return createUpload({ maxBytes: env.CSV_UPLOAD_MAX_BYTES, allowedMimes: env.CSV_UPLOAD_ALLOWED_MIME });
 };
+
+export const workspaceFileUpload = () => {
+  const env = getEnv();
+
+  return multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: env.FILE_UPLOAD_MAX_BYTES },
+  });
+};

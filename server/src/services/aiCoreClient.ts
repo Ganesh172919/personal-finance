@@ -666,3 +666,100 @@ export const processAiCoreHandwriting = async (
     },
   });
 };
+
+export type AiCoreGenericOcrResponse = {
+  success: boolean;
+  recognized_text: string;
+  lines: Array<{ text: string; confidence: number }>;
+  warnings: string[];
+  request_id: string;
+};
+
+export const processAiCoreGenericOcr = async (
+  payload: {
+    image: Buffer;
+    contentType: string;
+    lang?: string;
+  },
+  requestId: string,
+  options?: { userId?: string }
+): Promise<AiCoreGenericOcrResponse> => {
+  const startedAt = Date.now();
+
+  return runWithAiCoreConcurrency({
+    userId: options?.userId,
+    task: async () => {
+      const env = getEnv();
+
+      if (isCircuitOpen()) {
+        recordAiCoreRequest({ endpoint: "generic_ocr", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return {
+          success: false,
+          recognized_text: "",
+          lines: [],
+          warnings: ["AI core circuit breaker open"],
+          request_id: requestId,
+        };
+      }
+
+      const healthy = await checkAiCoreHealth(env, requestId);
+      if (!healthy) {
+        markFailure(env);
+        recordAiCoreRequest({ endpoint: "generic_ocr", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return {
+          success: false,
+          recognized_text: "",
+          lines: [],
+          warnings: [lastHealthError ? `AI core health check failed: ${lastHealthError}` : "AI core health check failed"],
+          request_id: requestId,
+        };
+      }
+
+      try {
+        const http = getHttpClient();
+        const { data } = await http.post("/api/vision/ocr/extract", payload.image, {
+          params: {
+            lang: payload.lang || "en",
+          },
+          headers: {
+            "X-Request-Id": requestId,
+            "Content-Type": payload.contentType || "application/octet-stream",
+          },
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+          transformRequest: [(body) => body],
+        });
+
+        markSuccess();
+        recordAiCoreRequest({ endpoint: "generic_ocr", durationMs: Date.now() - startedAt, fallbackUsed: false });
+
+        const lines = Array.isArray(data?.lines)
+          ? data.lines
+              .filter((line: any) => line && typeof line === "object")
+              .map((line: any) => ({
+                text: String(line.text || ""),
+                confidence: Number(line.confidence || 0),
+              }))
+          : [];
+
+        return {
+          success: data?.success !== false,
+          recognized_text: String(data?.recognized_text || ""),
+          lines,
+          warnings: Array.isArray(data?.warnings) ? data.warnings.map((warning: unknown) => String(warning)) : [],
+          request_id: String(data?.request_id || requestId),
+        };
+      } catch (error) {
+        markFailure(env);
+        recordAiCoreRequest({ endpoint: "generic_ocr", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        return {
+          success: false,
+          recognized_text: "",
+          lines: [],
+          warnings: [extractErrorReason(error)],
+          request_id: requestId,
+        };
+      }
+    },
+  });
+};

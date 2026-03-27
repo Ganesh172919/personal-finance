@@ -10,6 +10,7 @@ import chatRoutes from "../routes/chatRoutes";
 import configRoutes from "../routes/configRoutes";
 import financialDataRoutes from "../routes/financialDataRoutes";
 import financialJournalRoutes from "../routes/financialJournalRoutes";
+import fileRoutes from "../routes/fileRoutes";
 import marketplaceRoutes from "../routes/v1Routes";
 import mediaRoutes from "../routes/mediaRoutes";
 import monetizationRoutes from "../routes/monetizationRoutes";
@@ -97,6 +98,7 @@ describe("OpenAPI contract drift", () => {
       { prefix: "/api/v1", router: aiRoutes },
       { prefix: "/api/v1/chat", router: chatRoutes },
       { prefix: "/api/v1", router: financialDataRoutes },
+      { prefix: "/api/v1/files", router: fileRoutes },
       { prefix: "/api/v1", router: receiptRoutes },
       { prefix: "/api/v1", router: financialJournalRoutes },
       { prefix: "/api/v1", router: mediaRoutes },
@@ -139,4 +141,3 @@ describe("OpenAPI contract drift", () => {
     expect(missing, `OpenAPI is missing ${missing.length} route(s):\n${missing.join("\n")}`).toEqual([]);
   });
 });
-

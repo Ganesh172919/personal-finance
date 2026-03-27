@@ -1,19 +1,21 @@
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Plus, 
-  Search, 
-  MessageSquare, 
-  Trash2, 
-  Edit2, 
-  Check, 
+import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useLocation } from "wouter";
+import {
+  Check,
+  Clock,
+  Edit2,
+  MessageSquare,
+  Plus,
+  Search,
+  Trash2,
   X,
-  Clock 
 } from "lucide-react";
-import { useChatStore } from "@/stores/chatStore";
+
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
+import { useChatStore } from "@/stores/chatStore";
 import type { IChatSession } from "@/types/chat.types";
 
 interface ChatHistorySidebarProps {
@@ -29,30 +31,30 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
     createSession,
     selectSession,
     deleteSession,
-    renameSession
+    renameSession,
   } = useChatStore();
+  const [, navigate] = useLocation();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
 
-  // Load sessions on mount
   useEffect(() => {
-    loadSessions();
+    void loadSessions();
   }, [loadSessions]);
 
   const handleNewChat = async () => {
     const session = await createSession();
-    if (session && onSessionSelect) {
-      onSessionSelect(session.id);
-    }
+    if (!session) return;
+
+    navigate(`/chat/${session.id}`);
+    onSessionSelect?.(session.id);
   };
 
   const handleSelectSession = (sessionId: string) => {
-    selectSession(sessionId);
-    if (onSessionSelect) {
-      onSessionSelect(sessionId);
-    }
+    void selectSession(sessionId);
+    navigate(`/chat/${sessionId}`);
+    onSessionSelect?.(sessionId);
   };
 
   const handleStartRename = (session: IChatSession) => {
@@ -74,113 +76,104 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
   };
 
   const handleDelete = async (sessionId: string) => {
-    if (confirm("Delete this conversation?")) {
-      await deleteSession(sessionId);
-    }
+    if (!window.confirm("Delete this conversation?")) return;
+    await deleteSession(sessionId);
   };
 
-  // Filter sessions by search query
-  const filteredSessions = sessions.filter(session =>
+  const filteredSessions = sessions.filter((session) =>
     session.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Group sessions by date
   const groupedSessions = groupSessionsByDate(filteredSessions);
 
   const formatTime = (dateStr: string | Date) => {
     const date = new Date(dateStr);
     const now = new Date();
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays === 0) {
       return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    } else if (diffDays < 7) {
-      return date.toLocaleDateString([], { weekday: "short" });
-    } else {
-      return date.toLocaleDateString([], { month: "short", day: "numeric" });
     }
+
+    if (diffDays < 7) {
+      return date.toLocaleDateString([], { weekday: "short" });
+    }
+
+    return date.toLocaleDateString([], { month: "short", day: "numeric" });
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* New Chat Button */}
-      <div className="p-4 border-b border-border">
-        <Button
-          onClick={handleNewChat}
-          className="w-full flex items-center justify-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border p-4">
+        <Button onClick={handleNewChat} className="flex w-full items-center justify-center gap-2">
+          <Plus className="h-4 w-4" />
           New Chat
         </Button>
       </div>
 
-      {/* Search */}
       <div className="p-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search conversations..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(event) => setSearchQuery(event.target.value)}
             className="pl-9"
           />
         </div>
       </div>
 
-      {/* Sessions List */}
       <ScrollArea className="flex-1">
         <div className="px-2 pb-4">
           {isLoadingSessions ? (
             <div className="flex items-center justify-center py-8">
-              <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full" />
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             </div>
           ) : filteredSessions.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <div className="py-8 text-center text-muted-foreground">
+              <MessageSquare className="mx-auto mb-2 h-8 w-8 opacity-50" />
               <p className="text-sm">No conversations yet</p>
               <p className="text-xs">Start a new chat to begin</p>
             </div>
           ) : (
-            Object.entries(groupedSessions).map(([group, sessions]) => (
+            Object.entries(groupedSessions).map(([group, groupSessions]) => (
               <div key={group} className="mb-4">
-                <h3 className="text-xs font-medium text-muted-foreground px-2 py-1">
-                  {group}
-                </h3>
+                <h3 className="px-2 py-1 text-xs font-medium text-muted-foreground">{group}</h3>
                 <AnimatePresence>
-                  {sessions.map((session) => (
+                  {groupSessions.map((session) => (
                     <motion.div
                       key={session.id}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: -10 }}
-                      className={`group flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
+                      className={`group flex cursor-pointer items-center gap-2 rounded-lg p-2 transition-colors ${
                         currentSessionId === session.id
-                          ? "bg-primary/10 border border-primary/20 text-foreground"
+                          ? "border border-primary/20 bg-primary/10 text-foreground"
                           : "text-foreground hover:bg-accent hover:text-accent-foreground"
                       }`}
                       onClick={() => handleSelectSession(session.id)}
                     >
-                      <MessageSquare className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-                      
+                      <MessageSquare className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+
                       {editingId === session.id ? (
-                        <div className="flex-1 flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                        <div className="flex flex-1 items-center gap-1" onClick={(event) => event.stopPropagation()}>
                           <Input
                             value={editTitle}
-                            onChange={(e) => setEditTitle(e.target.value)}
+                            onChange={(event) => setEditTitle(event.target.value)}
                             className="h-6 text-sm"
                             autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleSaveRename(session.id);
-                              if (e.key === "Escape") handleCancelRename();
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") void handleSaveRename(session.id);
+                              if (event.key === "Escape") handleCancelRename();
                             }}
                           />
                           <Button
                             variant="ghost"
                             size="sm"
                             className="h-6 w-6 p-0"
-                            onClick={() => handleSaveRename(session.id)}
+                            onClick={() => void handleSaveRename(session.id)}
                           >
-                            <Check className="w-3 h-3" />
+                            <Check className="h-3 w-3" />
                           </Button>
                           <Button
                             variant="ghost"
@@ -188,39 +181,41 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                             className="h-6 w-6 p-0"
                             onClick={handleCancelRename}
                           >
-                            <X className="w-3 h-3" />
+                            <X className="h-3 w-3" />
                           </Button>
                         </div>
                       ) : (
                         <>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {session.title}
-                            </p>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{session.title}</p>
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <Clock className="w-3 h-3" />
+                              <Clock className="h-3 w-3" />
                               {formatTime(session.lastMessageAt)}
-                              <span>•</span>
-                              {Math.ceil(session.messageCount / 2)} {Math.ceil(session.messageCount / 2) === 1 ? 'message' : 'messages'}
+                              <span>&bull;</span>
+                              {Math.ceil(session.messageCount / 2)}{" "}
+                              {Math.ceil(session.messageCount / 2) === 1 ? "message" : "messages"}
                             </div>
                           </div>
-                          
-                          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1" onClick={e => e.stopPropagation()}>
+
+                          <div
+                            className="flex items-center gap-1 opacity-0 group-hover:opacity-100"
+                            onClick={(event) => event.stopPropagation()}
+                          >
                             <Button
                               variant="ghost"
                               size="sm"
                               className="h-6 w-6 p-0"
                               onClick={() => handleStartRename(session)}
                             >
-                              <Edit2 className="w-3 h-3" />
+                              <Edit2 className="h-3 w-3" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="sm"
                               className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-                              onClick={() => handleDelete(session.id)}
+                              onClick={() => void handleDelete(session.id)}
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="h-3 w-3" />
                             </Button>
                           </div>
                         </>
@@ -237,16 +232,15 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
   );
 }
 
-// Helper function to group sessions by date
 function groupSessionsByDate(sessions: IChatSession[]): Record<string, IChatSession[]> {
   const groups: Record<string, IChatSession[]> = {};
   const now = new Date();
-  
-  sessions.forEach(session => {
+
+  sessions.forEach((session) => {
     const date = new Date(session.lastMessageAt);
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-    
-    let groupName: string;
+
+    let groupName = "Older";
     if (diffDays === 0) {
       groupName = "Today";
     } else if (diffDays === 1) {
@@ -255,15 +249,13 @@ function groupSessionsByDate(sessions: IChatSession[]): Record<string, IChatSess
       groupName = "Last 7 Days";
     } else if (diffDays < 30) {
       groupName = "Last 30 Days";
-    } else {
-      groupName = "Older";
     }
-    
+
     if (!groups[groupName]) {
       groups[groupName] = [];
     }
     groups[groupName].push(session);
   });
-  
+
   return groups;
 }

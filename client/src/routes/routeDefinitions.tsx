@@ -42,6 +42,7 @@ const GrowthStoryDetail = lazy(() => import("@/pages/GrowthStoryDetail"));
 const Blogs = lazy(() => import("@/pages/Blogs"));
 const BlogDetail = lazy(() => import("@/pages/BlogDetail"));
 const Documentation = lazy(() => import("@/pages/Documentation"));
+const Files = lazy(() => import("@/pages/Files"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const Analytics = lazy(() => import("@/pages/Analytics"));
 const FinancialCalendar = lazy(() => import("@/pages/FinancialCalendar"));
@@ -76,6 +77,7 @@ export const appRoutes: AppRouteDefinition[] = [
   { path: "/billing", access: "protected", layout: "app", component: Billing },
   { path: "/org", access: "protected", layout: "app", component: Organization },
   { path: "/docs", access: "protected", layout: "app", component: Documentation },
+  { path: "/files", access: "protected", layout: "app", component: Files },
   { path: "/settings", access: "protected", layout: "app", component: Settings },
   { path: "/analytics", access: "protected", layout: "app", component: Analytics },
   { path: "/calendar", access: "protected", layout: "app", component: FinancialCalendar },

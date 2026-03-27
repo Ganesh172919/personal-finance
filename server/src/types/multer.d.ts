@@ -27,6 +27,7 @@ declare module "multer" {
   }
 
   interface MulterInstance {
+    array(fieldName: string, maxCount?: number): RequestHandler;
     single(fieldName: string): RequestHandler;
   }
 

@@ -10,6 +10,7 @@ import {
   CalendarDays,
   CreditCard,
   Download,
+  FolderOpen,
   FileText,
   Gauge,
   ListTodo,
@@ -30,6 +31,7 @@ import {
 } from "lucide-react";
 
 import { NotificationCenter, NotificationBell } from "@/components/NotificationCenter";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
@@ -84,6 +86,7 @@ const navigationItems: NavigationItem[] = [
   { href: "/dashboard", icon: Gauge, label: "Strategist's Desk", section: "daily", mobilePin: true },
   { href: "/transactions", icon: ReceiptText, label: "Transactions", section: "daily", mobilePin: true },
   { href: "/finance", icon: Wallet, label: "Finance OS", section: "daily", mobilePin: true },
+  { href: "/files", icon: FolderOpen, label: "Files", section: "daily" },
   { href: "/tasks", icon: ListTodo, label: "Tasks", section: "daily", requiresFeature: "tasks_enabled" },
   { href: "/goals-debts", icon: Target, label: "Goals & Debts", section: "planning" },
   { href: "/portfolio", icon: PieChart, label: "Investment Portfolio", section: "planning" },
@@ -125,7 +128,10 @@ function BrandBlock({
             <p className="text-xs text-muted-foreground">AI strategist workspace</p>
           </div>
         </Link>
-        <NotificationBell onClick={onNotificationsOpen} unreadCount={notificationUnreadCount} />
+        <div className="flex items-center gap-2">
+          <ThemeToggle compact />
+          <NotificationBell onClick={onNotificationsOpen} unreadCount={notificationUnreadCount} />
+        </div>
       </div>
 
       <div className="mt-4 rounded-2xl border border-border/60 bg-background/75 px-3 py-2.5">

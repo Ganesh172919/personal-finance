@@ -134,6 +134,7 @@ const envSchema = z
     UPLOAD_ALLOWED_MIME: csvArray("image/jpeg,image/png,image/webp"),
     RECEIPT_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
     JOURNAL_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(4 * 1024 * 1024),
+    FILE_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
     CSV_UPLOAD_ALLOWED_MIME: csvArray("text/csv,application/vnd.ms-excel,application/csv"),
     CSV_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(15 * 1024 * 1024),
 

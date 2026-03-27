@@ -12,35 +12,39 @@ const ThemeProviderContext = createContext<
   ThemeProviderContextType | undefined
 >(undefined);
 
+const THEME_STORAGE_KEY = "finwise-theme";
+
+const readStoredTheme = (): Theme => {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (stored === "light" || stored === "dark") {
+    return stored;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+};
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>(() => readStoredTheme());
 
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove("light", "dark");
-    root.classList.add("dark");
-    setTheme("dark");
-    localStorage.setItem("finwise-theme", "dark");
-  }, []);
-
-  const handleSetTheme = (newTheme: Theme) => {
-    const root = window.document.documentElement;
-    const resolvedTheme: Theme = newTheme === "light" ? "dark" : newTheme;
-
-    root.classList.remove("light", "dark");
-    root.classList.add(resolvedTheme);
-
-    setTheme(resolvedTheme);
-    localStorage.setItem("finwise-theme", resolvedTheme);
-  };
+    root.classList.add(theme);
+    root.style.colorScheme = theme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
 
   const toggleTheme = () => {
-    handleSetTheme("dark");
+    setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"));
   };
 
   return (
     <ThemeProviderContext.Provider
-      value={{ theme, setTheme: handleSetTheme, toggleTheme }}
+      value={{ theme, setTheme, toggleTheme }}
     >
       {children}
     </ThemeProviderContext.Provider>

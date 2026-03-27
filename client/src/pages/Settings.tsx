@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/useToast";
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { InlineLoader } from "@/components/feedback/InlineLoader";
 import { PageIntro } from "@/components/layout/PageIntro";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
@@ -825,15 +826,27 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
 
   return (
     <Card className="p-6">
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground">Preferences</h2>
-          <p className="text-sm text-muted-foreground">
-            Customize your currency, locale, and timezone
-          </p>
-        </div>
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Preferences</h2>
+            <p className="text-sm text-muted-foreground">
+              Customize your currency, locale, and timezone
+            </p>
+          </div>
 
-        <div className="space-y-5">
+          <div className="rounded-[calc(var(--radius)-8px)] border border-border/70 bg-muted/20 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-foreground">Theme</div>
+                <p className="text-xs text-muted-foreground">
+                  Switch between a bright light workspace and a pure black focus mode.
+                </p>
+              </div>
+              <ThemeToggle />
+            </div>
+          </div>
+
+          <div className="space-y-5">
           <div className="space-y-2">
             <Label htmlFor="currency">Currency</Label>
             <select

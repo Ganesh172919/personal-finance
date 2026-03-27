@@ -7,7 +7,8 @@ import {
   deleteSession,
   renameSession,
   getMessages,
-  sendMessage
+  sendMessage,
+  getConversationInsights
 } from "../controllers/chatController";
 import { validate } from "../middleware/validate";
 import { sessionIdParamSchema } from "../schemas/common";
@@ -43,6 +44,7 @@ router.get(
   validate({ params: sessionIdParamSchema, query: getMessagesQuerySchema }),
   asyncRoute(getMessages)
 );
+router.get("/insights/conversation", requireAuth, asyncRoute(getConversationInsights));
 router.post(
   "/sessions/:sessionId/messages",
   requireAuth,

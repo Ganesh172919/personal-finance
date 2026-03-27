@@ -1,12 +1,15 @@
 import { motion } from "framer-motion";
-import { ArrowRight, Bell, MessageSquare, ReceiptText, Sparkles, Target } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowRight, Bell, FolderOpen, MessageSquare, ReceiptText, Sparkles, Target } from "lucide-react";
 import { Link } from "wouter";
 
 import { AICommandBar } from "@/components/AiCommandBar";
 import { ActionableInsights } from "@/components/ActionableInsights";
+import { ConversationInsightsPanel } from "@/components/ConversationInsightsPanel";
 import { FinancialVitals } from "@/components/FinancialVitals";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
+import { fetchSessions } from "@/services/chatApi";
 
 const quickLaunches = [
   {
@@ -20,6 +23,12 @@ const quickLaunches = [
     label: "Review transactions",
     description: "Check the latest inflows and outflows quickly.",
     icon: ReceiptText,
+  },
+  {
+    href: "/files",
+    label: "Open files",
+    description: "Keep source documents ready for chat and AI analysis.",
+    icon: FolderOpen,
   },
   {
     href: "/goals-debts",
@@ -51,6 +60,10 @@ function DashboardSectionHeading({
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const sessionsQuery = useQuery({
+    queryKey: ["/api/chat/sessions", "dashboard"],
+    queryFn: () => fetchSessions(1, 5),
+  });
 
   const firstName = user?.name?.split(" ")[0] || "there";
   const dateLabel = new Intl.DateTimeFormat(undefined, {
@@ -105,7 +118,7 @@ export default function Dashboard() {
               </Button>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {quickLaunches.map((launch, index) => (
                 <motion.div
                   key={launch.href}
@@ -145,6 +158,80 @@ export default function Dashboard() {
             </div>
           </div>
         </motion.section>
+
+        <section className="space-y-5">
+          <DashboardSectionHeading
+            eyebrow="Conversation first"
+            title="Keep the strategist loop close"
+            description="Use your recent chats, cross-conversation patterns, and reusable files to decide what to ask next."
+          />
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+            <ConversationInsightsPanel />
+
+            <div className="space-y-5">
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.08 }}
+                className="rounded-[calc(var(--radius)+8px)] border border-border/80 bg-card/95 p-5 shadow-[0_22px_55px_-38px_rgba(15,23,42,0.55)]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">Recent conversations</div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      Jump back into the threads that are already carrying context.
+                    </div>
+                  </div>
+                  <Link href="/chat">
+                    <Button variant="outline" className="rounded-2xl">
+                      Open chat
+                    </Button>
+                  </Link>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {(sessionsQuery.data?.sessions || []).length === 0 ? (
+                    <div className="rounded-[calc(var(--radius)-8px)] border border-dashed border-border/80 bg-background/60 px-4 py-5 text-sm text-muted-foreground">
+                      No recent chat sessions yet. Start with a question or upload a file to ground the first conversation.
+                    </div>
+                  ) : (
+                    (sessionsQuery.data?.sessions || []).map((session) => (
+                      <Link
+                        key={session.id}
+                        href={`/chat/${session.id}`}
+                        className="block rounded-[calc(var(--radius)-8px)] border border-border/70 bg-background/70 p-4 no-underline transition-all hover:-translate-y-0.5 hover:border-primary/20"
+                      >
+                        <div className="text-sm font-semibold text-foreground">{session.title}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {new Date(session.lastMessageAt).toLocaleString()}
+                        </div>
+                      </Link>
+                    ))
+                  )}
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.14 }}
+                className="rounded-[calc(var(--radius)+8px)] border border-border/80 bg-card/95 p-5 shadow-[0_22px_55px_-38px_rgba(15,23,42,0.55)]"
+              >
+                <div className="text-sm font-semibold text-foreground">Why files matter here</div>
+                <div className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Upload statements, notes, invoices, or planning docs to the new Files workspace, then reference them
+                  directly in chat for grounded, higher-signal responses.
+                </div>
+                <Link href="/files" className="mt-4 inline-flex no-underline">
+                  <Button className="rounded-2xl">
+                    <FolderOpen className="mr-2 h-4 w-4" />
+                    Open files workspace
+                  </Button>
+                </Link>
+              </motion.div>
+            </div>
+          </div>
+        </section>
 
         <section className="space-y-5">
           <DashboardSectionHeading

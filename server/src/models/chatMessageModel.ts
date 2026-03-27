@@ -5,12 +5,20 @@ import { Schema, model, Document, Types } from "mongoose";
  * Represents individual messages within a chat session
  */
 export interface IChatMessageMetadata {
+  attachments?: Array<{
+    workspaceFileId: string;
+    fileId: string;
+    originalName: string;
+    mimeType: string;
+    sizeBytes: number;
+  }>;
   analysisType?: string;
   agentsInvolved?: string[];
   priority?: 'low' | 'medium' | 'high';
   actionable?: boolean;
   plan?: Record<string, unknown>;
   toolCalls?: Array<Record<string, unknown>>;
+  agentOutputId?: string;
   autopilotRunId?: string;
   autopilotRunStatus?: string;
   detailedAnalysis?: Record<string, unknown>;
@@ -73,6 +81,10 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
       required: true 
     },
     metadata: {
+      attachments: {
+        type: [Schema.Types.Mixed],
+        default: [],
+      },
       analysisType: String,
       agentsInvolved: [String],
       priority: { 
@@ -88,6 +100,7 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
         type: [Schema.Types.Mixed],
         default: []
       },
+      agentOutputId: String,
       autopilotRunId: String,
       autopilotRunStatus: String,
       detailedAnalysis: {

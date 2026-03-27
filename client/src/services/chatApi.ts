@@ -5,6 +5,8 @@ import type {
   IPaginatedSessions,
   IPaginatedMessages
 } from "@/types/chat.types";
+import type { IWorkflowTraceEntry } from "@/types";
+import type { Plan } from "@/types/ai.types";
 
 /**
  * Chat API Service
@@ -51,9 +53,12 @@ export async function fetchMessages(
 export async function sendMessage(
   sessionId: string,
   content: string,
-  options?: { narrative?: boolean }
+  options?: { narrative?: boolean; fileIds?: string[] }
 ): Promise<ISendMessageResponse> {
-  const payload: { content: string; options?: { narrative?: boolean } } = { content };
+  const payload: { content: string; fileIds?: string[]; options?: { narrative?: boolean } } = { content };
+  if (Array.isArray(options?.fileIds) && options.fileIds.length > 0) {
+    payload.fileIds = options.fileIds;
+  }
   if (typeof options?.narrative === "boolean") {
     payload.options = { narrative: options.narrative };
   }
@@ -62,4 +67,21 @@ export async function sendMessage(
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+export interface ConversationInsightsResponse {
+  success: boolean;
+  response: string;
+  plan?: Plan;
+  analysis_type?: string;
+  agents_involved?: string[];
+  workflow_trace?: IWorkflowTraceEntry[];
+  fallback_used?: boolean;
+  llm_call_count?: number;
+  request_id?: string;
+  sessions_considered: number;
+}
+
+export async function fetchConversationInsights(): Promise<ConversationInsightsResponse> {
+  return apiClient<ConversationInsightsResponse>("/chat/insights/conversation");
 }

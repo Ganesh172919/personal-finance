@@ -23,7 +23,7 @@ interface ChatState {
   selectSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
-  sendMessage: (content: string, options?: { narrative?: boolean }) => Promise<void>;
+  sendMessage: (content: string, options?: { narrative?: boolean; fileIds?: string[] }) => Promise<void>;
   clearCurrentSession: () => void;
 }
 
@@ -115,7 +115,7 @@ export const useChatStore = create<ChatState>()(
       },
 
       // Send a message in the current session
-      sendMessage: async (content: string, options?: { narrative?: boolean }) => {
+      sendMessage: async (content: string, options?: { narrative?: boolean; fileIds?: string[] }) => {
         const { currentSessionId } = get();
         
         if (!currentSessionId) {

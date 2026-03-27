@@ -2,6 +2,7 @@ import { Router } from "express";
 import passport from "passport";
 import {
   processAICommand,
+  processAiStream,
   processWhatIfScenario,
   getFinancialProfile,
   updateFinancialProfile,
@@ -31,6 +32,7 @@ router.use(passport.authenticate("jwt", { session: false }));
 
 // AI processing routes
 router.post("/process-command", validate({ body: processCommandBodySchema }), asyncRoute(processAICommand));
+router.post("/ai/process/stream", validate({ body: processCommandBodySchema }), asyncRoute(processAiStream));
 router.post("/scenarios/what-if", validate({ body: whatIfScenarioBodySchema }), asyncRoute(processWhatIfScenario));
 router.get("/ai-core/status", asyncRoute(getAiCoreStatus));
 router.get("/ai-core/providers", asyncRoute(async (req: any, res: any) => {

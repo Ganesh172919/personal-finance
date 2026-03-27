@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 
 import { AiStatusDialog } from "@/components/AiStatusDialog";
+import { ConversationInsightsPanel } from "@/components/ConversationInsightsPanel";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -56,8 +58,8 @@ export default function ChatPage() {
   };
 
   const handleNewSession = async () => {
-    await createSession();
-    navigate("/chat");
+    const session = await createSession();
+    navigate(session ? `/chat/${session.id}` : "/chat");
     setShowMobileSidebar(false);
   };
 
@@ -131,6 +133,7 @@ export default function ChatPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               <AiStatusDialog />
+              <ThemeToggle compact />
 
               <Button variant="outline" onClick={handleNewSession} className="rounded-2xl">
                 <Plus className="mr-2 h-4 w-4" />
@@ -203,6 +206,23 @@ export default function ChatPage() {
         <main className="min-w-0 flex-1 overflow-hidden rounded-[calc(var(--radius)+4px)] border border-border/70 surface-panel">
           <ChatContainer sessionId={sessionId} />
         </main>
+
+        <aside className="hidden w-[320px] shrink-0 flex-col gap-4 xl:flex">
+          <ConversationInsightsPanel compact className="overflow-hidden rounded-[calc(var(--radius)+4px)] border-border/70 surface-panel" />
+
+          <div className="rounded-[calc(var(--radius)+4px)] border border-border/70 bg-card/70 p-5">
+            <div className="text-sm font-semibold text-foreground">Use files to ground your chat</div>
+            <div className="mt-2 text-sm leading-6 text-muted-foreground">
+              Upload statements, screenshots, spreadsheets, or notes, then attach them in chat to give the AI real
+              context before it responds.
+            </div>
+            <Link href="/files" className="mt-4 inline-flex no-underline">
+              <Button className="rounded-2xl">
+                Open files workspace
+              </Button>
+            </Link>
+          </div>
+        </aside>
       </div>
     </div>
   );

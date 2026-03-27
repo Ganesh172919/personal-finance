@@ -532,6 +532,46 @@ async def recognize_handwriting_image(request: Request, lang: Optional[str] = No
         logger.error(f"[requestId={request_id}] Handwriting recognition failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/api/vision/ocr/extract")
+async def extract_generic_image_text(request: Request, lang: Optional[str] = None):
+    """Generic OCR endpoint for arbitrary image uploads."""
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+
+    try:
+        image_bytes = await _read_image_payload(request)
+        resolved_lang, warnings = _normalize_vision_lang(lang)
+
+        lines = ocr_image_to_lines(image_bytes, lang=resolved_lang)
+        normalized_lines = [
+            {
+                "text": line.text,
+                "confidence": float(line.confidence),
+            }
+            for line in lines
+        ]
+        recognized_text = "\n".join(line.text for line in lines if getattr(line, "text", "")).strip()
+
+        if not recognized_text:
+            warnings.append("No text detected.")
+
+        return {
+            "success": True,
+            "recognized_text": recognized_text,
+            "lines": normalized_lines,
+            "warnings": warnings,
+            "request_id": request_id,
+        }
+    except HTTPException:
+        raise
+    except VisionDependencyError as e:
+        logger.warning(f"[requestId={request_id}] Generic OCR dependencies unavailable: {str(e)}")
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error(f"[requestId={request_id}] Generic OCR failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/rate-limit/status")
 async def rate_limit_status(request: Request):
     """Get current rate limiter status - useful for monitoring API usage"""

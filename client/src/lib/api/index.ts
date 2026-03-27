@@ -10,4 +10,5 @@ export * from "./journal";
 export * from "./chat";
 export * from "./billing";
 export * from "./tools";
+export * from "./files";
 export * from "./v1";
