@@ -1,4 +1,4 @@
-﻿import hashlib
+import hashlib
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from config import settings
 from graph.state import AnalysisType
 from tools import PlanInputs, build_plan, render_plan_markdown
-from utils import RateLimitedLLM
+from utils import create_llm
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +17,7 @@ class MasterFinancialStrategistAgent:
     """Coordinates analysis routing and synthesizes the final plan."""
 
     def __init__(self):
-        self.llm = RateLimitedLLM(
-            model=settings.MODEL_NAME,
-            temperature=settings.get_agent_config("master")["temperature"],
-        )
+        self.llm = create_llm("master")
 
         self.system_prompt = SystemMessage(
             content=(

@@ -69,7 +69,7 @@ class Settings:
     # Model configuration (legacy, still used by create_llm fallback)
     _model_candidates_env = os.getenv(
         "MODEL_CANDIDATES",
-        "gemini-2.5-flash,gemini-2.0-flash,gemini-1.5-flash",
+        "gemini-2.5-flash,gemini-2.5-flash-lite",
     )
     MODEL_CANDIDATES: List[str] = [
         model.strip() for model in _model_candidates_env.split(",") if model.strip()

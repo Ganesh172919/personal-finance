@@ -73,7 +73,10 @@ PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
         env_key="GEMINI_API_KEY",
         base_url="",  # uses native langchain_google_genai
         default_model="gemini-2.5-flash",
-        model_candidates=["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"],
+        model_candidates=[
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+        ],
         is_openai_compatible=False,
     ),
     "openrouter": ProviderConfig(
@@ -81,12 +84,12 @@ PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
         display_name="OpenRouter",
         env_key="OPENROUTER_API_KEY",
         base_url="https://openrouter.ai/api/v1",
-        default_model="google/gemini-2.0-flash-exp:free",
+        default_model="meta-llama/llama-3.3-70b-instruct:free",
         model_candidates=[
-            "google/gemini-2.0-flash-exp:free",
-            "meta-llama/llama-4-maverick:free",
-            "deepseek/deepseek-r1:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
             "qwen/qwen3-235b-a22b:free",
+            "nvidia/llama-3.1-nemotron-70b-instruct:free",
+            "deepseek/deepseek-r1:free",
         ],
         extra_kwargs={
             "default_headers": {
@@ -105,7 +108,6 @@ PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
             "gemma2-9b-it",
-            "mixtral-8x7b-32768",
         ],
     ),
     "grok": ProviderConfig(
@@ -129,7 +131,6 @@ PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
             "meta-llama/Llama-3.3-70B-Instruct-Turbo",
             "Qwen/Qwen2.5-72B-Instruct-Turbo",
             "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
-            "mistralai/Mistral-Small-24B-Instruct-2501",
         ],
     ),
     "mistral": ProviderConfig(
@@ -140,7 +141,6 @@ PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
         default_model="mistral-small-latest",
         model_candidates=[
             "mistral-small-latest",
-            "mistral-medium-latest",
             "open-mistral-nemo",
         ],
     ),

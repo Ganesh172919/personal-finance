@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 from collections import OrderedDict
 from time import time
 from typing import Any, Dict, Optional, Tuple
@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from config import settings
-from utils import RateLimitedLLM, get_fallback_response
+from utils import create_llm, get_fallback_response
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +18,7 @@ class FinancialEducatorAgent:
     _CACHE_TTL_SECONDS = 30 * 60
 
     def __init__(self):
-        self.llm = RateLimitedLLM(
-            model=settings.MODEL_NAME,
-            temperature=settings.get_agent_config("educator")["temperature"],
-        )
+        self.llm = create_llm("educator")
         self.system_prompt = SystemMessage(
             content=(
                 "You are a clear and concise Financial Educator. "

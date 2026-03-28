@@ -224,13 +224,15 @@ class RateLimitedLLM:
 
                     client = self._client_for_model(provider_name, model_name)
                     timeout_seconds = getattr(settings, "LLM_TIMEOUT_SECONDS", None)
-                    max_retries = getattr(settings, "LLM_MAX_RETRIES", None)
 
                     invoke_kwargs: Dict[str, Any] = {}
                     if timeout_seconds is not None:
                         invoke_kwargs["timeout"] = timeout_seconds
-                    if max_retries is not None:
-                        invoke_kwargs["max_retries"] = max_retries
+                    # NOTE: max_retries is a constructor param, NOT an invoke
+                    # param.  Passing it here caused every provider to crash
+                    # with "got an unexpected keyword argument 'max_retries'".
+                    # Our own @with_rate_limit_and_retry decorator already
+                    # handles retries, so this is not needed.
 
                     response = client.invoke(messages, **invoke_kwargs)
 
@@ -265,6 +267,16 @@ class RateLimitedLLM:
 
                     self.active_provider = provider_name
                     self.active_model = model_name
+
+                    # Log successful response for debugging
+                    response_text = getattr(response, "content", None) or str(response)
+                    logger.info(
+                        "LLM response OK: provider=%s model=%s length=%d preview=%s",
+                        provider_name,
+                        model_name,
+                        len(response_text),
+                        response_text[:120].replace("\n", " ") + ("..." if len(response_text) > 120 else ""),
+                    )
                     return response
 
                 except Exception as exc:
@@ -296,8 +308,14 @@ class RateLimitedLLM:
                     break
 
         if last_error:
+            logger.error(
+                "ALL %d LLM providers failed. Last error: %s",
+                len(self.provider_candidates),
+                last_error,
+            )
             raise last_error
 
+        logger.error("No configured LLM providers are available.")
         raise AccessDeniedError("No configured LLM providers are available.", status_code=403)
 
     def invoke_with_fallback(
@@ -343,14 +361,36 @@ class RateLimitedLLM:
         }
 
 
+# ─── Per-Agent Provider/Model Routing ────────────────────
+# Maps agent roles to specific providers and models so that the multi-agent
+# system distributes load across free-tier quotas instead of hammering one.
+AGENT_PROVIDER_MAP: Dict[str, Dict[str, str]] = {
+    "master":    {"provider": "gemini",     "model": "gemini-2.5-flash"},
+    "educator":  {"provider": "openrouter", "model": "meta-llama/llama-3.3-70b-instruct:free"},
+    "analyzer":  {"provider": "groq",       "model": "llama-3.3-70b-versatile"},
+    "planner":   {"provider": "gemini",     "model": "gemini-2.5-flash"},
+    "advisor":   {"provider": "openrouter", "model": "qwen/qwen3-235b-a22b:free"},
+    "optimizer": {"provider": "groq",       "model": "llama-3.1-8b-instant"},
+}
+
+
 def create_llm(agent_type: str = "default", provider: Optional[str] = None) -> RateLimitedLLM:
     config = settings.get_agent_config(agent_type)
 
-    provider_name = provider or _resolve_provider_name()
+    # Check the per-agent routing map first, then fall back to env / auto-detect.
+    agent_map = AGENT_PROVIDER_MAP.get(agent_type, {})
+    provider_name = provider or agent_map.get("provider") or _resolve_provider_name()
     provider_config = PROVIDER_CONFIGS.get(provider_name)
 
-    model = provider_config.default_model if provider_config else settings.MODEL_NAME
+    model = agent_map.get("model") or (provider_config.default_model if provider_config else settings.MODEL_NAME)
     candidates = provider_config.model_candidates if provider_config else settings.MODEL_CANDIDATES
+
+    logger.info(
+        "create_llm: agent_type=%s provider=%s model=%s",
+        agent_type,
+        provider_name,
+        model,
+    )
 
     return RateLimitedLLM(
         model=model,

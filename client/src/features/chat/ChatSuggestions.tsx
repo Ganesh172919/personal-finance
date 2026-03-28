@@ -36,22 +36,22 @@ export function ChatSuggestions({ onSelect }: ChatSuggestionsProps) {
   ];
 
   return (
-    <div className="flex flex-col items-center justify-center h-full p-8">
+    <div className="flex h-full flex-col items-center justify-start overflow-y-auto px-5 py-8 sm:px-6 sm:py-10">
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-center mb-8"
+        className="mb-6 text-center"
       >
-        <div className="w-16 h-16 bg-gradient-to-br from-primary to-primary/50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-          <Sparkles className="w-8 h-8 text-primary-foreground" />
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/50">
+          <Sparkles className="h-6 w-6 text-primary-foreground" />
         </div>
-        <h2 className="text-2xl font-bold mb-2">How can I help you today?</h2>
-        <p className="text-muted-foreground max-w-md">
+        <h2 className="mb-2 text-xl font-bold sm:text-2xl">How can I help you today?</h2>
+        <p className="max-w-xl text-sm text-muted-foreground">
           Ask a finance question, upload supporting files in the composer, and let the multi-agent workflow build a grounded answer.
         </p>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl w-full">
+      <div className="grid w-full max-w-3xl grid-cols-1 gap-3 md:grid-cols-2">
         {suggestions.map((suggestion, index) => (
           <motion.div
             key={index}
@@ -60,12 +60,12 @@ export function ChatSuggestions({ onSelect }: ChatSuggestionsProps) {
             transition={{ delay: index * 0.1 }}
           >
             <Card
-              className="p-4 cursor-pointer hover:shadow-lg transition-all duration-200 border-2 hover:border-primary/50 group"
+              className="group cursor-pointer border-2 p-3.5 transition-all duration-200 hover:border-primary/50 hover:shadow-lg"
               onClick={() => onSelect(suggestion.text)}
             >
               <div className="flex items-start gap-3">
-                <div className={`p-2 rounded-lg bg-gradient-to-br ${suggestion.gradient} text-white`}>
-                  <suggestion.icon className="w-4 h-4" />
+                <div className={`rounded-lg bg-gradient-to-br p-2 ${suggestion.gradient} text-white`}>
+                  <suggestion.icon className="h-4 w-4" />
                 </div>
                 <p className="text-sm font-medium group-hover:text-primary transition-colors">
                   {suggestion.text}

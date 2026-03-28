@@ -26,17 +26,17 @@ const capabilityHighlights = [
   {
     icon: BrainCircuit,
     label: "Multi-agent reasoning",
-    description: "Budget, debt, portfolio, and educator paths can contribute to the same answer.",
+    description: "Budget, debt, portfolio, and educator views can shape one answer.",
   },
   {
     icon: Workflow,
     label: "Autopilot-ready actions",
-    description: "Tool previews and workflow creation stay simulation-first before execution.",
+    description: "Preview tools and workflows before anything is applied.",
   },
   {
     icon: ShieldCheck,
     label: "Provider visibility",
-    description: "Inspect failover chain, request metadata, and circuit-breaker health from the UI.",
+    description: "Check failover status, metadata, and provider health in one place.",
   },
 ];
 
@@ -71,9 +71,9 @@ export default function ChatPage() {
       </div>
 
       <header className="relative border-b border-border/70 bg-background/85 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1400px] flex-col gap-4 px-4 py-4 lg:px-6">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex items-start gap-3">
+        <div className="mx-auto flex max-w-[1480px] flex-col gap-3 px-4 py-3 lg:px-5">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+            <div className="flex min-w-0 items-start gap-3">
               <Button
                 variant="ghost"
                 size="icon"
@@ -84,8 +84,8 @@ export default function ChatPage() {
                 {showMobileSidebar ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </Button>
 
-              <div className="space-y-4">
-                <div className="flex flex-wrap items-center gap-3">
+              <div className="min-w-0 flex-1 space-y-3">
+                <div className="flex flex-wrap items-center gap-2.5">
                   <Link
                     href="/dashboard"
                     className="flex items-center gap-3 rounded-[calc(var(--radius)-6px)] border border-border/70 bg-card/75 px-3 py-2 no-underline"
@@ -99,39 +99,53 @@ export default function ChatPage() {
                     </div>
                   </Link>
 
-                  <Badge className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-primary">
+                  <Badge className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
                     Live agent workspace
                   </Badge>
                 </div>
 
-                <div className="space-y-2">
-                  <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                <div className="max-w-3xl space-y-1.5">
+                  <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl xl:text-[2rem]">
                     Collaborate with your finance agents in one place
                   </h1>
-                  <p className="max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
+                  <p className="max-w-2xl text-sm leading-5 text-muted-foreground">
                     Ask a question, review the workflow trace, inspect provider failover, and move from
                     analysis to action without leaving the conversation.
                   </p>
                 </div>
 
-                <div className="hidden grid-cols-1 gap-3 md:grid md:grid-cols-3">
+                <div className="hidden flex-wrap gap-2 lg:flex 2xl:hidden">
                   {capabilityHighlights.map((item) => (
                     <div
                       key={item.label}
-                      className="rounded-[calc(var(--radius)-6px)] border border-border/70 bg-card/70 p-3"
+                      className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/70 px-3 py-2"
                     >
-                      <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-2xl bg-background/80 text-primary">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-background/80 text-primary">
+                        <item.icon className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="text-xs font-medium text-foreground">{item.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden grid-cols-3 gap-2 2xl:grid">
+                  {capabilityHighlights.map((item) => (
+                    <div
+                      key={item.label}
+                      className="rounded-[calc(var(--radius)-8px)] border border-border/70 bg-card/70 p-2.5"
+                    >
+                      <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-2xl bg-background/80 text-primary">
                         <item.icon className="h-4 w-4" />
                       </div>
                       <div className="text-sm font-semibold text-foreground">{item.label}</div>
-                      <div className="mt-1 text-xs leading-5 text-muted-foreground">{item.description}</div>
+                      <div className="mt-1 text-xs leading-4 text-muted-foreground">{item.description}</div>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 xl:max-w-[560px] xl:justify-end">
               <AiStatusDialog />
               <ThemeToggle compact />
 
@@ -154,12 +168,12 @@ export default function ChatPage() {
                 </Button>
               </Link>
 
-              <div className="ml-1 flex items-center gap-3 rounded-[calc(var(--radius)-6px)] border border-border/70 bg-card/75 px-3 py-2">
-                <Avatar className="h-9 w-9">
+              <div className="flex items-center gap-3 rounded-[calc(var(--radius)-6px)] border border-border/70 bg-card/75 px-3 py-2">
+                <Avatar className="h-8 w-8">
                   <AvatarImage src={user?.photoURL || ""} alt={user?.name || ""} />
                   <AvatarFallback>{user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
                 </Avatar>
-                <div className="min-w-0 max-w-[160px]">
+                <div className="min-w-0 max-w-[150px]">
                   <div className="truncate text-sm font-medium text-foreground">{user?.name || "Workspace user"}</div>
                   <div className="truncate text-xs text-muted-foreground">{user?.email || "Signed in"}</div>
                 </div>
@@ -172,8 +186,8 @@ export default function ChatPage() {
         </div>
       </header>
 
-      <div className="relative flex min-h-0 flex-1 gap-4 p-4 lg:p-6">
-        <aside className="hidden w-80 shrink-0 overflow-hidden rounded-[calc(var(--radius)+4px)] border border-border/70 surface-panel lg:flex lg:flex-col">
+      <div className="relative flex min-h-0 flex-1 gap-3 p-3 lg:gap-4 lg:p-4">
+        <aside className="hidden w-72 shrink-0 overflow-hidden rounded-[calc(var(--radius)+4px)] border border-border/70 surface-panel lg:flex lg:flex-col xl:w-[290px]">
           <ChatHistorySidebar />
         </aside>
 
@@ -207,12 +221,12 @@ export default function ChatPage() {
           <ChatContainer sessionId={sessionId} />
         </main>
 
-        <aside className="hidden w-[320px] shrink-0 flex-col gap-4 xl:flex">
+        <aside className="hidden w-[280px] shrink-0 flex-col gap-3 xl:flex 2xl:w-[296px]">
           <ConversationInsightsPanel compact className="overflow-hidden rounded-[calc(var(--radius)+4px)] border-border/70 surface-panel" />
 
-          <div className="rounded-[calc(var(--radius)+4px)] border border-border/70 bg-card/70 p-5">
+          <div className="rounded-[calc(var(--radius)+4px)] border border-border/70 bg-card/70 p-4">
             <div className="text-sm font-semibold text-foreground">Use files to ground your chat</div>
-            <div className="mt-2 text-sm leading-6 text-muted-foreground">
+            <div className="mt-2 text-sm leading-5 text-muted-foreground">
               Upload statements, screenshots, spreadsheets, or notes, then attach them in chat to give the AI real
               context before it responds.
             </div>

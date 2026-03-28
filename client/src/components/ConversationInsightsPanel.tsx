@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { cn } from "@/lib/utils";
 import { fetchConversationInsights } from "@/services/chatApi";
 import type { ActionItem } from "@/types/ai.types";
 
@@ -21,14 +22,14 @@ const collectActionItems = (plan?: {
     next_30_days?: ActionItem[];
     next_12_months?: ActionItem[];
   };
-}) => {
+}, limit = 3) => {
   if (!plan?.actions) return [];
 
   return [
     ...(plan.actions.next_7_days || []),
     ...(plan.actions.next_30_days || []),
     ...(plan.actions.next_12_months || []),
-  ].slice(0, 3);
+  ].slice(0, limit);
 };
 
 export function ConversationInsightsPanel({
@@ -42,17 +43,22 @@ export function ConversationInsightsPanel({
   });
 
   const actionItems = useMemo(
-    () => collectActionItems(insightsQuery.data?.plan),
-    [insightsQuery.data?.plan]
+    () => collectActionItems(insightsQuery.data?.plan, compact ? 2 : 3),
+    [compact, insightsQuery.data?.plan]
   );
 
   return (
     <Card className={className}>
-      <div className="flex flex-col gap-4 p-5">
+      <div className={cn("flex flex-col", compact ? "gap-3 p-4" : "gap-4 p-5")}>
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+              <div
+                className={cn(
+                  "flex items-center justify-center rounded-2xl bg-primary text-primary-foreground",
+                  compact ? "h-9 w-9" : "h-10 w-10"
+                )}
+              >
                 <BrainCircuit className="h-4 w-4" />
               </div>
               <div>
@@ -67,7 +73,7 @@ export function ConversationInsightsPanel({
           <Button
             variant="ghost"
             size="icon"
-            className="rounded-2xl"
+            className={cn("rounded-2xl", compact ? "h-8 w-8" : "")}
             onClick={() => insightsQuery.refetch()}
             disabled={insightsQuery.isFetching}
             aria-label="Refresh conversation insights"

@@ -49,16 +49,16 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
 
   return (
     <motion.div
-      className="flex flex-col h-full bg-background"
+      className="flex h-full flex-col bg-background/70"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
       {/* Chat Header - simplified without New Chat button */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-card/80 px-5 py-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-foreground">Personal Finance AI Assistant</h1>
+          <h1 className="text-base font-semibold text-foreground sm:text-lg">Personal Finance AI Assistant</h1>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="hidden text-xs text-muted-foreground sm:block">
           Your intelligent financial co-pilot
         </p>
       </div>

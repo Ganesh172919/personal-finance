@@ -15,6 +15,7 @@ client/.vite/
 
 server/.env
 client/.env
+server/AI_Core/.env
 plugin-runtime/.env
 observability/.env
 
