@@ -1,6 +1,6 @@
-# Personal Finance — Contributing Guidelines
+# FinWise — Contributing Guidelines
 
-> How to contribute to the Personal Finance project, including coding standards, branching strategy, and PR process.
+> How to contribute to the FinWise project, including coding standards, branching strategy, and PR process.
 
 ---
 

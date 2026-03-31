@@ -1,6 +1,6 @@
-# Personal Finance — Deployment & Production Guide
+# FinWise — Deployment & Production Guide
 
-> How to build, deploy, and run Personal Finance in production environments.
+> How to build, deploy, and run FinWise in production environments.
 
 ---
 

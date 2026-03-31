@@ -1,6 +1,6 @@
-# Workflows
+# FinWise — Workflows
 
-Comprehensive guide to the automated workflow system in Personal Finance.
+Comprehensive guide to the automated workflow system in FinWise.
 
 ## Overview
 

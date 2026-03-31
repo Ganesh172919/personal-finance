@@ -1,6 +1,6 @@
-# Personal Finance — Services Catalog
+# FinWise — Services Catalog
 
-> Reference for all 50 business-logic service files in `server/src/services/`. Controllers stay thin — services contain the domain logic.
+> Reference for all 49 business-logic service files in `server/src/services/`. Controllers stay thin — services contain the domain logic.
 
 ---
 

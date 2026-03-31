@@ -1,6 +1,6 @@
-# Personal Finance — Environment Variables Reference
+# FinWise — Environment Variables Reference
 
-> Complete reference for every environment variable across all Personal Finance subsystems. Derived from the Zod schema in `server/src/config/env.ts`.
+> Complete reference for every environment variable across all FinWise subsystems. Derived from the Zod schema in `server/src/config/env.ts`.
 
 ---
 

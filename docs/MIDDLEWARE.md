@@ -1,6 +1,6 @@
-# Personal Finance — Middleware Reference
+# FinWise — Middleware Reference
 
-> Complete reference for the 13 Express middleware modules in `server/src/middleware/`. Applied in order from `app.ts`.
+> Complete reference for the Express middleware modules in `server/src/middleware/`. Applied in order from `app.ts`.
 
 ---
 

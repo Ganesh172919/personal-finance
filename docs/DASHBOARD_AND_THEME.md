@@ -1,6 +1,6 @@
-# Dashboard, Theming, and Media
+# FinWise — Dashboard, Theming, and Media
 
-This guide documents the current dashboard structure, the dark monochrome theme, and the media-loading rules used by blogs and growth stories.
+This guide documents the current dashboard structure, the dual light/dark theme system, and the media-loading rules used by blogs and growth stories.
 
 ## Dashboard intent
 

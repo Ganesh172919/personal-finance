@@ -1,6 +1,6 @@
-# Personal Finance — Testing Guide
+# FinWise — Testing Guide
 
-> How to run, write, and maintain tests across the Personal Finance monorepo.
+> How to run, write, and maintain tests across the FinWise monorepo.
 
 ---
 

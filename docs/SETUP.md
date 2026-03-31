@@ -1,6 +1,6 @@
-# Personal Finance Application — Environment Setup & Configuration Guide
+# FinWise — Environment Setup & Configuration Guide
 
-> A comprehensive, step-by-step master guide to establishing the optimal development and production environments for the Personal Finance Application. This document covers prerequisites, service dependencies, microservice-like spin-up, and robust troubleshooting for common integration issues.
+> A comprehensive, step-by-step master guide to establishing the optimal development and production environments for FinWise. This document covers prerequisites, service dependencies, microservice-like spin-up, and robust troubleshooting for common integration issues.
 
 ---
 
@@ -63,7 +63,7 @@ cp .env.example .env
 
 Open `.env` in your preferred editor. You **must** define the following critical keys to boot the server:
 
-- `MONGO_URI`: E.g., `mongodb://localhost:27017/personal-finance`. Ensure the database exists; Mongoose will create collections automatically.
+- `MONGO_URI`: E.g., `mongodb://localhost:27017/finwise`. Ensure the database exists; Mongoose will create collections automatically.
 - `REDIS_URL`: E.g., `redis://localhost:6379`. Essential for the server to bind queues to worker pools.
 - `JWT_SECRET`: A secure randomly-generated hash used for signing stateless authentication tokens.
 

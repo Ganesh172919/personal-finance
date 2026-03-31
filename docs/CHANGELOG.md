@@ -1,8 +1,29 @@
 # Changelog
 
-All notable changes to the Personal Finance project are documented in this file.
+All notable changes to the FinWise project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [Unreleased]
+
+### Added
+- `INDEX.md` as central documentation hub with quick reference tables
+- `DEVELOPMENT.md` with development guidelines, conventions, and workflows
+- `TROUBLESHOOTING.md` with comprehensive troubleshooting guide
+- Enhanced `README.md` with complete project overview, tech stack, and feature details
+- Enhanced `ARCHITECTURE.md` with data flow diagrams, security architecture, and module dependencies
+- Enhanced `AI_CORE.md` with complete agent documentation, provider failover, and tool call system
+- Enhanced `DATABASE.md` with WorkspaceFile model (49 total models)
+- Enhanced `QUICK_START.md` with corrected env var names and troubleshooting
+- Updated `FRONTEND.md` with Vite 7.3 version and component structure
+
+### Changed
+- Standardized project naming to "FinWise" across documentation
+- Fixed env var naming inconsistency (`MONGO_URI` not `MONGODB_URI`)
+- Corrected model count to 49 across all documentation
+- Corrected middleware count to 13 across all documentation
 
 ---
 
@@ -24,7 +45,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Changed
 
 - `DATABASE.md`: corrected Mongoose model count from 47 to 48 and added the missing `CalendarReminder` model entry
-- `ARCHITECTURE.md`: corrected controller count from 44 to 45, corrected model count from 47 to 48, and updated the documentation guide count
+- `ARCHITECTURE.md`: corrected controller counts and updated the documentation guide count
 - `README.md`: expanded the documentation index and corrected architecture references
 
 ## [1.3.0] - 2026-03-03

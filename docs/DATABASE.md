@@ -1,6 +1,6 @@
-# Personal Finance — Database Models & Schema Reference
+# FinWise — Database Models & Schema Reference
 
-> All 48 Mongoose models used by the Personal Finance backend. The database is **MongoDB**, accessed via Mongoose 8.
+> All 49 Mongoose models used by the FinWise backend. The database is **MongoDB**, accessed via Mongoose 8.
 
 ---
 
@@ -104,11 +104,12 @@ Configured in `server/src/config/database.ts`. Connection string is read from th
 
 ---
 
-### Receipts & Media
+### Receipts, Media & Files
 
-| Model       | File              | Key Fields                                                                                                           |
-| ----------- | ----------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **Receipt** | `receiptModel.ts` | `userId`, `orgId`, `imageFileId` (GridFS), `ocrText`, `extractedData` (vendor, amount, date, items), `transactionId` |
+| Model             | File                      | Key Fields                                                                                                           |
+| ----------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Receipt**       | `receiptModel.ts`         | `userId`, `orgId`, `imageFileId` (GridFS), `ocrText`, `extractedData` (vendor, amount, date, items), `transactionId` |
+| **WorkspaceFile** | `workspaceFileModel.ts`   | `userId`, `orgId`, `filename`, `mimeType`, `size`, `storagePath`, `extractedText`, `aiAnalysis`, `tags[]`            |
 
 ---
 

@@ -1,4 +1,4 @@
-# Personal Finance — Observability Runbook
+# FinWise — Observability Runbook
 
 > How to answer "what's slow?" and "what's failing?" within minutes.
 

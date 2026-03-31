@@ -1,6 +1,6 @@
-# Personal Finance — Plugin System
+# FinWise — Plugin System
 
-> Architecture, permission model, and runtime reference for the Personal Finance plugin system. Plugins extend Personal Finance's functionality through a sandboxed, permission-enforced runtime.
+> Architecture, permission model, and runtime reference for the FinWise plugin system. Plugins extend FinWise's functionality through a sandboxed, permission-enforced runtime.
 
 ---
 

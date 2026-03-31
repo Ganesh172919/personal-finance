@@ -1,4 +1,4 @@
-# AI Providers and Failover
+# FinWise — AI Providers and Failover
 
 This document explains how the AI runtime selects providers, exposes health information, and falls back across multiple model vendors.
 

@@ -1,4 +1,4 @@
-# Realtime Events
+# FinWise — Realtime Events
 
 Comprehensive guide to the realtime events system using Server-Sent Events (SSE) and domain event pub/sub.
 

@@ -1,4 +1,4 @@
-# Personal Finance — Frontend Architecture
+# FinWise — Frontend Architecture
 
 > Guide to the React client application architecture, routing, state management, and component system.
 
@@ -9,7 +9,7 @@
 | Layer            | Technology                    | Version |
 | ---------------- | ----------------------------- | ------- |
 | Framework        | React                         | 18      |
-| Build Tool       | Vite                          | 5+      |
+| Build Tool       | Vite                          | 7.3     |
 | Language         | TypeScript                    | 5+      |
 | Routing          | Wouter                        | —       |
 | State Management | Zustand                       | —       |

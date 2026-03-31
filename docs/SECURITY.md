@@ -1,8 +1,8 @@
-# Personal Finance Security Architecture
+# FinWise Security Architecture
 
 ## Threat Model
 
-Personal Finance handles **sensitive personal financial data** — income, debts, spending patterns, and investment goals. The security architecture follows defense-in-depth with OWASP API Security Top 10 coverage.
+FinWise handles **sensitive personal financial data** — income, debts, spending patterns, and investment goals. The security architecture follows defense-in-depth with OWASP API Security Top 10 coverage.
 
 ### Attack Surface
 
