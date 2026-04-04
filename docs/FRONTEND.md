@@ -111,6 +111,46 @@ All routes are defined in `App.tsx` using **Wouter**. Protected routes are wrapp
 
 ---
 
+## Chat Workspace
+
+The chat experience is implemented as a dedicated full-screen workspace rather than a small dashboard widget.
+
+Key layout pieces:
+
+- `pages/ChatPage.tsx`: overall workspace shell
+- `features/chat/ChatContainer.tsx`: active conversation surface
+- `features/chat/ChatHistorySidebar.tsx`: session history rail
+- `components/ConversationInsightsPanel.tsx`: recent cross-conversation insight card
+- `components/AiStatusDialog.tsx`: provider, failover, key-pool, and model-health visibility
+
+### Recent chat UI updates
+
+Recent UX work made the conversation output more prominent:
+
+- reduced the vertical footprint of the workspace hero/header
+- tightened the in-chat header typography and metadata pills
+- narrowed the right-side insights rail on desktop
+- compacted the "Conversation intelligence" card with smaller icon, badges, and copy
+- removed the max-width cap on the chat input so the composer spans the available conversation width
+
+The goal is to keep the assistant transcript as the dominant surface while still exposing AI health and session continuity.
+
+### AI metadata surfaced in the chat UI
+
+Assistant messages and status surfaces can now show:
+
+- active provider
+- active model
+- active key ID
+- fallback path
+- recovered failure count
+- resumed-from-checkpoint state
+- current workflow phase
+
+This data flows from the Python AI Core through the Node proxy into `chatStore` and the chat message metadata types.
+
+---
+
 ## State Management
 
 ### Zustand Stores
@@ -139,7 +179,7 @@ React Query handles all server state. The query client is configured in `lib/que
 | ---------------------- | ------------------------- | ----------------------------------------------------- |
 | `useAuth`              | `useAuth.tsx`             | Authentication context (user, login, logout, loading) |
 | `useAIStream`          | `useAIStream.ts`          | Server-Sent Events streaming for AI responses         |
-| `useRealtimeEvents`    | `useRealtimeEvents.ts`    | SSE connection for real-time app events               |
+| `useRealtimeEvents`    | `useRealtimeEvents.ts`    | SSE connection for real-time app events and AI status invalidation |
 | `useAppConfig`         | `useAppConfig.ts`         | Fetches public app configuration                      |
 | `useOrgFormatters`     | `useOrgFormatters.ts`     | Currency & date formatting based on org settings      |
 | `useDebounce`          | `useDebounce.ts`          | Debounced value hook                                  |
@@ -219,6 +259,7 @@ All modules use the shared `apiBase.ts` Axios instance with automatic JWT token 
 | `ReceiptOcrDialog`             | Receipt upload & OCR review          |
 | `AgentWorkflowVisualizer`      | Visual workflow execution display    |
 | `AiStatusDialog`               | AI Core status & health dialog       |
+| `ConversationInsightsPanel`    | Compact recent-conversation insight rail |
 | `AppErrorBoundary`             | Global React error boundary          |
 | `FeatureLimitDialog`           | Feature limit reached notification   |
 | `PlanAndUsageDialog`           | Plan details & usage overview        |

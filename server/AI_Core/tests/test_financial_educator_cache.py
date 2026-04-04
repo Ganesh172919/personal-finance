@@ -22,5 +22,4 @@ def test_financial_educator_concept_cache_hits(monkeypatch):
 
     assert calls["count"] == 1
     assert first == second
-    assert set(first.keys()) == {"concept_explained", "explanation", "fallback_used"}
-
+    assert set(first.keys()) == {"concept_explained", "explanation", "fallback_used", "llm_route"}

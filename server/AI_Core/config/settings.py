@@ -50,7 +50,7 @@ class Settings:
     """Application settings configuration."""
 
     # Provider selection
-    # Set LLM_PROVIDER to one of: gemini, openrouter, groq, grok, together, mistral
+    # Set LLM_PROVIDER to one of: gemini, openrouter, groq, openai, deepseek, grok, together, mistral
     # If not set, auto-detects from the first configured API key.
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").strip().lower() or None
 
@@ -58,6 +58,8 @@ class Settings:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip() or None
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip() or None
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip() or None
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip() or None
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip() or None
     XAI_API_KEY = os.getenv("XAI_API_KEY", "").strip() or None
     TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "").strip() or None
     MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "").strip() or None
@@ -148,6 +150,8 @@ class Settings:
             cls.GEMINI_API_KEY,
             cls.OPENROUTER_API_KEY,
             cls.GROQ_API_KEY,
+            cls.OPENAI_API_KEY,
+            cls.DEEPSEEK_API_KEY,
             cls.XAI_API_KEY,
             cls.TOGETHER_API_KEY,
             cls.MISTRAL_API_KEY,
@@ -155,7 +159,7 @@ class Settings:
         if not any(keys):
             raise ValueError(
                 "No LLM API key is configured. Set at least one of: "
-                "GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, "
+                "GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, "
                 "XAI_API_KEY, TOGETHER_API_KEY, MISTRAL_API_KEY"
             )
 

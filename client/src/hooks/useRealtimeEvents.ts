@@ -67,6 +67,8 @@ const EVENT_INVALIDATION_MAP: Record<string, string[][]> = {
     ["insights"],
     ["/api/agent-outputs/user"],
     ["/api/agent-outputs/recent"],
+    ["/api/ai-core/ai/status"],
+    ["/api/ai-core/ai/sessions"],
     ["activity-feed"],
   ],
   TaskCreated: [["tasks"], ["/api/tasks"], ["activity-feed"]],
@@ -95,7 +97,7 @@ const AGGREGATE_INVALIDATION_MAP: Record<string, string[][]> = {
   task: [["tasks"], ["/api/tasks"]],
   workflow: [["workflow-runs"], ["v1/workflows"], ["/api/tasks"]],
   scenario: [["analytics"], ["/api/dashboard/summary"]],
-  insight: [["insights"], ["/api/agent-outputs/user"], ["/api/agent-outputs/recent"]],
+  insight: [["insights"], ["/api/agent-outputs/user"], ["/api/agent-outputs/recent"], ["/api/ai-core/ai/status"], ["/api/ai-core/ai/sessions"]],
   profile: [["/api/financial-profiles/me"], ["/api/dashboard/summary"], ["analytics"]],
   goal: [["/api/financial-profiles/me"], ["/api/dashboard/summary"], ["goals"]],
 };

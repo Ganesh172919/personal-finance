@@ -22,6 +22,7 @@ from tools import PlanInputs, build_plan, render_plan_markdown
 from utils import (
     begin_request_metrics,
     get_llm_call_count,
+    get_last_route_snapshot,
     get_llm_usage,
     get_rate_limiter_status,
     reset_rate_limiter,
@@ -61,6 +62,7 @@ except Exception as _mem_exc:
         pass
     _memory_store = None
     _extract_memories = None
+
 
 def _tool_id(seed: str) -> str:
     digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
@@ -243,12 +245,14 @@ def _build_default_tool_calls(plan: Plan, user_profile: Dict[str, Any]) -> List[
 
     return tool_calls[:5]
 
+
 # Validate API key
 try:
     settings.validate_api_key()
 except ValueError as e:
     logger.warning(f"Startup warning: {str(e)}")
     logger.warning("Continuing in fallback-capable mode (deterministic outputs + no LLM narrative).")
+
 
 # Lifespan for startup (fixes deprecation)
 @asynccontextmanager
@@ -259,6 +263,7 @@ async def lifespan(app: FastAPI):
     logger.info("AI Core ready!")
     yield
     logger.info("Shutting down FinWise AI Core...")
+
 
 app = FastAPI(title="FinWise AI Core", version="1.0.0", lifespan=lifespan)
 
@@ -277,6 +282,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/metrics")
 async def metrics(authorization: Optional[str] = Header(default=None)):
     token = (os.getenv("AI_CORE_METRICS_TOKEN") or "").strip()
@@ -284,10 +290,11 @@ async def metrics(authorization: Optional[str] = Header(default=None)):
         raise HTTPException(status_code=404, detail="Metrics disabled")
 
     header = (authorization or "").strip()
-    if not header.startswith("Bearer ") or header[len("Bearer "):] != token:
+    if not header.startswith("Bearer ") or header[len("Bearer ") :] != token:
         raise HTTPException(status_code=403, detail="Forbidden")
 
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 
 @app.middleware("http")
 async def attach_request_id(request: Request, call_next):
@@ -337,6 +344,7 @@ async def attach_request_id(request: Request, call_next):
 
     return response
 
+
 def _simplify_for_json(obj: Any) -> Any:
     """Recursively simplify objects for JSON serialization (pandas-safe)"""
     if obj is None:
@@ -356,12 +364,13 @@ def _simplify_for_json(obj: Any) -> Any:
         return cleaned
     elif isinstance(obj, (list, tuple)):
         return [_simplify_for_json(item) for item in obj]
-    elif hasattr(obj, 'model_dump'):
+    elif hasattr(obj, "model_dump"):
         return _simplify_for_json(obj.model_dump())
-    elif hasattr(obj, '__dict__'):
+    elif hasattr(obj, "__dict__"):
         return _simplify_for_json(obj.__dict__)
     else:
         return str(obj)
+
 
 # Request/Response Models (unchanged)
 class FinancialGoalRequest(BaseModel):
@@ -370,11 +379,13 @@ class FinancialGoalRequest(BaseModel):
     timeline_months: int
     priority: int = 1
 
+
 class DebtRequest(BaseModel):
     name: str
     balance: float
     interest_rate: float
     minimum_payment: float
+
 
 class TransactionRequest(BaseModel):
     amount: float
@@ -382,6 +393,7 @@ class TransactionRequest(BaseModel):
     description: str
     date: str
     type: Optional[str] = None
+
 
 class UserProfileRequest(BaseModel):
     age: int
@@ -398,26 +410,33 @@ class UserProfileRequest(BaseModel):
     locale: Optional[str] = None
     timezone: Optional[str] = None
 
+
 class ConversationMessage(BaseModel):
     role: str
     content: str
 
+
 class ProcessOptions(BaseModel):
     narrative: bool = False
+
 
 class ProcessRequest(BaseModel):
     user_input: str
     user_profile: Optional[UserProfileRequest] = None
     org_id: Optional[str] = None
     user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    resume_from_checkpoint: bool = False
     conversation_history: List[ConversationMessage] = Field(default_factory=list)
     session_summary: Optional[str] = None
     options: ProcessOptions = Field(default_factory=ProcessOptions)
+
 
 class ScenarioAssumptions(BaseModel):
     months: int = Field(default=12, ge=1, le=120)
     expected_return_pct: Optional[float] = Field(default=None, ge=-100, le=100)
     inflation_pct: Optional[float] = Field(default=None, ge=-50, le=100)
+
 
 class WhatIfScenarioRequest(BaseModel):
     user_profile: UserProfileRequest
@@ -426,11 +445,13 @@ class WhatIfScenarioRequest(BaseModel):
     description: Optional[str] = ""
     assumptions: ScenarioAssumptions = Field(default_factory=ScenarioAssumptions)
 
+
 @app.get("/health")
 async def health_check(request: Request):
     """Health check endpoint"""
     vision_status = get_vision_dependency_status()
     from utils.provider_registry import _resolve_provider_name, get_provider_config, resolve_provider_chain
+
     active_provider = _resolve_provider_name()
     provider_config = get_provider_config(active_provider)
     return {
@@ -440,7 +461,7 @@ async def health_check(request: Request):
         "llm_model": provider_config.default_model,
         "provider_chain": resolve_provider_chain(active_provider),
         "vision": vision_status,
-        "request_id": request.state.request_id
+        "request_id": request.state.request_id,
     }
 
 
@@ -448,11 +469,322 @@ async def health_check(request: Request):
 async def list_llm_providers(request: Request):
     """List all available LLM providers and their status."""
     from utils.provider_registry import list_providers as _list_providers
+
     providers = _list_providers()
     return {
         "providers": providers,
         "request_id": request.state.request_id,
     }
+
+
+@app.get("/api/ai/status")
+async def get_ai_status(request: Request):
+    """
+    Get comprehensive AI system status including:
+    - Provider/model information
+    - Key pool health and rotation stats per provider
+    - Session manager stats
+    - Model catalog summary
+    - Rate limiter status
+    """
+    from utils.provider_registry import (
+        _resolve_provider_name,
+        get_provider_config,
+        resolve_provider_chain,
+    )
+    from utils.key_pool import get_all_key_pools, get_key_pool
+    from utils.model_catalog import get_catalog_stats
+    from utils.model_health import get_model_health_tracker
+    from utils.session_manager import get_session_manager
+
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+
+    # 1. Provider information
+    active_provider = _resolve_provider_name()
+    provider_config = get_provider_config(active_provider)
+    provider_chain = resolve_provider_chain(active_provider)
+
+    # 2. Key pool health for all initialized providers
+    key_pools_status = {}
+    all_pools = get_all_key_pools()
+    for provider_name, pool in all_pools.items():
+        key_pools_status[provider_name] = pool.get_stats()
+
+    # Ensure the active provider's pool is initialized and included
+    if active_provider not in key_pools_status:
+        try:
+            pool = get_key_pool(active_provider)
+            key_pools_status[active_provider] = pool.get_stats()
+        except Exception:
+            pass
+
+    # 3. Model catalog summary (use built-in stats function)
+    catalog_stats = get_catalog_stats()
+
+    # 4. Session manager stats
+    session_stats = {}
+    try:
+        manager = get_session_manager()
+        session_stats = manager.get_stats()
+    except Exception as e:
+        session_stats = {"error": str(e)[:200]}
+
+    # 5. Rate limiter status
+    rate_limit_status = {}
+    try:
+        rate_limit_status = get_rate_limiter_status()
+    except Exception as e:
+        rate_limit_status = {"error": str(e)[:200]}
+
+    # 6. LLM usage for current request context
+    llm_usage = {}
+    try:
+        llm_usage = get_llm_usage()
+    except Exception:
+        pass
+
+    # 7. Vision status
+    vision_status = get_vision_dependency_status()
+
+    # 8. Memory store status
+    memory_status = {"enabled": _memory_store is not None}
+    model_health = get_model_health_tracker().get_stats()
+    last_route = get_last_route_snapshot()
+
+    return {
+        "status": "healthy",
+        "service": "FinWise AI Core",
+        "request_id": request_id,
+        "provider": {
+            "active": active_provider,
+            "display_name": provider_config.display_name,
+            "default_model": provider_config.default_model,
+            "fallback_chain": provider_chain,
+        },
+        "key_pools": key_pools_status,
+        "model_catalog": catalog_stats,
+        "model_health": model_health,
+        "sessions": session_stats,
+        "rate_limiter": rate_limit_status,
+        "llm_usage": llm_usage,
+        "last_route": last_route,
+        "vision": vision_status,
+        "memory": memory_status,
+    }
+
+
+@app.get("/api/ai/sessions")
+async def list_ai_sessions(
+    request: Request,
+    org_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    limit: int = 20,
+):
+    """
+    List resumable AI sessions for a user.
+
+    Query params:
+    - org_id: Organization ID (required for filtered results)
+    - user_id: User ID (required for filtered results)
+    - limit: Max sessions to return (default 20)
+    """
+    from utils.session_manager import get_session_manager
+
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+
+    try:
+        manager = get_session_manager()
+
+        if org_id and user_id:
+            sessions = manager.get_resumable_sessions(
+                org_id=org_id.strip(),
+                user_id=user_id.strip(),
+                limit=min(limit, 50),
+            )
+            return {
+                "success": True,
+                "sessions": [s.to_dict() for s in sessions],
+                "count": len(sessions),
+                "request_id": request_id,
+            }
+        else:
+            # Return overall stats if no user filter
+            stats = manager.get_stats()
+            return {
+                "success": True,
+                "stats": stats,
+                "message": "Provide org_id and user_id to list specific sessions",
+                "request_id": request_id,
+            }
+
+    except Exception as e:
+        logger.error(f"[requestId={request_id}] Error listing sessions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/sessions/{session_id}")
+async def get_ai_session(session_id: str, request: Request):
+    """
+    Get details of a specific AI session including checkpoints.
+    """
+    from utils.session_manager import get_session_manager
+
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+
+    try:
+        manager = get_session_manager()
+        session = manager.get_session(session_id)
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        checkpoints = manager.get_checkpoints(session_id, limit=20)
+
+        return {
+            "success": True,
+            "session": session.to_dict(),
+            "checkpoints": [c.to_dict() for c in checkpoints],
+            "request_id": request_id,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[requestId={request_id}] Error getting session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ai/sessions/{session_id}/resume")
+async def resume_ai_session(session_id: str, request: Request):
+    """
+    Resume a paused or in-progress session.
+    Returns the session state and latest checkpoint for the client to continue.
+    """
+    from utils.session_manager import get_session_manager, SessionStatus
+
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+
+    try:
+        manager = get_session_manager()
+        session = manager.get_session(session_id)
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        if session.status in (SessionStatus.COMPLETED, SessionStatus.EXPIRED):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Session cannot be resumed (status: {session.status.value})",
+            )
+
+        # Get latest checkpoint
+        latest_checkpoint = manager.get_latest_checkpoint(session_id)
+
+        # Update session to in_progress
+        session.status = SessionStatus.IN_PROGRESS
+        manager.update_session(session)
+
+        return {
+            "success": True,
+            "session": session.to_dict(),
+            "checkpoint": latest_checkpoint.to_dict() if latest_checkpoint else None,
+            "message": "Session resumed successfully",
+            "request_id": request_id,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[requestId={request_id}] Error resuming session: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ai/sessions/cleanup")
+async def cleanup_expired_sessions(request: Request):
+    """
+    Clean up expired sessions. Admin endpoint.
+    """
+    from utils.session_manager import get_session_manager
+
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+
+    try:
+        manager = get_session_manager()
+        count = manager.cleanup_expired()
+
+        return {
+            "success": True,
+            "cleaned_up": count,
+            "message": f"Cleaned up {count} expired sessions",
+            "request_id": request_id,
+        }
+
+    except Exception as e:
+        logger.error(f"[requestId={request_id}] Error cleaning sessions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/models")
+async def list_ai_models(
+    request: Request,
+    provider: Optional[str] = None,
+    capability: Optional[str] = None,
+):
+    """
+    List available AI models from the catalog.
+
+    Query params:
+    - provider: Filter by provider (e.g., "openai", "anthropic")
+    - capability: Filter by capability (e.g., "reasoning", "code", "vision")
+    """
+    from utils.model_catalog import (
+        get_all_models,
+        get_models_by_provider,
+        get_models_for_task,
+        ModelCapability,
+    )
+
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+
+    try:
+        models = get_all_models()
+
+        # Filter by provider
+        if provider:
+            models = get_models_by_provider(provider.strip().lower())
+
+        # Filter by capability
+        if capability:
+            try:
+                cap = ModelCapability(capability.strip().lower())
+                cap_models = get_models_for_task(cap)
+                # Intersect with provider filter if applied
+                if provider:
+                    cap_model_ids = {m.model_id for m in cap_models}
+                    models = [m for m in models if m.model_id in cap_model_ids]
+                else:
+                    models = cap_models
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid capability: {capability}. Valid options: {[c.value for c in ModelCapability]}",
+                )
+
+        # Convert to serializable format using the model's to_dict method
+        model_list = [m.to_dict() for m in models]
+
+        return {
+            "success": True,
+            "models": model_list,
+            "count": len(model_list),
+            "request_id": request_id,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[requestId={request_id}] Error listing models: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def _normalize_vision_lang(lang: Optional[str]) -> tuple[str, List[str]]:
@@ -581,11 +913,12 @@ async def rate_limit_status(request: Request):
             "success": True,
             "rate_limit_status": status,
             "message": "Rate limiter is active. Requests are automatically throttled.",
-            "request_id": request.state.request_id
+            "request_id": request.state.request_id,
         }
     except Exception as e:
         logger.error(f"[requestId={request.state.request_id}] Error getting rate limit status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/rate-limit/reset")
 async def rate_limit_reset(request: Request):
@@ -595,11 +928,12 @@ async def rate_limit_reset(request: Request):
         return {
             "success": True,
             "message": "Rate limiter has been reset. Token buckets refilled.",
-            "request_id": request.state.request_id
+            "request_id": request.state.request_id,
         }
     except Exception as e:
         logger.error(f"[requestId={request.state.request_id}] Error resetting rate limiter: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/agents/process", response_model=ProcessResponse)
 async def process_financial_request(request: ProcessRequest, http_request: Request):
@@ -615,42 +949,46 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             len(request.conversation_history or []),
             bool(getattr(request.options, "narrative", False)),
         )
-        
+
         user_profile_dict = request.user_profile.model_dump() if request.user_profile else None
-        
+
         profile_instance = None
         if user_profile_dict:
             # Convert financial goals
             goals = []
-            for goal in user_profile_dict.get('financial_goals', []):
-                goals.append(FinancialGoal(
-                    name=goal['name'],
-                    target=goal['target'],
-                    timeline_months=goal['timeline_months'],
-                    priority=goal.get('priority', 1)
-                ))
-            
+            for goal in user_profile_dict.get("financial_goals", []):
+                goals.append(
+                    FinancialGoal(
+                        name=goal["name"],
+                        target=goal["target"],
+                        timeline_months=goal["timeline_months"],
+                        priority=goal.get("priority", 1),
+                    )
+                )
+
             # Create UserProfile instance
             profile_instance = UserProfile(
-                age=user_profile_dict['age'],
-                annual_income=user_profile_dict['annual_income'],
-                monthly_expenses=user_profile_dict['monthly_expenses'],
-                savings=user_profile_dict['savings'],
-                debts=user_profile_dict['debts'],
+                age=user_profile_dict["age"],
+                annual_income=user_profile_dict["annual_income"],
+                monthly_expenses=user_profile_dict["monthly_expenses"],
+                savings=user_profile_dict["savings"],
+                debts=user_profile_dict["debts"],
                 financial_goals=goals,
-                risk_tolerance=user_profile_dict['risk_tolerance'],
-                investment_experience=user_profile_dict['investment_experience'],
-                time_horizon=user_profile_dict['time_horizon'],
-                transactions=user_profile_dict.get('transactions', []),
-                currency=user_profile_dict.get('currency'),
-                locale=user_profile_dict.get('locale'),
-                timezone=user_profile_dict.get('timezone'),
+                risk_tolerance=user_profile_dict["risk_tolerance"],
+                investment_experience=user_profile_dict["investment_experience"],
+                time_horizon=user_profile_dict["time_horizon"],
+                transactions=user_profile_dict.get("transactions", []),
+                currency=user_profile_dict.get("currency"),
+                locale=user_profile_dict.get("locale"),
+                timezone=user_profile_dict.get("timezone"),
             )
             profile_data_for_workflow = profile_instance.model_dump()
         else:
             profile_data_for_workflow = None
 
-        conversation_history = [msg.model_dump() for msg in request.conversation_history] if request.conversation_history else []
+        conversation_history = (
+            [msg.model_dump() for msg in request.conversation_history] if request.conversation_history else []
+        )
         options = request.options.model_dump() if request.options else {"narrative": False}
 
         org_id = (request.org_id or "").strip() if hasattr(request, "org_id") else ""
@@ -667,8 +1005,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                 )
                 if memories:
                     lines = [
-                        f"- {m.key}: {m.value} (confidence {m.confidence:.2f}, source {m.source})"
-                        for m in memories
+                        f"- {m.key}: {m.value} (confidence {m.confidence:.2f}, source {m.source})" for m in memories
                     ]
                     memory_block = "User memory (preferences/facts):\n" + "\n".join(lines)
                     base = (session_summary or "").strip()
@@ -680,9 +1017,13 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
         result = workflow.process_request(
             request.user_input,
             profile_data_for_workflow,
+            org_id=org_id or None,
+            user_id=user_id or None,
             conversation_history=conversation_history,
             session_summary=session_summary,
             options=options,
+            session_id=(request.session_id or "").strip() or None,
+            resume_from_checkpoint=bool(request.resume_from_checkpoint),
         )
 
         if _memory_store is not None and _extract_memories is not None and org_id and user_id:
@@ -701,7 +1042,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             return value_str if value_str in {"low", "medium", "high"} else "medium"
 
         plan_dict: Optional[Dict[str, Any]] = None
-        
+
         if isinstance(final_output, dict):
             response_text = final_output.get("response", str(final_output))
             agent = final_output.get("agent", "master")
@@ -709,7 +1050,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             priority = normalize_priority(final_output.get("priority", "medium"))
             fallback_used = bool(final_output.get("fallback_used")) or bool(result.get("fallback_used"))
             plan_dict = final_output.get("plan") if isinstance(final_output.get("plan"), dict) else None
-            
+
             # Ensure insights is clean list of dicts
             raw_insights = final_output.get("insights", [])
             insights = []
@@ -720,9 +1061,10 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                             "agent": str(item.get("agent", "unknown")),
                             "title": str(item.get("title", "Insight")),
                             "description": str(item.get("description", "")),
-                            "actionType": str(item.get("actionType", "review"))
+                            "actionType": str(item.get("actionType", "review")),
                         }
                         insights.append(clean_insight)
+            llm_route = final_output.get("llm_route") if isinstance(final_output.get("llm_route"), dict) else None
         else:
             response_text = str(final_output)
             agent = "financial_educator"
@@ -730,7 +1072,8 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             priority = "medium"
             insights = []
             fallback_used = bool(result.get("fallback_used"))
-        
+            llm_route = result.get("llm_route") if isinstance(result.get("llm_route"), dict) else None
+
         # Determine agents involved
         agents_involved = []
         if result.get("income_analysis"):
@@ -743,7 +1086,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             agents_involved.append("debt_optimizer")
         if result.get("financial_education"):
             agents_involved.append("financial_educator")
-        
+
         if not agents_involved and agent:
             agents_involved = [agent]
         elif not agents_involved:
@@ -757,7 +1100,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                     traced_agents.append(trace_agent)
             if traced_agents:
                 agents_involved = traced_agents
-        
+
         # Simplify detailed analysis (enhanced for pandas)
         detailed_analysis = {}
         for key in ["income_analysis", "budget_plan", "investment_advice", "debt_optimization", "financial_education"]:
@@ -768,11 +1111,18 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                 except Exception as e:
                     logger.warning(f"[requestId={request_id}] Error simplifying {key}: {str(e)}")
                     detailed_analysis[key] = {"error": str(e)}
-        
+
+        if llm_route:
+            detailed_analysis["llm_route"] = _simplify_for_json(llm_route)
+        if result.get("session_memory"):
+            detailed_analysis["session_memory"] = _simplify_for_json(result.get("session_memory"))
+
         # === FIX: Clean analysis_type (enum → str) ===
         analysis_raw = result.get("current_analysis", {}).get("type", "comprehensive")
-        analysis_type = str(analysis_raw).split('.')[-1].lower() if hasattr(analysis_raw, 'name') else str(analysis_raw).lower()
-        
+        analysis_type = (
+            str(analysis_raw).split(".")[-1].lower() if hasattr(analysis_raw, "name") else str(analysis_raw).lower()
+        )
+
         # Build structured plan (always present)
         if plan_dict is not None:
             plan = Plan.model_validate(plan_dict)
@@ -815,11 +1165,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                 except Exception:
                     continue
 
-        if (
-            not tool_call_models
-            and profile_data_for_workflow
-            and isinstance(profile_data_for_workflow, dict)
-        ):
+        if not tool_call_models and profile_data_for_workflow and isinstance(profile_data_for_workflow, dict):
             try:
                 tool_call_models = _build_default_tool_calls(plan, profile_data_for_workflow)
             except Exception:
@@ -905,6 +1251,14 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
         if fallback_used:
             FALLBACK_TOTAL.labels(endpoint="process").inc()
 
+        session_status = None
+        if result.get("phase") == "complete":
+            session_status = "completed"
+        elif result.get("phase") == "error":
+            session_status = "failed"
+        elif result.get("session_id"):
+            session_status = "in_progress"
+
         return ProcessResponse(
             success=True,
             final_output=str(response_text),
@@ -922,13 +1276,19 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             plan=plan,
             usage=get_llm_usage(),
             tool_calls=tool_call_models,
+            session_id=result.get("session_id"),
+            session_status=session_status,
+            workflow_phase=result.get("phase"),
+            active_provider=llm_route.get("active_provider") if llm_route else None,
+            active_model=llm_route.get("active_model") if llm_route else None,
+            active_key_id=llm_route.get("active_key_id") if llm_route else None,
+            fallback_path=llm_route.get("fallback_path") if llm_route else [],
+            recovered_failures=llm_route.get("recovered_failures") if llm_route else [],
+            recovered_from_checkpoint=bool(result.get("recovered_from_checkpoint")),
         )
-        
+
     except Exception as e:
-        logger.error(
-            f"[requestId={request_id}] Error processing request: {str(e)}",
-            exc_info=True
-        )
+        logger.error(f"[requestId={request_id}] Error processing request: {str(e)}", exc_info=True)
         FALLBACK_TOTAL.labels(endpoint="process").inc()
         fallback_text = (
             "AI processing is temporarily degraded. Here is a safe fallback: "
@@ -957,7 +1317,11 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             request_id=str(request_id),
             plan=plan,
             usage=get_llm_usage(),
+            session_id=(request.session_id or "").strip() or None,
+            session_status="failed",
+            workflow_phase="error",
         )
+
 
 @app.post("/api/agents/what-if-scenario")
 async def process_what_if_scenario(request: WhatIfScenarioRequest, http_request: Request):
@@ -1081,54 +1445,52 @@ async def process_what_if_scenario(request: WhatIfScenarioRequest, http_request:
         )
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/agents/budget")
 async def get_budget_recommendations(request: UserProfileRequest):
     """Get budget recommendations"""
     try:
         from agents.budget_planner import BudgetPlannerAgent
+
         agent = BudgetPlannerAgent()
         user_profile_dict = request.model_dump()
         budget_plan = agent.create_budget_plan(user_profile_dict)
-        return {
-            "success": True,
-            "budget_plan": _simplify_for_json(budget_plan)
-        }
+        return {"success": True, "budget_plan": _simplify_for_json(budget_plan)}
     except Exception as e:
         logger.error(f"Error creating budget: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/agents/investment")
 async def get_investment_advice(request: UserProfileRequest):
     """Get investment recommendations"""
     try:
         from agents.investment_advisor import InvestmentAdvisorAgent
+
         agent = InvestmentAdvisorAgent()
         user_profile_dict = request.model_dump()
         investment_advice = agent.provide_advice(user_profile_dict)
-        return {
-            "success": True,
-            "investment_advice": _simplify_for_json(investment_advice)
-        }
+        return {"success": True, "investment_advice": _simplify_for_json(investment_advice)}
     except Exception as e:
         logger.error(f"Error generating investment advice: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/agents/debt")
 async def optimize_debt(request: UserProfileRequest):
     """Get debt optimization strategy"""
     try:
         from agents.debt_optimizer import DebtOptimizerAgent
+
         agent = DebtOptimizerAgent()
         user_profile_dict = request.model_dump()
-        debts = user_profile_dict.get('debts', [])
+        debts = user_profile_dict.get("debts", [])
         debt_plan = agent.optimize_repayment(debts, user_profile_dict)
-        return {
-            "success": True,
-            "debt_plan": _simplify_for_json(debt_plan)
-        }
+        return {"success": True, "debt_plan": _simplify_for_json(debt_plan)}
     except Exception as e:
         logger.error(f"Error optimizing debt: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/agents/process/stream")
 async def process_financial_request_stream(request: ProcessRequest, http_request: Request):
@@ -1185,9 +1547,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                 profile_data_for_workflow = None
 
             conversation_history = (
-                [msg.model_dump() for msg in request.conversation_history]
-                if request.conversation_history
-                else []
+                [msg.model_dump() for msg in request.conversation_history] if request.conversation_history else []
             )
             options = request.options.model_dump() if request.options else {"narrative": False}
             org_id = (request.org_id or "").strip() if hasattr(request, "org_id") else ""
@@ -1205,8 +1565,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                     )
                     if memories:
                         lines = [
-                            f"- {m.key}: {m.value} (confidence {m.confidence:.2f}, source {m.source})"
-                            for m in memories
+                            f"- {m.key}: {m.value} (confidence {m.confidence:.2f}, source {m.source})" for m in memories
                         ]
                         memory_block = "User memory (preferences/facts):\n" + "\n".join(lines)
                         base = (session_summary or "").strip()
@@ -1221,9 +1580,13 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
             result = workflow.process_request(
                 request.user_input,
                 profile_data_for_workflow,
+                org_id=org_id or None,
+                user_id=user_id or None,
                 conversation_history=conversation_history,
                 session_summary=session_summary,
                 options=options,
+                session_id=(request.session_id or "").strip() or None,
+                resume_from_checkpoint=bool(request.resume_from_checkpoint),
             )
 
             # 3️⃣ Emit trace events for each agent that participated
@@ -1254,17 +1617,20 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                 priority = normalize_priority(final_output.get("priority", "medium"))
                 fallback_used = bool(final_output.get("fallback_used")) or bool(result.get("fallback_used"))
                 plan_dict = final_output.get("plan") if isinstance(final_output.get("plan"), dict) else None
+                llm_route = final_output.get("llm_route") if isinstance(final_output.get("llm_route"), dict) else None
                 raw_insights = final_output.get("insights", [])
                 insights = []
                 if isinstance(raw_insights, list):
                     for item in raw_insights:
                         if isinstance(item, dict):
-                            insights.append({
-                                "agent": str(item.get("agent", "unknown")),
-                                "title": str(item.get("title", "Insight")),
-                                "description": str(item.get("description", "")),
-                                "actionType": str(item.get("actionType", "review")),
-                            })
+                            insights.append(
+                                {
+                                    "agent": str(item.get("agent", "unknown")),
+                                    "title": str(item.get("title", "Insight")),
+                                    "description": str(item.get("description", "")),
+                                    "actionType": str(item.get("actionType", "review")),
+                                }
+                            )
             else:
                 response_text = str(final_output)
                 agent = "financial_educator"
@@ -1272,6 +1638,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                 priority = "medium"
                 insights = []
                 fallback_used = bool(result.get("fallback_used"))
+                llm_route = result.get("llm_route") if isinstance(result.get("llm_route"), dict) else None
 
             agents_involved = []
             for key, name in [
@@ -1293,9 +1660,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
 
             analysis_raw = result.get("current_analysis", {}).get("type", "comprehensive")
             analysis_type = (
-                str(analysis_raw).split(".")[-1].lower()
-                if hasattr(analysis_raw, "name")
-                else str(analysis_raw).lower()
+                str(analysis_raw).split(".")[-1].lower() if hasattr(analysis_raw, "name") else str(analysis_raw).lower()
             )
 
             if plan_dict is not None:
@@ -1324,22 +1689,33 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
             # 4️⃣ Complete event with full result
             complete_payload = {
                 "phase": "complete",
-                "result": _simplify_for_json({
-                    "success": True,
-                    "final_output": str(response_text),
-                    "agent": str(agent or "master"),
-                    "actionType": str(action_type) if action_type else None,
-                    "priority": normalize_priority(priority),
-                    "insights": insights,
-                    "analysis_type": str(analysis_type or "comprehensive"),
-                    "agents_involved": agents_involved,
-                    "workflow_trace": _simplify_for_json(workflow_trace),
-                    "fallback_used": bool(fallback_used),
-                    "llm_call_count": int(get_llm_call_count() or 0),
-                    "request_id": str(request_id),
-                    "plan": _simplify_for_json(plan.model_dump()),
-                    "usage": _simplify_for_json(get_llm_usage()),
-                }),
+                "result": _simplify_for_json(
+                    {
+                        "success": True,
+                        "final_output": str(response_text),
+                        "agent": str(agent or "master"),
+                        "actionType": str(action_type) if action_type else None,
+                        "priority": normalize_priority(priority),
+                        "insights": insights,
+                        "analysis_type": str(analysis_type or "comprehensive"),
+                        "agents_involved": agents_involved,
+                        "workflow_trace": _simplify_for_json(workflow_trace),
+                        "fallback_used": bool(fallback_used),
+                        "llm_call_count": int(get_llm_call_count() or 0),
+                        "request_id": str(request_id),
+                        "plan": _simplify_for_json(plan.model_dump()),
+                        "usage": _simplify_for_json(get_llm_usage()),
+                        "session_id": result.get("session_id"),
+                        "session_status": "completed" if result.get("phase") == "complete" else "in_progress",
+                        "workflow_phase": result.get("phase"),
+                        "active_provider": llm_route.get("active_provider") if llm_route else None,
+                        "active_model": llm_route.get("active_model") if llm_route else None,
+                        "active_key_id": llm_route.get("active_key_id") if llm_route else None,
+                        "fallback_path": llm_route.get("fallback_path") if llm_route else [],
+                        "recovered_failures": llm_route.get("recovered_failures") if llm_route else [],
+                        "recovered_from_checkpoint": bool(result.get("recovered_from_checkpoint")),
+                    }
+                ),
             }
             yield f"data: {_json.dumps(complete_payload)}\n\n"
             yield "data: [DONE]\n\n"
@@ -1365,6 +1741,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
 def nowIso() -> str:
     """Return current UTC time as ISO string."""
     from datetime import datetime, timezone
+
     return datetime.now(timezone.utc).isoformat()
 
 

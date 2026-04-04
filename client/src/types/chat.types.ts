@@ -18,6 +18,10 @@ export interface IChatSession {
   lastMessageAt: Date | string;
   messageCount: number;
   createdAt: Date | string;
+  aiSessionId?: string;
+  aiSessionStatus?: string;
+  aiSessionPhase?: string;
+  aiRequestId?: string;
 }
 
 export interface IChatMessageMetadata {
@@ -47,6 +51,15 @@ export interface IChatMessageMetadata {
   taskApplyRequestId?: string;
   aiCoreDurationMs?: number;
   cacheHit?: boolean;
+  sessionId?: string;
+  sessionStatus?: string;
+  workflowPhase?: string;
+  activeProvider?: string;
+  activeModel?: string;
+  activeKeyId?: string;
+  fallbackPath?: string[];
+  recoveredFailures?: Array<Record<string, unknown>>;
+  recoveredFromCheckpoint?: boolean;
 }
 
 export interface IChatMessage {

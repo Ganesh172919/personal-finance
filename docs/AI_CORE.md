@@ -10,6 +10,26 @@ The **AI Core** lives in `server/AI_Core/` and provides the intelligent reasonin
 
 The Node.js server communicates with AI Core via HTTP through the `aiCoreClient` service (`server/src/services/aiCoreClient.ts`).
 
+## Recent Runtime Upgrades
+
+Recent platform work expanded the AI Core into a more resilient long-running system:
+
+- multi-key provider pools, including multiple OpenRouter keys
+- external capability-based model catalog with 100+ managed entries
+- per-key and per-model health scoring with cooldowns and circuit breaking
+- resumable sessions with checkpoints, compact memory, and workflow phase recovery
+- richer route metadata for active provider, active model, fallback path, and recovered failures
+- deterministic financial fallback when every LLM path fails
+
+The main implementation lives in:
+
+- `utils/key_pool.py`
+- `utils/model_catalog.py`
+- `utils/model_health.py`
+- `utils/session_manager.py`
+- `utils/llm_wrapper.py`
+- `graph/workflow.py`
+
 ---
 
 ## Architecture
@@ -95,11 +115,15 @@ AI_Core/
 │   ├── trace.py                     # Workflow trace models
 │   └── tool_calls.py                # Tool call validation models
 ├── utils/
-│   ├── llm_wrapper.py               # LLM provider abstraction
-│   ├── provider_registry.py         # Multi-provider registry with failover
+│   ├── llm_wrapper.py               # Task-aware routing, key/model/provider failover
+│   ├── provider_registry.py         # Provider configs and client adapters
+│   ├── key_pool.py                  # Multi-key rotation, cooldown, circuit breaking
+│   ├── model_catalog.py             # External model catalog loader and ranking
+│   ├── model_health.py              # Per-model latency/error health scoring
+│   ├── session_manager.py           # Resumable sessions and checkpoints
 │   ├── helpers.py                   # General utilities
-│   ├── rate_limiter.py              # Rate limiting
-│   ├── request_metrics.py           # Request metrics
+│   ├── rate_limiter.py              # Request-level rate limiting and retry wrapper
+│   ├── request_metrics.py           # Request metrics and token usage
 │   ├── prometheus_metrics.py        # Prometheus metrics
 │   └── finwise_server.py            # Server communication utilities
 ├── tests/                           # 15 pytest test files
@@ -172,6 +196,24 @@ The AI Core uses a **deterministic routing system** (no LLM call for routing):
 3. **Synthesis**: Master synthesis agent combines specialist outputs into actionable plans.
 
 If all LLM providers are unavailable, the system falls back to **deterministic mode** using built-in financial calculators and rule-based analysis.
+
+## Model Catalog And Task Routing
+
+The runtime now routes by capability instead of relying on one short static model list.
+
+- The catalog is stored in `server/AI_Core/data/model_catalog.json`
+- Each entry can include provider, model ID, reasoning strength, speed tier, context window, modality, cost tier, and fallback rank
+- Only configured providers are considered enabled at runtime
+- Agent roles can target different capabilities such as routing, summarization, analysis, reasoning, and premium synthesis
+
+Routing balances:
+
+1. explicit model preference for the agent or task
+2. provider defaults and candidate models
+3. enabled catalog candidates for the requested capability
+4. model health score and fallback rank
+
+This allows FinWise to reserve stronger reasoning models for synthesis and harder questions while using faster or cheaper models for lightweight work.
 
 ---
 
@@ -256,25 +298,60 @@ Located in `memory/`, this module provides:
 - **Memory extraction**: Extracts key facts from conversations for future reference
 - **Relevance scoring**: Ranks memories by relevance to current query
 
+### Session Continuity And Checkpoints
+
+Long-running work is now persisted through `utils/session_manager.py`.
+
+Each AI session can store:
+
+- session status and current workflow phase
+- rolling summary and compact user facts
+- recent decisions and unresolved goals
+- checkpoint summaries and agent outputs
+- input/output token counts and artifact references
+
+This allows:
+
+- resuming interrupted or multi-session work
+- partial completion without losing verified progress
+- memory compaction for longer workflows
+- better auditability of what each phase produced
+
 ---
 
 ## Provider Failover
 
-The AI Core supports **6 LLM providers** with automatic failover:
+The AI Core supports multiple providers and now fails over at four levels:
 
-| Priority | Provider  | Env Var              | Models                    |
-| -------- | --------- | -------------------- | ------------------------- |
-| 1        | Gemini    | `GEMINI_API_KEY`     | gemini-pro, gemini-ultra  |
-| 2        | OpenRouter| `OPENROUTER_API_KEY` | Multiple via OpenRouter   |
-| 3        | Groq      | `GROQ_API_KEY`       | llama, mixtral            |
-| 4        | Grok      | `GROK_API_KEY`       | grok-2                    |
-| 5        | Together  | `TOGETHER_API_KEY`   | Multiple via Together     |
-| 6        | Mistral   | `MISTRAL_API_KEY`    | mistral-large, mistral-medium |
+1. model failover inside the same provider
+2. key failover inside the same provider
+3. provider failover across vendors
+4. deterministic financial fallback if every LLM path fails
 
-### Two-Layer Resilience
+Configured providers may include Gemini, OpenRouter, Groq, Grok, Together, Mistral, OpenAI, and DeepSeek depending on the current environment.
 
-1. **Model failover**: Within a provider, try alternative models if the primary fails
-2. **Provider failover**: If a provider is down, try the next provider in priority order
+Health data is tracked for both keys and models, including:
+
+- success rate
+- average latency
+- 429 frequency
+- 403 frequency
+- 404 frequency
+- cooldown state
+- circuit-open state
+
+### Operational Status Endpoints
+
+Recent AI Core operational endpoints include:
+
+- `GET /api/providers`
+- `GET /api/ai/status`
+- `GET /api/ai/models`
+- `GET /api/ai/sessions`
+- `GET /api/ai/sessions/:sessionId`
+- `POST /api/ai/sessions/:sessionId/resume`
+
+These endpoints surface provider chains, last active route, key-pool health, model health, catalog stats, and resumable session state for the web UI and operations views.
 
 ---
 

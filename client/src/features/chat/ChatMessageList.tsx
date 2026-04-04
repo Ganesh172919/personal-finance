@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { AnimatePresence } from "framer-motion";
 import { ChatMessage } from "./ChatMessage";
-import { TypingIndicator } from "./TypingIndicator";
+import { TypingIndicator, type WorkflowPhase } from "./TypingIndicator";
 import type { IChatMessage } from "@/types/chat.types";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 
@@ -9,9 +9,17 @@ interface ChatMessageListProps {
   messages: IChatMessage[];
   isLoading: boolean;
   isSending: boolean;
+  currentPhase?: WorkflowPhase | null;
+  currentAgent?: string | null;
 }
 
-export function ChatMessageList({ messages, isLoading, isSending }: ChatMessageListProps) {
+export function ChatMessageList({ 
+  messages, 
+  isLoading, 
+  isSending,
+  currentPhase,
+  currentAgent
+}: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -20,7 +28,7 @@ export function ChatMessageList({ messages, isLoading, isSending }: ChatMessageL
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, isSending]);
+  }, [messages, isSending, currentPhase]);
 
   if (isLoading) {
     return (
@@ -43,7 +51,7 @@ export function ChatMessageList({ messages, isLoading, isSending }: ChatMessageL
 
   return (
     <ScrollArea className="flex-1" ref={scrollRef}>
-      <div className="py-4">
+      <div className="py-3">
         {messages.map((message) => (
           <ChatMessage
             key={message.id}
@@ -52,7 +60,12 @@ export function ChatMessageList({ messages, isLoading, isSending }: ChatMessageL
         ))}
         
         <AnimatePresence>
-          {isSending && <TypingIndicator />}
+          {isSending && (
+            <TypingIndicator 
+              phase={currentPhase || undefined} 
+              agentName={currentAgent || undefined} 
+            />
+          )}
         </AnimatePresence>
         
         <div ref={bottomRef} />

@@ -15,6 +15,11 @@ export interface IChatSession {
   isArchived: boolean;
   summary?: string;
   summaryUpdatedAt?: Date;
+  aiSessionId?: string;
+  aiSessionStatus?: string;
+  aiSessionPhase?: string;
+  aiSessionUpdatedAt?: Date;
+  aiRequestId?: string;
 }
 
 export interface IChatSessionDocument extends IChatSession, Document {
@@ -59,6 +64,22 @@ const chatSessionSchema = new Schema<IChatSessionDocument>(
     },
     summaryUpdatedAt: {
       type: Date
+    },
+    aiSessionId: {
+      type: String,
+      index: true
+    },
+    aiSessionStatus: {
+      type: String
+    },
+    aiSessionPhase: {
+      type: String
+    },
+    aiSessionUpdatedAt: {
+      type: Date
+    },
+    aiRequestId: {
+      type: String
     }
   },
   {

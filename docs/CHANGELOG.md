@@ -18,12 +18,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Enhanced `DATABASE.md` with WorkspaceFile model (49 total models)
 - Enhanced `QUICK_START.md` with corrected env var names and troubleshooting
 - Updated `FRONTEND.md` with Vite 7.3 version and component structure
+- Added multi-key provider pool documentation for OpenRouter and other providers
+- Added AI Core session continuity, model catalog, and model health documentation
+- Added API documentation for AI Core operational endpoints and AI response metadata
 
 ### Changed
 - Standardized project naming to "FinWise" across documentation
 - Fixed env var naming inconsistency (`MONGO_URI` not `MONGODB_URI`)
 - Corrected model count to 49 across all documentation
 - Corrected middleware count to 13 across all documentation
+- Updated frontend docs to reflect the slimmer chat workspace header, narrower conversation insights rail, and larger transcript area
+- Updated environment docs for `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `XAI_API_KEY`, and multi-key OpenRouter formats
 
 ---
 

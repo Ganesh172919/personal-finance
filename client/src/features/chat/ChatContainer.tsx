@@ -11,10 +11,13 @@ interface ChatContainerProps {
 
 export function ChatContainer({ sessionId }: ChatContainerProps) {
   const {
+    sessions,
     currentSessionId,
     messages,
     isLoadingMessages,
     isSending,
+    currentPhase,
+    currentAgent,
     selectSession,
     createSession,
     sendMessage,
@@ -46,6 +49,8 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
   };
 
   const hasMessages = messages.length > 0;
+  const currentSession = sessions.find((session) => session.id === currentSessionId);
+  const latestAssistantMetadata = [...messages].reverse().find((message) => message.role === "assistant")?.metadata;
 
   return (
     <motion.div
@@ -54,12 +59,36 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
       animate={{ opacity: 1 }}
     >
       {/* Chat Header - simplified without New Chat button */}
-      <div className="flex items-center justify-between gap-3 border-b border-border bg-card/80 px-5 py-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-base font-semibold text-foreground sm:text-lg">Personal Finance AI Assistant</h1>
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-card/80 px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0">
+            <h1 className="text-sm font-semibold text-foreground sm:text-base">Personal Finance AI Assistant</h1>
+            <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
+              {currentSession?.aiSessionId ? (
+                <span className="rounded-full border border-border/70 px-2 py-0.5">
+                  Session {currentSession.aiSessionStatus || "active"}
+                </span>
+              ) : null}
+              {latestAssistantMetadata?.activeProvider ? (
+                <span className="rounded-full border border-border/70 px-2 py-0.5">
+                  {latestAssistantMetadata.activeProvider}
+                </span>
+              ) : null}
+              {latestAssistantMetadata?.activeModel ? (
+                <span className="max-w-[180px] truncate rounded-full border border-border/70 px-2 py-0.5">
+                  {latestAssistantMetadata.activeModel}
+                </span>
+              ) : null}
+              {latestAssistantMetadata?.recoveredFromCheckpoint ? (
+                <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-300">
+                  resumed
+                </span>
+              ) : null}
+            </div>
+          </div>
         </div>
-        <p className="hidden text-xs text-muted-foreground sm:block">
-          Your intelligent financial co-pilot
+        <p className="hidden text-[11px] text-muted-foreground lg:block">
+          {currentPhase ? `Phase: ${currentPhase}` : "Your intelligent financial co-pilot"}
         </p>
       </div>
 
@@ -70,6 +99,8 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
             messages={messages}
             isLoading={isLoadingMessages}
             isSending={isSending}
+            currentPhase={currentPhase}
+            currentAgent={currentAgent}
           />
         ) : (
           <ChatSuggestions onSelect={handleSuggestionSelect} />

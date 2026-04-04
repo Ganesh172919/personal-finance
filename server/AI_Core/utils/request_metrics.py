@@ -38,6 +38,7 @@ def record_llm_usage(
     prompt_tokens: Optional[int] = None,
     completion_tokens: Optional[int] = None,
     total_tokens: Optional[int] = None,
+    cost_usd: Optional[float] = None,
 ) -> None:
     """
     Record token/cost usage for the current request scope.
@@ -69,6 +70,10 @@ def record_llm_usage(
         if model_clean and model_clean not in models:
             models.append(model_clean)
             _llm_models_ctx.set(models)
+
+    if cost_usd is not None:
+        _llm_cost_usd_ctx.set(_llm_cost_usd_ctx.get() + max(0.0, float(cost_usd)))
+        return
 
     in_rate = float(getattr(settings, "LLM_COST_USD_PER_1K_INPUT_TOKENS", 0.0) or 0.0)
     out_rate = float(getattr(settings, "LLM_COST_USD_PER_1K_OUTPUT_TOKENS", 0.0) or 0.0)

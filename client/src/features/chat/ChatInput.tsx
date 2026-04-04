@@ -113,11 +113,11 @@ export function ChatInput({
 
   return (
     <motion.div
-      className="border-t border-border bg-background p-4"
+      className="border-t border-border bg-background px-4 py-3"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-none">
         {selectedFiles.length > 0 ? (
           <div className="mb-3 flex flex-wrap gap-2">
             {selectedFiles.map((file, index) => (

@@ -102,7 +102,11 @@ export async function createSession(req: Request, res: Response) {
       title: session.title,
       lastMessageAt: session.lastMessageAt,
       messageCount: session.messageCount,
-      createdAt: session.createdAt
+      createdAt: session.createdAt,
+      aiSessionId: session.aiSessionId,
+      aiSessionStatus: session.aiSessionStatus,
+      aiSessionPhase: session.aiSessionPhase,
+      aiRequestId: session.aiRequestId,
     });
   } catch (error) {
     logger.error({ error }, "Error creating chat session");
@@ -147,7 +151,11 @@ export async function getSessions(req: Request, res: Response) {
         title: s.title,
         lastMessageAt: s.lastMessageAt,
         messageCount: s.messageCount,
-        createdAt: s.createdAt
+        createdAt: s.createdAt,
+        aiSessionId: (s as any).aiSessionId,
+        aiSessionStatus: (s as any).aiSessionStatus,
+        aiSessionPhase: (s as any).aiSessionPhase,
+        aiRequestId: (s as any).aiRequestId,
       })),
       pagination: {
         page,
@@ -196,7 +204,11 @@ export async function getSession(req: Request, res: Response) {
       title: session.title,
       lastMessageAt: session.lastMessageAt,
       messageCount: session.messageCount,
-      createdAt: session.createdAt
+      createdAt: session.createdAt,
+      aiSessionId: session.aiSessionId,
+      aiSessionStatus: session.aiSessionStatus,
+      aiSessionPhase: session.aiSessionPhase,
+      aiRequestId: session.aiRequestId,
     });
   } catch (error) {
     logger.error({ error }, "Error fetching chat session");
@@ -282,7 +294,11 @@ export async function renameSession(req: Request, res: Response) {
       id: session._id.toString(),
       title: session.title,
       lastMessageAt: session.lastMessageAt,
-      messageCount: session.messageCount
+      messageCount: session.messageCount,
+      aiSessionId: session.aiSessionId,
+      aiSessionStatus: session.aiSessionStatus,
+      aiSessionPhase: session.aiSessionPhase,
+      aiRequestId: session.aiRequestId,
     });
   } catch (error) {
     logger.error({ error }, "Error renaming chat session");
@@ -501,6 +517,8 @@ export async function sendMessage(req: Request, res: Response) {
            profile: financialProfile,
            orgId: orgId.toString(),
            userId: user._id.toString(),
+           sessionId: session.aiSessionId,
+           resumeFromCheckpoint: ["in_progress", "failed", "paused"].includes(String(session.aiSessionStatus || "")),
            orgSettings,
            transactions: txResult.transactions,
            totalTransactions: txResult.stats.totalTransactions,
@@ -544,7 +562,16 @@ export async function sendMessage(req: Request, res: Response) {
             linkedTaskIds: [],
             attachments,
             aiCoreDurationMs: aiDurationMs,
-            cacheHit: false
+            cacheHit: false,
+            sessionId: aiResponse.session_id,
+            sessionStatus: aiResponse.session_status,
+            workflowPhase: aiResponse.workflow_phase,
+            activeProvider: aiResponse.active_provider,
+            activeModel: aiResponse.active_model,
+            activeKeyId: aiResponse.active_key_id,
+            fallbackPath: aiResponse.fallback_path || [],
+            recoveredFailures: aiResponse.recovered_failures || [],
+            recoveredFromCheckpoint: aiResponse.recovered_from_checkpoint || false,
           };
           if (aiResponse.fallback_used) {
             recordAiFallback({ endpoint: "chat-message" });
@@ -722,7 +749,12 @@ export async function sendMessage(req: Request, res: Response) {
     const isFirstMessage = session.messageCount === 0;
     const updateData: any = {
       lastMessageAt: new Date(),
-      $inc: { messageCount: 2 }
+      $inc: { messageCount: 2 },
+      aiSessionId: aiMetadata?.sessionId || session.aiSessionId,
+      aiSessionStatus: aiMetadata?.sessionStatus || session.aiSessionStatus,
+      aiSessionPhase: aiMetadata?.workflowPhase || session.aiSessionPhase,
+      aiSessionUpdatedAt: new Date(),
+      aiRequestId: aiMetadata?.requestId || requestId,
     };
 
     // Auto-generate title from first user message

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { IChatSession, IChatMessage } from "@/types/chat.types";
+import type { WorkflowPhase } from "@/features/chat/TypingIndicator";
 import * as chatApi from "@/services/chatApi";
 import { reportClientError } from "@/lib/runtimeLogger";
 
@@ -17,6 +18,11 @@ interface ChatState {
   isLoadingMessages: boolean;
   isSending: boolean;
   
+  // Workflow progress tracking
+  currentPhase: WorkflowPhase | null;
+  currentAgent: string | null;
+  phaseHistory: Array<{ phase: WorkflowPhase; agent?: string; timestamp: number }>;
+  
   // Actions
   loadSessions: () => Promise<void>;
   createSession: () => Promise<IChatSession | null>;
@@ -25,6 +31,8 @@ interface ChatState {
   renameSession: (sessionId: string, title: string) => Promise<void>;
   sendMessage: (content: string, options?: { narrative?: boolean; fileIds?: string[] }) => Promise<void>;
   clearCurrentSession: () => void;
+  setWorkflowPhase: (phase: WorkflowPhase | null, agent?: string) => void;
+  clearWorkflowProgress: () => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -37,6 +45,9 @@ export const useChatStore = create<ChatState>()(
       isLoadingSessions: false,
       isLoadingMessages: false,
       isSending: false,
+      currentPhase: null,
+      currentAgent: null,
+      phaseHistory: [],
 
       // Load all sessions for the current user
       loadSessions: async () => {
@@ -127,7 +138,13 @@ export const useChatStore = create<ChatState>()(
         const sessionId = get().currentSessionId;
         if (!sessionId) return;
         
-        set({ isSending: true });
+        // Clear previous workflow progress and set initial phase
+        set({ 
+          isSending: true,
+          currentPhase: "routing",
+          currentAgent: null,
+          phaseHistory: [{ phase: "routing", timestamp: Date.now() }]
+        });
         
         // Optimistically add user message
         const tempUserMessage: IChatMessage = {
@@ -163,13 +180,17 @@ export const useChatStore = create<ChatState>()(
                     messageCount: s.messageCount + 2
                   }
                 : s
-            )
+            ),
+            currentPhase: "complete",
+            phaseHistory: [...state.phaseHistory, { phase: "complete", timestamp: Date.now() }]
           }));
         } catch (error) {
           reportClientError("Failed to send message", error);
           // Remove optimistic message on error
           set((state) => ({
-            messages: state.messages.filter(m => m.id !== tempUserMessage.id)
+            messages: state.messages.filter(m => m.id !== tempUserMessage.id),
+            currentPhase: "error",
+            phaseHistory: [...state.phaseHistory, { phase: "error", timestamp: Date.now() }]
           }));
         } finally {
           set({ isSending: false });
@@ -178,7 +199,25 @@ export const useChatStore = create<ChatState>()(
 
       // Clear current session
       clearCurrentSession: () => {
-        set({ currentSessionId: null, messages: [] });
+        set({ currentSessionId: null, messages: [], currentPhase: null, currentAgent: null, phaseHistory: [] });
+      },
+
+      // Set workflow phase (can be called from SSE handlers)
+      setWorkflowPhase: (phase: WorkflowPhase | null, agent?: string) => {
+        if (!phase) {
+          set({ currentPhase: null, currentAgent: null });
+          return;
+        }
+        set((state) => ({
+          currentPhase: phase,
+          currentAgent: agent || state.currentAgent,
+          phaseHistory: [...state.phaseHistory, { phase, agent, timestamp: Date.now() }]
+        }));
+      },
+
+      // Clear workflow progress
+      clearWorkflowProgress: () => {
+        set({ currentPhase: null, currentAgent: null, phaseHistory: [] });
       }
     }),
     {

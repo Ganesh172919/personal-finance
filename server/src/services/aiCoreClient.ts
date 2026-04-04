@@ -16,6 +16,8 @@ export interface AiCoreProcessRequest {
   user_profile: Record<string, unknown> | null;
   org_id?: string;
   user_id?: string;
+  session_id?: string;
+  resume_from_checkpoint?: boolean;
   conversation_history?: Array<{ role: "user" | "assistant"; content: string }>;
   session_summary?: string;
   options?: { narrative?: boolean };
@@ -60,6 +62,15 @@ export interface AiCoreProcessResponse {
   fallback_used: boolean;
   llm_call_count: number;
   request_id: string;
+  session_id?: string;
+  session_status?: string;
+  workflow_phase?: string;
+  active_provider?: string;
+  active_model?: string;
+  active_key_id?: string;
+  fallback_path?: string[];
+  recovered_failures?: Array<Record<string, unknown>>;
+  recovered_from_checkpoint?: boolean;
 }
 
 let consecutiveFailures = 0;
@@ -178,6 +189,15 @@ const normalizeProcessResponse = (data: any, requestId: string): AiCoreProcessRe
     fallback_used: Boolean(data?.fallback_used),
     llm_call_count: Number.isFinite(Number(data?.llm_call_count)) ? Number(data.llm_call_count) : 0,
     request_id: String(data?.request_id || requestId),
+    session_id: data?.session_id ? String(data.session_id) : undefined,
+    session_status: data?.session_status ? String(data.session_status) : undefined,
+    workflow_phase: data?.workflow_phase ? String(data.workflow_phase) : undefined,
+    active_provider: data?.active_provider ? String(data.active_provider) : undefined,
+    active_model: data?.active_model ? String(data.active_model) : undefined,
+    active_key_id: data?.active_key_id ? String(data.active_key_id) : undefined,
+    fallback_path: Array.isArray(data?.fallback_path) ? data.fallback_path.map((item: unknown) => String(item)) : undefined,
+    recovered_failures: Array.isArray(data?.recovered_failures) ? data.recovered_failures : undefined,
+    recovered_from_checkpoint: Boolean(data?.recovered_from_checkpoint),
   };
 };
 

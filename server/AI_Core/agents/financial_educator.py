@@ -69,6 +69,7 @@ Return a short response with:
             "concept_explained": concept,
             "explanation": explanation,
             "fallback_used": fallback_used,
+            "llm_route": self.llm.get_route_metadata(),
         }
 
         self._cache_set(concept, payload)

@@ -17,6 +17,41 @@ All versioned endpoints are prefixed with `/api/v1`.
 
 ---
 
+## AI Runtime And Chat Orchestration
+
+FinWise now exposes both Node-level AI endpoints and proxied AI Core operational endpoints.
+
+### Node server AI endpoints
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /process-command` | Run a structured AI command through the Node server and AI Core |
+| `POST /api/ai/process/stream` | Stream AI responses and workflow progress |
+| `GET /api/ai-core/status` | Aggregated Node + AI Core health snapshot |
+| `GET /api/ai-core/ai/status` | Detailed AI Core status, key pools, model health, sessions |
+| `GET /api/ai-core/ai/models` | Proxied model catalog listing |
+| `GET /api/ai-core/ai/sessions` | Proxied resumable AI sessions list |
+| `GET /api/ai-core/ai/sessions/:sessionId` | Proxied AI session detail |
+| `POST /api/ai-core/ai/sessions/:sessionId/resume` | Resume a paused or interrupted AI session |
+
+### AI response metadata
+
+Recent AI responses may now include:
+
+- `session_id`
+- `session_status`
+- `workflow_phase`
+- `active_provider`
+- `active_model`
+- `active_key_id`
+- `fallback_path`
+- `recovered_failures`
+- `recovered_from_checkpoint`
+
+This metadata is used by the chat UI to display session continuity, failover visibility, and active model/provider status.
+
+---
+
 ## Authentication
 
 ### `POST /api/v1/auth/register`

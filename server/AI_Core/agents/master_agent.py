@@ -235,6 +235,7 @@ PLAN (do not change numbers):
             "fallback_used": fallback_used,
             "plan": plan.model_dump(),
             "tool_calls": self._build_tool_calls(plan.model_dump(), user_profile),
+            "llm_route": self.llm.get_route_metadata(),
         }
 
     def _tool_id(self, seed: str) -> str:

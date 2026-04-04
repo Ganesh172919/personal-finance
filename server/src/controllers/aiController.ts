@@ -243,7 +243,10 @@ export const processAICommand = async (req: Request, res: Response) => {
         plan: normalizedPlan,
         tool_calls: aiResponse.tool_calls || [],
         fallback_used: aiResponse.fallback_used,
-        llm_call_count: aiResponse.llm_call_count
+        llm_call_count: aiResponse.llm_call_count,
+        active_provider: aiResponse.active_provider,
+        active_model: aiResponse.active_model,
+        session_id: aiResponse.session_id,
       },
       analysis_type: aiResponse.analysis_type || "comprehensive",
       agents_involved: aiResponse.agents_involved || ["master"],
@@ -252,6 +255,9 @@ export const processAICommand = async (req: Request, res: Response) => {
       fallback_used: aiResponse.fallback_used,
       llm_call_count: aiResponse.llm_call_count,
       request_id: aiResponse.request_id || requestId,
+      active_provider: aiResponse.active_provider,
+      active_model: aiResponse.active_model,
+      session_id: aiResponse.session_id,
       priority,
       actionable
     });
@@ -295,7 +301,16 @@ export const processAICommand = async (req: Request, res: Response) => {
       detailed_analysis: aiResponse.detailed_analysis || {},
       fallback_used: aiResponse.fallback_used,
       llm_call_count: aiResponse.llm_call_count,
-      request_id: aiResponse.request_id || requestId
+      request_id: aiResponse.request_id || requestId,
+      session_id: aiResponse.session_id,
+      session_status: aiResponse.session_status,
+      workflow_phase: aiResponse.workflow_phase,
+      active_provider: aiResponse.active_provider,
+      active_model: aiResponse.active_model,
+      active_key_id: aiResponse.active_key_id,
+      fallback_path: aiResponse.fallback_path,
+      recovered_failures: aiResponse.recovered_failures,
+      recovered_from_checkpoint: aiResponse.recovered_from_checkpoint,
     };
 
     await AiResponseCacheModel.findOneAndUpdate(

@@ -43,29 +43,33 @@ export function ConversationInsightsPanel({
   });
 
   const actionItems = useMemo(
-    () => collectActionItems(insightsQuery.data?.plan, compact ? 2 : 3),
+    () => collectActionItems(insightsQuery.data?.plan, compact ? 1 : 3),
     [compact, insightsQuery.data?.plan]
   );
 
   return (
     <Card className={className}>
-      <div className={cn("flex flex-col", compact ? "gap-3 p-4" : "gap-4 p-5")}>
-        <div className="flex items-start justify-between gap-3">
+      <div className={cn("flex flex-col", compact ? "gap-2 p-2.5" : "gap-4 p-5")}>
+        <div className="flex items-start justify-between gap-2">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <div
                 className={cn(
                   "flex items-center justify-center rounded-2xl bg-primary text-primary-foreground",
-                  compact ? "h-9 w-9" : "h-10 w-10"
+                  compact ? "h-7 w-7" : "h-10 w-10"
                 )}
               >
-                <BrainCircuit className="h-4 w-4" />
+                <BrainCircuit className={compact ? "h-3 w-3" : "h-4 w-4"} />
               </div>
               <div>
-                <div className="text-sm font-semibold text-foreground">Conversation intelligence</div>
-                <div className="text-xs text-muted-foreground">
-                  Patterns pulled from your recent AI conversations
+                <div className={cn("font-semibold text-foreground", compact ? "text-[11px] leading-4" : "text-sm")}>
+                  Conversation intelligence
                 </div>
+                {!compact ? (
+                  <div className="text-xs text-muted-foreground">
+                    Patterns pulled from your recent AI conversations
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -73,12 +77,12 @@ export function ConversationInsightsPanel({
           <Button
             variant="ghost"
             size="icon"
-            className={cn("rounded-2xl", compact ? "h-8 w-8" : "")}
+            className={cn("rounded-2xl", compact ? "h-6 w-6" : "")}
             onClick={() => insightsQuery.refetch()}
             disabled={insightsQuery.isFetching}
             aria-label="Refresh conversation insights"
           >
-            <RefreshCcw className={`h-4 w-4 ${insightsQuery.isFetching ? "animate-spin" : ""}`} />
+            <RefreshCcw className={`${compact ? "h-3 w-3" : "h-4 w-4"} ${insightsQuery.isFetching ? "animate-spin" : ""}`} />
           </Button>
         </div>
 
@@ -92,22 +96,22 @@ export function ConversationInsightsPanel({
           </div>
         ) : insightsQuery.data ? (
           <>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">
+            <div className="flex flex-wrap items-center gap-1">
+              <Badge variant="outline" className={compact ? "px-1.5 py-0 text-[9px]" : undefined}>
                 {insightsQuery.data.sessions_considered} session
                 {insightsQuery.data.sessions_considered === 1 ? "" : "s"}
               </Badge>
               {insightsQuery.data.fallback_used ? (
-                <Badge variant="outline">Fallback response</Badge>
+                <Badge variant="outline" className={compact ? "px-1.5 py-0 text-[9px]" : undefined}>Fallback response</Badge>
               ) : null}
               {(insightsQuery.data.agents_involved || []).slice(0, compact ? 2 : 4).map((agent) => (
-                <Badge key={agent} className="bg-primary/10 text-primary">
+                <Badge key={agent} className={cn("bg-primary/10 text-primary", compact ? "px-1.5 py-0 text-[9px]" : "")}>
                   {agent}
                 </Badge>
               ))}
             </div>
 
-            <div className="prose prose-sm max-w-none text-foreground dark:prose-invert">
+            <div className={cn("max-w-none text-foreground dark:prose-invert", compact ? "prose prose-xs" : "prose prose-sm")}>
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {insightsQuery.data.response}
               </ReactMarkdown>
@@ -115,16 +119,16 @@ export function ConversationInsightsPanel({
 
             {actionItems.length ? (
               <div className="space-y-2">
-                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                <div className={cn("font-semibold uppercase text-muted-foreground", compact ? "text-[10px] tracking-[0.18em]" : "text-xs tracking-[0.22em]")}>
                   Recommended next moves
                 </div>
                 <div className="grid gap-2">
                   {actionItems.map((action, index) => (
                     <div
                       key={`${action.title}-${index}`}
-                      className="rounded-[calc(var(--radius)-10px)] border border-border/70 bg-muted/20 p-3"
+                      className={cn("rounded-[calc(var(--radius)-10px)] border border-border/70 bg-muted/20", compact ? "p-2.5" : "p-3")}
                     >
-                      <div className="text-sm font-semibold text-foreground">{action.title}</div>
+                      <div className={cn("font-semibold text-foreground", compact ? "text-xs leading-4" : "text-sm")}>{action.title}</div>
                       {!compact ? (
                         <div className="mt-1 text-xs leading-5 text-muted-foreground">{action.why}</div>
                       ) : null}

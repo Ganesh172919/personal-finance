@@ -35,7 +35,7 @@
 | Document | Description | Key Topics |
 | -------- | ----------- | ---------- |
 | [AI Core](./AI_CORE.md) | Multi-agent AI engine | LangGraph, agents, tools |
-| [AI Providers & Failover](./AI_PROVIDERS_AND_FAILOVER.md) | Provider configuration | 6 providers, failover |
+| [AI Providers & Failover](./AI_PROVIDERS_AND_FAILOVER.md) | Provider configuration | key pools, model failover, provider failover |
 | [Mega AI Core Deep Dive](./MEGA_AI_CORE_DEEP_DIVE.md) | AI system deep dive | Implementation details |
 
 ---
@@ -116,6 +116,14 @@ cd client && npm test             # Run tests
 cd server/AI_Core && python api_service.py  # Start AI Core
 cd server/AI_Core && pytest tests/ -v       # Run tests
 ```
+
+### Recent Documentation Focus
+
+- multi-key AI provider pools and OpenRouter rotation
+- 100+ entry model catalog and task-aware routing
+- resumable AI sessions and checkpoint metadata
+- AI status, model health, and failover visibility in the chat UI
+- chat workspace layout updates for a larger conversation surface
 
 ### File Counts
 

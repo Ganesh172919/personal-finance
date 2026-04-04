@@ -570,6 +570,41 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </div>
           )}
 
+        {!isUser &&
+        (message.metadata?.activeProvider ||
+          message.metadata?.activeModel ||
+          message.metadata?.fallbackPath?.length ||
+          message.metadata?.recoveredFailures?.length ||
+          message.metadata?.sessionId) ? (
+          <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+            {message.metadata?.sessionId ? (
+              <span className="rounded-full border border-border/70 bg-background/60 px-2 py-1 text-muted-foreground">
+                session {message.metadata.sessionStatus || "active"}
+              </span>
+            ) : null}
+            {message.metadata?.activeProvider ? (
+              <span className="rounded-full border border-border/70 bg-background/60 px-2 py-1 text-muted-foreground">
+                provider {message.metadata.activeProvider}
+              </span>
+            ) : null}
+            {message.metadata?.activeModel ? (
+              <span className="max-w-[280px] truncate rounded-full border border-border/70 bg-background/60 px-2 py-1 text-muted-foreground">
+                model {message.metadata.activeModel}
+              </span>
+            ) : null}
+            {message.metadata?.recoveredFailures?.length ? (
+              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-amber-300">
+                recovered {message.metadata.recoveredFailures.length}
+              </span>
+            ) : null}
+            {message.metadata?.fallbackPath?.length ? (
+              <span className="rounded-full border border-border/70 bg-background/60 px-2 py-1 text-muted-foreground">
+                route {message.metadata.fallbackPath.length}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="flex items-center gap-2 mt-1 px-2">
           <span className="text-xs text-muted-foreground">
             {formatTime(message.createdAt)}

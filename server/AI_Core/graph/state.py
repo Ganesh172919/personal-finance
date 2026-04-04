@@ -6,8 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class AgentState(TypedDict):
     """State for the multi-agent financial system"""
+
     user_input: str
     user_profile: Dict[str, Any]
+    org_id: Optional[str]
+    user_id: Optional[str]
     conversation_history: List[Dict[str, str]]
     session_summary: Optional[str]
     options: Dict[str, Any]
@@ -22,6 +25,39 @@ class AgentState(TypedDict):
     fallback_used: bool
     workflow_trace: List[Dict[str, Any]]
     error: Optional[str]
+    # Extended state for long-running workflows
+    session_id: Optional[str]
+    subtasks: Optional[List[Dict[str, Any]]]
+    verification_results: Optional[Dict[str, Any]]
+    retry_count: int
+    max_retries: int
+    phase: Optional[str]
+    recovered_from_checkpoint: bool
+    llm_route: Optional[Dict[str, Any]]
+
+
+class WorkflowPhase(str, Enum):
+    """Phases in the enhanced workflow."""
+
+    ROUTING = "routing"
+    PLANNING = "planning"
+    RESEARCH = "research"
+    EXECUTION = "execution"
+    VERIFICATION = "verification"
+    SYNTHESIS = "synthesis"
+    COMPLETE = "complete"
+    ERROR = "error"
+
+
+class SubtaskStatus(str, Enum):
+    """Status of a subtask."""
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
 
 class AnalysisType(str, Enum):
     INCOME_EXPENSE = "income_expense"
@@ -31,15 +67,19 @@ class AnalysisType(str, Enum):
     FINANCIAL_EDUCATION = "financial_education"
     COMPREHENSIVE = "comprehensive"
 
+
 class FinancialGoal(BaseModel):
     """Financial goal model"""
+
     name: str
     target: float
     timeline_months: int
     priority: int = Field(ge=1, le=5)
 
+
 class UserProfile(BaseModel):
     """User financial profile model"""
+
     age: int
     annual_income: float
     monthly_expenses: float
@@ -53,7 +93,7 @@ class UserProfile(BaseModel):
     currency: Optional[str] = None
     locale: Optional[str] = None
     timezone: Optional[str] = None
-    
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -76,15 +116,17 @@ class UserProfile(BaseModel):
         }
     )
 
+
 class FinancialPlan(BaseModel):
     """Comprehensive financial plan model"""
+
     summary: str
     recommendations: List[str]
     action_items: List[Dict[str, Any]]
     risk_assessment: str
     timeline: Dict[str, Any]
     metrics: Dict[str, float]
-    
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {

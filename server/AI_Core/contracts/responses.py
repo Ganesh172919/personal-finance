@@ -32,3 +32,12 @@ class ProcessResponse(BaseModel):
     plan: Plan
     usage: UsageMetadata = Field(default_factory=UsageMetadata)
     tool_calls: List[ToolCall] = Field(default_factory=list)
+    session_id: Optional[str] = None
+    session_status: Optional[str] = None
+    workflow_phase: Optional[str] = None
+    active_provider: Optional[str] = None
+    active_model: Optional[str] = None
+    active_key_id: Optional[str] = None
+    fallback_path: List[str] = Field(default_factory=list)
+    recovered_failures: List[Dict[str, Any]] = Field(default_factory=list)
+    recovered_from_checkpoint: bool = False

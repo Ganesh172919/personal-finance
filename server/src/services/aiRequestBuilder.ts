@@ -212,6 +212,8 @@ export const buildProcessRequest = (params: {
   profile: FinancialProfileLike | null;
   orgId?: string;
   userId?: string;
+  sessionId?: string;
+  resumeFromCheckpoint?: boolean;
   orgSettings?: OrgSettingsLike;
   transactions?: TransactionLike[];
   totalTransactions?: number;
@@ -235,6 +237,8 @@ export const buildProcessRequest = (params: {
       user_profile,
       org_id: params.orgId,
       user_id: params.userId,
+      session_id: params.sessionId,
+      resume_from_checkpoint: params.resumeFromCheckpoint,
       conversation_history: params.conversationHistory,
       session_summary: params.sessionSummary,
       options: params.narrative === undefined ? undefined : { narrative: params.narrative },

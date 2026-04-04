@@ -226,10 +226,40 @@
 
 ## AI Core (`server/AI_Core/.env`)
 
-| Variable         | Required | Description           | Default | Example   |
-| ---------------- | -------- | --------------------- | ------- | --------- |
-| `GEMINI_API_KEY` | **Yes**  | Google Gemini API key | —       | `AIza...` |
-| `LOG_LEVEL`      | No       | Python logging level  | `INFO`  | `DEBUG`   |
+### Provider Keys
+
+| Variable | Required | Description | Default | Example |
+| --- | --- | --- | --- | --- |
+| `GEMINI_API_KEY` | No* | Google Gemini API key | — | `AIza...` |
+| `OPENROUTER_API_KEY` | No | Single OpenRouter API key | — | `sk-or-v1-...` |
+| `OPENROUTER_API_KEY_1` | No | OpenRouter pooled key 1 | — | `sk-or-v1-...` |
+| `OPENROUTER_API_KEY_2` | No | OpenRouter pooled key 2 | — | `sk-or-v1-...` |
+| `OPENROUTER_API_KEYS` | No | JSON array of OpenRouter keys | — | `["key-one","key-two"]` |
+| `GROQ_API_KEY` | No | Groq API key | — | `gsk_...` |
+| `OPENAI_API_KEY` | No | OpenAI API key | — | `sk-...` |
+| `DEEPSEEK_API_KEY` | No | DeepSeek API key | — | `sk-...` |
+| `XAI_API_KEY` | No | xAI Grok API key | — | `xai-...` |
+| `TOGETHER_API_KEY` | No | Together API key | — | `...` |
+| `MISTRAL_API_KEY` | No | Mistral API key | — | `...` |
+
+> \* At least one AI provider key must be configured for live LLM routing.
+
+### Routing And Runtime
+
+| Variable | Required | Description | Default | Example |
+| --- | --- | --- | --- | --- |
+| `LLM_PROVIDER` | No | Preferred default provider | auto | `openrouter` |
+| `LLM_PROVIDER_PRIORITY` | No | Comma-separated provider fallback order | built-in order | `openrouter,gemini,groq,grok,together,mistral` |
+| `MODEL_NAME` | No | Legacy default model fallback | provider-specific | `gemini-2.5-flash` |
+| `LLM_TIMEOUT_SECONDS` | No | Upstream LLM timeout in seconds | runtime default | `30` |
+| `AI_CORE_ALLOWED_ORIGINS` | No | CORS origins for the Python AI Core | `http://localhost:3000` | `http://localhost:3000,https://app.example.com` |
+| `LOG_LEVEL` | No | Python logging level | `INFO` | `DEBUG` |
+
+### Notes
+
+- OpenRouter supports single-key and multi-key pool formats.
+- Key pools are health-tracked independently and only expose redacted fingerprints in status payloads.
+- The model catalog is managed separately in `server/AI_Core/data/model_catalog.json`; configuring a provider key enables only that provider's catalog entries.
 
 ---
 
