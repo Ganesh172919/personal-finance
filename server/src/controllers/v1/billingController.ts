@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Billing Controller (v1)
+ *
+ * Stripe billing integration: checkout sessions, customer portal, and webhook handling.
+ *
+ * Routes served:
+ *   POST /api/v1/billing/checkout  - createCheckoutSession (admin)
+ *   GET  /api/v1/billing/portal    - createBillingPortal (admin)
+ *   POST /api/v1/billing/webhook   - stripeWebhook (unauthenticated, Stripe-signed)
+ *
+ * Key patterns:
+ *   - Checkout and portal endpoints require admin role
+ *   - Webhook endpoint validates Stripe signature using raw request body
+ *   - Plan tiers limited to "pro" and "team"
+ *   - Delegates all Stripe interaction to the billing service module
+ *
+ * @module controllers/v1/billingController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

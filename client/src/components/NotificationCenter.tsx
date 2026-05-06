@@ -1,3 +1,25 @@
+/**
+ * @fileoverview NotificationCenter — slide-in notification panel with filtering,
+ * time-grouped display, and a reusable `NotificationBell` trigger button.
+ *
+ * WHAT IT DOES
+ *  - Renders a right-side drawer (AnimatePresence + spring animation) listing
+ *    notifications grouped into "Today", "This Week", and "Earlier".
+ *  - Supports filter tabs: All / Unread / Read with unread count badge.
+ *  - Each notification row shows a context-aware icon (AI, budget, alert, billing),
+ *    accent colour, relative timestamp, and a hover-reveal "mark as read" button.
+ *  - Exports `NotificationBell` — an animated icon button with an unread-count badge
+ *    designed to sit in the Sidebar.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `isOpen` / `onClose` — controlled by the parent (Sidebar).
+ *  - Uses `useNotifications` hook for data fetching, mark-read, and mark-all-read.
+ *
+ * ARCHITECTURE NOTES
+ *  - Consumed by `Sidebar` which mounts both the bell trigger and this panel.
+ *  - Notifications originate from transactions, budgets, AI insights, and workflow events.
+ *  - Purely presentational after the hook provides data; no direct API calls inside.
+ */
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {

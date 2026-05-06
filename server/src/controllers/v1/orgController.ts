@@ -1,3 +1,26 @@
+/**
+ * @fileoverview Organization Controller (v1)
+ *
+ * Multi-tenancy management: list user's orgs, create team orgs, update settings,
+ * and add members (direct add or email invite). This is the core org lifecycle controller.
+ *
+ * Routes served:
+ *   GET    /api/v1/orgs                    - listMyOrgs
+ *   POST   /api/v1/orgs                    - createOrg (requires team plan)
+ *   PUT    /api/v1/orgs/:orgId/settings    - updateOrgSettings (admin)
+ *   POST   /api/v1/orgs/:orgId/members     - addOrgMember (admin)
+ *
+ * Key patterns:
+ *   - Org slugs are normalized (lowercase, alphanumeric + hyphens, max 60 chars)
+ *   - createOrg requires team plan entitlement check
+ *   - addOrgMember branches: if user exists -> direct add; if not -> email invite
+ *   - Seat limits enforced via assertSeatAvailable before adding members
+ *   - Invite tokens included in response only in non-production environments
+ *   - All mutations produce audit events
+ *
+ * @module controllers/v1/orgController
+ */
+
 import crypto from "crypto";
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
@@ -12,6 +35,7 @@ import { sendEmail } from "../../utils/sendEmail";
 import { recordAuditEvent } from "../../services/auditLog";
 import { assertSeatAvailable, requireTeamPlan } from "../../services/orgEntitlements";
 
+// Slug normalization: lowercase, alphanumeric + hyphens only, max 60 chars
 const normalizeSlug = (value: string) =>
   value
     .trim()
@@ -20,6 +44,7 @@ const normalizeSlug = (value: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
 
+// Appends random hex suffix to guarantee uniqueness even if two orgs have the same name
 const buildUniqueSlug = (base: string) => {
   const normalized = normalizeSlug(base) || "org";
   const suffix = crypto.randomBytes(3).toString("hex");

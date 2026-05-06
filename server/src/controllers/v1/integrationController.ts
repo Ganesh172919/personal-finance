@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Integration Controller (v1)
+ *
+ * Manages third-party integrations (connectors) for the organization.
+ * Handles connection lifecycle, sync operations, and sync history.
+ *
+ * Routes served:
+ *   GET    /api/v1/integrations                    - listIntegrations
+ *   GET    /api/v1/integrations/:id/health         - getIntegrationHealth
+ *   POST   /api/v1/integrations/:id/connect        - connectIntegration (admin)
+ *   POST   /api/v1/integrations/:id/disconnect     - disconnectIntegration (admin)
+ *   POST   /api/v1/integrations/:id/sync           - syncIntegration (admin)
+ *   GET    /api/v1/integrations/:id/history         - getIntegrationHistory
+ *
+ * Key patterns:
+ *   - Connector keys validated against a registry (getConnectorOrThrow)
+ *   - Connect/disconnect/sync require admin role; health/history are member-readable
+ *   - Sync supports simulate_error flag for testing error handling
+ *   - Sync runs recorded in IntegrationSyncRunModel for history
+ *   - Connection status tracked: connected, disconnected, error
+ *
+ * @module controllers/v1/integrationController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

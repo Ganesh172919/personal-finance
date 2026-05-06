@@ -1,3 +1,21 @@
+/**
+ * @fileoverview GoalDetailModal — presents a single financial goal in a dialog with
+ * progress bar, remaining amount, and time-to-deadline indicator.
+ *
+ * WHAT IT DOES
+ *  - Accepts an `IFinancialGoal` object and renders its current/target amounts
+ *    as a percentage progress bar with color-coded deadline urgency.
+ *  - Uses `useOrgFormatters` for locale-aware currency display.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `goal` (IFinancialGoal | null) — the goal to display; when null the dialog is hidden.
+ *  - `onClose` () => void — callback to dismiss the modal.
+ *
+ * ARCHITECTURE NOTES
+ *  - Opened from dashboard components (e.g. GoalProgress) when a user clicks on a goal row.
+ *  - Stateless presentational component — all financial data is passed in via props.
+ *  - Uses shadcn Dialog primitives for accessible focus trapping and backdrop overlay.
+ */
 import {
   Dialog,
   DialogContent,

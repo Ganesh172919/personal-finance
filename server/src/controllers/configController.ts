@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Config Controller
+ *
+ * Returns runtime configuration and feature flags to the client. This is the
+ * "bootstrap" endpoint the frontend calls on app load to determine which
+ * features are available and what entitlements the current user/org has.
+ *
+ * Routes served:
+ *   GET /api/config - getMyConfig
+ *
+ * Key patterns:
+ *   - Reads feature flags from environment variables (not a database)
+ *   - Conditionally resolves entitlements only when MONETIZATION_ENABLED is true
+ *   - Returns org settings (currency, locale, timezone) alongside feature flags
+ *   - Lightweight endpoint — no AI calls, no heavy aggregation
+ *
+ * @module controllers/configController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

@@ -1,3 +1,26 @@
+/**
+ * @fileoverview TaskApplyDialog — rich dialog for converting a task recommendation into
+ * real financial actions: transactions, goal progress updates, debt payments, or profile updates.
+ *
+ * WHAT IT DOES
+ *  - Displays the task's title and rationale ("why"), then lets the user compose one or
+ *    more "effects" using a draft builder (transaction / goal_progress / debt_payment / profile_update).
+ *  - Each effect is validated (amount > 0, required fields) before being added to a list.
+ *  - "Apply outcomes" sends all effects via `applyTaskEffects` with an idempotency key;
+ *    "Mark completed" skips effects and just updates task status.
+ *  - Fetches goals and debts from the user's financial profile to populate dropdowns.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `task` (Task) — the task being applied.
+ *  - `open` / `onOpenChange` — controlled dialog visibility.
+ *  - `defaultNote` — optional pre-filled note (e.g. "Applied from dashboard task widget").
+ *  - Mutations: `applyTaskEffects`, `updateTaskStatus`.
+ *
+ * ARCHITECTURE NOTES
+ *  - Opened from `TasksWidget` when user clicks the "apply" (rocket) button on a task.
+ *  - Uses idempotency keys (crypto.randomUUID) to prevent duplicate effect applications.
+ *  - Invalidates multiple query caches on success: tasks, transactions, and financial profile.
+ */
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 

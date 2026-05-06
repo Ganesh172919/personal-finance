@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Category Rule Controller (v1)
+ *
+ * Manages user-defined rules that automatically categorize transactions
+ * based on patterns (e.g., "Starbucks" -> "Food & Drink").
+ *
+ * Routes served:
+ *   GET    /api/v1/category-rules     - listRules
+ *   POST   /api/v1/category-rules     - createRule
+ *   PUT    /api/v1/category-rules/:id - updateRule
+ *   DELETE /api/v1/category-rules/:id - deleteRule
+ *
+ * Key patterns:
+ *   - Thin controller: delegates all logic to categoryRuleService
+ *   - Org ID falls back to user ID when org context is missing
+ *   - Rules are user-scoped within an organization
+ *
+ * @module controllers/v1/categoryRuleController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import {

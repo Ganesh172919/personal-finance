@@ -1,3 +1,21 @@
+/**
+ * @fileoverview QuickActions — dashboard shortcut grid with four common actions
+ * (Add Transaction, New Goal, View Reports, Connect Account) for fast navigation.
+ *
+ * WHAT IT DOES
+ *  - Renders a 2x2 grid of action buttons, each with an icon, label, and hover animation.
+ *  - "Connect Account" is disabled with a "Coming soon" tooltip; the other three
+ *    navigate to their respective routes via wouter.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — entirely self-contained.
+ *  - Uses `useLocation().navigate` from wouter for client-side routing.
+ *
+ * ARCHITECTURE NOTES
+ *  - A lightweight "launcher" card on the Dashboard page.
+ *  - Framer Motion `whileHover`/`whileTap` scale effects give tactile feedback.
+ *  - Designed to be extensible — new actions can be added to the `actions` array.
+ */
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";

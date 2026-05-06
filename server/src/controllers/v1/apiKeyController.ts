@@ -1,3 +1,23 @@
+/**
+ * @fileoverview API Key Controller (v1)
+ *
+ * Manages API keys for programmatic access to the organization's data.
+ * API keys are scoped to an org and carry permission scopes.
+ *
+ * Routes served:
+ *   GET    /api/v1/api-keys         - listApiKeys (admin)
+ *   POST   /api/v1/api-keys         - createApiKeyForOrg (admin)
+ *   DELETE /api/v1/api-keys/:id     - revokeApiKey (admin)
+ *
+ * Key patterns:
+ *   - All endpoints require admin role
+ *   - The raw secret is only returned once at creation time (never stored)
+ *   - Keys are revoked by setting revokedAt (soft-delete, not hard-delete)
+ *   - Key prefix stored for display purposes (e.g., "sk_abc...")
+ *
+ * @module controllers/v1/apiKeyController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

@@ -1,3 +1,27 @@
+/**
+ * @fileoverview API Response Type Definitions
+ *
+ * TypeScript types for all API request and response shapes. These types
+ * use an intersection pattern (`AnyRecord & { ... }`) to allow additional
+ * fields from the server while providing type safety for known fields.
+ *
+ * WHY AnyRecord INTERSECTION?
+ * The server may add fields over time. Using `AnyRecord & { known_fields }`
+ * provides autocomplete for known fields while accepting unknown ones,
+ * preventing breaking changes when the server evolves.
+ *
+ * CATEGORIES:
+ * - Auth: login, logout, user profile
+ * - Billing: checkout, portal, plans, entitlements
+ * - API Keys: CRUD operations for programmatic access
+ * - Exports: async export job management
+ * - Orgs: multi-tenant organization management
+ * - Workflows: automation workflow CRUD
+ * - Content: blogs, growth stories
+ *
+ * @module types/apiTypes
+ */
+
 type AnyRecord = { [key: string]: any };
 
 export type AuthUserResponse = AnyRecord & { request_id?: string };

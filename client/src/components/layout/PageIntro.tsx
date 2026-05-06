@@ -1,3 +1,27 @@
+/**
+ * @fileoverview PageIntro — standard page header section with an icon badge, eyebrow label,
+ * title, description, optional stat cards, and an action slot for page-level buttons.
+ *
+ * WHAT IT DOES
+ *  - Renders a rounded, shadowed section with decorative blur orbs in the background.
+ *  - Top-left: an eyebrow pill (icon + uppercase label), a large title, and a description.
+ *  - Below: optional stat cards in a responsive grid (1/2/3 columns depending on viewport).
+ *  - Right side: optional action buttons (e.g. "Create Blog", "Export") via the `actions` slot.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `icon` (LucideIcon) — displayed in the eyebrow pill.
+ *  - `eyebrow` (string) — uppercase section label (e.g. "BLOG", "GROWTH STORIES").
+ *  - `title` (string) — the main page heading.
+ *  - `description` (string) — subtitle text.
+ *  - `actions` (ReactNode, optional) — page-level action buttons.
+ *  - `stats` (IntroStat[], optional) — array of `{ label, value }` stat cards.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used at the top of every major page (blogs, growth stories, transactions, goals, etc.)
+ *    for a consistent visual identity.
+ *  - Pure presentational — no hooks, no state, no API calls.
+ *  - The decorative blur orbs are `pointer-events-none` and purely aesthetic.
+ */
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 

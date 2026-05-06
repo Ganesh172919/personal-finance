@@ -1,3 +1,23 @@
+/**
+ * @fileoverview PlanAndUsageDialog — full entitlements breakdown showing the user's
+ * current subscription plan, feature usage, base limits, credits, and remaining quota.
+ *
+ * WHAT IT DOES
+ *  - Fetches app config (entitlements) via `useAppConfig` when the dialog is open.
+ *  - Renders a table of nine tracked features (AI calls, scenario depth, OCR quota,
+ *    export access, API requests, autopilot actions, workflow runs, connector syncs,
+ *    marketplace installs) with columns for Used, Base, Credits, Limit, and Remaining.
+ *  - Shows plan name, status, and current billing period key.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No explicit props — visibility is controlled by `useAppDialogStore.planAndUsageOpen`.
+ *  - Locale-aware number formatting via `useAppConfig().org.locale`.
+ *
+ * ARCHITECTURE NOTES
+ *  - Opened from `FeatureLimitDialog` ("View plan & usage" button) or directly from settings.
+ *  - Companion to `FeatureLimitDialog` — that one is a lightweight nudge, this is the full view.
+ *  - Read-only; entitlements are managed server-side via Stripe/billing integration.
+ */
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/Button";

@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Search Controller (v1)
+ *
+ * Global search across multiple entity types (transactions, budgets, goals,
+ * workflows, etc.) within an organization.
+ *
+ * Routes served:
+ *   GET /api/v1/search - search
+ *
+ * Key patterns:
+ *   - Delegates to globalSearch service which queries multiple collections
+ *   - Supports type filtering (limit search to specific entity types)
+ *   - Cursor-based pagination for efficient deep pagination
+ *   - Org context extracted from req.org; falls back to user ID if missing
+ *
+ * @module controllers/v1/searchController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import { globalSearch, SearchableType } from "../../services/searchService";

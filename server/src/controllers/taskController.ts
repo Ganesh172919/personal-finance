@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Task Controller
+ *
+ * Manages financial action tasks generated from AI plans. Tasks are grouped into
+ * time-bucketed categories (7-day, 30-day, 12-month) and support lifecycle operations
+ * including creation from AI plans, status updates, and effect application.
+ *
+ * Routes served:
+ *   GET    /api/tasks/:id           - getTaskById
+ *   POST   /api/tasks/from-plan     - createTasksFromPlan
+ *   GET    /api/tasks               - listTasks
+ *   PATCH  /api/tasks/:id           - updateTask
+ *   POST   /api/tasks/:id/apply     - applyTask
+ *
+ * Key patterns:
+ *   - Deterministic task IDs derived from org+user+bucket+title hash (prevents duplicates)
+ *   - Tasks use $setOnInsert in bulkWrite to make creation idempotent
+ *   - Task kind inferred from title/why text when not explicitly provided
+ *   - applyTask delegates to actionOutcomeService for side-effect execution
+ *   - Manual try/catch wrappers (not asyncRoute) for granular error responses
+ *
+ * @module controllers/taskController
+ */
+
 import crypto from "crypto";
 import { Request, Response } from "express";
 import mongoose from "mongoose";
@@ -20,6 +44,7 @@ const BUCKETS: Array<{ key: keyof AiPlan["actions"]; bucket: 7 | 30 | 365; defau
 
 const normalizeTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase();
 
+// Deterministic ID ensures the same plan re-import does not create duplicate tasks
 const buildDeterministicTaskId = (params: { orgId: string; userId: string; bucket: number; title: string }) => {
   const hash = crypto
     .createHash("sha256")
@@ -175,6 +200,7 @@ export const createTasksFromPlan = async (req: Request, res: Response) => {
         .filter(Boolean) as Array<any>;
     });
 
+    // $setOnInsert + upsert: inserts new tasks but skips existing ones (idempotent)
     const ops = tasks.map(task => ({
       updateOne: {
         filter: { _id: task._id, orgId, userId: user._id },

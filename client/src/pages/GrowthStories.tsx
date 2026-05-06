@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Browse and search real financial transformation stories.
+ *
+ * Lists community-submitted growth stories with a featured hero card,
+ * category pill filters, and debounced text search.  Users can also
+ * open a modal to submit their own story via CreateGrowthStoryForm.
+ *
+ * Key data flows:
+ * - getFeaturedGrowthStories(1) fetches the pinned hero story.
+ * - getGrowthStoryCategories() populates the filter pills.
+ * - getGrowthStories({ category, search, limit }) loads the story grid;
+ *   query keys include category and debounced search so React Query
+ *   caches each combination independently.
+ *
+ * The featured section hides when a search or non-"all" category is
+ * active so result density stays high.
+ *
+ * Accessible from the sidebar under "Growth Stories" and linked from
+ * the blog and documentation surfaces.
+ */
+
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";

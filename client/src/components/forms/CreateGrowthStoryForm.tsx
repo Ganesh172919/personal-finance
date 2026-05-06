@@ -1,3 +1,31 @@
+/**
+ * @fileoverview CreateGrowthStoryForm — multi-section dialog form for submitting a personal
+ * financial transformation story with metrics, narrative, and categorisation.
+ *
+ * WHAT IT DOES
+ *  - Renders inside a `Dialog` (controlled by `open`/`onOpenChange`) with a scrollable body.
+ *  - Four sections: (1) Basics (title, persona, location, summary), (2) Financial Metrics
+ *    (starting/current net worth, monthly income, savings rate, debt paid off, investment
+ *    returns, timeline, outcome), (3) The Journey (challenge description, detailed Markdown
+ *    story), (4) Categorisation (category, difficulty, strategies, tags).
+ *  - Uses `react-hook-form` with `register` for all fields; strategies and tags are
+ *    comma-separated strings converted to arrays on submit.
+ *  - Default financialMetrics are zeroed; default cover image is provided if none entered.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `open` (boolean) — controls dialog visibility.
+ *  - `onOpenChange` ((open: boolean) => void) — callback to toggle dialog state.
+ *  - Mutation: `createGrowthStory` from `@/lib/apiClient`.
+ *  - Category options: 7 categories (debt-freedom, wealth-building, early-retirement, etc.).
+ *  - Difficulty levels: beginner, intermediate, advanced.
+ *
+ * ARCHITECTURE NOTES
+ *  - Opened from the /growth-stories page "Share Your Story" button.
+ *  - The form uses `id="growth-story-form"` with a submit button outside the scroll area
+ *    so the user can submit without scrolling back to the top.
+ *  - Financial metrics are converted back to numbers on submit to handle string inputs
+ *    from number-type input fields.
+ */
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";

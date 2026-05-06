@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Feature Flag Controller (v1)
+ *
+ * Organization-level feature flags with variant and rollout percentage support.
+ * Admins can create, update, and delete flags per organization.
+ *
+ * Routes served:
+ *   GET    /api/v1/feature-flags          - listFeatureFlags (admin)
+ *   PUT    /api/v1/feature-flags/:key     - upsertFeatureFlag (admin)
+ *   DELETE /api/v1/feature-flags/:key     - deleteFeatureFlag (admin)
+ *
+ * Key patterns:
+ *   - All endpoints require admin role
+ *   - Flags are keyed by lowercase string within an org
+ *   - upsert uses findOneAndUpdate with upsert:true (create or update in one call)
+ *   - Rollout percent clamped to 0-100
+ *   - Variant field unset when not provided (via $unset)
+ *
+ * @module controllers/v1/featureFlagController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

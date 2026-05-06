@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Notification Controller (v1)
+ *
+ * User notification management within an organization. Notifications are
+ * in-app messages triggered by domain events (workflow completions, reminders, etc.).
+ *
+ * Routes served:
+ *   GET   /api/v1/notifications      - listNotifications (filterable by status)
+ *   PATCH /api/v1/notifications/:id  - markNotificationRead
+ *
+ * Key patterns:
+ *   - Notifications scoped to org + user
+ *   - Status filter: "read" or "unread" (or all if omitted)
+ *   - markNotificationRead sets status to "read" and records readAt timestamp
+ *   - Results sorted by newest first with configurable limit (max 200)
+ *
+ * @module controllers/v1/notificationController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

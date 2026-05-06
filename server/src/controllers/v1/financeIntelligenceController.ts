@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Finance Intelligence Controller (v1)
+ *
+ * Read-only analytics endpoints powered by the financeIntelligence service.
+ * Provides budget envelopes, recurring charge detection, and cash-flow forecasting.
+ *
+ * Routes served:
+ *   GET /api/v1/finance/budget-envelopes/:periodKey  - getBudgetEnvelopesEndpoint
+ *   GET /api/v1/finance/recurring-candidates          - listRecurringCandidatesEndpoint
+ *   GET /api/v1/finance/forecast                      - getForecastEndpoint
+ *
+ * Key patterns:
+ *   - Thin controller: delegates all computation to financeIntelligence service
+ *   - Budget envelopes compare planned vs. actual spending per category
+ *   - Recurring candidates detected from transaction frequency patterns
+ *   - Forecast projects future cash flow based on historical data
+ *   - All endpoints scoped to org context
+ *
+ * @module controllers/v1/financeIntelligenceController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

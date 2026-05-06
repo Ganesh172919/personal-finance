@@ -1,3 +1,62 @@
+/**
+ * @fileoverview Central v1 API route aggregator. This file defines the bulk of the v1 REST API
+ * by mounting many domain-specific route handlers onto a single Express Router.
+ *
+ * Endpoint groups (all mounted under /api/v1):
+ *   Calendar Reminders   - GET/POST/PATCH/DELETE /calendar-reminders
+ *   Global Search        - GET /search
+ *   Category Rules       - GET/POST/PATCH/DELETE /category-rules (auto-categorization)
+ *   Organizations        - GET /orgs/me, POST /orgs, POST /orgs/:orgId/members, PATCH /orgs/:orgId/settings
+ *   Org Invites          - POST /org-invites/accept
+ *   API Keys             - GET/POST /api-keys, POST /api-keys/:id/revoke
+ *   Usage Ledger         - GET /usage/ledger
+ *   Billing              - POST /billing/checkout, GET /billing/portal, POST /billing/webhook (Stripe)
+ *   Workflows            - GET /workflows/templates, GET/POST /workflows, POST /workflows/:id/run
+ *   Finance Accounts     - GET/POST /finance/accounts, PATCH /finance/accounts/:id
+ *   Finance Merchants    - GET/POST /finance/merchants
+ *   Budget Allocations   - GET/PUT /finance/budgets/:periodKey/allocations, GET .../envelopes
+ *   Recurring Rules      - GET /finance/recurring/candidates, GET/POST /finance/recurring, PATCH .../:id
+ *   Finance Forecast     - GET /finance/forecast
+ *   Exports              - GET/POST /exports, GET /exports/:id, GET /exports/:id/download
+ *   Audit Events         - GET /audit/events
+ *   Tools                - POST /tools/simulate, POST /tools/execute
+ *   AI                   - POST /ai/command, POST /ai/stream, POST /ai/scenario
+ *   Autopilot            - POST /autopilot/plan, simulate, approve, execute; GET /autopilot/runs/:id
+ *   Events (SSE)         - GET /events/stream
+ *   Notifications        - GET /notifications, POST /notifications/:id/read
+ *   Marketplace          - GET /marketplace/catalog, POST /marketplace/install
+ *   Plugins              - GET /plugins, POST /plugins/:id/update, POST /plugins/:id/uninstall
+ *   Integrations         - GET /integrations, connect/disconnect/sync/history per :id
+ *   CSV Import           - POST /integrations/transactions_csv/import
+ *   Automation Events    - GET /automation/events, POST /automation/events/emit
+ *   Feature Flags        - GET/PUT/DELETE /feature-flags/:key
+ *   Analytics            - GET /analytics/overview, spending-heatmap, category-trends, income-expense, etc.
+ *   Activity Feed        - GET /activity-feed
+ *   Comments             - GET/POST/PATCH/DELETE /comments
+ *   Shares               - POST /shares/financial-story
+ *   Referrals            - GET /referrals/me, POST /referrals/redeem
+ *   Two-Factor Auth      - POST /auth/2fa/setup, verify, disable; GET /auth/2fa/status
+ *   Security Audit Logs  - GET /security/audit-log, GET /orgs/audit-log
+ *   Connector Health     - GET /integrations/health-summary
+ *   Plugin Manifest      - POST /plugins/validate-manifest
+ *
+ * Middleware:
+ *   - Passport JWT authentication on nearly all endpoints
+ *   - authAny + requireScopeIfApiKey on usage ledger (supports API key auth)
+ *   - Zod validation on params, query, and body per endpoint
+ *   - CSV file upload (csvUpload) on CSV import endpoint
+ *   - Stripe webhook endpoint is unauthenticated (signature verified in controller)
+ *
+ * Controllers: orgController, apiKeyController, usageController, billingController,
+ *   workflowController, exportController, inviteController, auditController, toolController,
+ *   featureFlagController, marketplaceController, aiController, integrationController,
+ *   automationEventController, analyticsController, shareController, referralController,
+ *   notificationController, autopilotController, eventsController, financeAccountsController,
+ *   financeMerchantsController, financeBudgetsController, financeRecurringController,
+ *   financeIntelligenceController, transactionsCsvImportController, searchController,
+ *   categoryRuleController, calendarReminderController, analyticsDetailController,
+ *   activityFeedController, commentController, twoFactorController
+ */
 import { Router } from "express";
 import passport from "passport";
 

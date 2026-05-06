@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Chat Input Component
+ *
+ * The message input area for the AI chat. Supports:
+ * - Auto-resizing textarea (grows with content)
+ * - File attachment with upload-to-workspace flow
+ * - Narrative mode toggle (request detailed narrative responses)
+ * - Enter to send (Shift+Enter for newline)
+ * - Loading state during message sending
+ *
+ * FILE ATTACHMENT FLOW:
+ * 1. User clicks paperclip → file picker opens
+ * 2. Selected files are stored locally (not yet uploaded)
+ * 3. On send, files are uploaded to the workspace first
+ * 4. File IDs are included in the message payload
+ *
+ * @module features/chat/ChatInput
+ */
+
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Paperclip, Send, X } from "lucide-react";

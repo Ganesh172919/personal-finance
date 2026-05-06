@@ -1,4 +1,23 @@
-﻿import { motion } from "framer-motion";
+﻿/**
+ * @fileoverview SpendingAnalysis — dashboard card showing total monthly spending,
+ * month-over-month change, and a breakdown of top expense categories with progress bars.
+ *
+ * WHAT IT DOES
+ *  - Fetches `/api/transactions/summary` for the current month grouped by month with top 6 categories.
+ *  - Calculates current vs. previous month total and computes a percentage change indicator.
+ *  - Renders each category with a contextual icon (food→Utensils, transport→Car, etc.),
+ *    amount, percentage, and an animated progress bar.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — data is fully server-fetched.
+ *  - `getCategoryIcon()` maps category names to lucide-react icons.
+ *  - `CATEGORY_COLORS` provides a rotating palette of six HSL accent colours.
+ *
+ * ARCHITECTURE NOTES
+ *  - Paired with InvestmentPortfolio on the dashboard; together they give income vs. expense visibility.
+ *  - The "This Month" dropdown is currently a static selector but is structured for future range options.
+ *  - Framer Motion stagger animation (0.1 s per category + 1 s progress bar fill).
+ */
 import { Card } from "@/components/ui/Card";
 import {
   Select,

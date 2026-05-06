@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Finance Budgets Controller (v1)
+ *
+ * Manages budget allocations per category per period (month). Budgets define
+ * planned spending limits that are compared against actual spending in the
+ * dashboard and intelligence endpoints.
+ *
+ * Routes served:
+ *   GET /api/v1/finance/budgets/:periodKey        - listBudgetAllocations
+ *   PUT /api/v1/finance/budgets/:periodKey         - upsertBudgetAllocation (admin)
+ *
+ * Key patterns:
+ *   - Period key format: YYYY-MM (validated with regex)
+ *   - upsert uses findOneAndUpdate with upsert:true for atomic create-or-update
+ *   - Amounts rounded to 2 decimal places
+ *   - Currency validated as 3-letter ISO code
+ *   - List readable by any org member; upsert requires admin role
+ *
+ * @module controllers/v1/financeBudgetsController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

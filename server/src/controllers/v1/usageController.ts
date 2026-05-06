@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Usage Controller (v1)
+ *
+ * Returns the current usage ledger and entitlement breakdown for the organization.
+ * This is the primary endpoint for the "Usage" dashboard page.
+ *
+ * Routes served:
+ *   GET /api/v1/usage/ledger - getUsageLedger
+ *
+ * Key patterns:
+ *   - User identity resolved from JWT or API key (supports both auth methods)
+ *   - Period key defaults to current billing period if not specified
+ *   - Returns resolved entitlements (plan, limits, usage, remaining) plus raw ledger rows
+ *   - Ledger rows include per-feature unit counts, token usage, and cost
+ *
+ * @module controllers/v1/usageController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

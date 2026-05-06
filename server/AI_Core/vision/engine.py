@@ -1,3 +1,35 @@
+"""
+vision/engine.py - OCR Engine (PaddleOCR)
+===========================================
+
+The core OCR engine that converts raw image bytes into structured text
+lines.  Uses **PaddleOCR** (Baidu's open-source OCR library) with
+angle correction and space-character support.
+
+Pipeline
+--------
+1. ``decode_image()`` -- decode raw bytes to a numpy BGR array (OpenCV).
+2. ``preprocess_for_ocr()`` -- denoise, equalise, and binarise for
+   better OCR accuracy on receipts and handwritten notes.
+3. ``PaddleOCR.ocr()`` -- run the neural OCR model to extract tokens
+   with bounding boxes and confidence scores.
+4. ``_group_tokens_into_lines()`` -- cluster tokens into horizontal
+   lines based on y-coordinate proximity (median height threshold).
+
+Data structures
+---------------
+- ``OcrToken`` -- a single recognised text unit with bounding box and
+  confidence.
+- ``OcrLine`` -- a line of text formed by grouping nearby tokens.
+
+Design decisions
+----------------
+- PaddleOCR is lazily imported and cached (``@lru_cache``) to keep
+  non-vision endpoints fast to start up.
+- Line grouping uses an adaptive y-threshold (0.6 * median token
+  height) to handle varying font sizes on receipts.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,6 +45,7 @@ from .preprocess import decode_image, preprocess_for_ocr
 
 @dataclass(frozen=True)
 class OcrToken:
+    """A single OCR token with text, confidence score, and bounding box."""
     text: str
     confidence: float
     box: List[List[float]]

@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Email verification page with 6-digit OTP input.
+ *
+ * Displayed after registration to confirm the user's email address.
+ * Reads the email from sessionStorage (set by the Register page) and
+ * submits the 6-digit OTP to POST /api/auth/verify-email.  On success,
+ * refreshes the auth context and navigates to the dashboard or the
+ * stored post-auth redirect path.
+ *
+ * Key data flows:
+ * - POST /api/auth/verify-email with { email, otp } confirms the code.
+ * - checkAuthStatus() refreshes the auth context so the router recognises
+ *   the user as verified.
+ * - In development mode, the OTP is auto-populated from sessionStorage
+ *   (devOtpForVerification) for faster local testing.
+ *
+ * A "Resend code" action re-triggers the server-side OTP email.
+ * Users without an email in sessionStorage are redirected to /register.
+ *
+ * Routed at /verify-email; the next step in the registration flow.
+ */
+
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, MailCheck, ShieldCheck, Sparkles } from "lucide-react";

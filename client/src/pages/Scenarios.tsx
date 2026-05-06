@@ -1,3 +1,24 @@
+/**
+ * @fileoverview What-if scenario builder for financial planning.
+ *
+ * Lets users model hypothetical changes to expenses, income, or
+ * investments and see the projected impact on surplus, savings rate,
+ * and goal timelines.  Three scenario types are supported: New Expense,
+ * Income Change, and Investment Plan.
+ *
+ * Key data flows:
+ * - processScenario() mutation sends scenario_type, amount, description,
+ *   and assumptions (months, expected_return_pct) to the server.
+ * - The response (ScenarioResponse) contains before/after comparisons
+ *   and delta metrics rendered in the results panel.
+ *
+ * All monetary values are formatted via useOrgFormatters for tenant-
+ * aware currency display.  Results are stored in local state and
+ * cleared when a new calculation is triggered.
+ *
+ * Accessible from the sidebar under "Scenarios" for authenticated users.
+ */
+
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";

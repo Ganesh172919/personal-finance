@@ -1,4 +1,31 @@
-﻿from __future__ import annotations
+﻿"""
+vision/receipt_parser.py - Receipt Field Extraction
+=====================================================
+
+Parses OCR output lines into structured receipt data using **heuristic
+rules** (no ML model).  Extracts vendor name, date, total amount, tax,
+line items, currency, and a suggested spending category.
+
+Extraction pipeline
+-------------------
+1. **Vendor** -- pick the best candidate from the first 8 lines based
+   on letter-to-digit ratio, length, and confidence.
+2. **Date** -- regex match for YYYY-MM-DD or DD-MM-YYYY patterns.
+3. **Total** -- scan for keywords like "grand total", "amount due";
+   fall back to the maximum detected amount.
+4. **Tax** -- scan for tax/GST/VAT keywords.
+5. **Items** -- lines with an amount that are not totals/tax/discount.
+6. **Currency** -- detect from currency symbols in the text.
+7. **Category** -- keyword-based classification (food, groceries, etc.).
+
+Design decisions
+----------------
+- Purely deterministic (no LLM calls) for speed and cost.
+- Handles multiple currencies (INR, USD, EUR, GBP) via symbol detection.
+- Limits extracted items to 30 to avoid huge payloads from noisy OCR.
+"""
+
+from __future__ import annotations
 
 import re
 from typing import Dict, List, Optional, Tuple

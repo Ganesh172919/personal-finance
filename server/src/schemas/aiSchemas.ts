@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Zod validation schemas for AI-related API request bodies and query parameters.
+ *
+ * Exported schemas:
+ *   processCommandBodySchema         - Validates AI command input (command text + optional narrative flag)
+ *   whatIfScenarioBodySchema         - Validates what-if scenario parameters (v2 or legacy format)
+ *   updateFinancialProfileBodySchema - Validates financial profile updates (age, income, expenses,
+ *                                      savings, goals, debts, transactions, risk tolerance, etc.)
+ *   addInvestmentBodySchema          - Validates adding a new investment entry
+ *   agentOutputFeedbackBodySchema    - Validates thumbs up/down feedback on AI agent outputs
+ *   recentAgentOutputsQuerySchema    - Validates query params for listing recent agent outputs
+ *
+ * Used by: aiRoutes, v1Routes
+ *
+ * Key validation rules:
+ *   - Command text: required, 1-4000 chars
+ *   - What-if scenarios support two formats: v2 (scenario_type + amount) and legacy (type + expense/income)
+ *   - Financial profile: all fields optional, arrays of goals/debts/transactions validated individually
+ *   - Investment: name required, amount must be positive
+ *   - Feedback rating: enum "up" | "down"
+ */
 import { z } from "zod";
 
 const riskToleranceSchema = z.enum(["conservative", "moderate", "aggressive"]);

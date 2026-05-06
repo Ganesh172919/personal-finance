@@ -1,9 +1,23 @@
 /**
- * Chat-related TypeScript interfaces
+ * @fileoverview Chat Type Definitions
+ *
+ * TypeScript interfaces for the AI chat system: sessions, messages,
+ * attachments, and message metadata. These types are used by the chat
+ * store, API client, and chat UI components.
+ *
+ * MESSAGE METADATA:
+ * The `IChatMessageMetadata` interface is intentionally large — it captures
+ * all possible metadata the AI system can attach to a response, including
+ * analysis results, tool calls, workflow traces, and debugging info.
+ * Most fields are optional because different response types populate
+ * different metadata fields.
+ *
+ * @module types/chat.types
  */
 
 import type { Plan, ToolCall } from "@/types/ai.types";
 
+/** File attachment in a chat message (references a workspace file) */
 export interface IChatAttachment {
   workspaceFileId: string;
   fileId: string;
@@ -36,6 +50,26 @@ export interface IChatMessageMetadata {
   taskIds?: string[];
   appliedTaskIds?: string[];
   detailedAnalysis?: Record<string, unknown>;
+  evidence?: Array<{
+    id?: string;
+    type?: string;
+    label?: string;
+    snippet?: string;
+    entity_id?: string;
+  }>;
+  confidence?: {
+    score?: number;
+    label?: string;
+    notes?: string[];
+    coverage?: Record<string, unknown>;
+  };
+  suggestedActions?: Array<{
+    title?: string;
+    why?: string;
+    priority?: "low" | "medium" | "high";
+    entity_id?: string;
+  }>;
+  linkedEntityIds?: Record<string, string[]>;
   workflowTrace?: Array<{
     agent: string;
     startedAt: string;

@@ -1,3 +1,26 @@
+/**
+ * @fileoverview CommentThread — reusable threaded comment system for any resource type
+ * (transaction, budget, goal, workflow, insight) with create, edit, and delete support.
+ *
+ * WHAT IT DOES
+ *  - Fetches comments for a given `resourceType` + `resourceId` via `listResourceComments`.
+ *  - Renders each comment with an avatar (initials + deterministic colour), author name,
+ *    relative timestamp, and edit indicator.
+ *  - Own comments show a kebab menu with Edit (inline input) and Delete options.
+ *  - New comments are submitted via a form at the bottom with Enter-to-send.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `resourceType` ("transaction" | "budget" | "goal" | "workflow" | "insight") — the entity type.
+ *  - `resourceId` (string) — the specific entity ID.
+ *  - `compact` (boolean) — smaller padding / no card wrapper for inline use.
+ *  - Mutations: `createComment`, `updateCommentApi`, `deleteCommentApi`.
+ *
+ * ARCHITECTURE NOTES
+ *  - Designed to be embedded inside detail views (e.g. transaction detail, insight modal).
+ *  - Query key is `["comments", resourceType, resourceId]` so multiple instances don't collide.
+ *  - Framer Motion stagger (0.04 s) for comment entry animation.
+ *  - `useAuth` determines which comments are "own" to show edit/delete controls.
+ */
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";

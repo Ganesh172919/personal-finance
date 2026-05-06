@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Registration page with name, email, phone, referral code, and password.
+ *
+ * Collects new user credentials through a validated form (react-hook-form
+ * + zod) and submits to POST /api/auth/register.  On success, stores
+ * the email (and dev OTP when present) in sessionStorage and navigates
+ * to /verify-email for the OTP confirmation step.
+ *
+ * Key data flows:
+ * - POST /api/auth/register creates the account; the server returns
+ *   a dev_otp in development mode for local testing.
+ * - ?next= query param is preserved across registration so the
+ *   post-verification redirect lands on the intended page.
+ *
+ * Password rules: min 8 chars, upper + lower + digit required.
+ * Phone is optional (regex-validated when provided).
+ * Referral code is optional (6-16 alphanumeric, uppercased).
+ *
+ * Feature highlights (multi-agent guidance, security, referral-ready)
+ * are shown on the left side of the split layout.
+ *
+ * Routed at /register; linked from Login page and public marketing.
+ */
+
 import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { Brain, Gift, ShieldCheck, Sparkles } from "lucide-react";

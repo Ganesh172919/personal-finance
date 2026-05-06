@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Task management page for AI-generated action items.
+ *
+ * Displays tasks produced by AI agent plans, filterable by status
+ * (open, in-progress, done) and free-text search.  Selecting a task
+ * opens a detail sheet with description, rationale (why), and status
+ * mutation controls.  An "Apply" dialog lets users accept a task's
+ * recommended action into their financial plan.
+ *
+ * Key data flows:
+ * - getTasks({ status, limit }) loads the task list; query key includes
+ *   the active status filter for independent caching.
+ * - getTaskById(id) fetches full detail for the selected task sheet.
+ * - updateTaskStatus(id, status) mutates task lifecycle state.
+ *
+ * Tasks are sorted by due date ascending; overdue items surface first.
+ * Feature-flagged behind tasks_enabled; renders a disabled notice when
+ * the flag is off.
+ *
+ * Accessible from the sidebar under "Tasks" for authenticated users.
+ */
+
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

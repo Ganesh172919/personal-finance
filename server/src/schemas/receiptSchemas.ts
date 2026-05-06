@@ -1,3 +1,18 @@
+/**
+ * @fileoverview Zod validation schemas for receipt parsing and confirmation.
+ *
+ * Exported schemas:
+ *   receiptParseBodySchema    - Validates optional hints for OCR parsing (lang, currencyHint)
+ *   receiptConfirmBodySchema  - Validates confirmed/corrected receipt data before saving
+ *
+ * Used by: receiptRoutes (POST /receipts/parse, POST /receipts/:id/confirm)
+ *
+ * Key validation rules:
+ *   - Parse body: both fields optional (language hint max 20 chars, currency hint max 10 chars)
+ *   - Confirm body: vendor (required, max 250), date (YYYY-MM-DD format), total (positive),
+ *     tax (non-negative, optional), currency (optional), category (required, max 100),
+ *     description (optional), items array (each with description, optional quantity/unit_price/total)
+ */
 import { z } from "zod";
 
 export const receiptParseBodySchema = z.object({

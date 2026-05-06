@@ -1,3 +1,27 @@
+/**
+ * @fileoverview FinancialCopilot — floating AI chat widget (FAB + expandable panel) that
+ * provides page-context-aware financial assistance across the entire application.
+ *
+ * WHAT IT DOES
+ *  - Renders a floating action button (bottom-right) that opens a 380px-wide chat panel.
+ *  - On open, displays contextual suggestions based on the current route (dashboard,
+ *    transactions, analytics, goals, portfolio, finance OS, workflows) via `PAGE_CONTEXTS`.
+ *  - Chat messages are rendered with ReactMarkdown for assistant responses and plain text
+ *    for user messages. A typing indicator shows while the AI is processing.
+ *  - Supports minimize (header-only) and close states.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — fully self-contained state management.
+ *  - Mutation: `processAICommand` with `narrative: false` for concise responses.
+ *  - Uses `useLocation` from wouter to determine the current page context.
+ *
+ * ARCHITECTURE NOTES
+ *  - Complementary to `AiCommandBar` — the copilot is always-available via FAB, while
+ *    the command bar is embedded in specific pages.
+ *  - Messages are ephemeral (not persisted) — cleared when the panel closes.
+ *  - The panel uses `position: fixed` with `z-index: 50` to overlay all content.
+ *  - Spring animation (damping 25, stiffness 350) for smooth open/close transitions.
+ */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {

@@ -1,3 +1,31 @@
+"""
+memory/store.py - SQLite-Backed Memory Store
+=============================================
+
+Provides ``MemoryStore``, a persistent key-value store for user-level
+memories (preferences, facts, inferred traits).  Memories are scoped by
+``org_id`` + ``user_id`` and support full-text search via SQLite FTS5.
+
+Features
+--------
+- **Upsert** -- insert or update memories by ``(org_id, user_id, key)``
+  with automatic deduplication.
+- **Full-text search** -- uses FTS5 ``bm25()`` ranking for relevance-
+  based retrieval.  Falls back to ``LIKE`` if FTS5 is unavailable.
+- **Thread-safe** -- all operations are guarded by a ``threading.Lock``.
+- **WAL mode** -- enables concurrent reads during writes for better
+  performance under concurrent FastAPI requests.
+
+Schema
+------
+The ``memories`` table stores: ``org_id``, ``user_id``, ``key``,
+``value``, ``confidence`` (0-1), ``source`` ("explicit"/"inferred"),
+``created_at``, ``updated_at``.
+
+The ``memories_fts`` virtual table mirrors ``key`` and ``value`` for
+full-text search, kept in sync via INSERT/UPDATE/DELETE triggers.
+"""
+
 from __future__ import annotations
 
 import sqlite3
@@ -9,11 +37,13 @@ from typing import Iterable, List
 
 
 def _utc_now_iso() -> str:
+    """Return the current UTC time as an ISO 8601 string."""
     return datetime.now(timezone.utc).isoformat()
 
 
 @dataclass(frozen=True)
 class MemoryRecord:
+    """A single memory entry with key, value, confidence, and source."""
     key: str
     value: str
     confidence: float

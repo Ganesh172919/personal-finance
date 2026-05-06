@@ -1,3 +1,29 @@
+"""
+finwise_server.py - FinWise Server Communication Client
+========================================================
+
+Provides HTTP client functions for communicating with the FinWise
+Node.js/Express backend server.  Used primarily for **tool call
+validation** -- before surfacing automation suggestions to the user,
+the AI Core simulates the tool call against the server to check
+RBAC permissions and eligibility.
+
+Functions
+---------
+- ``simulate_tool_call()`` -- sends a tool call to the server's
+  ``/api/internal/tools/simulate`` endpoint for validation.
+- ``fetch_tool_catalog()`` -- retrieves the list of available tools
+  from the server (unused currently, but available for future use).
+
+Design decisions
+----------------
+- Uses ``urllib`` (stdlib) instead of ``requests``/``httpx`` to avoid
+  adding a dependency for simple JSON-over-HTTP calls.
+- Timeouts are short (1.5-2s) to avoid blocking the AI response when
+  the server is slow or unreachable -- connectivity failures are
+  silently caught by the caller.
+"""
+
 from __future__ import annotations
 
 import json
@@ -12,6 +38,11 @@ logger = logging.getLogger(__name__)
 
 
 class FinWiseServerHttpError(RuntimeError):
+    """Structured HTTP error from the FinWise server.
+
+    Carries ``status_code``, ``code``, and ``message`` so the caller
+    can make informed decisions (e.g. 401/403 means skip validation).
+    """
     def __init__(
         self,
         *,

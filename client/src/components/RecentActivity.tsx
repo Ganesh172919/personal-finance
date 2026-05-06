@@ -1,6 +1,23 @@
-import { motion } from "framer-motion";
-import { Card } from "@/components/ui/Card";
-import { useQuery } from "@tanstack/react-query";
+/**
+ * @fileoverview RecentActivity — dashboard card showing the five most recent transactions
+ * with type-specific icons, colour coding, and a "View All" link to the transactions page.
+ *
+ * WHAT IT DOES
+ *  - Fetches the last 5 transactions from `/api/transactions/recent` via React Query.
+ *  - Renders each transaction with an icon indicating type (income = green down-left arrow,
+ *    expense = red up-right arrow, investment = blue refresh icon), description, category,
+ *    date, and signed amount.
+ *  - Clicking "View All" navigates to `/transactions`.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — data is fully server-fetched.
+ *  - Uses `useOrgFormatters` for locale-aware money and date formatting.
+ *
+ * ARCHITECTURE NOTES
+ *  - One of the main dashboard grid cards alongside GoalProgress, InvestmentPortfolio, etc.
+ *  - Framer Motion stagger (0.1 s per row) for a polished entry animation.
+ *  - Purely presentational; transaction mutations are handled in the Transactions page.
+ */
 import { getRecentTransactions } from "@/lib/apiClient";
 import { ArrowUpRight, ArrowDownLeft, RefreshCcw } from "lucide-react";
 import { useLocation } from "wouter";

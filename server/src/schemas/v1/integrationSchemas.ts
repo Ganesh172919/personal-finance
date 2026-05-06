@@ -1,3 +1,20 @@
+/**
+ * @fileoverview Zod validation schemas for third-party integration management.
+ *
+ * Exported schemas:
+ *   integrationIdParamSchema         - Validates integration/connector ID (:id param, lowercase alphanumeric key)
+ *   integrationHistoryQuerySchema    - Validates query for integration sync history (limit: 1-200)
+ *   integrationSyncBodySchema        - Validates triggering a sync (optional records_synced, simulate_error)
+ *   integrationConnectBodySchema     - Validates connecting an integration (empty object)
+ *   integrationDisconnectBodySchema  - Validates disconnecting an integration (empty object)
+ *
+ * Used by: v1Routes (integrations/:id/connect, /disconnect, /sync, /history, /health)
+ *
+ * Key validation rules:
+ *   - Connector key: 3-120 chars, lowercase alphanumeric with . _ - : separators
+ *   - Sync body: records_synced 0-1M, simulate_error boolean for testing
+ *   - Connect/disconnect: empty strict objects (future extensibility)
+ */
 import { z } from "zod";
 
 const connectorKeySchema = z

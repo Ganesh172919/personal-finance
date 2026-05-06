@@ -1,3 +1,25 @@
+/**
+ * @fileoverview AI API Client
+ *
+ * Functions for interacting with the AI subsystem: status monitoring,
+ * session management, model catalog, command processing, and scenario analysis.
+ *
+ * AI CORE vs SERVER AI:
+ * - `/ai-core/*` routes proxy to the Python FastAPI AI Core service
+ * - `/process-command` and `/scenarios/*` are handled by the Express server
+ *
+ * SESSION MANAGEMENT:
+ * AI sessions are multi-step workflows that can be paused, resumed, and
+ * inspected. Each session has checkpoints that record the state at each
+ * phase of processing.
+ *
+ * SCENARIO ANALYSIS:
+ * The what-if scenario endpoint evaluates "what if I spent/earned/invested
+ * X more per month?" against the user's financial data.
+ *
+ * @module lib/api/ai
+ */
+
 import type {
   AiCoreStatusResponse,
   EnhancedAiStatusResponse,
@@ -9,6 +31,7 @@ import type {
 
 import { apiClient } from "./core";
 
+/** Get basic AI Core health status */
 export async function getAiCoreStatus(): Promise<AiCoreStatusResponse> {
   return apiClient("/ai-core/status");
 }
@@ -66,6 +89,13 @@ export async function listAiModels(
   return apiClient(`/ai-core/ai/models${query ? `?${query}` : ""}`);
 }
 
+/**
+ * Process an AI command (the main AI entry point for non-streaming requests).
+ * This is the non-streaming alternative to useAIStream.
+ *
+ * @param command - Natural language command (e.g., "analyze my spending")
+ * @param options.narrative - Request a narrative-style response
+ */
 export async function processAICommand(
   command: string,
   options: { narrative?: boolean } = {}
@@ -81,6 +111,7 @@ export async function processAICommand(
   });
 }
 
+/** Alias for processAICommand (backward compatibility) */
 export async function processAICommandWithOptions(
   command: string,
   options: { narrative?: boolean } = {}

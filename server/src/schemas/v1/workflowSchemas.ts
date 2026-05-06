@@ -1,3 +1,32 @@
+/**
+ * @fileoverview Zod validation schemas for workflow automation management.
+ *
+ * Exported schemas:
+ *   createWorkflowBodySchema - Validates creating a new workflow (name, trigger, actions)
+ *   workflowIdParamSchema    - Validates :id route param as a 24-char hex ObjectId
+ *   runWorkflowBodySchema    - Validates triggering a workflow run (optional idempotency_key)
+ *
+ * Workflow trigger types (discriminated on "type"):
+ *   manual  - Triggered explicitly by user action
+ *   cron    - Triggered on a cron schedule (cron expression: 5-120 chars)
+ *   event   - Triggered by a domain event (event_type: 2-120 chars)
+ *
+ * Workflow action types (discriminated on "type"):
+ *   create_task        - Create a task with title, why, steps, priority, kind, due_days
+ *   send_notification  - Send email or in-app notification with subject and message
+ *   export_report      - Generate an export (transactions_csv or monthly_summary_pdf)
+ *
+ * Used by: v1Routes (GET /workflows/templates, GET/POST /workflows, POST /workflows/:id/run)
+ *
+ * Key validation rules:
+ *   - Workflow name: required, 2-160 chars
+ *   - Actions: required array, 1-50 items
+ *   - Task actions: kind enum cashflow | budget | debt | invest | goal | education | generic
+ *   - Task priority: low | medium | high (default medium)
+ *   - Notification actions: channel email | in_app (default email)
+ *   - Export actions: monthly_summary_pdf requires period_key in params (enforced by .superRefine)
+ *   - runWorkflow idempotency_key: optional 8-128 chars for safe retries
+ */
 import { z } from "zod";
 
 const objectIdRegex = /^[a-f\d]{24}$/i;

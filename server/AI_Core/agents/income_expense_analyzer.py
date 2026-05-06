@@ -1,3 +1,33 @@
+"""
+income_expense_analyzer.py - Income & Expense Analyzer Agent
+=============================================================
+
+The ``IncomeExpenseAnalyzerAgent`` performs a comprehensive analysis of a
+user's transaction history, categorising income vs. expenses, detecting
+spending trends, identifying anomalies, and computing key financial
+metrics (savings rate, cash flow, fixed vs. discretionary ratio).
+
+Key responsibilities
+--------------------
+- Categorise transactions into income, expenses, investments, transfers.
+- Analyse spending trends over time (monthly breakdown).
+- Detect anomalous transactions using z-score statistical method.
+- Identify recurring income/expense patterns.
+- Compute a financial health score (0-100) based on savings rate,
+  cash flow, and fixed expense ratio.
+- Generate deterministic insight text (no LLM calls).
+
+Design decisions
+----------------
+- Uses ``pandas`` for efficient groupby/aggregate operations on
+  transaction DataFrames.
+- The ``_serialize_dict`` helper ensures all outputs are JSON-safe
+  (converts pandas Series/DataFrames to plain dicts/lists).
+- Financial health scoring uses a weighted point system: savings rate
+  contributes up to 30 points, cash flow +/- 15-20, fixed expense
+  ratio +/- 10-20, plus bonuses for detected strengths/concerns.
+"""
+
 import logging
 from typing import Any, Dict, List
 
@@ -10,7 +40,12 @@ logger = logging.getLogger(__name__)
 
 
 class IncomeExpenseAnalyzerAgent:
-    """Comprehensive income and expense analysis with trend detection and optimization insights."""
+    """Comprehensive income and expense analysis with trend detection and optimization insights.
+
+    This agent is part of the multi-agent financial advisory system.
+    It receives a list of transaction dicts and returns a structured
+    analysis with metrics, patterns, insights, and a health score.
+    """
 
     def __init__(self):
         self.data_processor = DataProcessor()

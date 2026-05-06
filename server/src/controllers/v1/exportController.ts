@@ -1,3 +1,26 @@
+/**
+ * @fileoverview Export Controller (v1)
+ *
+ * Data export system. Users can request exports (e.g., CSV of transactions),
+ * which are processed asynchronously (when ASYNC_JOBS_ENABLED) or synchronously.
+ * Completed exports are downloadable from GridFS.
+ *
+ * Routes served:
+ *   GET    /api/v1/exports         - listExports
+ *   POST   /api/v1/exports         - createExport
+ *   GET    /api/v1/exports/:id     - getExportById
+ *   GET    /api/v1/exports/:id/download - downloadExport
+ *
+ * Key patterns:
+ *   - Feature limit enforced via "export_access" entitlement
+ *   - Idempotency key prevents duplicate export creation
+ *   - Async mode: returns 201 with queued=true; sync mode: processes inline
+ *   - Download streams from GridFS with Content-Disposition: attachment
+ *   - Audit event recorded on export creation
+ *
+ * @module controllers/v1/exportController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -133,6 +156,8 @@ export const createExport = async (req: Request, res: Response) => {
 
   const exportJobId = created._id.toString();
 
+  // Async mode: job is queued for background processing (returns immediately)
+  // Sync mode: job is processed inline and the result is returned in the same request
   if (env.ASYNC_JOBS_ENABLED) {
     return res.status(201).json({ export: toPublicJob(created), queued: true, request_id: req.requestId });
   }

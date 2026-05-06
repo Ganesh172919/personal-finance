@@ -1,3 +1,24 @@
+/**
+ * @fileoverview ThemeToggle — pill-shaped toggle button that switches between light and
+ * dark themes using the ThemeProvider context.
+ *
+ * WHAT IT DOES
+ *  - Renders two side-by-side buttons (Sun icon for light, Moon icon for dark) inside a
+ *    rounded container with `bg-background/80 backdrop-blur` for a frosted-glass effect.
+ *  - The active theme button gets `bg-primary text-primary-foreground`; inactive gets
+ *    `text-muted-foreground` with hover state.
+ *  - In `compact` mode, the label text is hidden and the container height shrinks to 40px.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `className` (string, optional) — additional classes for positioning.
+ *  - `compact` (boolean) — hides labels and reduces height for sidebar/header use.
+ *  - Reads and sets theme via `useTheme()` from ThemeProvider.
+ *
+ * ARCHITECTURE NOTES
+ *  - Placed in the Sidebar's BrandBlock header and potentially in the mobile drawer.
+ *  - Uses `aria-pressed` for accessibility to indicate the currently active theme.
+ *  - Pure presentational; all theme logic lives in ThemeProvider.
+ */
 import { Moon, Sun } from "lucide-react";
 
 import { useTheme } from "@/components/ThemeProvider";

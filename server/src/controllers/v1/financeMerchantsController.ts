@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Finance Merchants Controller (v1)
+ *
+ * Manages the merchant directory for an organization. Merchants normalize
+ * transaction descriptions (e.g., "STARBUCKS #1234" -> "Starbucks") and
+ * provide default category assignments.
+ *
+ * Routes served:
+ *   GET /api/v1/finance/merchants - listMerchants (searchable)
+ *   PUT /api/v1/finance/merchants - upsertMerchant (admin)
+ *
+ * Key patterns:
+ *   - Merchant names normalized to lowercase, stripped of special chars
+ *   - Upsert keyed on normalizedName (not the raw name)
+ *   - Aliases merged via $addToSet to prevent duplicates
+ *   - Search matches name, normalizedName, and aliases via regex
+ *   - List readable by any org member; upsert requires admin role
+ *
+ * @module controllers/v1/financeMerchantsController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -26,6 +47,8 @@ const requireOrgAdmin = (req: Request) => {
   return orgId;
 };
 
+// Normalizes merchant names for consistent matching: lowercase, collapse whitespace,
+// strip non-alphanumeric chars (except &.-), truncate to 160 chars
 const normalizeMerchantName = (value: string) => {
   const trimmed = value.trim().toLowerCase();
   const squashed = trimmed.replace(/\s+/g, " ");

@@ -1,3 +1,24 @@
+/**
+ * @fileoverview GrowthStoryCard — renders a user-submitted financial transformation story
+ * as either a featured hero card or a standard grid card, with net-worth growth metrics.
+ *
+ * WHAT IT DOES
+ *  - When `featured=true`: renders a two-column hero layout with cover image (left),
+ *    story summary, starting/current net worth comparison, timeline, persona, and location (right).
+ *  - When `featured=false`: renders a compact card with cover image overlay showing net-worth
+ *    growth delta, title, summary, strategy tags, and footer with persona + views/likes.
+ *  - `formatCompactCurrency` converts large numbers to Indian lakhs/crores notation.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `story` (IGrowthStory) — the growth story data including financialMetrics, strategies, etc.
+ *  - `featured` (boolean) — toggles hero vs. grid layout.
+ *  - Uses `resolveGrowthStoryCoverImage` for media URL resolution.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used on the /growth-stories listing page; featured variant is the top story.
+ *  - Links to `/growth-stories/:slug` via wouter.
+ *  - `DIFFICULTY_COLORS` and `CATEGORY_COLORS` provide semantic colour coding for badges.
+ */
 import { motion } from "framer-motion";
 import { Link } from "wouter";
 import { Clock, Eye, Heart, MapPin, Target, User } from "lucide-react";

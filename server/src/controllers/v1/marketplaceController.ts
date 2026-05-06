@@ -1,3 +1,26 @@
+/**
+ * @fileoverview Marketplace Controller (v1)
+ *
+ * Plugin marketplace: browse available plugins, install/uninstall, and manage versions.
+ * Includes a fallback catalog for development when no DB plugins exist.
+ *
+ * Routes served:
+ *   GET    /api/v1/marketplace/catalog             - listMarketplaceCatalog
+ *   POST   /api/v1/marketplace/install             - installMarketplacePlugin (admin)
+ *   GET    /api/v1/marketplace/installed            - listInstalledPlugins
+ *   DELETE /api/v1/marketplace/installed/:id        - uninstallPlugin (admin)
+ *   PUT    /api/v1/marketplace/installed/:id/version - updateInstalledPluginVersion (admin)
+ *
+ * Key patterns:
+ *   - Catalog loaded from DB first; falls back to hardcoded FALLBACK_MARKETPLACE_CATALOG
+ *   - Install uses upsert (reinstall updates version/status)
+ *   - Uninstall sets status to "disabled" (soft-delete, preserves config)
+ *   - Feature limit enforced on marketplace_installs
+ *   - Plugin versions validated against available_versions in catalog
+ *
+ * @module controllers/v1/marketplaceController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -26,6 +49,7 @@ type CatalogPlugin = {
   price_monthly_usd: number | null;
 };
 
+// Hardcoded fallback catalog used when no plugins exist in the database (dev/seed scenarios)
 const FALLBACK_MARKETPLACE_CATALOG: CatalogPlugin[] = [
   {
     plugin_key: "finwise.connector.bank_stub",

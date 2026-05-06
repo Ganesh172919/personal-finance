@@ -1,4 +1,22 @@
-import { motion } from "framer-motion";
+/**
+ * @fileoverview InvestmentPortfolio — dashboard card displaying total invested capital,
+ * month-over-month change, SIP estimate, asset allocation breakdown, and top holdings.
+ *
+ * WHAT IT DOES
+ *  - Fetches `/api/portfolio/summary` (last 12 months) via React Query.
+ *  - Renders a summary header (total value + MoM % change), allocation colour chips
+ *    for equity/debt/gold categories, and a list of top holdings with weight percentages.
+ *  - Uses Framer Motion stagger for animated entry of allocation and holding rows.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — all data is server-fetched.
+ *  - Uses `useOrgFormatters` for locale-aware currency display.
+ *  - `allocationColor()` maps asset-class names to HSL theme colours.
+ *
+ * ARCHITECTURE NOTES
+ *  - One of the main dashboard cards; pairs with `SpendingAnalysis` and `GoalProgress`.
+ *  - Purely read-only; portfolio mutations live in dedicated portfolio management pages.
+ */
 import { useQuery } from "@tanstack/react-query";
 
 import { Card } from "@/components/ui/Card";

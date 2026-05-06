@@ -1,3 +1,19 @@
+/**
+ * @fileoverview Internal tool execution routes used by the AI Core service to simulate
+ * and execute tool calls on behalf of users. These endpoints are NOT part of the public
+ * API and are protected by a shared bearer token (AI_CORE_TOOLS_TOKEN).
+ *
+ * Endpoints:
+ *   GET    /catalog     - List all available tool definitions in the catalog
+ *   POST   /simulate    - Simulate a tool call without side effects (dry-run)
+ *   POST   /execute     - Execute a tool call with real side effects
+ *
+ * Middleware:
+ *   - Custom bearer-token authentication (internalToolsAuth) using AI_CORE_TOOLS_TOKEN
+ *   - Zod validation (toolSchemas) on request body
+ *
+ * Controllers: Inlined handlers that delegate to toolExecutor and orgService
+ */
 import { Router, type RequestHandler } from "express";
 import mongoose from "mongoose";
 

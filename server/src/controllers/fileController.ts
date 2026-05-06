@@ -1,3 +1,28 @@
+/**
+ * @fileoverview Workspace File Controller
+ *
+ * Manages uploaded workspace files (documents, spreadsheets, images) that users
+ * attach to AI conversations. Files are stored in GridFS, text is extracted on
+ * upload, and AI analysis can be requested on-demand.
+ *
+ * Routes served:
+ *   POST   /api/workspace-files              - uploadWorkspaceFiles
+ *   GET    /api/workspace-files              - listWorkspaceFiles
+ *   GET    /api/workspace-files/:id          - getWorkspaceFile
+ *   POST   /api/workspace-files/:id/analyze  - analyzeWorkspaceFile
+ *   DELETE /api/workspace-files/:id          - deleteWorkspaceFile
+ *
+ * Key patterns:
+ *   - Files stored in GridFS via uploadBufferToGridFs
+ *   - Text extraction attempted on upload; failures recorded as warnings (not blocking)
+ *   - analyzeWorkspaceFile sends extracted text to AI Core with financial context
+ *   - AI analysis results cached and persisted on the file document
+ *   - Ownership verified via assertGridFsOwnership before delete
+ *   - buildWorkspaceFileAttachmentContext exported for chat message attachment injection
+ *
+ * @module controllers/fileController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

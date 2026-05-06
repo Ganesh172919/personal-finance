@@ -1,3 +1,30 @@
+/**
+ * @fileoverview AiCommandBar — the primary natural-language input for the AI financial
+ * assistant. Accepts free-text queries, submits them to multi-agent AI pipelines, and
+ * renders rich markdown responses with workflow traces, tool calls, plan metrics, and
+ * interactive action buttons.
+ *
+ * WHAT IT DOES
+ *  - Renders a gradient-bordered input bar with suggestions dropdown and a "Narrative" toggle.
+ *  - On submit, fires `processAICommand` mutation; shows animated loading dots while pending.
+ *  - Response card includes: agent attribution, request ID, AI Status dialog trigger, copy/clear
+ *    buttons, plan key metrics (cash flow, savings rate, debt-to-income, emergency fund, total debt),
+ *    data warnings, autopilot tool calls (preview/apply), markdown-rendered analysis,
+ *    workflow trace visualizer, thumbs-up/down feedback, and "Add to tasks" button.
+ *  - Tool calls can be previewed (`simulateToolCall`) or executed (`executeToolCall`) inline.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `onCommand` ((command: string) => void) — optional callback after successful command.
+ *  - Mutations: `processAICommand`, `createTasksFromPlan`, `simulateToolCall`,
+ *    `executeToolCall`, `submitAgentOutputFeedback`.
+ *  - Uses `useOrgFormatters` for currency-aware suggestion amounts.
+ *
+ * ARCHITECTURE NOTES
+ *  - The largest and most complex component in the AI feature surface.
+ *  - Embeds `AgentWorkflowVisualizer` and `AiStatusDialog` as child components.
+ *  - Feature-gated: "Add to tasks" is disabled when `tasks_enabled` is false.
+ *  - Custom `markdownComponents` map ensures consistent typography across the app's AI surfaces.
+ */
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Wand2, Send, X, Copy, CheckCircle, ListTodo, ThumbsDown, ThumbsUp } from "lucide-react";

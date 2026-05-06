@@ -1,3 +1,29 @@
+"""
+main.py - CLI Entry Point for FinWise AI Financial Assistant
+=============================================================
+
+This module provides an **interactive command-line interface** for the FinWise
+AI Financial Assistant.  It is intended for local development, demos, and
+manual testing -- the production entry point is ``api_service.py`` (FastAPI).
+
+What it does
+------------
+1. Loads environment variables from ``.env`` files.
+2. Optionally initialises a Gemini-based **query router** that classifies
+   user questions as "user_specific" or "general".
+3. Creates a sample ``UserProfile`` with realistic financial data.
+4. Initialises the LangGraph multi-agent ``FinancialWorkflow``.
+5. Enters a REPL loop where the user can type financial questions and
+   receive analysis from the multi-agent system.
+
+Design notes
+------------
+- The query router is optional: if ``GEMINI_API_KEY`` is not set, all
+  queries default to "user_specific" analysis (personal profile required).
+- The sample profile is hardcoded for demonstration purposes.  In
+  production, the profile comes from the HTTP request body.
+"""
+
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -10,7 +36,8 @@ from graph.state import FinancialGoal, UserProfile
 from graph.workflow import create_financial_workflow
 from utils import ColorFormatter, setup_logging
 
-# Load environment variables first
+# Load environment variables from .env files into os.environ.
+# Must happen before any code that reads os.getenv().
 load_dotenv()
 
 # Initialize Windows-compatible color output if available
@@ -23,6 +50,10 @@ except Exception:
 
 
 def _validate_provider_config() -> bool:
+    """Check whether at least one LLM API key is configured.
+
+    Returns True if valid, False if running in degraded (deterministic-only) mode.
+    """
     try:
         settings.validate_api_key()
         return True
@@ -34,6 +65,12 @@ def _validate_provider_config() -> bool:
 
 
 def _build_router_chain(gemini_available: bool, logger) -> Optional[object]:
+    """Build a Gemini-based query classifier (user_specific vs general).
+
+    Returns a LangChain chain that classifies queries, or None if Gemini
+    is unavailable.  The chain is used to decide whether to pass the
+    user profile to the workflow or treat the query as general education.
+    """
     if not gemini_available:
         return None
 

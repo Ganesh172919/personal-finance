@@ -1,3 +1,24 @@
+/**
+ * @fileoverview FinancialTransformationChart — area chart visualising the net worth
+ * trajectory from a starting point to current value over a given timeline.
+ *
+ * WHAT IT DOES
+ *  - Receives `FinancialMetrics` (starting/current net worth, income, savings rate, etc.)
+ *    and a `timeline` string (e.g. "3 years", "18 months").
+ *  - `generateTrendData` creates synthetic intermediate data points using an ease-in-out
+ *    curve with slight random noise for a realistic growth shape.
+ *  - Renders a Recharts `AreaChart` with a gradient fill, INR-formatted Y-axis, and a
+ *    themed tooltip. Stroke colour switches between green (positive growth) and red (negative).
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `metrics` (FinancialMetrics) — the financial data to chart.
+ *  - `timeline` (string) — parsed to determine the number of data points.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used in GrowthStoryCard detail pages and the AI insight detail modal.
+ *  - Uses `generateTrendData` with random noise, so the chart is illustrative, not exact.
+ *  - Y-axis labels use Indian lakhs/crores format (₹1L, ₹1Cr) via `formatYAxis`.
+ */
 import {
   XAxis,
   YAxis,

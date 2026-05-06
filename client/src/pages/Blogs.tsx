@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Blog listing page for financial intelligence articles.
+ *
+ * Displays a searchable, category-filtered grid of blog posts with a
+ * featured post hero section. Users can also create new posts via a
+ * modal form.
+ *
+ * Key data flows:
+ * - Fetches featured posts via getFeaturedBlogs(1).
+ * - Fetches categories via getBlogCategories() for the filter chips.
+ * - Fetches paginated blog list via getBlogs({ category, search, limit })
+ *   using a debounced search query (300ms).
+ * - Featured section hides when searching or filtering by category.
+ *
+ * Part of the content/community layer alongside Growth Stories, providing
+ * user-generated and curated financial education content.
+ */
+
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";

@@ -1,3 +1,20 @@
+/**
+ * @fileoverview Blog content routes for listing, viewing, creating, and liking blog posts.
+ *
+ * Endpoints:
+ *   GET    /                  - List blog posts with pagination, filtering, and sorting (public)
+ *   GET    /featured          - Get featured blog posts (public)
+ *   GET    /categories        - Get available blog categories (public)
+ *   GET    /:slug             - Get a single blog post by slug (public)
+ *   POST   /                  - Create a new blog post (optional JWT auth)
+ *   POST   /:id/like          - Toggle like on a blog post (optional JWT auth)
+ *
+ * Middleware:
+ *   - Optional JWT authentication (optionalJwtAuth) on protected routes
+ *   - Zod validation (contentSchemas) on query, params, and body
+ *
+ * Controllers: blogController
+ */
 import { Router } from "express";
 import { blogController } from "../controllers/blogController";
 import { optionalJwtAuth } from "../middleware/optionalJwtAuth";

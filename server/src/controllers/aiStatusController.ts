@@ -1,3 +1,21 @@
+/**
+ * @fileoverview AI Status Controller
+ *
+ * Health-check endpoint for the Python AI Core service. Probes three
+ * upstream endpoints in parallel (health, rate-limit, providers) and
+ * returns a consolidated status report.
+ *
+ * Routes served:
+ *   GET /api/ai/status - getAiCoreStatus
+ *
+ * Key patterns:
+ *   - Uses Promise.allSettled so one failing probe does not block others
+ *   - Upstream errors summarized into human-readable strings (not raw Axios errors)
+ *   - Also reports the Node-side AI Core client connection state
+ *
+ * @module controllers/aiStatusController
+ */
+
 import { Request, Response } from "express";
 import axios from "axios";
 

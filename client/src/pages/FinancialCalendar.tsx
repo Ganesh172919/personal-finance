@@ -1,3 +1,20 @@
+/**
+ * @fileoverview Financial Calendar page -- visual day-by-day transaction view.
+ *
+ * Renders a full month calendar grid where each day cell shows income and
+ * expense magnitude as colored bars. Clicking a day opens a detail panel
+ * listing that day's transactions and allowing reminder management.
+ *
+ * Key data flows:
+ * - Fetches transactions for the visible month via /v1/transactions?from=&to=.
+ * - Fetches calendar reminders via /v1/calendar-reminders for the same range.
+ * - Supports add, toggle-complete, and delete reminder mutations.
+ * - Monthly totals (income, expense, net) are computed client-side from
+ *   the transaction list.
+ *
+ * Currency formatting respects org-level settings from useAppConfig().
+ */
+
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { motion } from "framer-motion";

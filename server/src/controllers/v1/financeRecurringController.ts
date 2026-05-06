@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Finance Recurring Controller (v1)
+ *
+ * Manages recurring transaction rules (subscriptions, bills, regular income).
+ * Rules define a cron schedule and optional amount/category constraints.
+ *
+ * Routes served:
+ *   GET    /api/v1/finance/recurring       - listRecurringRules
+ *   POST   /api/v1/finance/recurring       - createRecurringRule (admin)
+ *   PUT    /api/v1/finance/recurring/:id   - updateRecurringRule (admin)
+ *
+ * Key patterns:
+ *   - Cron expressions define when the rule should fire
+ *   - Optional merchant_id links rule to a specific merchant
+ *   - Amount range filters (min/max) for matching transactions
+ *   - Status can be "active" or "disabled"
+ *   - next_run_at stored as Date for scheduler queries
+ *   - List readable by any org member; create/update require admin role
+ *
+ * @module controllers/v1/financeRecurringController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

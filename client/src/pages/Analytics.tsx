@@ -1,3 +1,28 @@
+/**
+ * @fileoverview Financial analytics dashboard with charts and stat cards.
+ *
+ * Presents a multi-chart view of the user's financial data:
+ * - Income vs Expense area chart over the last 12 months.
+ * - Category breakdown pie chart for the selected period.
+ * - Top merchants horizontal bar chart ranked by spend.
+ * - Account balance bar chart across all linked accounts.
+ * - Stat cards for total income, expenses, savings rate, and net flow.
+ *
+ * Key data flows:
+ * - getIncomeExpenseSummary({ months }) provides monthly income/expense
+ *   series for the area chart and stat calculations.
+ * - getCategoryTrends({ months }) returns category-level breakdowns
+ *   for the pie chart.
+ * - getAccountBalances() fetches current balances per account.
+ * - getTopMerchants({ months, limit }) surfaces the highest-spend
+ *   merchants for the bar chart.
+ *
+ * A month-range selector lets users adjust the lookback window.
+ * All charts use Recharts with a shared color palette.
+ *
+ * Accessible from the sidebar under "Analytics" for authenticated users.
+ */
+
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";

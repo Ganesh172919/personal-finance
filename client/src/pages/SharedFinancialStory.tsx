@@ -1,3 +1,26 @@
+/**
+ * @fileoverview Public read-only view of a shared financial story snapshot.
+ *
+ * Renders a financial story generated via createFinancialStoryShare()
+ * without requiring authentication.  The share token is extracted from
+ * the URL route parameter and used to fetch the public payload.
+ *
+ * Key data flows:
+ * - getPublicFinancialStoryShare(token) fetches the snapshot payload
+ *   containing goals, milestones, currency, and locale info.
+ * - Money formatting uses the payload's locale and currency with
+ *   Intl.NumberFormat for correct regional display.
+ * - Milestone icons are mapped per agent type (budget planner, debt
+ *   optimizer, investment advisor, etc.).
+ *
+ * No mutation or write operations; purely presentational.  Shows a
+ * loading spinner while fetching and an error state if the token is
+ * invalid or expired.
+ *
+ * Routed at /share/financial-story/:token; linked from the FinancialStory
+ * page's "Share" action.
+ */
+
 import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { useRoute } from "wouter";

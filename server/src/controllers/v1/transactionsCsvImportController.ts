@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Transactions CSV Import Controller (v1)
+ *
+ * Handles bulk transaction import from CSV files. Supports dry-run mode,
+ * custom column mapping, optional account association, and mapping persistence.
+ *
+ * Routes served:
+ *   POST /api/v1/integrations/transactions_csv/import - importTransactionsCsvEndpoint
+ *
+ * Key patterns:
+ *   - Requires admin role for the organization
+ *   - Dry-run mode validates and previews without persisting
+ *   - Column mapping provided in request body; optionally saved to account metadata
+ *   - Feature limit enforced on the number of valid rows (not total rows)
+ *   - Domain event published on successful import for downstream consumers
+ *   - Idempotency key derived from import_id to prevent double-counting usage
+ *
+ * @module controllers/v1/transactionsCsvImportController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -63,6 +83,7 @@ export const importTransactionsCsvEndpoint = async (req: Request, res: Response)
   }
 
   const dryRun = Boolean(body.dry_run);
+  const rememberMapping = body.remember_mapping !== false;
 
   const accountIdRaw = typeof body.account_id === "string" ? body.account_id.trim() : "";
   let accountId: mongoose.Types.ObjectId | undefined = undefined;
@@ -149,10 +170,32 @@ export const importTransactionsCsvEndpoint = async (req: Request, res: Response)
     }).catch(() => null);
   }
 
+  if (accountId && rememberMapping) {
+    const account = await AccountModel.findOne({ _id: accountId, orgId });
+    if (account) {
+      const nextMetadata =
+        account.metadata && typeof account.metadata === "object" && !Array.isArray(account.metadata)
+          ? { ...(account.metadata as Record<string, unknown>) }
+          : {};
+      const importPreferences =
+        nextMetadata.import_preferences && typeof nextMetadata.import_preferences === "object" && !Array.isArray(nextMetadata.import_preferences)
+          ? { ...(nextMetadata.import_preferences as Record<string, unknown>) }
+          : {};
+
+      importPreferences.transactions_csv = {
+        last_mapping: mapping,
+        last_file_name: file.originalname,
+        updated_at: new Date().toISOString(),
+      };
+      nextMetadata.import_preferences = importPreferences;
+      account.metadata = nextMetadata;
+      await account.save();
+    }
+  }
+
   res.status(dryRun ? 200 : 201).json({
     org_id: orgId.toString(),
     ...result,
     request_id: req.requestId,
   });
 };
-

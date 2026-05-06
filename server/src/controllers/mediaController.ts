@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Media Controller
+ *
+ * Serves user-owned files from GridFS as inline responses. Acts as a
+ * private CDN endpoint -- the caller must be authenticated and must own
+ * the file (verified via assertGridFsOwnership).
+ *
+ * Routes served:
+ *   GET /api/media/:fileId - getMediaByFileId
+ *
+ * Key patterns:
+ *   - Streams file content directly from GridFS to the HTTP response
+ *   - Sets Content-Type from the stored file metadata
+ *   - Cleans up the read stream if the client disconnects early
+ *
+ * @module controllers/mediaController
+ */
+
 import type { Request, Response } from "express";
 import { IUserDocument } from "../models/userModel";
 import { assertGridFsOwnership, openGridFsDownloadStream } from "../services/gridfs";

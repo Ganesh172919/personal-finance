@@ -1,3 +1,7 @@
+"""
+contracts - Data contracts for structured AI Core outputs
+"""
+
 from .plan import ActionBuckets, ActionItem, KeyMetrics, Plan
 from .responses import ProcessResponse
 from .tool_calls import ToolCall

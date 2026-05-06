@@ -1,10 +1,42 @@
 """
-Multi-Key Pool with Health Tracking, Rotation, and Circuit Breaker.
+key_pool.py - Multi-Key API Key Pool with Health Tracking and Circuit Breaking
+==============================================================================
 
-Supports multiple API keys per provider (e.g., OPENROUTER_API_KEY_1, OPENROUTER_API_KEY_2)
-with intelligent rotation, per-key health scoring, cooldown management, and circuit breaking.
+This module implements ``KeyPool``, a **thread-safe pool of API keys** for a
+single LLM provider.  It provides intelligent key rotation, per-key health
+scoring, cooldown management, and circuit breaking.
 
-Usage:
+Problem it solves
+-----------------
+LLM providers impose rate limits per API key.  When a key hits a 429 (rate
+limit) or 403 (access denied), the system needs to **immediately switch** to
+another key instead of waiting.  ``KeyPool`` manages this automatically.
+
+Key features
+------------
+1. **Key discovery** -- automatically discovers keys from environment
+   variables in three formats:
+   - ``PROVIDER_API_KEY`` (single key)
+   - ``PROVIDER_API_KEY_1``, ``PROVIDER_API_KEY_2``, ... (numbered)
+   - ``PROVIDER_API_KEYS=key1,key2,key3`` (comma-separated array)
+
+2. **Rotation strategies** -- three strategies for selecting the next key:
+   - ``round_robin``     -- cycle through keys in order
+   - ``least_used``      -- prefer keys with fewest total requests
+   - ``health_weighted`` -- score by success rate, latency, and recency
+
+3. **Health tracking** -- per-key metrics: success rate, average latency,
+   error counts by type (429, 403, 404, 5xx), consecutive failures.
+
+4. **Cooldown** -- after a 429, a key is cooled down for a configurable
+   period (default 60s).  After 403, cooldown is 1 hour.
+
+5. **Circuit breaker** -- after N consecutive failures (default 5), the key's
+   circuit is "opened" and it is excluded for a recovery period (default 5
+   min).  After recovery, one "half-open" test request is allowed.
+
+Usage
+-----
     from utils.key_pool import KeyPool, get_key_pool
 
     pool = get_key_pool("openrouter")
@@ -30,7 +62,14 @@ logger = logging.getLogger(__name__)
 
 
 class KeyStatus(Enum):
-    """Status of an API key in the pool."""
+    """Status of an API key in the pool.
+
+    - ``HEALTHY``      -- success rate above threshold, no cooldown
+    - ``DEGRADED``     -- success rate below threshold but still usable
+    - ``COOLDOWN``     -- temporarily excluded after a rate-limit or error
+    - ``CIRCUIT_OPEN`` -- excluded after consecutive failures (circuit breaker)
+    - ``DISABLED``     -- manually disabled (not auto-selected)
+    """
 
     HEALTHY = "healthy"
     DEGRADED = "degraded"
@@ -41,29 +80,35 @@ class KeyStatus(Enum):
 
 @dataclass
 class KeyHealth:
-    """Health metrics for a single API key."""
+    """Health metrics for a single API key.
 
+    Tracks cumulative request counts, error breakdowns by HTTP status code,
+    latency statistics, and circuit breaker state.  These metrics drive the
+    key selection logic in ``KeyPool.get_healthy_key()``.
+    """
+
+    # --- Request counters ---
     total_requests: int = 0
     successful_requests: int = 0
     failed_requests: int = 0
 
-    # Error code counters
-    errors_429: int = 0  # Rate limited
-    errors_403: int = 0  # Access denied / invalid key
-    errors_404: int = 0  # Model not found
-    errors_5xx: int = 0  # Server errors
+    # --- Error code counters (categorised by HTTP status) ---
+    errors_429: int = 0  # Rate limited -- triggers cooldown
+    errors_403: int = 0  # Access denied / invalid key -- triggers long cooldown
+    errors_404: int = 0  # Model not found -- no cooldown (model issue, not key)
+    errors_5xx: int = 0  # Server errors -- short cooldown
     errors_other: int = 0
 
-    # Timing metrics
+    # --- Timing metrics ---
     total_latency_ms: float = 0.0
     last_request_at: float = 0.0
     last_success_at: float = 0.0
     last_failure_at: float = 0.0
 
-    # Circuit breaker state
-    consecutive_failures: int = 0
-    circuit_opened_at: Optional[float] = None
-    cooldown_until: Optional[float] = None
+    # --- Circuit breaker state ---
+    consecutive_failures: int = 0          # Resets on success
+    circuit_opened_at: Optional[float] = None  # Timestamp when circuit opened
+    cooldown_until: Optional[float] = None     # Timestamp when cooldown expires
 
     @property
     def success_rate(self) -> float:
@@ -158,35 +203,47 @@ class KeyEntry:
 
 @dataclass
 class KeyPoolConfig:
-    """Configuration for key pool behavior."""
+    """Configuration for key pool behavior.
 
-    # Rotation strategy
-    rotation_strategy: str = "round_robin"  # round_robin, least_used, health_weighted
+    All values have sensible defaults but can be overridden per-pool.
+    """
 
-    # Circuit breaker settings
-    circuit_failure_threshold: int = 5  # Consecutive failures to open circuit
-    circuit_recovery_seconds: float = 300.0  # 5 minutes
+    # --- Rotation strategy ---
+    # "round_robin"     -- cycle through keys in index order
+    # "least_used"      -- prefer the key with fewest total requests
+    # "health_weighted" -- composite score of success rate, latency, recency
+    rotation_strategy: str = "round_robin"
 
-    # Cooldown settings (for rate limits)
-    cooldown_429_seconds: float = 60.0  # 1 minute cooldown after rate limit
-    cooldown_403_seconds: float = 3600.0  # 1 hour cooldown for access denied
-    cooldown_5xx_seconds: float = 30.0  # 30 second cooldown for server errors
+    # --- Circuit breaker settings ---
+    circuit_failure_threshold: int = 5      # Consecutive failures to open circuit
+    circuit_recovery_seconds: float = 300.0  # 5 minutes before half-open test
 
-    # Health thresholds
-    min_requests_for_health: int = 10  # Min requests before judging health
-    degraded_threshold_percent: float = 70.0  # Below this = degraded
+    # --- Cooldown settings (per error type) ---
+    cooldown_429_seconds: float = 60.0     # 1 minute after rate limit
+    cooldown_403_seconds: float = 3600.0   # 1 hour for access denied (likely bad key)
+    cooldown_5xx_seconds: float = 30.0     # 30 seconds for transient server errors
 
-    # Scoring weights for health-weighted rotation
-    weight_success_rate: float = 0.4
-    weight_latency: float = 0.3
-    weight_recency: float = 0.3
+    # --- Health thresholds ---
+    min_requests_for_health: int = 10       # Need at least N requests before judging
+    degraded_threshold_percent: float = 70.0  # Below this success rate = degraded
+
+    # --- Scoring weights (for health_weighted rotation) ---
+    weight_success_rate: float = 0.4  # How much success rate matters
+    weight_latency: float = 0.3       # How much latency matters
+    weight_recency: float = 0.3       # How much time-since-last-use matters
 
 
 class KeyPool:
-    """
-    Multi-key pool for a single provider with health tracking and rotation.
+    """Multi-key pool for a single provider with health tracking and rotation.
 
-    Thread-safe implementation supporting concurrent access.
+    Thread-safe implementation supporting concurrent access.  Each provider
+    (e.g. "openrouter", "gemini") gets its own ``KeyPool`` instance.
+
+    Lifecycle:
+    1. ``initialize()`` discovers keys from environment variables.
+    2. ``get_healthy_key()`` returns the next key to use.
+    3. ``record_success()`` / ``record_failure()`` update health metrics.
+    4. ``get_stats()`` returns a diagnostic snapshot.
     """
 
     def __init__(
@@ -197,25 +254,30 @@ class KeyPool:
         self.provider = provider
         self.config = config or KeyPoolConfig()
         self._keys: List[KeyEntry] = []
-        self._lock = threading.RLock()
+        self._lock = threading.RLock()  # Reentrant lock for thread safety
         self._round_robin_index = 0
         self._initialized = False
 
     def _discover_keys(self) -> List[Tuple[str, str]]:
-        """
-        Discover API keys from environment variables.
+        """Discover API keys from environment variables.
 
-        Supports formats:
-        - PROVIDER_API_KEY (single key)
-        - PROVIDER_API_KEY_1, PROVIDER_API_KEY_2, ... (numbered keys)
-        - PROVIDER_API_KEYS (comma-separated array)
+        Supports three formats (checked in order):
+        1. ``PROVIDER_API_KEYS=key1,key2,key3`` or JSON array
+        2. ``PROVIDER_API_KEY_1``, ``PROVIDER_API_KEY_2``, ... (numbered, up to 20)
+        3. ``PROVIDER_API_KEY`` (single key fallback)
 
-        Returns list of (key_id, key_value) tuples.
+        Deduplication ensures the same key value is not added twice even if
+        it appears in multiple formats.
+
+        Returns
+        -------
+        list[tuple[str, str]]
+            List of ``(key_id, key_value)`` tuples.
         """
         provider_upper = self.provider.upper()
         discovered: List[Tuple[str, str]] = []
 
-        # Map provider names to env var prefixes
+        # Map provider names to their environment variable prefixes.
         env_prefixes = {
             "openrouter": "OPENROUTER_API_KEY",
             "gemini": "GEMINI_API_KEY",
@@ -306,10 +368,19 @@ class KeyPool:
             return len(self._keys)
 
     def get_healthy_key(self) -> Optional[KeyEntry]:
-        """
-        Get the next healthy key based on rotation strategy.
+        """Get the next healthy key based on the configured rotation strategy.
 
-        Returns None if no healthy keys are available.
+        Selection logic:
+        1. Filter keys to those with ``HEALTHY`` or ``DEGRADED`` status.
+        2. If no healthy keys remain, check for keys whose circuit breaker
+           has expired (half-open state) and allow one test request.
+        3. If still no keys, return ``None``.
+        4. Otherwise, apply the configured rotation strategy.
+
+        Returns
+        -------
+        KeyEntry or None
+            The selected key entry, or None if all keys are unavailable.
         """
         with self._lock:
             if not self._initialized:
@@ -318,23 +389,26 @@ class KeyPool:
             if not self._keys:
                 return None
 
+            # Filter to keys that are healthy or degraded (still usable).
             healthy_keys = [
                 k for k in self._keys if k.get_status(self.config) in (KeyStatus.HEALTHY, KeyStatus.DEGRADED)
             ]
 
             if not healthy_keys:
-                # All keys are in cooldown/circuit open - try to find one in half-open
+                # All keys are in cooldown or circuit-open.
+                # Try to find one whose circuit breaker recovery period has
+                # expired -- allow a "half-open" test request.
                 now = time.time()
                 for key in self._keys:
                     if key.health.circuit_opened_at:
                         recovery_time = key.health.circuit_opened_at + self.config.circuit_recovery_seconds
                         if now >= recovery_time:
-                            # Allow half-open test
-                            return key
+                            return key  # Half-open test
 
-                # No keys available at all
+                # No keys available at all.
                 return None
 
+            # Apply the configured rotation strategy.
             if self.config.rotation_strategy == "round_robin":
                 return self._select_round_robin(healthy_keys)
             elif self.config.rotation_strategy == "least_used":
@@ -345,29 +419,44 @@ class KeyPool:
                 return self._select_round_robin(healthy_keys)
 
     def _select_round_robin(self, keys: List[KeyEntry]) -> KeyEntry:
-        """Select next key using round-robin."""
+        """Select the next key using round-robin (simplest strategy).
+
+        Cycles through keys by their index, wrapping around when the end is
+        reached.  Ensures even distribution of requests across keys.
+        """
         if not keys:
             return None
 
-        # Find the key with the next index
         indices = sorted([k.index for k in keys])
 
-        # Find next index >= current round robin position
+        # Find the next index >= current round-robin position.
         for idx in indices:
             if idx >= self._round_robin_index:
                 self._round_robin_index = idx + 1
                 return next(k for k in keys if k.index == idx)
 
-        # Wrap around
+        # Wrap around to the first key.
         self._round_robin_index = indices[0] + 1
         return next(k for k in keys if k.index == indices[0])
 
     def _select_least_used(self, keys: List[KeyEntry]) -> KeyEntry:
-        """Select key with fewest total requests."""
+        """Select the key with the fewest total requests.
+
+        Simple load-balancing strategy that ensures no single key is
+        disproportionately used.
+        """
         return min(keys, key=lambda k: k.health.total_requests)
 
     def _select_health_weighted(self, keys: List[KeyEntry]) -> KeyEntry:
-        """Select key based on weighted health score."""
+        """Select the key with the highest weighted health score.
+
+        The score is a weighted combination of:
+        - **Success rate** (0-1) -- higher is better
+        - **Latency score** (0-1) -- lower latency is better (inverse)
+        - **Recency score** (0-1) -- prefer keys not used recently
+
+        Weights are configurable via ``KeyPoolConfig``.
+        """
         now = time.time()
 
         def score(k: KeyEntry) -> float:
@@ -375,13 +464,13 @@ class KeyPool:
             # Success rate score (0-1)
             sr = h.success_rate / 100.0
 
-            # Latency score (inverse, normalized to 0-1)
+            # Latency score: inverse normalisation.  1s latency = 0.5 score.
             avg_lat = h.avg_latency_ms
-            lat_score = 1.0 / (1.0 + avg_lat / 1000.0)  # 1s = 0.5 score
+            lat_score = 1.0 / (1.0 + avg_lat / 1000.0)
 
-            # Recency score (prefer keys not used recently)
+            # Recency score: prefer keys not used recently (full score after 1 min).
             time_since = now - h.last_request_at if h.last_request_at else 3600.0
-            rec_score = min(1.0, time_since / 60.0)  # Full score after 1 min
+            rec_score = min(1.0, time_since / 60.0)
 
             return (
                 self.config.weight_success_rate * sr
@@ -396,7 +485,11 @@ class KeyPool:
         key_id: str,
         latency_ms: float = 0.0,
     ) -> None:
-        """Record a successful request for a key."""
+        """Record a successful request for a key.
+
+        Updates health metrics, resets consecutive failures, and clears the
+        circuit breaker if it was open (the key has recovered).
+        """
         with self._lock:
             key = self._find_key(key_id)
             if not key:
@@ -408,9 +501,10 @@ class KeyPool:
             key.health.total_latency_ms += latency_ms
             key.health.last_request_at = now
             key.health.last_success_at = now
+            # Reset consecutive failures on success.
             key.health.consecutive_failures = 0
 
-            # Clear circuit breaker on success
+            # Clear circuit breaker on success -- the key has recovered.
             if key.health.circuit_opened_at:
                 logger.info(
                     "Circuit closed for key %s after successful request",
@@ -424,7 +518,12 @@ class KeyPool:
         status_code: Optional[int] = None,
         error_message: Optional[str] = None,
     ) -> None:
-        """Record a failed request for a key."""
+        """Record a failed request for a key.
+
+        Categorises the error by HTTP status code and applies the appropriate
+        cooldown period.  If consecutive failures exceed the threshold, the
+        circuit breaker is opened.
+        """
         with self._lock:
             key = self._find_key(key_id)
             if not key:
@@ -437,8 +536,9 @@ class KeyPool:
             key.health.last_failure_at = now
             key.health.consecutive_failures += 1
 
-            # Categorize error
+            # --- Categorise error and apply cooldown ---
             if status_code == 429:
+                # Rate limited -- short cooldown, try other keys.
                 key.health.errors_429 += 1
                 key.health.cooldown_until = now + self.config.cooldown_429_seconds
                 logger.warning(
@@ -447,6 +547,7 @@ class KeyPool:
                     self.config.cooldown_429_seconds,
                 )
             elif status_code == 403:
+                # Access denied -- long cooldown (key may be revoked).
                 key.health.errors_403 += 1
                 key.health.cooldown_until = now + self.config.cooldown_403_seconds
                 logger.warning(
@@ -455,15 +556,18 @@ class KeyPool:
                     self.config.cooldown_403_seconds,
                 )
             elif status_code == 404:
+                # Model not found -- no cooldown (it's a model issue, not key).
                 key.health.errors_404 += 1
-                # Don't cooldown for 404 - it's a model issue, not key issue
             elif status_code and 500 <= status_code < 600:
+                # Server error -- short cooldown (transient).
                 key.health.errors_5xx += 1
                 key.health.cooldown_until = now + self.config.cooldown_5xx_seconds
             else:
                 key.health.errors_other += 1
 
-            # Check circuit breaker
+            # --- Circuit breaker check ---
+            # If consecutive failures exceed the threshold, open the circuit
+            # to stop sending requests to this key for a recovery period.
             if key.health.consecutive_failures >= self.config.circuit_failure_threshold:
                 if not key.health.circuit_opened_at:
                     key.health.circuit_opened_at = now
@@ -565,3 +669,36 @@ def reset_all_key_pools() -> None:
     """Reset all key pools (for testing)."""
     with _pools_lock:
         _key_pools.clear()
+
+
+# ============================================================================
+# END-OF-FILE SUMMARY -- utils/key_pool.py
+# ============================================================================
+# Key takeaways:
+#
+# 1. ``KeyPool`` manages **multiple API keys per provider** with automatic
+#    rotation, health tracking, and circuit breaking.  It is the foundation
+#    of the system's resilience to rate limits and key failures.
+#
+# 2. Keys are **discovered from environment variables** in three formats:
+#    single key, numbered keys, and comma-separated arrays.  This makes it
+#    easy to add keys without code changes.
+#
+# 3. Three **rotation strategies** are supported: round-robin (default),
+#    least-used, and health-weighted.  The health-weighted strategy considers
+#    success rate, latency, and recency.
+#
+# 4. The **circuit breaker** pattern prevents repeated requests to a failing
+#    key.  After N consecutive failures, the key is excluded for a recovery
+#    period.  After recovery, a single "half-open" test request is allowed.
+#
+# 5. **Cooldowns** are error-specific: 429 gets 60s, 403 gets 1 hour, 5xx
+#    gets 30s.  404 does not trigger cooldown (it's a model issue, not a key
+#    issue).
+#
+# 6. The module is **thread-safe** -- all public methods acquire a reentrant
+#    lock before accessing shared state.
+#
+# 7. ``get_key_pool()`` is a **singleton factory** -- each provider gets one
+#    ``KeyPool`` instance that is reused across the application.
+# ============================================================================

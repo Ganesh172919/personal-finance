@@ -1,3 +1,31 @@
+"""
+vision/handwriting_parser.py - Handwriting Intent Extraction
+=============================================================
+
+Extracts financial intent from handwritten text recognised by the OCR
+engine.  Unlike the receipt parser (which targets structured printed
+receipts), this parser handles **unstructured handwritten notes** like
+"save 50000 for emergency fund in 6 months".
+
+Extracted values
+----------------
+- **Amounts** -- numeric values with optional currency symbols and
+  suffixes (k, m).
+- **Percentages** -- values followed by %.
+- **Dates** -- date-like patterns parsed with ``dateutil``.
+- **Goal candidates** -- inferred from keywords like "emergency",
+  "savings target", "debt payoff".
+- **Budget adjustments** -- amounts near budget/expense/spend keywords.
+
+Design decisions
+----------------
+- Deduplication ensures the same date/value is not reported twice.
+- Goal inference is conservative: only one goal is inferred per
+  recognition (the first keyword match).
+- Security: the ``_looks_like_secret`` check (inherited from
+  ``memory/extract.py``) prevents storing API keys or passwords.
+"""
+
 from __future__ import annotations
 
 import re
@@ -7,6 +35,7 @@ from dateutil.parser import parse as parse_date
 
 from .engine import OcrLine
 
+# Regex patterns for extracting financial values from OCR text.
 _PERCENT_RE = re.compile(r"(?<!\d)(\d+(?:\.\d+)?)\s*%")
 _DATE_LIKE_RE = re.compile(r"\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})\b")
 _AMOUNT_RE = re.compile(

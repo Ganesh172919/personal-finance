@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Audit Controller (v1)
+ *
+ * Read-only endpoint for listing audit events within an organization.
+ * Audit events track all significant actions (logins, data changes, etc.).
+ *
+ * Routes served:
+ *   GET /api/v1/audit/events - listAuditEvents (admin)
+ *
+ * Key patterns:
+ *   - Requires admin or owner role
+ *   - Supports optional action filter and limit (max 200)
+ *   - Events are immutable — this endpoint only reads, never writes
+ *   - Each event includes actor type, target type, and request correlation ID
+ *
+ * @module controllers/v1/auditController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

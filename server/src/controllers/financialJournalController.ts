@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Financial Journal Controller
+ *
+ * Handwriting-based financial journal. Users upload photos of handwritten notes,
+ * which are OCR-recognized and parsed into structured financial intents. AI can
+ * then generate insights from journal entries.
+ *
+ * Routes served:
+ *   POST   /api/journal/recognize       - recognizeHandwriting (upload + OCR)
+ *   GET    /api/journal/entries          - listJournalEntries
+ *   GET    /api/journal/entries/:id      - getJournalEntryById
+ *   PATCH  /api/journal/entries/:id      - patchJournalEntry (edit recognized text)
+ *   POST   /api/journal/entries/:id/insights - generateJournalInsights (AI analysis)
+ *
+ * Key patterns:
+ *   - Feature-gated: all endpoints return 404 when JOURNAL_ENABLED is false
+ *   - Handwriting images stored in GridFS; text extracted via AI Core OCR
+ *   - Journal intent parser extracts financial signals from recognized text
+ *   - AI insights generated on-demand with full financial profile context
+ *   - AgentOutput persisted for each recognition and insight generation
+ *
+ * @module controllers/financialJournalController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import { getEnv } from "../config/env";

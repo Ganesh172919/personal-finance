@@ -1,3 +1,30 @@
+/**
+ * @fileoverview LazyImage — viewport-aware image component with shimmer placeholder,
+ * blur-up transition, and graceful fallback on load failure.
+ *
+ * WHAT IT DOES
+ *  - Uses `IntersectionObserver` with a configurable `rootMargin` (default 200px) to
+ *    defer image loading until the element is near the viewport.
+ *  - Shows a pulsing `bg-muted` shimmer while loading, plus an optional low-res
+ *    `placeholderSrc` for a blur-up effect.
+ *  - On image load failure: tries `fallbackSrc` first; if that also fails, renders a
+ *    gradient fallback surface so the layout never shows a broken image icon.
+ *  - Applies a 500ms opacity transition once the image has loaded for a smooth reveal.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `src` (string) — primary image URL.
+ *  - `placeholderSrc` (string, optional) — low-res blur placeholder.
+ *  - `fallbackSrc` (string, optional) — backup image URL on primary failure.
+ *  - `rootMargin` (string) — IntersectionObserver margin for pre-loading.
+ *  - `imageClassName` (string) — additional classes applied directly to the `<img>`.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used by `BlogCard` and `GrowthStoryCard` for cover images, and anywhere else
+ *    images need performance-optimised lazy loading.
+ *  - Pure presentational component — no API calls, no global state.
+ *  - The `loading="lazy"` and `decoding="async"` attributes provide native browser hints
+ *    as a fallback if IntersectionObserver is unavailable.
+ */
 import { useEffect, useRef, useState, type ImgHTMLAttributes } from "react";
 
 /**

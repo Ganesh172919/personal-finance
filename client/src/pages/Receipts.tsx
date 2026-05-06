@@ -1,3 +1,26 @@
+/**
+ * @fileoverview Receipt OCR review and confirmation page.
+ *
+ * Lists uploaded receipts with status-based tab filtering (all, pending,
+ * confirmed, rejected).  Selecting a receipt opens a detail sheet that
+ * displays OCR-extracted fields (vendor, date, total, items) in an
+ * editable form.  The user corrects values and confirms to create a
+ * transaction, or rejects the receipt.
+ *
+ * Key data flows:
+ * - listReceipts({ page, limit }) provides the paginated receipt list.
+ * - getReceiptById(id) fetches full OCR detail for the selected receipt.
+ * - confirmReceipt(id, payload) validates fields and creates a
+ *   transaction from the receipt data.
+ * - deleteReceipt(id) permanently removes a receipt record.
+ *
+ * Feature-flagged behind receipts_ocr_enabled; renders a disabled
+ * notice when the flag is off.
+ *
+ * Receipt images are served via buildApiUrl for the preview link.
+ * Accessible from the sidebar under "Receipts" for authenticated users.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

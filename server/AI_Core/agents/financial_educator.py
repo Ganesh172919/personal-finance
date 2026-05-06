@@ -1,3 +1,31 @@
+"""
+financial_educator.py - Financial Educator Agent
+==================================================
+
+The ``FinancialEducatorAgent`` explains financial concepts (e.g. "what is
+compound interest?") in plain language.  Unlike the other specialist agents,
+this agent **does** make an LLM call (via ``invoke_with_fallback``) because
+educational content benefits from natural language generation.
+
+Key responsibilities
+--------------------
+- Extract the core concept from the user's question (deterministic regex).
+- Check an in-memory LRU cache to avoid redundant LLM calls for the
+  same concept.
+- Invoke the LLM with a system prompt that constrains the response to
+  definitions, explanations, and simple examples (no personalised advice).
+- Fall back to a deterministic explanation if the LLM is unavailable.
+
+Design decisions
+----------------
+- The concept cache uses an ``OrderedDict`` with TTL-based eviction
+  (30 minutes, max 256 entries) to reduce cost for repeated queries.
+- Concept extraction is simple keyword matching + prefix stripping --
+  no LLM call is needed for this step.
+- The agent explicitly avoids personalised financial advice; it only
+  provides general education.
+"""
+
 import logging
 from collections import OrderedDict
 from time import time
@@ -12,7 +40,11 @@ logger = logging.getLogger(__name__)
 
 
 class FinancialEducatorAgent:
-    """Explains financial concepts clearly with optional request-context relevance."""
+    """Explains financial concepts clearly with optional request-context relevance.
+
+    This is the only specialist agent that makes an LLM call (for natural
+    language generation).  All other agents are fully deterministic.
+    """
 
     _CACHE_MAX_SIZE = 256
     _CACHE_TTL_SECONDS = 30 * 60

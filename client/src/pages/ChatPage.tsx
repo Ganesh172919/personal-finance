@@ -1,3 +1,28 @@
+/**
+ * @fileoverview Chat Page (AI Financial Strategist)
+ *
+ * The main AI chat interface. Provides a three-column layout:
+ * - Left: Chat session history sidebar
+ * - Center: Active chat conversation (ChatContainer)
+ * - Right: Conversation insights panel + files workspace CTA
+ *
+ * LAYOUT MODES:
+ * - Desktop (lg+): Full three-column layout
+ * - Mobile (< lg): Center content only, sidebar via hamburger menu
+ *
+ * KEY FEATURES:
+ * - Session management (create, select, delete, rename)
+ * - Real-time AI streaming with workflow visualization
+ * - AI status dialog for provider/key pool monitoring
+ * - Multi-agent capability highlights in the header
+ *
+ * ROUTING:
+ * - /chat → No session selected (shows welcome state)
+ * - /chat/:sessionId → Specific session loaded
+ *
+ * @module pages/ChatPage
+ */
+
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
 import {
@@ -22,6 +47,7 @@ import { ChatContainer, ChatHistorySidebar } from "@/features/chat";
 import { useAuth } from "@/hooks/useAuth";
 import { useChatStore } from "@/stores/chatStore";
 
+/** Capability highlights shown in the header (hidden on small screens) */
 const capabilityHighlights = [
   {
     icon: BrainCircuit,

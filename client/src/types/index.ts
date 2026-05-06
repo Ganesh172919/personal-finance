@@ -1,5 +1,24 @@
-// This file should contain all types shared between your frontend components.
+/**
+ * @fileoverview Shared Frontend Type Definitions
+ *
+ * Core domain types used across all frontend components, hooks, and stores.
+ * These interfaces mirror the server-side Mongoose models but are tailored
+ * for frontend consumption (e.g., optional fields, Date | string unions).
+ *
+ * NAMING CONVENTION:
+ * - "I" prefix for interfaces (ITransaction, IFinancialProfile)
+ * - Matches the server model names for easy cross-referencing
+ *
+ * DATE HANDLING:
+ * Dates use `Date | string` union types because:
+ * - Server returns ISO strings in JSON
+ * - Frontend components may parse them into Date objects
+ * - This flexibility prevents type errors at boundaries
+ *
+ * @module types
+ */
 
+/** A financial goal (e.g., "Save for vacation", "Emergency fund") */
 export interface IFinancialGoal {
   id?: string;
   name: string;
@@ -40,6 +59,27 @@ export interface ITransaction {
   date: Date | string; 
   type: 'income' | 'expense' | 'investment';
   source?: IMutationSource;
+  review?: {
+    needs_attention: boolean;
+    flags: Array<"uncategorized" | "suspected_duplicate" | "needs_merchant_match" | "split_candidate" | "recurring_candidate">;
+    notes?: string[];
+    attention_score?: number;
+  };
+  reconciliation?: {
+    status?: "unreconciled" | "cleared" | "reconciled";
+    reference?: string;
+    statementDate?: string | Date;
+    statementBalance?: number;
+    reconciledAt?: string | Date;
+  };
+  import_details?: {
+    importId?: string;
+    fileName?: string;
+    rowIndex?: number;
+    duplicateKey?: string;
+    committedAt?: string | Date;
+  };
+  running_balance?: number;
 }
 
 export interface IFinancialProfile {

@@ -1,3 +1,29 @@
+/**
+ * @fileoverview Autopilot Controller (v1)
+ *
+ * AI-driven autopilot system that plans, simulates, approves, and executes
+ * multi-step financial actions. Users describe a goal; the AI generates tool
+ * calls that are simulated, approved, and then executed atomically.
+ *
+ * Routes served:
+ *   POST /api/v1/autopilot/plan      - createAutopilotPlan
+ *   POST /api/v1/autopilot/simulate  - simulateAutopilotRun
+ *   POST /api/v1/autopilot/approve   - approveAutopilotRun
+ *   POST /api/v1/autopilot/execute   - executeAutopilotRun
+ *   GET  /api/v1/autopilot/runs/:id  - getAutopilotRun
+ *
+ * Key patterns:
+ *   - Lifecycle: plan -> simulate -> approve -> execute
+ *   - Tool calls validated against Zod schemas; invalid ones are dropped with reasons
+ *   - Simulation previews side-effects without committing changes
+ *   - High-risk tool calls require explicit user approval before execution
+ *   - Execution is idempotent (uses idempotency keys per tool call)
+ *   - Every state transition publishes domain events and audit records
+ *   - Feature limits enforced on AI calls and autopilot actions separately
+ *
+ * @module controllers/v1/autopilotController
+ */
+
 import type { Request, Response } from "express";
 import crypto from "crypto";
 import mongoose from "mongoose";
@@ -59,6 +85,8 @@ const mapRun = (run: any) => ({
   updated_at: run.updatedAt || null,
 });
 
+// Evaluates whether a tool call needs explicit user approval before execution.
+// Invalid schemas and unknown tools default to requiring approval (safety-first).
 const requiresExplicitApproval = (raw: unknown): boolean => {
   const parsed = toolCallSchema.safeParse(raw);
   if (!parsed.success) {

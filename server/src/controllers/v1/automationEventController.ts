@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Automation Event Controller (v1)
+ *
+ * Catalog of automation-triggerable domain events and an endpoint to
+ * manually emit custom events for testing or integration purposes.
+ *
+ * Routes served:
+ *   GET  /api/v1/automation/events - listAutomationEvents (catalog)
+ *   POST /api/v1/automation/events - emitAutomationEvent (admin)
+ *
+ * Key patterns:
+ *   - listAutomationEvents returns a static catalog of supported event types
+ *   - emitAutomationEvent publishes a domain event via the event bus (admin only)
+ *   - Custom events use aggregate_type "custom_event" by default
+ *   - Published events are consumed by workflows, notifications, and the activity feed
+ *
+ * @module controllers/v1/automationEventController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

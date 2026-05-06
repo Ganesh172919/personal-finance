@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Share Controller (v1)
+ *
+ * Creates and resolves shareable links for financial stories. Share links
+ * allow users to publicly share a read-only view of their financial progress.
+ *
+ * Routes served:
+ *   POST /api/v1/shares/financial-story          - createFinancialStoryShare (auth required)
+ *   GET  /api/v1/shares/financial-story/:token   - getPublicFinancialStoryShare (public)
+ *
+ * Key patterns:
+ *   - Creation requires authentication; resolution is public (token-based)
+ *   - Share links have configurable expiration (default in service layer)
+ *   - Options control what data is included (goal names, deadlines, milestones)
+ *   - Token is a secure random string; resolved payload is a snapshot (not live data)
+ *
+ * @module controllers/v1/shareController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

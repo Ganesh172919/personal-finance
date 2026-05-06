@@ -1,3 +1,28 @@
+/**
+ * @fileoverview Full organization management page for multi-tenant workspaces.
+ *
+ * Provides a tabbed admin panel covering: tenant switching and creation,
+ * member management (add/role assignment), org settings (name, currency,
+ * locale, timezone), installed integrations and marketplace plugins,
+ * API key lifecycle (create with scopes, revoke), referral program
+ * (view code, redeem), and a usage ledger for billing visibility.
+ *
+ * Key data flows:
+ * - getMyOrgs() lists all orgs the user belongs to; active org is
+ *   tracked in both server config and client-side localStorage.
+ * - addOrgMember(), updateOrgSettings() mutate the current org.
+ * - listIntegrations() / syncIntegration() manage third-party connections.
+ * - listMarketplaceCatalog() / installMarketplacePlugin() browse and
+ *   install plugins from the marketplace.
+ * - createApiKey() / revokeApiKey() / listApiKeys() manage API keys
+ *   with granular scopes (usage:read, transactions:read/write, etc.).
+ * - getMyReferral() / redeemReferral() handle the referral program.
+ * - getUsageLedger() surfaces per-org billing usage.
+ *
+ * Some tabs are feature-flagged via useAppConfig(); admin mutations
+ * require owner or admin role.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 

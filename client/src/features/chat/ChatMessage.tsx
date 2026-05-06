@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Chat Message Component
+ *
+ * Renders a single chat message (user or assistant) with rich formatting.
+ *
+ * FEATURES:
+ * - Markdown rendering with GFM support (tables, code blocks, lists)
+ * - User vs assistant visual distinction (avatar, alignment)
+ * - Tool call visualization with approve/simulate actions
+ * - Action plan rendering with "Create tasks" button
+ * - File attachment display
+ * - Agent workflow trace visualization
+ * - Copy-to-clipboard for assistant messages
+ * - Thumbs up/down feedback for AI outputs
+ *
+ * TOOL CALLS:
+ * When the AI suggests actions (create transaction, create goal, etc.),
+ * each tool call is rendered as an interactive card. Users can:
+ * - "Simulate" — preview the effect without applying
+ * - "Approve" — execute the action on the server
+ *
+ * @module features/chat/ChatMessage
+ */
+
 import { motion } from "framer-motion";
 import { User, Wand2, Copy, CheckCircle, ListTodo, Paperclip, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState } from "react";
@@ -418,6 +442,57 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 <li key={idx}>{warning}</li>
               ))}
             </ul>
+          </div>
+        ) : null}
+
+        {!isUser && (message.metadata?.confidence || message.metadata?.evidence?.length || message.metadata?.suggestedActions?.length) ? (
+          <div className="mt-2 w-full space-y-2">
+            {message.metadata?.confidence ? (
+              <div className="rounded-md border border-border bg-background/60 p-3">
+                <div className="text-xs font-semibold text-foreground">Grounding confidence</div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  {message.metadata.confidence.label || "unknown"} confidence
+                  {typeof message.metadata.confidence.score === "number"
+                    ? ` • score ${message.metadata.confidence.score.toFixed(2)}`
+                    : ""}
+                </div>
+                {message.metadata.confidence.notes?.length ? (
+                  <ul className="mt-2 list-disc list-inside space-y-1 text-xs text-muted-foreground">
+                    {message.metadata.confidence.notes.slice(0, 3).map((note, idx) => (
+                      <li key={idx}>{note}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+
+            {message.metadata?.evidence?.length ? (
+              <div className="rounded-md border border-border bg-background/60 p-3">
+                <div className="text-xs font-semibold text-foreground">Evidence used</div>
+                <div className="mt-2 space-y-2">
+                  {message.metadata.evidence.slice(0, 4).map((item, idx) => (
+                    <div key={item.id || `${item.label}-${idx}`} className="rounded-md border border-border/70 bg-background p-2">
+                      <div className="text-sm font-medium text-foreground">{item.label || item.type || "Evidence"}</div>
+                      {item.snippet ? <div className="mt-1 text-xs text-muted-foreground">{item.snippet}</div> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {message.metadata?.suggestedActions?.length ? (
+              <div className="rounded-md border border-border bg-background/60 p-3">
+                <div className="text-xs font-semibold text-foreground">Suggested next actions</div>
+                <div className="mt-2 space-y-2">
+                  {message.metadata.suggestedActions.slice(0, 3).map((item, idx) => (
+                    <div key={`${item.title}-${idx}`} className="rounded-md border border-border/70 bg-background p-2">
+                      <div className="text-sm font-medium text-foreground">{item.title || "Action"}</div>
+                      {item.why ? <div className="mt-1 text-xs text-muted-foreground">{item.why}</div> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 

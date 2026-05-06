@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Activity Feed Controller (v1)
+ *
+ * Human-readable activity feed derived from domain events. Transforms raw
+ * event data into friendly descriptions with icons for the activity timeline UI.
+ *
+ * Routes served:
+ *   GET /api/v1/activity-feed - getActivityFeed
+ *
+ * Key patterns:
+ *   - Cursor-based pagination using createdAt timestamp (not offset)
+ *   - Event types mapped to human-readable descriptions via EVENT_DESCRIPTIONS lookup
+ *   - Icon selection based on event type prefix (transaction -> receipt, goal -> target, etc.)
+ *   - Falls back to humanized event type string for unknown events
+ *   - Supports optional filtering by event_type and user_id
+ *   - Populates user data (name, avatar) for actor attribution
+ *
+ * @module controllers/v1/activityFeedController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -42,6 +62,8 @@ const EVENT_DESCRIPTIONS: Record<string, (payload: any) => string> = {
   "member.joined": () => `joined the organization`,
 };
 
+// Looks up a human-readable description for the event type; falls back to
+// replacing dots/underscores with spaces (e.g., "transaction.created" -> "transaction created")
 function describeEvent(eventType: string, payload: Record<string, unknown>): string {
   const describer = EVENT_DESCRIPTIONS[eventType];
   if (describer) return describer(payload);
@@ -49,6 +71,7 @@ function describeEvent(eventType: string, payload: Record<string, unknown>): str
   return eventType.replace(/[._]/g, " ");
 }
 
+// Maps event type prefixes to icon names used by the frontend UI
 function getEventIcon(eventType: string): string {
   if (eventType.startsWith("transaction")) return "receipt";
   if (eventType.startsWith("budget")) return "wallet";

@@ -1,7 +1,25 @@
+/**
+ * @fileoverview AI System Type Definitions
+ *
+ * TypeScript interfaces for the AI processing system: tool calls, action plans,
+ * key pool management, session state, model catalog, and AI status responses.
+ *
+ * KEY AREAS:
+ * - ToolCall: AI agent actions that may require user confirmation (e.g., create transaction)
+ * - Plan: Structured action plan with time-bucketed action items
+ * - KeyPoolEntry/Stats: LLM API key health monitoring
+ * - SessionState/Checkpoint: Multi-step AI workflow state tracking
+ * - ModelEntry: LLM model catalog with capabilities and cost info
+ *
+ * @module types/ai.types
+ */
+
 import type { IWorkflowTraceEntry } from "@/types";
 
+/** Priority level used across action items, tool calls, and insights */
 export type Priority = "low" | "medium" | "high";
 
+/** Risk level for tool calls (same scale as priority) */
 export type ToolCallRisk = Priority;
 
 export type ToolName =
@@ -62,6 +80,26 @@ export interface ProcessAICommandResponse {
   response: string;
   plan?: Plan;
   tool_calls?: ToolCall[];
+  evidence?: Array<{
+    id?: string;
+    type?: string;
+    label?: string;
+    snippet?: string;
+    entity_id?: string;
+  }>;
+  confidence?: {
+    score?: number;
+    label?: string;
+    notes?: string[];
+    coverage?: Record<string, unknown>;
+  };
+  suggested_actions?: Array<{
+    title?: string;
+    why?: string;
+    priority?: Priority;
+    entity_id?: string;
+  }>;
+  linked_entity_ids?: Record<string, string[]>;
   agent_output_id?: string;
   analysis_type?: string;
   agents_involved?: string[];

@@ -1,3 +1,19 @@
+/**
+ * @fileoverview Task management routes for AI-generated financial action items.
+ *
+ * Endpoints:
+ *   POST   /from-plan   - Create tasks from an AI-generated financial plan
+ *   GET    /            - List tasks filtered by status (open, completed, dismissed)
+ *   GET    /:id         - Get a single task by ID
+ *   PATCH  /:id         - Update a task's status, effects, or completion evidence
+ *   POST   /:id/apply   - Apply a task's effects (e.g., create transactions, update goals)
+ *
+ * Middleware:
+ *   - Passport JWT authentication applied to all routes
+ *   - Zod validation (taskSchemas) on params, query, and body
+ *
+ * Controllers: taskController
+ */
 import { Router } from "express";
 import passport from "passport";
 

@@ -1,9 +1,21 @@
 /**
- * Client-side error reporting service.
+ * @fileoverview Client-side Error Reporting Service
  *
  * Captures unhandled errors, React boundary crashes, and custom events.
  * Reports via POST /api/v1/client-errors when available, and logs to
  * console in development. Designed as a drop-in for future Sentry migration.
+ *
+ * BREADCRUMB SYSTEM:
+ * Maintains a rolling buffer of recent user actions (navigation, clicks,
+ * console logs). These breadcrumbs are attached to error reports to help
+ * developers reproduce the steps leading to an error.
+ *
+ * ARCHITECTURE:
+ * - install(): Registers global error listeners (called once on app mount)
+ * - report(): Sends error to server (best-effort, non-blocking)
+ * - addBreadcrumb(): Records user actions for context
+ *
+ * @module services/errorReporting
  */
 
 interface ErrorReport {

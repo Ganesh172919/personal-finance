@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Financial journaling page with handwriting canvas and AI insights.
+ *
+ * Combines a free-form handwriting canvas (HTML5 canvas) with OCR
+ * recognition and AI-powered journal analysis.  Users draw financial
+ * notes, submit them for text recognition, then generate insights and
+ * auto-detect goals from the recognized content.
+ *
+ * Key data flows:
+ * - listJournalEntries / getJournalEntry provide paginated journal CRUD.
+ * - recognizeHandwriting() sends canvas strokes to the OCR service.
+ * - generateJournalInsights() produces AI analysis of the entry text.
+ * - createGoal() is offered when the AI detects goal-like intent.
+ * - createTasksFromPlan() converts an insight plan into actionable tasks.
+ *
+ * Feature-flagged behind journal_enabled and tasks_enabled; the page
+ * renders a disabled notice when the flag is off.
+ *
+ * Accessible from the sidebar under "Notes" for authenticated users.
+ */
+
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

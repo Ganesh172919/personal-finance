@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Analytics Controller (v1)
+ *
+ * Organization-level analytics overview. Aggregates metrics across workflows,
+ * exports, integrations, plugins, feature flags, and usage for the admin dashboard.
+ *
+ * Routes served:
+ *   GET /api/v1/analytics/overview - getAnalyticsOverview (admin)
+ *
+ * Key patterns:
+ *   - Requires admin role for the organization
+ *   - Aggregates 30-day counts for workflows, exports, integrations, plugins
+ *   - Usage data grouped by feature from the usage ledger for the current period
+ *   - Returns resolved entitlements (plan, limits, remaining) alongside metrics
+ *
+ * @module controllers/v1/analyticsController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

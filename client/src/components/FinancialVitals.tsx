@@ -1,3 +1,22 @@
+/**
+ * @fileoverview FinancialVitals — top-level dashboard metrics row showing four key
+ * financial health indicators: Cash Flow, Savings Rate, Total Savings, and Goals Progress.
+ *
+ * WHAT IT DOES
+ *  - Fetches `/api/dashboard/summary` via React Query and computes four `Metric` objects.
+ *  - Each metric card displays an icon, label, formatted value, and a status indicator
+ *    (e.g. "Positive cash flow" vs "Negative cash flow", "Above target" vs "Below target").
+ *  - Values are formatted via `useOrgFormatters` for locale-aware currency and percentages.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — data is fully server-fetched.
+ *  - Returns a 4-column responsive grid (1 col mobile, 2 col tablet, 4 col desktop).
+ *
+ * ARCHITECTURE NOTES
+ *  - Rendered at the top of the Dashboard page, above all other cards.
+ *  - Shows "No data" defaults when the summary endpoint returns no data (e.g. new user).
+ *  - Framer Motion stagger (0.1 s) for card entry animation.
+ */
 import { motion } from "framer-motion";
 import { Wallet, TrendingUp, PiggyBank, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/Card";

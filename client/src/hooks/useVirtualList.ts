@@ -1,3 +1,46 @@
+/**
+ * @fileoverview Virtual Scrolling Hook
+ *
+ * Implements virtualized list rendering for performance with large datasets.
+ * Instead of rendering all items (e.g., 10,000 transactions), it only renders
+ * items visible in the viewport plus a small buffer (overscan).
+ *
+ * HOW VIRTUAL SCROLLING WORKS:
+ * 1. Container has a fixed height with `overflow-y: auto`
+ * 2. A spacer element sets the total scrollable height (items.length * itemHeight)
+ * 3. Only visible items (based on scroll position) are rendered in the DOM
+ * 4. As the user scrolls, items enter/leave the visible window
+ *
+ * PERFORMANCE IMPACT:
+ * - Without virtualization: 10,000 items = 10,000 DOM nodes
+ * - With virtualization: 10,000 items with 10 visible = ~20 DOM nodes (10 + overscan)
+ * - This dramatically reduces memory usage and improves scroll performance
+ *
+ * TRADEOFFS:
+ * - Requires fixed item height (no dynamic/auto heights)
+ * - Scroll position is tracked via ref (not state) to avoid re-renders on scroll
+ * - The `forceUpdateRef` counter triggers re-renders when scroll changes
+ *
+ * @example
+ * const { visibleItems, containerRef, totalHeight } = useVirtualList({
+ *   items: allTransactions,
+ *   itemHeight: 56,
+ *   overscan: 5,
+ * });
+ *
+ * return (
+ *   <div ref={containerRef} style={{ height: 400, overflow: "auto" }}>
+ *     <div style={{ height: totalHeight, position: "relative" }}>
+ *       {visibleItems.map(({ item, index, offsetTop }) => (
+ *         <div key={index} style={{ position: "absolute", top: offsetTop }}>
+ *           {item.description}
+ *         </div>
+ *       ))}
+ *     </div>
+ *   </div>
+ * );
+ */
+
 import { useRef, useEffect, useCallback } from "react";
 
 /**
@@ -5,13 +48,6 @@ import { useRef, useEffect, useCallback } from "react";
  *
  * Renders only visible items plus a buffer, reducing DOM nodes
  * for transaction lists, activity feeds, and notification lists.
- *
- * Usage:
- *   const { visibleItems, containerProps, totalHeight } = useVirtualList({
- *     items: allTransactions,
- *     itemHeight: 56,
- *     overscan: 5,
- *   });
  */
 
 interface UseVirtualListOptions<T> {

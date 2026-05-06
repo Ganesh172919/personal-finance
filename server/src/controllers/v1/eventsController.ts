@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Events Controller (v1) - Server-Sent Events (SSE)
+ *
+ * Real-time event stream for domain events. Clients connect via SSE and
+ * receive live updates as transactions, goals, workflows, etc. change.
+ *
+ * Routes served:
+ *   GET /api/v1/events/stream - streamEvents
+ *
+ * Key patterns:
+ *   - SSE connection kept alive with 15-second heartbeat comments
+ *   - On connect with last-event-id: replays missed events from DB (up to 1000)
+ *   - On connect without last-event-id: subscribes to live in-memory event bus
+ *   - Event bus pauses during DB replay to prevent duplicates, then flushes buffer
+ *   - Write backpressure handled with drain events
+ *   - Cleanup on client disconnect: clears heartbeat, closes subscription, ends response
+ *
+ * @module controllers/v1/eventsController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -42,6 +62,7 @@ export const streamEvents = async (req: Request, res: Response) => {
   // Initial message (lets clients confirm the stream is live).
   res.write(`event: ready\ndata: ${JSON.stringify({ ok: true, request_id: req.requestId })}\n\n`);
 
+  // SSE comment heartbeat keeps the connection alive through proxies/load balancers
   const heartbeat = setInterval(() => {
     try {
       if (!res.writableEnded && !res.destroyed) {
@@ -190,6 +211,8 @@ export const streamEvents = async (req: Request, res: Response) => {
     }
   };
 
+  // New connection (no lastId): subscribe to live events immediately.
+  // Reconnection (has lastId): replay missed events from DB first, then switch to live.
   if (!lastId) {
     unpauseAndFlush();
   } else {

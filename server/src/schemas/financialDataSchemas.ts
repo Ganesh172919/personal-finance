@@ -1,3 +1,43 @@
+/**
+ * @fileoverview Zod validation schemas for financial data endpoints (transactions, goals, debts).
+ *
+ * Exported schemas:
+ *   Params:
+ *     transactionIdParamSchema  - Validates :id as a 24-char hex ObjectId
+ *     goalIdParamSchema         - Validates :goalId as a 24-char hex ObjectId
+ *     debtIdParamSchema         - Validates :debtId as a 24-char hex ObjectId
+ *
+ *   Transaction bodies:
+ *     createTransactionBodySchema    - Validates new transaction (amount, category, description, date, type)
+ *     importTransactionsBodySchema   - Validates bulk import (rows array, 1-5000 items)
+ *     updateTransactionBodySchema    - Validates partial transaction update (at least one field required)
+ *
+ *   Transaction queries:
+ *     listTransactionsQuerySchema    - Validates list query (pagination, date range, type, category, review flags)
+ *     recentTransactionsQuerySchema  - Validates recent transactions query (limit: 1-50)
+ *     dashboardSummaryQuerySchema    - Validates dashboard summary query (empty, strict)
+ *     portfolioSummaryQuerySchema    - Validates portfolio summary query (months: 1-36)
+ *     transactionsSummaryQuerySchema - Validates summary query (from/to dates, groupBy, topCategories)
+ *
+ *   Goal bodies:
+ *     createGoalBodySchema  - Validates new goal (name, target, current, deadline, priority)
+ *     updateGoalBodySchema  - Validates partial goal update (at least one field required)
+ *
+ *   Debt bodies:
+ *     createDebtBodySchema  - Validates new debt (name, balance, interest_rate, minimum_payment, type)
+ *     updateDebtBodySchema  - Validates partial debt update (at least one field required)
+ *
+ * Used by: financialDataRoutes
+ *
+ * Key validation rules:
+ *   - Transaction type enum: income | expense | investment
+ *   - Date range: from must be <= to (enforced by .refine)
+ *   - Review flags: uncategorized | suspected_duplicate | needs_merchant_match | split_candidate | recurring_candidate
+ *   - Interest rate: 0-100 range
+ *   - Goal priority: 1-10 integer
+ *   - All update schemas require at least one field (reject empty objects)
+ *   - All schemas use .strict() to reject unknown fields
+ */
 import { z } from "zod";
 
 const objectIdRegex = /^[a-f\d]{24}$/i;
@@ -59,7 +99,9 @@ export const listTransactionsQuerySchema = z
     from: z.coerce.date().optional(),
     to: z.coerce.date().optional(),
     type: transactionTypeSchema.optional(),
-    category: z.string().trim().min(1).max(100).optional()
+    category: z.string().trim().min(1).max(100).optional(),
+    needs_review: z.coerce.boolean().optional(),
+    review_flag: z.enum(["uncategorized", "suspected_duplicate", "needs_merchant_match", "split_candidate", "recurring_candidate"]).optional(),
   })
   .strict()
   .refine(

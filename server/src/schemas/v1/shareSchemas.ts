@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Zod validation schemas for financial story sharing.
+ *
+ * Exported schemas:
+ *   createFinancialStoryShareBodySchema - Validates creating a shareable financial story link
+ *   shareTokenParamSchema               - Validates the :token route param for public share access
+ *
+ * Used by: v1Routes (POST /shares/financial-story), publicShareRoutes (GET /shares/financial-story/:token)
+ *
+ * Key validation rules:
+ *   - Share creation:
+ *     - expires_in_days: optional integer 1-365 for link expiration
+ *     - include_goal_names, include_goal_deadlines, include_milestones: optional booleans controlling what data to share
+ *     - max_milestones: optional integer 1-100 limiting milestone count
+ *     - Defaults to empty object if no body provided
+ *   - Share token: 16-256 chars, alphanumeric with _ and - allowed
+ *   - Token schema uses regex to ensure URL-safe characters only
+ */
 import { z } from "zod";
 
 const tokenSchema = z

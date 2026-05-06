@@ -1,3 +1,20 @@
+/**
+ * @fileoverview Billing and subscription management page.
+ *
+ * Lets the user view their current plan, upgrade to Pro or Team tiers,
+ * and open the Stripe billing portal for payment management. In local
+ * stub billing mode, upgrades apply immediately without Stripe checkout.
+ *
+ * Key data flows:
+ * - Reads plan and status from useAppConfig() entitlements.
+ * - Calls createBillingCheckout({ plan_tier }) for upgrades; if the
+ *   response contains a checkout_url the browser redirects to Stripe.
+ * - Calls getBillingPortal() to open the Stripe customer portal.
+ * - Refetches config after successful upgrades.
+ *
+ * Tied to the Stripe integration and the server-side billing module.
+ */
+
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";

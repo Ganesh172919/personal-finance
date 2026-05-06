@@ -1,3 +1,20 @@
+/**
+ * @fileoverview Chat History Sidebar
+ *
+ * Displays the list of chat sessions with search, create, rename, and delete.
+ * Shows session title, last message time, and message count.
+ *
+ * FEATURES:
+ * - Search sessions by title
+ * - Create new session
+ * - Inline rename (double-click or edit button)
+ * - Delete with confirmation
+ * - Active session highlighting
+ * - Relative time display ("2h ago", "Yesterday")
+ *
+ * @module features/chat/ChatHistorySidebar
+ */
+
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "wouter";

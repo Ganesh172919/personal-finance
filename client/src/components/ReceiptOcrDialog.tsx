@@ -1,3 +1,26 @@
+/**
+ * @fileoverview ReceiptOcrDialog — two-step receipt scanning flow: upload an image to
+ * extract vendor/date/total/tax via OCR, then review and confirm to create a transaction.
+ *
+ * WHAT IT DOES
+ *  - Step 1 (Parse): user uploads a receipt image; `parseReceipt` mutation sends it to
+ *    the server which returns extracted fields, confidence scores, line items, and warnings.
+ *  - Step 2 (Confirm): user reviews/edits extracted fields (vendor, date, total, tax,
+ *    category, currency, description) and optionally toggles a line-items table.
+ *    On confirm, `confirmReceipt` mutation creates a transaction on the server.
+ *  - Feature-gated: disabled button when `receipts_ocr_enabled` is false in app config.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `onConfirmed` (() => void) — optional callback after successful transaction creation.
+ *  - `currencyHint` (string) — fallback currency from org config.
+ *  - Mutations: `parseReceipt`, `confirmReceipt`.
+ *
+ * ARCHITECTURE NOTES
+ *  - Triggered by a "Scan Receipt" button rendered inline in the transactions page.
+ *  - Uses file input with `capture="environment"` for mobile camera support.
+ *  - Confidence labels (percentage) are displayed next to each extracted field so users
+ *    know which values may need manual correction.
+ */
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 

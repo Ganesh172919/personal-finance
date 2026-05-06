@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Tool Controller (v1)
+ *
+ * Direct tool execution and simulation endpoints. Tools are atomic financial
+ * actions (create transaction, update goal, etc.) that can be called by the
+ * AI autopilot system or directly by users.
+ *
+ * Routes served:
+ *   POST /api/v1/tools/simulate - simulateTool (preview without committing)
+ *   POST /api/v1/tools/execute  - executeTool (commit the action)
+ *
+ * Key patterns:
+ *   - simulateTool previews side-effects without persisting changes
+ *   - executeTool commits the action with idempotency support
+ *   - Tool calls validated against Zod schemas (ToolCallInput)
+ *   - Actor role passed through for policy evaluation (risk assessment)
+ *   - confirmed flag controls whether high-risk tools proceed
+ *
+ * @module controllers/v1/toolController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

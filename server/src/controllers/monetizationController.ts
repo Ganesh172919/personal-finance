@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Monetization Controller
+ *
+ * Exposes plan catalog, per-user/org entitlement resolution, and an internal
+ * usage-event ingestion endpoint for metered billing.
+ *
+ * Routes served:
+ *   GET  /api/monetization/plans           - getPlans
+ *   GET  /api/monetization/entitlements    - getMyEntitlements
+ *   POST /api/monetization/usage-events    - ingestUsageEvent (internal-only)
+ *
+ * Key patterns:
+ *   - getPlans returns the static plan catalog (free/pro/team limits)
+ *   - getMyEntitlements resolves the caller's current plan, usage, and remaining quota
+ *   - ingestUsageEvent is a server-to-server endpoint protected by x-internal-usage-token
+ *   - Falls back to user's default org if org_id is not provided in usage events
+ *
+ * @module controllers/monetizationController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

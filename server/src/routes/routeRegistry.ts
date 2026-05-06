@@ -1,3 +1,33 @@
+/**
+ * @fileoverview Route registry that centralizes all API route mounting for the Express application.
+ * This is the single source of truth for which route modules are mounted at which URL prefixes.
+ *
+ * It provides two route sets:
+ *   - Canonical routes: mounted under /api/v1/* (the preferred API surface)
+ *   - Legacy routes: mounted under /api/* (backward-compatible aliases for older clients)
+ *
+ * Feature flags control conditional mounting:
+ *   - MONETIZATION_ENABLED: gates monetization routes
+ *   - TASKS_ENABLED: gates task management routes
+ *
+ * Route modules registered:
+ *   internalToolsRoutes  -> /api/internal/tools
+ *   authRoutes           -> /api/v1/auth
+ *   configRoutes         -> /api/v1/config
+ *   publicShareRoutes    -> /api/v1/public
+ *   blogRoutes           -> /api/v1/blogs
+ *   growthStoryRoutes    -> /api/v1/growth-stories
+ *   v1Routes             -> /api/v1 (main v1 aggregator)
+ *   monetizationRoutes   -> /api/v1 (conditional)
+ *   aiRoutes             -> /api/v1
+ *   chatRoutes           -> /api/v1/chat
+ *   financialDataRoutes  -> /api/v1
+ *   fileRoutes           -> /api/v1/files
+ *   receiptRoutes        -> /api/v1
+ *   financialJournalRoutes -> /api/v1
+ *   mediaRoutes          -> /api/v1
+ *   taskRoutes           -> /api/v1/tasks (conditional)
+ */
 import type { Application, Router } from "express";
 
 import type { Env } from "../config/env";

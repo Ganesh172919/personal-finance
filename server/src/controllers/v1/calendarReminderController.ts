@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Calendar Reminder Controller (v1)
+ *
+ * Manages financial calendar reminders (bill due dates, payment schedules, etc.).
+ * Each reminder belongs to a user within an organization.
+ *
+ * Routes served:
+ *   GET    /api/v1/calendar-reminders     - listReminders
+ *   POST   /api/v1/calendar-reminders     - createReminder
+ *   PATCH  /api/v1/calendar-reminders/:id/toggle - toggleReminder
+ *   DELETE /api/v1/calendar-reminders/:id - deleteReminder
+ *
+ * Key patterns:
+ *   - Date stored as YYYY-MM-DD string (not Date object)
+ *   - toggleReminder flips the completed boolean
+ *   - Date range filtering supported via from/to query params
+ *   - All operations scoped to org + authenticated user
+ *
+ * @module controllers/v1/calendarReminderController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

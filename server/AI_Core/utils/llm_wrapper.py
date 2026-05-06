@@ -1,5 +1,50 @@
 """
-LLM wrapper with provider/model/key failover and secure routing telemetry.
+llm_wrapper.py - Multi-Provider LLM Abstraction with Failover
+=============================================================
+
+This module provides ``RateLimitedLLM``, a **resilient LLM client** that
+abstracts away the complexity of talking to multiple LLM providers (Gemini,
+OpenRouter, Groq, OpenAI, DeepSeek, Together, Mistral, etc.) behind a single
+``invoke()`` method.
+
+Core capabilities
+-----------------
+1. **Provider failover** -- If the preferred provider fails, the client
+   automatically tries the next provider in the fallback chain.
+2. **Model failover** -- Within a provider, if the preferred model fails
+   (e.g. 404 Not Found), the next model candidate is tried.
+3. **Key rotation** -- For providers with multiple API keys, the client uses
+   a ``KeyPool`` to rotate keys and avoid rate limits.
+4. **Circuit breaking** -- Models in cooldown or circuit-open state are
+   skipped to avoid wasting time on known-broken endpoints.
+5. **Rate limiting** -- A decorator-based rate limiter throttles outbound
+   requests to stay within provider quotas.
+6. **Telemetry** -- Every call records provider, model, key, latency, token
+   usage, and cost for observability.
+7. **Secure error handling** -- API keys are redacted from error messages
+   before logging.
+
+Architecture
+------------
+``RateLimitedLLM`` is instantiated per agent (via ``create_llm()``).  Each
+instance holds:
+- A preferred provider and model
+- A fallback chain of providers
+- Cached LangChain client instances (keyed by provider:model:key)
+- Per-provider ``KeyPool`` instances
+- A ``ModelHealthTracker`` for success/failure rates
+
+The ``invoke()`` method iterates over providers and models, trying each
+combination until one succeeds or all are exhausted.  The ``invoke_with_fallback()``` wrapper adds a deterministic fallback response when all
+LLM attempts fail.
+
+Key classes
+-----------
+- ``RateLimitedLLM`` -- the main client class
+- ``AIProviderError`` (and subclasses) -- structured error types
+- ``create_llm()`` -- factory function used by agents
+- ``AGENT_TASK_CONFIG`` -- per-agent provider/model/capability mapping
+- ``FALLBACK_RESPONSES`` -- deterministic responses when LLM is unavailable
 """
 
 from __future__ import annotations
@@ -38,6 +83,13 @@ _LAST_ROUTE_SNAPSHOT: Dict[str, Any] = {}
 
 
 class AIProviderError(Exception):
+    """Base exception for all LLM provider errors.
+
+    Carries structured metadata (status_code, model, key_id, provider) so
+    that the failover logic can make informed decisions about whether to
+    retry with a different key, model, or provider.
+    """
+
     def __init__(
         self,
         message: str,
@@ -54,18 +106,35 @@ class AIProviderError(Exception):
 
 
 class QuotaExceededError(AIProviderError):
+    """HTTP 429 -- rate limit or quota exceeded.
+
+    Triggers key rotation (try next API key) or provider failover.
+    """
     pass
 
 
 class AccessDeniedError(AIProviderError):
+    """HTTP 403 -- API key is invalid or access is denied.
+
+    Triggers key rotation (try next API key) or provider failover.
+    """
     pass
 
 
 class ModelNotFoundError(AIProviderError):
+    """HTTP 404 -- the requested model does not exist on this provider.
+
+    Triggers model failover (try next model candidate within the same provider).
+    """
     pass
 
 
 def _normalize_model_id(provider_name: str, model: str) -> str:
+    """Ensure a model ID has the ``provider/model`` prefix format.
+
+    LangChain model IDs are typically ``"provider/model-name"``.  This
+    function adds the prefix if missing.
+    """
     cleaned = str(model or "").strip()
     if cleaned.startswith(f"{provider_name}/"):
         return cleaned
@@ -73,10 +142,19 @@ def _normalize_model_id(provider_name: str, model: str) -> str:
 
 
 def _raw_model_name(model_id: str) -> str:
+    """Extract the model name without the provider prefix.
+
+    E.g. ``"gemini/gemini-2.5-flash"`` -> ``"gemini-2.5-flash"``.
+    """
     return str(model_id or "").split("/", 1)[1] if "/" in str(model_id or "") else str(model_id or "")
 
 
 def _sanitize_text(value: Any) -> str:
+    """Clean text by removing null bytes and normalising whitespace.
+
+    LLM outputs sometimes contain null bytes or unusual whitespace that
+    can cause issues downstream.  This function strips them.
+    """
     text = str(value or "")
     text = text.replace("\x00", "")
     text = re.sub(r"[^\S\r\n\t]+", " ", text)
@@ -84,6 +162,11 @@ def _sanitize_text(value: Any) -> str:
 
 
 def _sanitize_messages(messages: List[BaseMessage]) -> List[BaseMessage]:
+    """Sanitize the content of every message in a list.
+
+    Creates new message instances with cleaned content to avoid mutating the
+    originals.
+    """
     sanitized: List[BaseMessage] = []
     for message in messages:
         content = _sanitize_text(getattr(message, "content", ""))
@@ -99,6 +182,19 @@ def _sanitize_messages(messages: List[BaseMessage]) -> List[BaseMessage]:
 
 
 class RateLimitedLLM:
+    """Resilient LLM client with provider/model/key failover.
+
+    This class wraps LangChain's chat model interface and adds:
+    - Automatic provider failover (Gemini -> OpenRouter -> Groq -> ...)
+    - Automatic model failover within a provider
+    - API key rotation via ``KeyPool``
+    - Circuit breaking via ``ModelHealthTracker``
+    - Rate limiting via a decorator
+    - Telemetry (latency, token usage, cost)
+
+    Instances are created per agent via ``create_llm()``.
+    """
+
     def __init__(
         self,
         model: Optional[str] = None,
@@ -110,30 +206,49 @@ class RateLimitedLLM:
         task_capability: Optional[ModelCapability] = None,
         max_cost_tier: Optional[CostTier] = None,
     ):
+        # --- Provider chain ---
+        # The preferred provider is tried first.  If it fails, the fallback
+        # chain (resolved by ``resolve_provider_chain``) is tried in order.
         self.preferred_provider = provider or _resolve_provider_name()
         self.provider_candidates = resolve_provider_chain(self.preferred_provider)
+
+        # --- Model candidates ---
+        # The preferred model is tried first.  Additional candidates come
+        # from the provider config and the model catalog.
         self.preferred_model_id = _normalize_model_id(self.preferred_provider, model) if model else None
         self.preferred_model_candidates = [
             _normalize_model_id(self.preferred_provider, candidate) for candidate in (model_candidates or [])
         ]
+
         self.temperature = temperature
         self.max_tokens = max_tokens
         self._api_key = api_key
         self._task_capability = task_capability
         self._max_cost_tier = max_cost_tier
+
+        # --- Client cache ---
+        # LangChain chat model instances are cached by "provider:model:key_hash"
+        # to avoid recreating them on every call.
         self._llm_clients: Dict[str, Any] = {}
+
+        # --- Key pools (per provider) ---
         self._key_pools: Dict[str, KeyPool] = {}
+
+        # --- Model health tracker ---
         self._model_health = get_model_health_tracker()
 
+        # --- Active state (updated after each successful call) ---
         self.active_provider = self.preferred_provider
         self.active_model = self.preferred_model_id or ""
         self.active_key_id: Optional[str] = None
+
+        # --- Telemetry counters ---
         self._call_count = 0
         self._error_count = 0
         self._last_error: Optional[str] = None
         self._last_latency_ms: float = 0.0
-        self._fallback_path: List[str] = []
-        self._recovered_failures: List[Dict[str, Any]] = []
+        self._fallback_path: List[str] = []          # Models tried in order
+        self._recovered_failures: List[Dict[str, Any]] = []  # Failover events
 
     @property
     def provider_name(self) -> str:
@@ -308,19 +423,50 @@ class RateLimitedLLM:
 
     @with_rate_limit_and_retry
     def invoke(self, messages: List[BaseMessage], fallback_response: Optional[str] = None) -> Any:
-        del fallback_response
+        """Send messages to the LLM with full failover logic.
+
+        The failover strategy is a **three-level nested loop**:
+
+        1. **Outer loop** -- iterate over providers (e.g. Gemini, OpenRouter, Groq)
+        2. **Middle loop** -- iterate over API keys for the current provider
+           (via ``KeyPool``)
+        3. **Inner loop** -- iterate over model candidates for the current
+           provider (e.g. gemini-2.5-flash, gemini-2.5-pro)
+
+        At each level, specific error types trigger the appropriate failover:
+        - ``ModelNotFoundError`` (404) -> try next model (inner loop ``continue``)
+        - ``QuotaExceededError`` (429) -> try next key (middle loop ``break``)
+        - ``AccessDeniedError`` (403) -> try next key (middle loop ``break``)
+        - Other errors -> try next provider (outer loop ``break``)
+
+        The ``@with_rate_limit_and_retry`` decorator adds token-bucket rate
+        limiting and automatic retry with exponential backoff.
+
+        Returns
+        -------
+        AIMessage
+            The LLM's response.
+
+        Raises
+        ------
+        AIProviderError
+            If all providers/models/keys are exhausted.
+        """
+        del fallback_response  # unused; fallback is handled by invoke_with_fallback
 
         sanitized_messages = _sanitize_messages(messages)
         self._fallback_path = []
         self._recovered_failures = []
         last_error: Optional[AIProviderError] = None
 
+        # --- Outer loop: providers ---
         for provider_index, provider_name in enumerate(self.provider_candidates):
             model_candidates = self._model_candidates_for_provider(provider_name)
             pool = self._get_key_pool(provider_name)
             tried_key_ids = set()
             max_key_attempts = len(pool.get_all_keys()) or 1
 
+            # --- Middle loop: API keys ---
             for _ in range(max_key_attempts):
                 api_key, key_id = self._get_api_key(provider_name)
                 if not api_key:
@@ -331,12 +477,16 @@ class RateLimitedLLM:
                     )
                     break
 
+                # Skip keys we already tried in this provider cycle.
                 if key_id and key_id in tried_key_ids:
                     continue
                 if key_id:
                     tried_key_ids.add(key_id)
 
+                # --- Inner loop: model candidates ---
                 for model_index, model_entry in enumerate(model_candidates):
+                    # Skip models in cooldown or circuit-open state (unless
+                    # it's the last candidate -- give it a chance to recover).
                     status = self._model_health.get_status(model_entry.model_id)
                     if status in {ModelHealthStatus.COOLDOWN, ModelHealthStatus.CIRCUIT_OPEN} and model_index < len(model_candidates) - 1:
                         continue
@@ -481,6 +631,19 @@ class RateLimitedLLM:
         raise AccessDeniedError("No configured LLM providers are available.", status_code=403)
 
     def invoke_with_fallback(self, messages: List[BaseMessage], fallback_response: str) -> Tuple[Any, bool]:
+        """Invoke the LLM with a deterministic fallback if all attempts fail.
+
+        This is the **preferred entry point** for agent code.  It wraps
+        ``invoke()`` and catches all LLM-related exceptions, returning a
+        deterministic fallback response instead of raising.
+
+        Returns
+        -------
+        tuple[AIMessage, bool]
+            The response and a flag indicating whether the fallback was used
+            (``True`` = LLM was unavailable, deterministic response returned).
+        """
+        # Fast path: if no API keys are configured at all, skip LLM entirely.
         if not any(self._get_api_key(provider_name)[0] for provider_name in self.provider_candidates):
             logger.info("LLM disabled (no provider API keys configured). Returning deterministic fallback response.")
             _LAST_ROUTE_SNAPSHOT.clear()
@@ -539,6 +702,16 @@ class RateLimitedLLM:
         }
 
 
+# ---------------------------------------------------------------------------
+# Per-Agent Task Configuration
+# ---------------------------------------------------------------------------
+# Maps each agent type to its preferred provider, model, and capability.
+# This is the **primary configuration** for the multi-provider strategy:
+# - Routing agents use fast, cheap models (Groq Llama 8B)
+# - Analysis agents use mid-tier models (Gemini Flash, Groq Llama 70B)
+# - Reasoning agents use larger models (Qwen 235B, Gemini Pro)
+# - Free-tier models on OpenRouter are used where possible to reduce cost
+# ---------------------------------------------------------------------------
 AGENT_TASK_CONFIG: Dict[str, Dict[str, Any]] = {
     "master": {
         "provider": "gemini",
@@ -600,6 +773,31 @@ def create_llm(
     provider: Optional[str] = None,
     task_capability: Optional[ModelCapability] = None,
 ) -> RateLimitedLLM:
+    """Factory function to create a ``RateLimitedLLM`` for a specific agent.
+
+    This is the **primary entry point** used by all agents (e.g.
+    ``self.llm = create_llm("master")``).
+
+    The function resolves the provider, model, and capability from:
+    1. Explicit arguments (highest priority)
+    2. ``AGENT_TASK_CONFIG`` (per-agent defaults)
+    3. ``settings`` (global fallbacks)
+    4. Model catalog (best model for the capability)
+
+    Parameters
+    ----------
+    agent_type : str
+        The agent type key (e.g. "master", "educator", "analyzer").
+    provider : str, optional
+        Override the provider from the task config.
+    task_capability : ModelCapability, optional
+        Override the capability from the task config.
+
+    Returns
+    -------
+    RateLimitedLLM
+        A configured LLM client ready for ``invoke()`` calls.
+    """
     config = settings.get_agent_config(agent_type)
     task_config = AGENT_TASK_CONFIG.get(agent_type, {})
 
@@ -635,6 +833,13 @@ def create_llm(
     )
 
 
+# ---------------------------------------------------------------------------
+# Deterministic Fallback Responses
+# ---------------------------------------------------------------------------
+# When the LLM is completely unavailable (no API keys, all providers down,
+# etc.), these responses are returned instead.  They are intentionally generic
+# and safe -- no personalised numbers, no hallucinated data.
+# ---------------------------------------------------------------------------
 FALLBACK_RESPONSES = {
     "analysis_type": "comprehensive",
     "financial_education": """
@@ -678,8 +883,51 @@ I couldn't generate a full AI narrative right now, but here is a safe action pla
 
 
 def get_fallback_response(response_type: str) -> str:
+    """Get a deterministic fallback response by type.
+
+    Falls back to the ``synthesis`` response if the type is unknown.
+    """
     return FALLBACK_RESPONSES.get(response_type, FALLBACK_RESPONSES["synthesis"])
 
 
 def get_last_route_snapshot() -> Dict[str, Any]:
+    """Return the routing metadata from the most recent successful LLM call.
+
+    Used by the ``/api/ai/status`` endpoint to report which provider/model/key
+    was last used.
+    """
     return dict(_LAST_ROUTE_SNAPSHOT)
+
+
+# ============================================================================
+# END-OF-FILE SUMMARY -- utils/llm_wrapper.py
+# ============================================================================
+# Key takeaways:
+#
+# 1. ``RateLimitedLLM`` is the **resilient LLM client** that every agent uses.
+#    It abstracts away provider/model/key failover behind a simple ``invoke()``
+#    interface.
+#
+# 2. The failover strategy is a **three-level nested loop**: providers -> keys
+#    -> models.  Specific error types (429, 403, 404) trigger the appropriate
+#    level of failover.
+#
+# 3. ``AGENT_TASK_CONFIG`` maps each agent type to its preferred provider and
+#    model.  This is the **primary configuration** for the multi-provider
+#    strategy.  Different agents use different providers based on their needs
+#    (speed vs. reasoning quality vs. cost).
+#
+# 4. ``invoke_with_fallback()`` is the **preferred entry point** for agent
+#    code.  It catches all LLM errors and returns a deterministic fallback
+#    response instead of raising.
+#
+# 5. ``FALLBACK_RESPONSES`` provides generic, safe responses when the LLM is
+#    completely unavailable.  They contain no personalised numbers.
+#
+# 6. The ``create_llm()`` factory function resolves the provider, model, and
+#    capability from multiple sources (explicit args, task config, settings,
+#    model catalog) with a clear priority order.
+#
+# 7. Security: API keys are redacted from all error messages and logs via
+#    ``_redact_message()``.
+# ============================================================================

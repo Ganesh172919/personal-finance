@@ -1,3 +1,28 @@
+/**
+ * @fileoverview Authentication routes for user registration, login, email verification,
+ * Google OAuth, profile management, and password changes.
+ *
+ * Endpoints:
+ *   GET    /providers              - List available auth providers (email, google)
+ *   GET    /csrf                   - Get a CSRF token for form submissions
+ *   POST   /register              - Register a new user account
+ *   POST   /login                 - Authenticate with email/password
+ *   POST   /verify-email          - Verify email address with OTP
+ *   POST   /resend-verification   - Resend verification email
+ *   GET    /google                - Initiate Google OAuth flow
+ *   GET    /google/callback       - Google OAuth callback handler
+ *   GET    /profile               - Get authenticated user's profile (JWT required)
+ *   PUT    /profile               - Update authenticated user's profile (JWT required)
+ *   POST   /password              - Change password (JWT required)
+ *   POST   /logout                - Log out current session
+ *
+ * Middleware:
+ *   - Rate limiting (authRateLimiter) on register, login, verify-email, resend-verification
+ *   - Passport JWT authentication on profile and password endpoints
+ *   - Zod validation (authSchemas) on request bodies
+ *
+ * Controllers: authController
+ */
 import { Router } from "express";
 import passport from "passport";
 import rateLimit from "express-rate-limit";

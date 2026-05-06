@@ -1,3 +1,24 @@
+/**
+ * @fileoverview ActionableInsights — dashboard card listing the top four AI-generated
+ * financial insights with priority badges, action buttons, and click-to-expand detail modal.
+ *
+ * WHAT IT DOES
+ *  - Fetches all agent outputs for the current user from `/api/agent-outputs/user/:userId`.
+ *  - Renders up to 4 insight cards, each showing: agent-type icon, title, description,
+ *    priority badge (high/medium/low with colour coding), and an optional "Take Action" button.
+ *  - Clicking a card opens `InsightDetailModal` with the full markdown analysis.
+ *  - "View all" navigates to `/all-insights`.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — data is fully server-fetched based on the authenticated user.
+ *  - `getInsightIcon` maps agent types to lucide icons (Star, BarChart3, GraduationCap, etc.).
+ *  - `handleAction` maps `actionType` to in-app routes (invest → /portfolio, etc.).
+ *
+ * ARCHITECTURE NOTES
+ *  - Embeds `InsightDetailModal` at the bottom; `selectedInsightId` state controls its visibility.
+ *  - High-priority insights get a distinctive white/20 border and white/5 background.
+ *  - Framer Motion stagger (0.1 s per card) for animated entry.
+ */
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Star, BarChart3, GraduationCap, TrendingUp, CreditCard, PiggyBank } from "lucide-react";

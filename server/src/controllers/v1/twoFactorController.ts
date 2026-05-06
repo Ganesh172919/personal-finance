@@ -1,7 +1,24 @@
 /**
- * Two-Factor Authentication Controller
+ * @fileoverview Two-Factor Authentication Controller (v1)
  *
- * Endpoints for enabling, verifying, and disabling TOTP-based 2FA.
+ * TOTP-based two-factor authentication lifecycle: setup, verify, disable, status.
+ * Uses a pending-secret pattern where the secret is generated during setup and
+ * only persisted after the user successfully verifies a TOTP code.
+ *
+ * Routes served:
+ *   POST /api/v1/auth/2fa/setup    - setup2FA (generates secret + QR URI)
+ *   POST /api/v1/auth/2fa/verify   - verify2FA (confirms setup, generates backup codes)
+ *   POST /api/v1/auth/2fa/disable  - disable2FA (requires TOTP or backup code)
+ *   GET  /api/v1/auth/2fa/status   - get2FAStatus
+ *
+ * Key patterns:
+ *   - Two-phase setup: generate secret -> verify token -> activate
+ *   - Pending secret stored temporarily; moved to permanent field on verify
+ *   - Backup codes generated as plaintext, stored as hashes
+ *   - Disable requires valid TOTP token OR backup code (fallback authentication)
+ *   - Audit events recorded for enable, disable, and failed attempts
+ *
+ * @module controllers/v1/twoFactorController
  */
 
 import type { Request, Response } from "express";
@@ -34,7 +51,8 @@ export const setup2FA = async (req: Request, res: Response) => {
   const secret = generateTotpSecret();
   const uri = generateTotpUri(secret, user.email);
 
-  // Temporarily store unverified secret (will be confirmed in verify step)
+  // Store secret temporarily in a separate field; it only moves to the permanent
+  // twoFactorSecret field after the user successfully verifies a TOTP code
   await UserModel.updateOne(
     { _id: userId },
     { $set: { twoFactorPendingSecret: secret } },
@@ -128,7 +146,7 @@ export const disable2FA = async (req: Request, res: Response) => {
   const totpResult = verifyTotp(token, secret);
 
   if (!totpResult.valid) {
-    // Check backup codes
+    // TOTP failed — try the token as a backup code (hashed comparison)
     const hashedInput = hashBackupCode(token);
     const backupCodes: string[] = (user as any).twoFactorBackupCodes || [];
     if (!backupCodes.includes(hashedInput)) {

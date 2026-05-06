@@ -1,8 +1,41 @@
+"""
+memory/extract.py - Deterministic Memory Extraction
+=====================================================
+
+Extracts user preferences and facts from free-text input using
+**deterministic regex patterns** (no LLM calls).  The extracted
+memories are persisted in the ``MemoryStore`` and used to enrich
+future requests with personalised context.
+
+What it extracts
+----------------
+- **Risk tolerance** -- phrases like "conservative", "moderate",
+  "aggressive" mapped to standardised values.
+- **Preferences** -- "I prefer/like/love/avoid/hate ..." patterns.
+- **Budgeting style** -- mentions of "envelope" budgeting.
+- **Time horizon** -- "in 6 months", "for 3 years" patterns.
+
+Security
+--------
+- The ``_looks_like_secret()`` guard prevents storing API keys,
+  tokens, passwords, or high-entropy strings as memories.
+- Empty or whitespace-only inputs are silently skipped.
+
+Returns
+-------
+List of ``(key, value, confidence, source)`` tuples where:
+- ``key`` is the memory category (e.g. "risk_tolerance")
+- ``value`` is the extracted value (e.g. "moderate")
+- ``confidence`` is a float 0-1 (higher for explicit statements)
+- ``source`` is "explicit" or "inferred"
+"""
+
 from __future__ import annotations
 
 import re
 from typing import List, Tuple
 
+# Maps natural language phrases to standardised risk tolerance values.
 _RISK_MAP = {
     "conservative": "low",
     "low risk": "low",

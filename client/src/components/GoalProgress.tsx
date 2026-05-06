@@ -1,4 +1,22 @@
-import { motion } from "framer-motion";
+/**
+ * @fileoverview GoalProgress — dashboard card that lists all user financial goals
+ * with animated progress bars and deadline countdowns.
+ *
+ * WHAT IT DOES
+ *  - Fetches the user's financial profile via React Query and extracts `goals[]`.
+ *  - Renders each goal as an animated row: name, current/target amounts, a color-coded
+ *    progress bar (green >= 80 %, blue >= 50 %, yellow below), and months remaining.
+ *  - Shows an empty-state message when no goals have been set.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — data is fetched from `GET /api/financial-profiles/me`.
+ *  - Uses `useOrgFormatters` for currency display that adapts to the organisation locale.
+ *
+ * ARCHITECTURE NOTES
+ *  - Typically rendered on the main Dashboard page alongside FinancialVitals, RecentActivity, etc.
+ *  - Framer Motion stagger (0.2 s per goal) and progress bar easing create a polished reveal.
+ *  - Purely presentational once data is loaded; mutations are handled elsewhere.
+ */
 import { Card } from "@/components/ui/Card";
 import { useQuery } from "@tanstack/react-query";
 import { IFinancialProfile, IFinancialGoal } from "@/types";

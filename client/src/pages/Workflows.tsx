@@ -1,4 +1,27 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿/**
+ * @fileoverview Workflow automation page for creating and managing automated tasks.
+ *
+ * Provides a three-tab interface: existing workflows, a create form,
+ * and a template gallery.  Workflows combine triggers (manual, cron
+ * schedule, or event-based) with actions (task creation, export report,
+ * or send notification).
+ *
+ * Key data flows:
+ * - listWorkflows() loads existing workflows; listWorkflowTemplates()
+ *   and builtinWorkflowTemplates() provide server + client templates.
+ * - simulateToolCall() dry-runs a workflow to preview its effect.
+ * - executeToolCall() runs a workflow for real, creating tasks or
+ *   exports as configured.
+ * - Template deep-links are parsed from the URL query string via
+ *   parseWorkflowTemplateParam() and pre-populate the create form.
+ *
+ * Action-specific sub-forms render conditionally (e.g., period key for
+ * monthly PDF export, CSV filters for transaction export).
+ *
+ * Accessible from the sidebar under "Workflows" for authenticated users.
+ */
+
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 

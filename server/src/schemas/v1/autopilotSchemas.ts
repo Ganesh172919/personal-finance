@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Zod validation schemas for the autopilot (AI-driven automation) feature.
+ *
+ * Exported schemas:
+ *   autopilotPlanBodySchema     - Validates creating an autopilot plan from a natural-language goal
+ *   autopilotRunIdBodySchema    - Validates referencing an autopilot run by ID
+ *   autopilotApproveBodySchema  - Validates approving tool calls in an autopilot run
+ *
+ * Used by: v1Routes (POST /autopilot/plan, /simulate, /approve, /execute)
+ *
+ * Key validation rules:
+ *   - goal: required, 1-4000 chars (the user's financial goal in natural language)
+ *   - run_id: required, must be a valid 24-char hex ObjectId
+ *   - Approve body: must provide either approve_all=true or a non-empty tool_call_ids array
+ *     (enforced by .superRefine cross-field validation)
+ *   - tool_call_ids: max 200 items, each 4-128 chars
+ *   - options.narrative: optional boolean for AI response style
+ */
 import { z } from "zod";
 
 const objectIdRegex = /^[a-f\d]{24}$/i;

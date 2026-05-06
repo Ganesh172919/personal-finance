@@ -1,3 +1,31 @@
+/**
+ * @fileoverview Zod validation schemas for AI-generated financial task management.
+ *
+ * Exported schemas:
+ *   taskIdParamSchema        - Validates task ID route param (8-128 chars, trimmed)
+ *   tasksFromPlanBodySchema  - Validates creating tasks from an AI plan (optional source refs + full plan)
+ *   listTasksQuerySchema     - Validates task list query (status filter + limit)
+ *   taskEffectSchema         - Discriminated union of task side effects:
+ *       - transaction: create a transaction (amount, category, description, date, tx_type)
+ *       - goal_progress: update goal progress (goal_id, amount, mode)
+ *       - debt_payment: record debt payment (debt_id, amount)
+ *       - profile_update: update financial profile fields
+ *   updateTaskBodySchema     - Validates task status update (status, effects, completion evidence)
+ *   applyTaskBodySchema      - Validates applying/executing a task's effects
+ *
+ * Exported types:
+ *   TaskEffectInput - Inferred type from taskEffectSchema
+ *
+ * Used by: taskRoutes
+ *
+ * Key validation rules:
+ *   - Task status enum: open | completed | dismissed
+ *   - Effects array: max 20 items, each a discriminated union on "type"
+ *   - Transaction effects: amount must be positive, date optional
+ *   - Goal progress: mode enum increment | set (default increment)
+ *   - Apply body supports idempotency_key for safe retries
+ *   - planSchema imported from aiPlanSchema for plan validation
+ */
 import { z } from "zod";
 import { planSchema } from "./aiPlanSchema";
 

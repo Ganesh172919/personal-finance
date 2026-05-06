@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Narrative view of the user's financial journey.
+ *
+ * Renders a story-style page that combines the user's financial profile,
+ * goals, and recent AI-generated insights into a cohesive narrative with
+ * progress indicators and milestone markers.
+ *
+ * Key data flows:
+ * - GET /api/financial-profiles/me provides goals, income, and debts.
+ * - GET /api/agent-outputs/recent surfaces AI milestones from various agents
+ *   (budget planner, debt optimizer, investment advisor, etc.).
+ * - createFinancialStoryShare() generates a time-limited public share link.
+ *
+ * Milestone icons are mapped per agent type; dates are humanized relative
+ * to "now".  A GoalDetailModal opens for individual goal deep-dives.
+ *
+ * Sits under the authenticated route tree and is linked from the
+ * Dashboard "View your story" action.
+ */
+
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Card } from "../components/ui/Card";

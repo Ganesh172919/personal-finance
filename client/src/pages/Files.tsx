@@ -1,3 +1,26 @@
+/**
+ * @fileoverview Workspace file management page with upload, search, and AI analysis.
+ *
+ * Provides a paginated file browser for the workspace with upload,
+ * preview, AI-powered analysis, and delete capabilities.  Files are
+ * displayed as cards with kind-specific icons (document, image,
+ * spreadsheet, archive, etc.) and size formatting.
+ *
+ * Key data flows:
+ * - listWorkspaceFiles({ page, limit, search }) loads the file list
+ *   with server-side search and pagination.
+ * - uploadWorkspaceFiles() handles multi-file upload via a hidden
+ *   input element (useRef).
+ * - analyzeWorkspaceFile(id, prompt?) sends a file to the AI service
+ *   for content analysis; results are rendered as markdown.
+ * - deleteWorkspaceFile(id) removes a file after confirmation.
+ *
+ * A detail sheet shows file metadata, a preview link (via buildApiUrl),
+ * the AI analysis textarea, and the delete action.
+ *
+ * Accessible from the sidebar under "Files" for authenticated users.
+ */
+
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";

@@ -1,3 +1,24 @@
+/**
+ * @fileoverview FeatureLimitDialog — modal shown when a user hits a plan usage cap
+ * or attempts to use a feature not included in their current subscription tier.
+ *
+ * WHAT IT DOES
+ *  - Reads limit details from `useAppDialogStore` (global Zustand store) and renders
+ *    either a "FEATURE_LIMIT_REACHED" view with used/remaining counts, or a
+ *    "FEATURE_NOT_AVAILABLE" view explaining the plan gap.
+ *  - Provides a quick-link button to open the full PlanAndUsageDialog for more detail.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No explicit props — all data comes from the `featureLimit` slice of `appDialogStore`.
+ *  - Uses `useAppConfig` to resolve locale-aware number formatting.
+ *  - `closeFeatureLimit()` and `openPlanAndUsage()` are Zustand actions wired to footer buttons.
+ *
+ * ARCHITECTURE NOTES
+ *  - Companion to `PlanAndUsageDialog`; this one is a lightweight nudge, the other is the
+ *    full entitlements table.
+ *  - Controlled entirely through the global dialog store — any service layer code (API
+ *    error handlers, middleware) can trigger it by calling `openFeatureLimit()` on the store.
+ */
 import { Button } from "@/components/ui/Button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { useMemo } from "react";

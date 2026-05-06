@@ -1,3 +1,38 @@
+"""
+master_agent.py - Master Financial Strategist Agent
+====================================================
+
+The ``MasterFinancialStrategistAgent`` is the **coordinator** of the multi-agent
+financial advisory system.  It has two primary responsibilities:
+
+1. **Routing** -- Given a user's free-text query, determine which specialist
+   agent (income analyser, budget planner, investment advisor, debt optimiser,
+   financial educator) should handle it, or whether a comprehensive analysis
+   involving all agents is needed.
+
+2. **Synthesis** -- After specialist agents have produced their analyses, the
+   master combines them into a single, coherent financial plan.  It optionally
+   asks the LLM to polish the deterministic plan into friendlier prose, but
+   only if the LLM does not introduce new numbers (a safety guard).
+
+Design philosophy
+-----------------
+- Routing is **entirely deterministic** (keyword + regex scoring).  No LLM
+  call is made during routing, which keeps latency and cost near zero.
+- Synthesis follows a **tool-first** approach: the structured plan is built
+  deterministically by ``tools.build_plan()``; the LLM is only used to
+  rewrite it into markdown prose.  If the LLM introduces new numbers or is
+  unavailable, the deterministic markdown is used as-is.
+- Tool calls (automation suggestions) are generated deterministically from
+  the plan's key metrics.
+
+Key methods
+-----------
+- ``determine_analysis_type()`` -- deterministic routing (no LLM call)
+- ``synthesize_plan()``          -- tool-first synthesis with optional LLM polish
+- ``_build_tool_calls()``        -- generate low-risk automation suggestions
+"""
+
 import hashlib
 import logging
 import re
@@ -14,9 +49,15 @@ logger = logging.getLogger(__name__)
 
 
 class MasterFinancialStrategistAgent:
-    """Coordinates analysis routing and synthesizes the final plan."""
+    """Coordinates analysis routing and synthesizes the final financial plan.
+
+    This agent sits at the root of the LangGraph workflow.  It receives the
+    user's query, decides which specialist(s) should analyse it, and then
+    merges their outputs into a single actionable plan.
+    """
 
     def __init__(self):
+        # The LLM is used only for optional narrative polish -- not for routing.
         self.llm = create_llm("master")
 
         self.system_prompt = SystemMessage(
@@ -34,11 +75,47 @@ class MasterFinancialStrategistAgent:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         session_summary: Optional[str] = None,
     ) -> AnalysisType:
-        """Deterministic keyword/rule-based routing (no LLM call)."""
+        """Deterministic keyword/rule-based routing (no LLM call).
+
+        Classifies the user's query into one of the ``AnalysisType`` enum
+        values by scoring domain keywords and applying a priority rule-set.
+
+        Routing rules (evaluated in order):
+        1. If the query looks educational AND is not personal/action-seeking
+           AND has no amounts/timelines -> ``FINANCIAL_EDUCATION``.
+        2. If the query is educational but no domain keywords matched ->
+           ``FINANCIAL_EDUCATION``.
+        3. If the query contains broad-plan phrases ("analyze my finances",
+           "comprehensive", etc.) -> ``COMPREHENSIVE``.
+        4. If 2+ domain categories matched -> ``COMPREHENSIVE``.
+        5. If exactly 1 domain matched -> that domain's analysis type.
+        6. If no profile is available -> ``FINANCIAL_EDUCATION`` (can't do
+           personalised analysis without data).
+        7. Fallback -> ``COMPREHENSIVE``.
+
+        Parameters
+        ----------
+        user_input : str
+            The raw user query.
+        user_profile : dict
+            The user's financial profile (may be empty/None).
+        conversation_history : list[dict], optional
+            Prior messages for context on follow-up queries.
+        session_summary : str, optional
+            A compact summary of the conversation so far.
+
+        Returns
+        -------
+        AnalysisType
+            The determined analysis category.
+        """
         text = (user_input or "").lower().strip()
         has_profile = bool(user_profile)
 
-        # Lightweight context enrichment for ambiguous follow-ups (keeps cost low).
+        # --- Context enrichment ---
+        # For ambiguous follow-ups like "what about investing?", the previous
+        # user message and session summary provide crucial context.  We append
+        # them to the query text for keyword matching without making an LLM call.
         context_parts: List[str] = []
         if session_summary:
             context_parts.append(str(session_summary))
@@ -50,7 +127,9 @@ class MasterFinancialStrategistAgent:
 
         text_with_context = f"{text} {' '.join(context_parts)}".strip().lower() if context_parts else text
 
-        # General educational intent detection
+        # --- Educational intent detection ---
+        # These patterns catch general knowledge questions like "what is a
+        # mutual fund?" or "explain compound interest".
         education_patterns = [
             r"\bwhat is\b",
             r"\bhow does\b",
@@ -59,6 +138,10 @@ class MasterFinancialStrategistAgent:
             r"\bwhy\b",
         ]
 
+        # --- Personal / action-seeking detection ---
+        # Queries containing "my", "should I", "help me", etc. are asking for
+        # personalised advice, not general education -- even if they use
+        # educational-sounding phrasing.
         def _is_personal_or_action_seeking(prompt: str) -> bool:
             patterns = [
                 r"\bmy\b",
@@ -74,25 +157,34 @@ class MasterFinancialStrategistAgent:
             ]
             return any(re.search(pattern, prompt) for pattern in patterns)
 
+        # --- Amount / timeline detection ---
+        # If the user mentions specific numbers (currency amounts, percentages,
+        # lakhs/crores, time periods, years), the query is almost certainly
+        # about their personal finances -- not a general knowledge question.
         def _has_amounts_or_timelines(prompt: str) -> bool:
+            # Indian currency symbols and abbreviations
             if re.search(r"(₹|rs\.?|inr)\s*\d", prompt):
                 return True
-
+            # Percentages
             if re.search(r"\b\d+(?:\.\d+)?\s*%\b", prompt):
                 return True
-
+            # Indian number units (k, lakh, crore)
             if re.search(r"\b\d+(?:\.\d+)?\s*(?:k|l|lac|lakh|lakhs|cr|crore|crores)\b", prompt):
                 return True
-
+            # Time periods
             if re.search(r"\b\d+\s*(?:day|days|week|weeks|month|months|year|years)\b", prompt):
                 return True
-
+            # Calendar years (e.g. "2025", "2030")
             if re.search(r"\b(19|20)\d{2}\b", prompt):
                 return True
 
             return False
 
-        # Domain scoring
+        # --- Domain keyword scoring ---
+        # Each analysis type has a set of keywords.  The query (plus enriched
+        # context) is scanned for each keyword and the matching type gets +1.
+        # This simple bag-of-words approach works well for financial queries
+        # because domain vocabulary is fairly specific.
         domain_keywords = {
             AnalysisType.INCOME_EXPENSE: [
                 "expense", "spend", "spending", "income", "cash flow", "cashflow", "transaction",
@@ -115,7 +207,9 @@ class MasterFinancialStrategistAgent:
                 if keyword in text_with_context:
                     scores[analysis_type] += 1
 
-        # Personal intent and broad-plan intent
+        # --- Broad-plan / comprehensive intent detection ---
+        # Phrases like "analyze my finances" or "give me a roadmap" signal
+        # that the user wants a holistic view, not a single-domain analysis.
         personal_or_comprehensive = any(
             phrase in text
             for phrase in [
@@ -124,6 +218,7 @@ class MasterFinancialStrategistAgent:
             ]
         )
 
+        # Compute final flags
         looks_educational = any(re.search(pattern, text_with_context) for pattern in education_patterns)
         personal_or_action_seeking = _is_personal_or_action_seeking(text)
         has_amounts_or_timelines = _has_amounts_or_timelines(text)
@@ -131,25 +226,33 @@ class MasterFinancialStrategistAgent:
         non_zero_domains = [domain for domain, score in scores.items() if score > 0]
         best_domain = max(scores, key=lambda key: scores[key]) if scores else AnalysisType.COMPREHENSIVE
 
-        # Rules
+        # --- Routing decision tree (priority order matters) ---
+
+        # Rule 1: Pure educational query (no personal context, no numbers)
         if looks_educational and not personal_or_action_seeking and not has_amounts_or_timelines:
             return AnalysisType.FINANCIAL_EDUCATION
 
+        # Rule 2: Educational phrasing but no domain keywords matched
         if looks_educational and len(non_zero_domains) == 0:
             return AnalysisType.FINANCIAL_EDUCATION
 
+        # Rule 3: Broad / comprehensive request
         if personal_or_comprehensive:
             return AnalysisType.COMPREHENSIVE
 
+        # Rule 4: Multiple domains matched -> comprehensive
         if len(non_zero_domains) >= 2:
             return AnalysisType.COMPREHENSIVE
 
+        # Rule 5: Exactly one domain matched -> that specialist
         if len(non_zero_domains) == 1:
             return non_zero_domains[0]
 
+        # Rule 6: No profile data available -> can only educate
         if not has_profile:
             return AnalysisType.FINANCIAL_EDUCATION
 
+        # Rule 7: Fallback to best-scoring domain or comprehensive
         return best_domain if scores.get(best_domain, 0) > 0 else AnalysisType.COMPREHENSIVE
 
     def synthesize_plan(
@@ -158,11 +261,45 @@ class MasterFinancialStrategistAgent:
         analyses: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Tool-first synthesis: deterministic plan + optional narrative polish."""
+        """Tool-first synthesis: build a deterministic plan, then optionally
+        ask the LLM to polish the prose.
+
+        The synthesis pipeline is:
+        1. Filter out analyses that errored.
+        2. Call ``tools.build_plan()`` to produce a structured ``Plan`` object
+           with executive summary, key metrics, action items, etc.
+        3. Render the plan as deterministic markdown via
+           ``tools.render_plan_markdown()``.
+        4. If narrative mode is enabled, send the markdown to the LLM with
+           strict instructions: "improve wording but do NOT change any numbers".
+        5. **Number guard** -- compare every numeric token in the LLM output
+           against the deterministic version.  If the LLM introduced new
+           numbers, discard its output and use the deterministic version.
+        6. Return the final markdown plus structured metadata (action type,
+           priority, insights, tool calls, plan dict).
+
+        Parameters
+        ----------
+        user_profile : dict
+            The user's financial profile.
+        analyses : dict
+            Specialist outputs keyed by analysis type (e.g. "income_analysis").
+        context : dict, optional
+            Session summary, conversation history, and options.
+
+        Returns
+        -------
+        dict
+            A dictionary containing ``response`` (markdown), ``agent``,
+            ``actionType``, ``priority``, ``insights``, ``fallback_used``,
+            ``plan``, ``tool_calls``, and ``llm_route``.
+        """
         logger.info("Master agent synthesizing comprehensive financial plan")
 
+        # Filter out analyses that contain errors (those should not be included in the plan).
         valid_analyses = {k: v for k, v in analyses.items() if v is not None and not v.get("error")}
 
+        # Step 1-2: Build the structured Plan object deterministically.
         inputs = PlanInputs(
             user_profile=user_profile if user_profile else None,
             income_analysis=valid_analyses.get("income_analysis"),
@@ -171,12 +308,16 @@ class MasterFinancialStrategistAgent:
             debt_optimization=valid_analyses.get("debt_optimization"),
         )
         plan = build_plan(inputs)
+
+        # Step 3: Render as deterministic markdown (currency-aware).
         currency_code = "USD"
         candidate_currency = str((user_profile or {}).get("currency") or "").strip().upper()
         if len(candidate_currency) == 3 and candidate_currency.isalpha():
             currency_code = candidate_currency
         deterministic_markdown = render_plan_markdown(plan, currency_code=currency_code)
 
+        # Check if narrative mode is enabled (can be disabled by the caller
+        # to skip the LLM polish step and save latency/cost).
         narrative_enabled = True
         if context and isinstance(context, dict):
             options = context.get("options", {})
@@ -186,6 +327,7 @@ class MasterFinancialStrategistAgent:
         final_markdown = deterministic_markdown
         fallback_used = False
 
+        # Step 4-5: Optional LLM narrative polish with number safety guard.
         if narrative_enabled:
             session_summary = ""
             history = []
@@ -193,6 +335,9 @@ class MasterFinancialStrategistAgent:
                 session_summary = str(context.get("session_summary") or "")
                 history = context.get("conversation_history") if isinstance(context.get("conversation_history"), list) else []
 
+            # The prompt is deliberately strict: the LLM must NOT change,
+            # add, or remove any numeric values.  This prevents the LLM from
+            # hallucinating different amounts, percentages, or timelines.
             prompt = f"""
 Rewrite the following financial plan for clarity and readability.
 
@@ -209,6 +354,9 @@ PLAN (do not change numbers):
 {deterministic_markdown}
 """
 
+            # invoke_with_fallback returns (response, was_fallback_used).
+            # If the LLM is unreachable, the deterministic markdown is returned
+            # as the fallback response (llm_fallback_used=True).
             llm_response, llm_fallback_used = self.llm.invoke_with_fallback(
                 [self.system_prompt, HumanMessage(content=prompt)],
                 deterministic_markdown,
@@ -217,6 +365,10 @@ PLAN (do not change numbers):
             candidate = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
             candidate = candidate.strip() + "\n"
 
+            # --- Number safety guard ---
+            # Extract every numeric token from both the LLM output and the
+            # deterministic version.  If the LLM introduced ANY new number
+            # that was not in the original, discard its output entirely.
             if llm_fallback_used or not self._numbers_are_subset(candidate, deterministic_markdown):
                 if not llm_fallback_used:
                     logger.warning("LLM output introduced new numbers; falling back to deterministic markdown.")
@@ -243,18 +395,22 @@ PLAN (do not change numbers):
         return digest[:12]
 
     def _build_tool_calls(self, plan: Dict[str, Any], user_profile: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """
-        Build deterministic, low-risk tool calls that improve retention and execution.
+        """Build deterministic, low-risk tool calls that improve retention and execution.
 
-        Notes:
-        - These are suggestions only; execution is always server-side and requires explicit user confirmation.
-        - All generated calls must be safe-by-default (no money movement, no destructive actions).
+        These are **suggestions only** -- the client presents them to the user
+        and execution always requires explicit confirmation.  All generated
+        calls must be safe-by-default (no money movement, no destructive
+        actions).
+
+        The same logic exists in ``api_service._build_default_tool_calls()``
+        as a fallback when the master agent does not emit tool calls.
         """
         tool_calls: List[Dict[str, Any]] = []
 
         if not user_profile or not isinstance(user_profile, dict):
             return tool_calls
 
+        # Extract key metrics that drive conditional tool-call generation.
         key_metrics = plan.get("key_metrics") if isinstance(plan, dict) else {}
         monthly_net_cash_flow = None
         emergency_fund_months = None
@@ -265,7 +421,7 @@ PLAN (do not change numbers):
             emergency_fund_months = key_metrics.get("emergency_fund_months")
             total_debt = key_metrics.get("total_debt")
 
-        # 1) Weekly review workflow (always valuable)
+        # 1) Weekly review workflow (always valuable -- consistency habit)
         tool_calls.append(
             {
                 "id": self._tool_id("workflow:weekly-review:v1"),
@@ -421,11 +577,22 @@ PLAN (do not change numbers):
         return tool_calls[:5]
 
     def _numbers_are_subset(self, candidate: str, reference: str) -> bool:
+        """Check that every number in *candidate* already exists in *reference*.
+
+        Used by the number safety guard: the LLM is allowed to omit numbers
+        but not to introduce new ones.
+        """
         reference_nums = self._extract_numbers(reference)
         candidate_nums = self._extract_numbers(candidate)
         return candidate_nums.issubset(reference_nums)
 
     def _extract_numbers(self, text: str) -> set[str]:
+        """Extract and normalise all numeric tokens from a string.
+
+        Captures integers, decimals, comma-separated thousands, and optional
+        currency/percentage suffixes.  Normalises by stripping the rupee sign
+        and commas so that "₹1,00,000" and "100000" compare as equal.
+        """
         tokens = re.findall(r"₹?\d[\d,]*(?:\.\d+)?%?", text)
         normalized = set()
         for token in tokens:
@@ -433,6 +600,11 @@ PLAN (do not change numbers):
         return normalized
 
     def _determine_action_type(self, analyses: Dict[str, Any]) -> str:
+        """Map the set of completed analyses to a single action type string.
+
+        The action type tells the frontend which primary CTA to show.
+        Priority order: debt > investment > budget > income > review.
+        """
         if "debt_optimization" in analyses:
             return "manage_debt"
         if "investment_advice" in analyses:
@@ -444,6 +616,12 @@ PLAN (do not change numbers):
         return "review"
 
     def _determine_priority(self, analyses: Dict[str, Any]) -> str:
+        """Determine the urgency level of the financial plan.
+
+        - **high**   -- debt-to-income > 40% or savings rate is negative
+        - **medium** -- savings rate below 10%
+        - **low**    -- everything else
+        """
         if "debt_optimization" in analyses:
             debt_ratio = analyses["debt_optimization"].get("current_debt_situation", {}).get("debt_to_income_ratio", 0)
             if debt_ratio > 40:
@@ -459,6 +637,12 @@ PLAN (do not change numbers):
         return "low"
 
     def _extract_key_insights(self, analyses: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extract one headline insight per completed analysis.
+
+        Each insight is a small dict with ``agent``, ``title``,
+        ``description``, and ``actionType``.  The frontend uses these to
+        render summary cards above the full plan.
+        """
         insights = []
 
         for analysis_type, analysis_data in analyses.items():
@@ -641,3 +825,30 @@ PLAN (do not change numbers):
         )
 
         return "\n".join(plan_parts)
+
+
+# ============================================================================
+# END-OF-FILE SUMMARY -- master_agent.py
+# ============================================================================
+# Key takeaways:
+#
+# 1. The master agent is the **traffic controller** of the multi-agent system.
+#    It decides which specialist handles each query (routing) and merges their
+#    outputs into a single plan (synthesis).
+#
+# 2. Routing is **100% deterministic** -- keyword scoring + regex patterns.
+#    No LLM call is made, keeping latency under 1ms and cost at zero.
+#
+# 3. Synthesis is **tool-first**: the structured plan is built by
+#    ``tools.build_plan()`` before any LLM call.  The LLM only rewrites
+#    prose; if it introduces new numbers, its output is discarded.
+#
+# 4. The **number safety guard** (``_numbers_are_subset``) is a critical
+#    defence against LLM hallucination of financial figures.  It extracts
+#    every numeric token and verifies the LLM output is a subset of the
+#    deterministic version.
+#
+# 5. Tool calls (automation suggestions) are generated deterministically
+#    from the plan's key metrics and are always low-risk, requiring user
+#    confirmation before execution.
+# ============================================================================

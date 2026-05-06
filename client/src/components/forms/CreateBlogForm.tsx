@@ -1,3 +1,26 @@
+/**
+ * @fileoverview CreateBlogForm — dialog-based form for authoring and publishing a new blog
+ * post with title, excerpt, category, cover image, tags, and Markdown content.
+ *
+ * WHAT IT DOES
+ *  - Renders inside a `Dialog` (controlled by `open`/`onOpenChange` props).
+ *  - Uses `react-hook-form` for validation: title (required, min 5 chars), excerpt (required,
+ *    max 300 chars), content (required), and optional category, cover image, tags.
+ *  - Tags are entered as a comma-separated string and split into an array on submit.
+ *  - Default cover image is provided if none is entered.
+ *  - On success: invalidates "blogs" query cache, shows toast, resets form, closes dialog.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `open` (boolean) — controls dialog visibility.
+ *  - `onOpenChange` ((open: boolean) => void) — callback to toggle dialog state.
+ *  - Mutation: `createBlog` from `@/lib/apiClient`.
+ *  - Category options are defined locally (9 categories from investing to personal-growth).
+ *
+ * ARCHITECTURE NOTES
+ *  - Opened from the /blogs page "Write a Blog" button.
+ *  - Form state is fully local; no global store involvement.
+ *  - `isSubmitting` state is managed separately from the mutation to handle the `onSettled` callback.
+ */
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";

@@ -1,3 +1,28 @@
+"""
+budget_planner.py - Budget Planner Agent
+=========================================
+
+The ``BudgetPlannerAgent`` creates personalised budget plans based on a
+user's income, expenses, savings goals, and debts.  It operates entirely
+deterministically -- no LLM calls are made -- producing structured
+budget allocations, savings plans, and debt repayment budgets.
+
+Key responsibilities
+--------------------
+- Allocate income across spending categories (50/30/20 or debt-heavy variants).
+- Calculate monthly savings needed for each financial goal.
+- Determine debt repayment budget (minimum + recommended extra).
+- Generate a markdown-formatted budget plan with actionable steps.
+
+Design decisions
+----------------
+- All calculations are deterministic arithmetic -- no LLM fan-out.
+- The agent adapts its allocation strategy based on the user's
+  debt-to-income ratio (switches to a debt-heavy split when >15%).
+- Emergency fund target defaults to 3 months of expenses (configurable
+  via ``settings.EMERGENCY_FUND_MONTHS``).
+"""
+
 import logging
 from typing import Any, Dict, List
 
@@ -8,7 +33,12 @@ logger = logging.getLogger(__name__)
 
 
 class BudgetPlannerAgent:
-    """Creates and optimizes personalized budget plans."""
+    """Creates and optimizes personalized budget plans.
+
+    This agent is part of the multi-agent financial advisory system.
+    It receives a user profile dict and returns a structured budget
+    plan with allocations, savings targets, and debt repayment guidance.
+    """
 
     def create_budget_plan(self, user_profile: Dict[str, Any]) -> Dict[str, Any]:
         """Create a comprehensive budget plan."""

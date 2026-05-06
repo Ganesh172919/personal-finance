@@ -1,3 +1,31 @@
+/**
+ * @fileoverview Transactions Page (Cash Flow Ledger)
+ *
+ * The primary transaction management interface. Supports:
+ * - Viewing paginated transaction list with filters
+ * - Creating/editing/deleting transactions via inline form
+ * - CSV import with column mapping, preview, and duplicate detection
+ * - Receipt OCR scanning (via ReceiptOcrDialog)
+ * - Review queue filtering (uncategorized, duplicates, merchant matches)
+ *
+ * CSV IMPORT FLOW:
+ * 1. User uploads CSV file → PapaParse parses headers and rows
+ * 2. User maps CSV columns to transaction fields (amount, date, etc.)
+ * 3. "Preview" → server validates rows and detects duplicates (dry_run=true)
+ * 4. "Commit" → server imports valid rows and returns results
+ *
+ * STATE MANAGEMENT:
+ * - React Query for server state (transactions, accounts)
+ * - Local useState for form state, filters, and CSV import wizard
+ * - Mutations with onSuccess/onError for create/update/delete/import
+ *
+ * REVIEW SYSTEM:
+ * Transactions can have review flags (uncategorized, duplicate, etc.).
+ * The review filter allows users to focus on items needing attention.
+ *
+ * @module pages/Transactions
+ */
+
 import { motion } from "framer-motion";
 import Papa from "papaparse";
 import { FormEvent, useMemo, useState } from "react";
@@ -7,9 +35,12 @@ import { Plus, ReceiptText, ScanLine, Upload } from "lucide-react";
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { InlineLoader } from "@/components/feedback/InlineLoader";
 import { PageIntro } from "@/components/layout/PageIntro";
+import TransactionReviewQueue from "@/components/TransactionReviewQueue";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ReceiptOcrDialog } from "@/components/ReceiptOcrDialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +63,7 @@ import {
 } from "@/lib/apiClient";
 import { ITransaction } from "@/types";
 
+/** Transaction form state (amount is string for input control) */
 type TransactionForm = {
   amount: string;
   category: string;
@@ -55,6 +87,15 @@ type CsvState = {
     merchant: string;
   };
 };
+
+type ReviewFilter =
+  | "all"
+  | "needs_attention"
+  | "uncategorized"
+  | "suspected_duplicate"
+  | "needs_merchant_match"
+  | "split_candidate"
+  | "recurring_candidate";
 
 const EMPTY_FORM: TransactionForm = {
   amount: "",
@@ -83,6 +124,14 @@ const pickFirstMatchingColumn = (columns: string[], candidates: string[]) => {
   return "";
 };
 
+const reviewFlagLabel: Record<Exclude<ReviewFilter, "all" | "needs_attention">, string> = {
+  uncategorized: "Uncategorized",
+  suspected_duplicate: "Suspected duplicate",
+  needs_merchant_match: "Needs merchant match",
+  split_candidate: "Split candidate",
+  recurring_candidate: "Recurring candidate",
+};
+
 const formatError = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
@@ -100,6 +149,7 @@ export default function Transactions() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [fromFilter, setFromFilter] = useState("");
   const [toFilter, setToFilter] = useState("");
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all");
 
   const accountsQuery = useQuery({
     queryKey: ["v1/finance/accounts"],
@@ -179,13 +229,27 @@ export default function Transactions() {
     return [...allTransactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [data?.transactions]);
 
-  const visibleIncome = transactions
+  const visibleTransactions = useMemo(() => {
+    if (reviewFilter === "all") return transactions;
+    if (reviewFilter === "needs_attention") {
+      return transactions.filter((transaction) => Boolean(transaction.review?.needs_attention));
+    }
+    return transactions.filter((transaction) => transaction.review?.flags?.includes(reviewFilter));
+  }, [reviewFilter, transactions]);
+
+  const visibleIncome = visibleTransactions
     .filter((transaction) => transaction.type === "income")
     .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
-  const visibleOutflow = transactions
+  const visibleOutflow = visibleTransactions
     .filter((transaction) => transaction.type !== "income")
     .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
-  const activeFiltersCount = [typeFilter !== "all", Boolean(categoryFilter), Boolean(fromFilter), Boolean(toFilter)].filter(Boolean).length;
+  const activeFiltersCount = [
+    typeFilter !== "all",
+    Boolean(categoryFilter),
+    Boolean(fromFilter),
+    Boolean(toFilter),
+    reviewFilter !== "all",
+  ].filter(Boolean).length;
 
   const formatAmount = (amount: number, type: TransactionType) => {
     const prefix = type === "income" ? "+" : "-";
@@ -241,6 +305,21 @@ export default function Transactions() {
 
   const [importOpen, setImportOpen] = useState(false);
   const [csv, setCsv] = useState<CsvState>(EMPTY_CSV);
+  const [previewReady, setPreviewReady] = useState(false);
+
+  const previewMutation = useMutation({
+    mutationFn: importTransactionsCsv,
+    onSuccess: () => {
+      setPreviewReady(true);
+    },
+    onError: (error) => {
+      toast({
+        title: "Preview failed",
+        description: formatError(error, "Failed to preview transactions."),
+        variant: "destructive",
+      });
+    },
+  });
 
   const importMutation = useMutation({
     mutationFn: importTransactionsCsv,
@@ -248,10 +327,12 @@ export default function Transactions() {
       await queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       toast({
         title: "Imported",
-        description: `Inserted ${result.inserted} transactions (${result.duplicates} duplicates). Merchants touched: ${result.merchants_touched}.`,
+        description: `Inserted ${result.inserted} transactions (${result.duplicates} duplicates, ${result.invalid_rows || 0} invalid). Merchants touched: ${result.merchants_touched}.`,
       });
       setImportOpen(false);
       setCsv(EMPTY_CSV);
+      setPreviewReady(false);
+      previewMutation.reset();
     },
     onError: (error) => {
       toast({
@@ -290,6 +371,8 @@ export default function Transactions() {
       accountId: "",
       mapping,
     });
+    setPreviewReady(false);
+    previewMutation.reset();
   };
 
   const previewRows = useMemo(() => {
@@ -306,6 +389,37 @@ export default function Transactions() {
       type: mapping.type ? String(row[mapping.type] || "").trim().toLowerCase() : "",
     }));
   }, [csv]);
+
+  const runPreview = async () => {
+    const { mapping } = csv;
+    if (!csv.file || !csv.rawRows.length) return;
+
+    if (!mapping.amount || !mapping.date) {
+      toast({
+        title: "Mapping required",
+        description: "Map at least Amount and Date columns before previewing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const mappingPayload: any = {
+      amount: mapping.amount,
+      date: mapping.date,
+      description: mapping.description || undefined,
+      category: mapping.category || undefined,
+      type: mapping.type || undefined,
+      merchant: mapping.merchant || undefined,
+    };
+
+    await previewMutation.mutateAsync({
+      file: csv.file,
+      mapping: mappingPayload,
+      account_id: csv.accountId || undefined,
+      dry_run: true,
+      remember_mapping: true,
+    });
+  };
 
   const runImport = async () => {
     const { mapping } = csv;
@@ -333,8 +447,12 @@ export default function Transactions() {
       file: csv.file,
       mapping: mappingPayload,
       account_id: csv.accountId || undefined,
+      remember_mapping: true,
     });
   };
+
+  const importPreviewRows = previewMutation.data?.preview_rows || [];
+  const importDuplicateGroups = previewMutation.data?.duplicate_groups || [];
 
   return (
     <div className="page-grid flex-1 overflow-auto" data-testid="transactions-page">
@@ -345,7 +463,7 @@ export default function Transactions() {
           title="Transactions that are easier to review, filter, and clean up"
           description="Keep income, expenses, and investments in one working ledger. Import in bulk, scan receipts, and tighten filters when you need to isolate a pattern quickly."
           stats={[
-            { label: "Visible entries", value: String(transactions.length) },
+            { label: "Visible entries", value: String(visibleTransactions.length) },
             { label: "Visible income", value: formatMoney(visibleIncome, { maximumFractionDigits: 0 }) },
             { label: "Visible outflow", value: formatMoney(visibleOutflow, { maximumFractionDigits: 0 }) },
           ]}
@@ -396,7 +514,21 @@ export default function Transactions() {
                         <label className="text-sm font-medium">Account (optional)</label>
                         <select
                           value={csv.accountId}
-                          onChange={(e) => setCsv((prev) => ({ ...prev, accountId: e.target.value }))}
+                          onChange={(e) => {
+                            const accountId = e.target.value;
+                            const selectedAccount = (accountsQuery.data?.accounts || []).find((account) => account.id === accountId);
+                            const rememberedMapping = (selectedAccount?.metadata as any)?.import_preferences?.transactions_csv?.last_mapping;
+                            setCsv((prev) => ({
+                              ...prev,
+                              accountId,
+                              mapping:
+                                rememberedMapping && typeof rememberedMapping === "object"
+                                  ? { ...prev.mapping, ...rememberedMapping }
+                                  : prev.mapping,
+                            }));
+                            setPreviewReady(false);
+                            previewMutation.reset();
+                          }}
                           disabled={accountsQuery.isLoading}
                           className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
                         >
@@ -414,6 +546,11 @@ export default function Transactions() {
                               ? "Helps segment imports and power account-level insights."
                               : "No accounts yet. Create one in Finance OS."}
                         </div>
+                        {csv.accountId && ((accountsQuery.data?.accounts || []).find((account) => account.id === csv.accountId)?.metadata as any)?.import_preferences?.transactions_csv?.last_mapping ? (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Reused the last saved mapping for this account. You can adjust it before previewing.
+                          </div>
+                        ) : null}
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -431,11 +568,14 @@ export default function Transactions() {
                             <label className="text-sm font-medium">{label}</label>
                             <select
                               value={(csv.mapping as any)[key]}
-                              onChange={e =>
+                              onChange={e => {
                                 setCsv(prev => ({
                                   ...prev,
                                   mapping: { ...prev.mapping, [key]: e.target.value },
-                                }))}
+                                }));
+                                setPreviewReady(false);
+                                previewMutation.reset();
+                              }}
                               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
                             >
                               <option value="">Select column</option>
@@ -451,7 +591,41 @@ export default function Transactions() {
                     </div>
                   )}
 
-                  {previewRows.length > 0 && (
+                  {previewMutation.data ? (
+                    <div className="space-y-3">
+                      <div className="grid gap-3 sm:grid-cols-4">
+                        <Card className="p-3">
+                          <div className="text-xs text-muted-foreground">Parsed rows</div>
+                          <div className="text-lg font-semibold">{previewMutation.data.parsed_rows}</div>
+                        </Card>
+                        <Card className="p-3">
+                          <div className="text-xs text-muted-foreground">Valid rows</div>
+                          <div className="text-lg font-semibold">{previewMutation.data.valid_rows}</div>
+                        </Card>
+                        <Card className="p-3">
+                          <div className="text-xs text-muted-foreground">Invalid rows</div>
+                          <div className="text-lg font-semibold">{previewMutation.data.invalid_rows || 0}</div>
+                        </Card>
+                        <Card className="p-3">
+                          <div className="text-xs text-muted-foreground">Duplicates</div>
+                          <div className="text-lg font-semibold">{previewMutation.data.duplicates}</div>
+                        </Card>
+                      </div>
+
+                      {importDuplicateGroups.length ? (
+                        <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+                          <div className="font-medium text-foreground">Duplicate review</div>
+                          <div className="mt-2 space-y-1">
+                            {importDuplicateGroups.slice(0, 4).map((group) => (
+                              <div key={group.duplicate_key}>
+                                Rows {group.row_indexes.join(", ")}: {group.reason}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : previewRows.length > 0 && (
                     <div className="overflow-x-auto rounded-md border border-border">
                       <table className="min-w-full text-sm">
                         <thead className="bg-muted">
@@ -480,18 +654,72 @@ export default function Transactions() {
                     </div>
                   )}
 
+                  {importPreviewRows.length > 0 ? (
+                    <div className="overflow-x-auto rounded-md border border-border">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-muted">
+                          <tr>
+                            <th className="px-3 py-2 text-left">Row</th>
+                            <th className="px-3 py-2 text-left">Status</th>
+                            <th className="px-3 py-2 text-left">Description</th>
+                            <th className="px-3 py-2 text-left">Category</th>
+                            <th className="px-3 py-2 text-left">Amount</th>
+                            <th className="px-3 py-2 text-left">Review</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {importPreviewRows.map((row) => (
+                            <tr key={row.row_index} className="border-t border-border align-top">
+                              <td className="px-3 py-2">{row.row_index}</td>
+                              <td className="px-3 py-2">
+                                <Badge variant={row.status === "ready" ? "default" : row.status === "duplicate" ? "secondary" : "outline"}>
+                                  {row.status}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="font-medium">{row.description || row.merchant_name || "—"}</div>
+                                {row.issues.length ? <div className="text-xs text-muted-foreground">{row.issues.join(" ")}</div> : null}
+                              </td>
+                              <td className="px-3 py-2">
+                                <div>{row.category || "—"}</div>
+                                {row.suggestions?.category && row.suggestions.category !== row.category ? (
+                                  <div className="text-xs text-muted-foreground">
+                                    Suggested: {row.suggestions.category} via {row.suggestions.category_source?.replace("_", " ")}
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-2">{row.amount_raw}</td>
+                              <td className="px-3 py-2">
+                                <div className="flex flex-wrap gap-1">
+                                  {row.review.flags.length ? row.review.flags.map((flag) => (
+                                    <Badge key={flag} variant="outline">{reviewFlagLabel[flag]}</Badge>
+                                  )) : <span className="text-muted-foreground">Clean</span>}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+
                   <div className="flex justify-end gap-2">
                     <Button
                       variant="outline"
                       onClick={() => {
                         setImportOpen(false);
                         setCsv(EMPTY_CSV);
+                        setPreviewReady(false);
+                        previewMutation.reset();
                       }}
                     >
                       Cancel
                     </Button>
-                    <Button onClick={runImport} disabled={importMutation.isPending}>
-                      {importMutation.isPending ? "Importing..." : "Import"}
+                    <Button variant="outline" onClick={runPreview} disabled={previewMutation.isPending || importMutation.isPending}>
+                      {previewMutation.isPending ? "Previewing..." : "Preview import"}
+                    </Button>
+                    <Button onClick={runImport} disabled={importMutation.isPending || !previewReady}>
+                      {importMutation.isPending ? "Importing..." : "Commit import"}
                     </Button>
                   </div>
                 </div>
@@ -505,6 +733,26 @@ export default function Transactions() {
             </>
           }
         />
+
+        <Tabs defaultValue={new URLSearchParams(window.location.search).get("tab") === "review" ? "review" : "ledger"} className="w-full">
+          <TabsList className="mb-4">
+            <TabsTrigger value="ledger">Ledger</TabsTrigger>
+            <TabsTrigger value="review">Review Queue</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="review">
+            <Card className="surface-panel p-6">
+              <div className="mb-4">
+                <h2 className="text-lg font-semibold text-foreground">Transaction Review Queue</h2>
+                <p className="text-sm text-muted-foreground">
+                  Approve, categorize, or dismiss flagged transactions. Bulk actions are available for batch workflows.
+                </p>
+              </div>
+              <TransactionReviewQueue />
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="ledger">
 
         <Card className="surface-panel p-4">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -521,7 +769,7 @@ export default function Transactions() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-3 items-end">
             <div>
               <label className="text-sm font-medium">Type</label>
               <select
@@ -579,6 +827,26 @@ export default function Transactions() {
             </div>
 
             <div>
+              <label className="text-sm font-medium">Review</label>
+              <select
+                value={reviewFilter}
+                onChange={(e) => {
+                  setReviewFilter(e.target.value as ReviewFilter);
+                  setPage(1);
+                }}
+                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+              >
+                <option value="all">All</option>
+                <option value="needs_attention">Needs attention</option>
+                <option value="uncategorized">Uncategorized</option>
+                <option value="suspected_duplicate">Suspected duplicate</option>
+                <option value="needs_merchant_match">Needs merchant match</option>
+                <option value="split_candidate">Split candidate</option>
+                <option value="recurring_candidate">Recurring candidate</option>
+              </select>
+            </div>
+
+            <div>
               <label className="text-sm font-medium">Page size</label>
               <select
                 value={limit}
@@ -605,6 +873,7 @@ export default function Transactions() {
                 setCategoryFilter("");
                 setFromFilter("");
                 setToFilter("");
+                setReviewFilter("all");
                 setPage(1);
               }}
             >
@@ -697,7 +966,7 @@ export default function Transactions() {
         <Card className="surface-panel p-6">
           {isLoading ? (
             <InlineLoader label="Loading transactions..." />
-          ) : transactions.length === 0 ? (
+          ) : visibleTransactions.length === 0 ? (
             <EmptyState
               title="No transactions found"
               description={
@@ -717,7 +986,7 @@ export default function Transactions() {
             />
           ) : (
             <div className="space-y-3">
-              {transactions.map((transaction, index) => {
+              {visibleTransactions.map((transaction, index) => {
                 const id = transaction.id || transaction._id;
                 return (
                   <motion.div
@@ -733,6 +1002,16 @@ export default function Transactions() {
                         {transaction.category} - {formatDate(transaction.date)}
                         {transaction.source?.origin ? ` • ${transaction.source.origin.replace("_", " ")}` : ""}
                       </p>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {transaction.review?.flags?.map((flag) => (
+                          <Badge key={flag} variant="outline">
+                            {reviewFlagLabel[flag]}
+                          </Badge>
+                        ))}
+                        {transaction.reconciliation?.status && transaction.reconciliation.status !== "unreconciled" ? (
+                          <Badge variant="outline">Reconciliation: {transaction.reconciliation.status}</Badge>
+                        ) : null}
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-3">
@@ -785,6 +1064,9 @@ export default function Transactions() {
             </Button>
           </div>
         ) : null}
+
+          </TabsContent>
+        </Tabs>
       </motion.div>
     </div>
   );

@@ -1,5 +1,25 @@
+/**
+ * @fileoverview V1 Financial Story Sharing API
+ *
+ * Enables users to create shareable "financial story" links -- public,
+ * read-only snapshots of their financial health that can be viewed by
+ * anyone with the link (no authentication required).
+ *
+ * Key concepts:
+ * - **Share Creation**: `createFinancialStoryShare` generates a time-limited
+ *   share token and URL. The creator controls what data is included
+ *   (goals, milestones, deadlines) and how long the share is valid.
+ * - **Public Access**: `getPublicFinancialStoryShare` fetches the share
+ *   payload using only the token -- no auth needed. The response includes
+ *   a summary (health percentage, assets, savings), goals, and milestones.
+ * - **Token Security**: Tokens are URL-encoded and passed as path params.
+ *   The response includes `token_prefix` for display but the full token
+ *   is only shown once at creation time.
+ */
+
 import { apiClient } from "../core";
 
+/** Options for creating a financial story share. */
 export type FinancialStoryShareCreateRequest = {
   expires_in_days?: number;
   include_goal_names?: boolean;
@@ -20,6 +40,7 @@ export type FinancialStoryShareCreateResponse = {
   request_id?: string;
 };
 
+/** Create a shareable financial story link with configurable data inclusion and expiry. */
 export async function createFinancialStoryShare(
   body: FinancialStoryShareCreateRequest = {}
 ): Promise<FinancialStoryShareCreateResponse> {
@@ -66,6 +87,10 @@ export type PublicFinancialStoryShareResponse = {
   request_id?: string;
 };
 
+/**
+ * Fetch a public financial story by its share token (no auth required).
+ * The token is URL-encoded to handle special characters safely.
+ */
 export async function getPublicFinancialStoryShare(token: string): Promise<PublicFinancialStoryShareResponse> {
   const safe = encodeURIComponent(String(token || ""));
   return apiClient(`/v1/public/shares/financial-story/${safe}`);

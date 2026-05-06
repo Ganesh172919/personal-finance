@@ -1,3 +1,29 @@
+/**
+ * @fileoverview AiStatusDialog — developer/debug dialog showing the health and configuration
+ * of the AI subsystem: active provider, model catalog, key pool status, rate limiter,
+ * session checkpoints, and the last response metadata.
+ *
+ * WHAT IT DOES
+ *  - Renders a tabbed dialog with four tabs: Overview, Keys, Models, Sessions.
+ *  - Overview: last request ID, LLM call count, fallback/cache status, active provider/model,
+ *    failover chain, rate limiter tokens, system stats (vision, memory, free models), and
+ *    server circuit breaker state.
+ *  - Keys: key pool cards with per-key health (success rate, latency, status badge),
+ *    rotation strategy, and expandable key entry rows.
+ *  - Models: model catalog broken down by provider, capability, cost tier, and reasoning
+ *    strength, plus recent model health entries.
+ *  - Sessions: session checkpoint stats with status breakdown (completed, in_progress, failed).
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `lastRequestId`, `fallbackUsed`, `llmCallCount`, `cacheHit` — metadata from the last
+ *    AI response, passed in by the parent (AiCommandBar).
+ *  - Fetches `/api/ai-core/status` and `/api/ai-core/ai/status` on dialog open.
+ *
+ * ARCHITECTURE NOTES
+ *  - Embedded in `AiCommandBar` response header; primarily a developer/power-user tool.
+ *  - Uses two parallel queries (`statusQuery`, `enhancedQuery`) that only fire when `open=true`.
+ *  - Sub-components: `KeyStatusBadge`, `KeyPoolCard`, `KeyEntryRow` for key pool rendering.
+ */
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 

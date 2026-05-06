@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Organization invite acceptance page.
+ *
+ * Handles the end-to-end flow of accepting an org invite token passed
+ * as a URL query parameter. Supports three states:
+ * 1. Unauthenticated -- prompts the user to log in or register, storing
+ *    the invite URL for post-auth redirect.
+ * 2. Authenticated + idle -- auto-fires the accept mutation.
+ * 3. Accepted -- shows a success message and a "Go to organization" button.
+ *
+ * Key data flows:
+ * - Reads ?token= from the URL via getSearchParam.
+ * - Calls acceptOrgInvite(token) which hits POST /api/v1/orgs/invite/accept.
+ * - On success, sets the active org context and invalidates config/org queries.
+ * - Handles INVITE_EMAIL_MISMATCH errors with a dedicated message.
+ *
+ * Part of the multi-tenant organization flow; linked from invite emails.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";

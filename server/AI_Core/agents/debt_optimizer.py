@@ -1,3 +1,29 @@
+"""
+debt_optimizer.py - Debt Optimizer Agent
+==========================================
+
+The ``DebtOptimizerAgent`` analyses a user's outstanding debts and
+produces an optimised repayment plan.  It compares two classic
+strategies -- **snowball** (smallest balance first) and **avalanche**
+(highest interest first) -- and recommends the one that best fits
+the user's psychology and financial situation.
+
+Key responsibilities
+--------------------
+- Compute weighted interest rate, debt-to-income ratio, and total debt.
+- Simulate month-by-month payoff for both snowball and avalanche methods.
+- Evaluate consolidation options (personal loan, balance transfer card).
+- Recommend the optimal strategy with rationale.
+
+Design decisions
+----------------
+- All calculations are deterministic (no LLM calls).
+- The snowball method is preferred when the user has >3 debts and a
+  conservative risk tolerance (psychological momentum matters).
+- Extra payment capacity is capped at 15% of monthly income to ensure
+  the plan is realistic.
+"""
+
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
@@ -8,7 +34,12 @@ logger = logging.getLogger(__name__)
 
 
 class DebtOptimizerAgent:
-    """Optimizes debt repayment strategies and minimizes interest costs."""
+    """Optimizes debt repayment strategies and minimizes interest costs.
+
+    This agent is part of the multi-agent financial advisory system.
+    It receives a list of debt dicts and a user profile, and returns
+    a structured optimisation plan with snowball/avalanche comparisons.
+    """
 
     def optimize_repayment(self, debts: List[Dict[str, Any]], user_profile: Dict[str, Any]) -> Dict[str, Any]:
         """Create optimized debt repayment plan."""

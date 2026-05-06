@@ -1,3 +1,24 @@
+/**
+ * @fileoverview CRUD management page for financial goals and debts.
+ *
+ * Displays two tabbed sections -- Goals and Debts -- each with inline
+ * create/edit forms and a list of existing records sourced from the
+ * user's financial profile.
+ *
+ * Key data flows:
+ * - GET /api/financial-profiles/me loads goals and debts arrays.
+ * - createGoal / updateGoal / createDebt / updateDebt / deleteGoal /
+ *   deleteDebt mutate individual records, then invalidate the profile
+ *   query to refetch.
+ *
+ * Form state is local; editing is toggled by selecting a record id.
+ * Money values are formatted via useOrgFormatters for tenant-aware
+ * currency display.
+ *
+ * Part of the onboarding flow (step 2-3) and also accessible standalone
+ * from the sidebar under "Goals & Debts".
+ */
+
 import { FormEvent, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";

@@ -1,3 +1,45 @@
+"""
+workflow.py - LangGraph Multi-Agent Financial Workflow
+======================================================
+
+This module defines the ``FinancialWorkflow`` class, which is the **orchestrator**
+of the entire multi-agent financial advisory system.  It uses LangGraph's
+``StateGraph`` to wire together six specialist agents into a directed acyclic
+graph with conditional routing, parallel execution, verification, and synthesis.
+
+Architecture
+------------
+The graph has the following nodes::
+
+    master_agent  ──(conditional)──>  income_analyzer    ──> synthesize ──> END
+                                  |  budget_planner     ──> synthesize
+                                  |  investment_advisor  ──> synthesize
+                                  |  debt_optimizer      ──> synthesize
+                                  |  financial_educator   ──> END
+                                  |  comprehensive_analysis ──> verification ──> synthesize
+
+Key features:
+- **Session checkpointing** -- state can be persisted and resumed across
+  requests, enabling long-running or interrupted workflows.
+- **Subtask decomposition** -- complex requests are broken into tracked
+  subtasks with status (pending/in_progress/completed/failed).
+- **Verification phase** -- before synthesis, a lightweight QA step checks
+  that recommendations are consistent and feasible.
+- **Parallel execution** -- the comprehensive analysis node runs all four
+  specialist agents concurrently using ``ThreadPoolExecutor``.
+- **Retry with graceful degradation** -- each node is wrapped in
+  ``_execute_with_trace`` which retries up to ``DEFAULT_MAX_RETRIES`` times
+  before propagating the error.
+
+Design decisions
+----------------
+- Agents are instantiated once in ``__init__`` and reused (stateless).
+- The session manager is lazily loaded to avoid import errors when the
+  checkpointing subsystem is unavailable.
+- Every node execution is traced (timestamps, status, token counts) for
+  observability.
+"""
+
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -11,8 +53,9 @@ logger = logging.getLogger(__name__)
 
 
 class FinancialWorkflow:
-    """
-    Orchestrates the multi-agent financial workflow with enhanced capabilities:
+    """Orchestrates the multi-agent financial workflow using LangGraph.
+
+    Enhanced capabilities:
     - Session checkpointing for resumable state
     - Subtask decomposition for complex requests
     - Verification phase for quality assurance
@@ -20,9 +63,12 @@ class FinancialWorkflow:
     - Graceful degradation with retries
     """
 
+    # Maximum number of retries per node before giving up.
     DEFAULT_MAX_RETRIES = 2
 
     def __init__(self):
+        # Lazy imports to avoid circular dependencies -- agents import from
+        # this module indirectly via the workflow factory.
         from agents.budget_planner import BudgetPlannerAgent
         from agents.debt_optimizer import DebtOptimizerAgent
         from agents.financial_educator import FinancialEducatorAgent
@@ -30,19 +76,26 @@ class FinancialWorkflow:
         from agents.investment_advisor import InvestmentAdvisorAgent
         from agents.master_agent import MasterFinancialStrategistAgent
 
+        # Instantiate all specialist agents (stateless, reusable).
         self.master_agent = MasterFinancialStrategistAgent()
         self.income_analyzer = IncomeExpenseAnalyzerAgent()
         self.budget_planner = BudgetPlannerAgent()
         self.investment_advisor = InvestmentAdvisorAgent()
         self.debt_optimizer = DebtOptimizerAgent()
         self.financial_educator = FinancialEducatorAgent()
+
+        # Build and compile the LangGraph state graph.
         self.workflow = self._build_workflow()
 
-        # Session manager for checkpointing
+        # Session manager for checkpointing (lazily loaded).
         self._session_manager = None
 
     def _get_session_manager(self):
-        """Lazy load session manager."""
+        """Lazy-load the session manager singleton.
+
+        Returns None if the session manager module is not available (e.g. in
+        test environments or when the SQLite dependency is missing).
+        """
         if self._session_manager is None:
             try:
                 from utils.session_manager import get_session_manager
@@ -53,8 +106,27 @@ class FinancialWorkflow:
         return self._session_manager
 
     def _build_workflow(self) -> StateGraph:
+        """Build and compile the LangGraph state graph.
+
+        The graph topology is::
+
+            master_agent ─┬─> income_analyzer     ──────> synthesize ──> END
+                          ├─> budget_planner       ──────> synthesize
+                          ├─> investment_advisor   ──────> synthesize
+                          ├─> debt_optimizer       ──────> synthesize
+                          ├─> financial_educator   ──────> END
+                          └─> comprehensive_analysis ──> verification ──> synthesize
+
+        The ``master_agent`` node uses conditional edges to route to the
+        appropriate specialist based on the analysis type determined by
+        ``MasterFinancialStrategistAgent.determine_analysis_type()``.
+
+        Note: ``financial_educator`` goes directly to ``END`` (no synthesis
+        needed) because educational responses are self-contained.
+        """
         workflow = StateGraph(AgentState)
 
+        # --- Register nodes ---
         workflow.add_node("master_agent", self._master_agent_node)
         workflow.add_node("income_analyzer", self._income_analyzer_node)
         workflow.add_node("budget_planner", self._budget_planner_node)
@@ -65,7 +137,11 @@ class FinancialWorkflow:
         workflow.add_node("verification", self._verification_node)
         workflow.add_node("synthesize", self._synthesize_node)
 
+        # --- Entry point ---
         workflow.set_entry_point("master_agent")
+
+        # --- Conditional routing from master_agent ---
+        # The route function returns a string matching one of the dict keys.
         workflow.add_conditional_edges(
             "master_agent",
             self._route_based_on_analysis,
@@ -80,7 +156,10 @@ class FinancialWorkflow:
             },
         )
 
-        # Add verification step before synthesis for comprehensive analysis
+        # --- Static edges ---
+        # Single-domain agents feed directly into synthesis.
+        # Comprehensive analysis goes through verification first.
+        # Financial educator is self-contained (no synthesis needed).
         workflow.add_edge("income_analyzer", "synthesize")
         workflow.add_edge("budget_planner", "synthesize")
         workflow.add_edge("investment_advisor", "synthesize")
@@ -93,6 +172,7 @@ class FinancialWorkflow:
         return workflow.compile()
 
     def _utc_now_iso(self) -> str:
+        """Return the current UTC time as an ISO 8601 string."""
         return datetime.now(timezone.utc).isoformat()
 
     def _build_trace_entry(
@@ -107,6 +187,12 @@ class FinancialWorkflow:
         output_tokens: int = 0,
         latency_ms: float = 0.0,
     ) -> Dict[str, Any]:
+        """Build a single trace entry for the workflow trace log.
+
+        Each entry records which agent ran, when it started/finished, whether
+        it succeeded or failed, and optional token/latency metrics.  The
+        frontend uses these entries to render a live progress timeline.
+        """
         entry: Dict[str, Any] = {
             "agent": agent_name,
             "startedAt": started_at,
@@ -133,7 +219,18 @@ class FinancialWorkflow:
         agent_outputs: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
     ) -> None:
-        """Save a checkpoint if session manager is available."""
+        """Persist a workflow checkpoint for session resumption.
+
+        Checkpoints allow a workflow that was interrupted (e.g. by a timeout
+        or client disconnect) to be resumed from the last successful phase
+        instead of starting over.  The checkpoint includes:
+        - The current phase (routing, execution, verification, etc.)
+        - The agent's outputs so far
+        - A human-readable context summary
+
+        This is a no-op if no session manager is available or no session_id
+        is set in the state.
+        """
         session_id = state.get("session_id")
         if not session_id:
             return
@@ -240,6 +337,36 @@ class FinancialWorkflow:
         handler: Callable[[], Dict[str, Any]],
         phase: str = "execution",
     ) -> Dict[str, Any]:
+        """Execute an agent handler with tracing, checkpointing, and retry logic.
+
+        This is the **universal wrapper** used by every graph node.  It:
+        1. Records start/end timestamps for the trace log.
+        2. Calls the ``handler`` (a zero-argument callable that runs the agent).
+        3. On success: appends a trace entry, saves a checkpoint, compacts
+           session memory, and returns the handler's output dict.
+        4. On failure with retries remaining: increments ``retry_count`` in
+           the state and returns a partial update (LangGraph will re-invoke
+           the node).
+        5. On failure after max retries: saves an error checkpoint, logs the
+           exception, and re-raises.
+
+        Parameters
+        ----------
+        state : AgentState
+            The current workflow state (read-only; updates are returned as a dict).
+        agent_name : str
+            Human-readable name for tracing (e.g. "income_expense_analyzer").
+        handler : Callable
+            Zero-argument function that performs the agent's work and returns
+            a dict of state updates.
+        phase : str
+            The workflow phase label (e.g. "execution", "verification").
+
+        Returns
+        -------
+        dict
+            State updates to merge into the graph state.
+        """
         trace = list(state.get("workflow_trace") or [])
         started_at = self._utc_now_iso()
         retry_count = state.get("retry_count", 0)
@@ -253,7 +380,7 @@ class FinancialWorkflow:
             updates["workflow_trace"] = trace
             updates["phase"] = phase
 
-            # Save checkpoint on success
+            # Save checkpoint on success for session resumption.
             self._save_checkpoint(state, phase, agent_name, updates)
             self._compact_session_memory(state, phase, updates)
 
@@ -262,10 +389,11 @@ class FinancialWorkflow:
             ended_at = self._utc_now_iso()
             error_msg = str(exc)
 
-            # Retry logic
+            # Retry logic: if retries remain, return a partial state update
+            # with an incremented retry count.  LangGraph will re-invoke this
+            # node, and the handler can try again.
             if retry_count < max_retries:
                 logger.warning("%s node failed (retry %d/%d): %s", agent_name, retry_count + 1, max_retries, error_msg)
-                # Return state with incremented retry count
                 trace.append(self._build_trace_entry(agent_name, started_at, ended_at, "retry", error_msg, phase))
                 return {
                     "workflow_trace": trace,
@@ -273,22 +401,31 @@ class FinancialWorkflow:
                     "error": error_msg,
                 }
 
-            # Max retries exceeded
+            # Max retries exceeded -- save error checkpoint and propagate.
             trace.append(self._build_trace_entry(agent_name, started_at, ended_at, "error", error_msg, phase))
-
-            # Save error checkpoint
             self._save_checkpoint(state, "error", agent_name, error=error_msg)
-
             logger.exception("%s node failed after %d retries", agent_name, retry_count)
             raise
 
     def _route_based_on_analysis(self, state: AgentState) -> str:
+        """Conditional edge function: route to the appropriate specialist node.
+
+        Reads the analysis type from the state (set by the master agent node)
+        and returns the name of the next node to execute.  If no user profile
+        is available and the type would be "comprehensive", fall back to
+        "financial_education" since personalised analysis requires data.
+        """
         analysis_type = str(state.get("current_analysis", {}).get("type") or AnalysisType.COMPREHENSIVE.value).lower()
         if not state.get("user_profile") and analysis_type == AnalysisType.COMPREHENSIVE.value:
             return AnalysisType.FINANCIAL_EDUCATION.value
         return analysis_type
 
     def _run_master(self, state: AgentState) -> Dict[str, Any]:
+        """Execute the master agent's routing logic.
+
+        Calls ``determine_analysis_type()`` (deterministic, no LLM) and
+        decomposes the request into subtasks for tracking.
+        """
         user_input = state.get("user_input", "")
         user_profile = state.get("user_profile")
         conversation_history = state.get("conversation_history") or []
@@ -301,7 +438,7 @@ class FinancialWorkflow:
         )
         analysis_value = analysis_type.value if hasattr(analysis_type, "value") else str(analysis_type).lower()
 
-        # Decompose complex requests into subtasks
+        # Decompose complex requests into subtasks for progress tracking.
         subtasks = self._decompose_request(user_input, analysis_value, user_profile)
 
         return {
@@ -317,12 +454,19 @@ class FinancialWorkflow:
         analysis_type: str,
         user_profile: Optional[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """
-        Decompose a request into subtasks for tracking and parallel execution.
+        """Decompose a request into subtasks for progress tracking.
+
+        Each subtask has an ``id``, ``type``, ``status``, ``description``,
+        and optional ``priority``/``depends_on``/``can_parallel`` fields.
+        The frontend uses these to render a progress checklist.
+
+        For comprehensive analysis, the subtask list includes one entry per
+        specialist agent plus verification and synthesis.  For single-domain
+        requests, only the primary analysis plus verify/synthesis are included.
         """
         subtasks = []
 
-        # Base subtask for the primary analysis
+        # Base subtask for the primary analysis.
         subtasks.append(
             {
                 "id": f"subtask_{analysis_type}",
@@ -539,6 +683,18 @@ class FinancialWorkflow:
             raise
 
     def _comprehensive_analysis_node(self, state: AgentState) -> Dict[str, Any]:
+        """Run all four specialist agents, reusing any outputs already in state.
+
+        This node is used for ``COMPREHENSIVE`` analysis requests.  It:
+        1. Checks which specialist outputs already exist in the state (e.g.
+           from a previous checkpoint).
+        2. Runs the remaining specialists **in parallel** using a
+           ``ThreadPoolExecutor`` with up to 4 workers.
+        3. Collects all results and returns a merged state update.
+
+        Parallel execution significantly reduces wall-clock latency for
+        comprehensive requests (four agents instead of sequential).
+        """
         logger.info("Comprehensive analysis: running all deterministic specialists")
         trace = list(state.get("workflow_trace") or [])
         comprehensive_started = self._utc_now_iso()
@@ -613,13 +769,19 @@ class FinancialWorkflow:
         }
 
     def _run_verification(self, state: AgentState) -> Dict[str, Any]:
-        """
-        Verify the quality and consistency of recommendations.
+        """Lightweight quality-assurance check on the specialist outputs.
 
-        This is a lightweight verification step that ensures:
-        - Recommendations don't conflict with each other
-        - Numbers are reasonable and consistent
-        - Critical warnings are flagged
+        This step runs **after** the comprehensive analysis and **before**
+        synthesis.  It does not call any LLM -- it is purely rule-based.
+
+        Checks performed:
+        1. Budget vs. income -- flag if monthly expenses exceed income by >10%.
+        2. Emergency fund -- warn if savings cover <1 month of expenses.
+        3. Risk tolerance alignment -- warn if stock allocation is too
+           aggressive for a "conservative" risk profile.
+
+        Returns a ``verification_results`` dict with ``passed`` (bool),
+        ``warnings`` (list), and ``adjustments`` (list).
         """
         verification_results = {
             "passed": True,
@@ -698,9 +860,16 @@ class FinancialWorkflow:
         return updates
 
     def _run_synthesis(self, state: AgentState) -> Dict[str, Any]:
+        """Synthesise the final financial plan by delegating to the master agent.
+
+        Gathers all specialist outputs and verification warnings from the
+        state, then calls ``master_agent.synthesize_plan()`` which produces
+        a deterministic plan with optional LLM narrative polish.
+        """
         user_profile = state.get("user_profile")
         verification_results = state.get("verification_results") or {}
 
+        # Collect all specialist outputs that completed successfully.
         analyses = {
             "income_analysis": state.get("income_analysis"),
             "budget_plan": state.get("budget_plan"),
@@ -761,20 +930,45 @@ class FinancialWorkflow:
         session_id: Optional[str] = None,
         resume_from_checkpoint: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Process a financial request through the multi-agent workflow.
+        """Process a financial request through the multi-agent workflow.
 
-        Args:
-            user_input: The user's query or request
-            user_profile: User's financial profile data
-            conversation_history: Previous conversation messages
-            session_summary: Compact summary of prior context
-            options: Processing options (e.g., narrative mode)
-            session_id: Optional session ID for checkpointing
-            resume_from_checkpoint: Whether to resume from last checkpoint
+        This is the **main entry point** called by ``api_service.py``.  It:
+        1. Optionally creates or restores a session (for checkpointing).
+        2. If ``resume_from_checkpoint`` is True, loads the latest checkpoint
+           and merges its state into the initial state.
+        3. Builds the ``AgentState`` TypedDict with all required fields.
+        4. Invokes the compiled LangGraph workflow.
+        5. On success: marks the session as completed and returns the result.
+        6. On failure: marks the session as failed and returns a safe fallback
+           response with ``fallback_used=True``.
 
-        Returns:
-            Complete workflow result with final output and trace
+        Parameters
+        ----------
+        user_input : str
+            The user's free-text query.
+        user_profile : dict, optional
+            The user's financial profile (may be None for educational queries).
+        org_id : str, optional
+            Organisation identifier for multi-tenant session management.
+        user_id : str, optional
+            User identifier for session management.
+        conversation_history : list[dict], optional
+            Previous conversation messages for multi-turn context.
+        session_summary : str, optional
+            Compact summary of prior conversation (may include memory enrichments).
+        options : dict, optional
+            Processing options (e.g. ``{"narrative": True}``).
+        session_id : str, optional
+            Existing session ID to resume.
+        resume_from_checkpoint : bool
+            If True, load the latest checkpoint and skip already-completed phases.
+
+        Returns
+        -------
+        dict
+            The complete workflow result including ``final_output``,
+            ``workflow_trace``, ``phase``, ``session_id``, and all
+            specialist analysis outputs.
         """
         manager = self._get_session_manager()
         checkpoint = None
@@ -876,4 +1070,40 @@ class FinancialWorkflow:
 
 
 def create_financial_workflow() -> FinancialWorkflow:
+    """Factory function to create a ``FinancialWorkflow`` instance.
+
+    Called once at application startup by ``api_service.py``.
+    """
     return FinancialWorkflow()
+
+
+# ============================================================================
+# END-OF-FILE SUMMARY -- graph/workflow.py
+# ============================================================================
+# Key takeaways:
+#
+# 1. This module defines the **LangGraph state graph** that wires together
+#    six specialist agents into a directed acyclic graph.  The graph is
+#    compiled once at startup and reused for every request.
+#
+# 2. The graph has **conditional routing** from the master agent to the
+#    appropriate specialist(s), and **static edges** for synthesis and
+#    verification.
+#
+# 3. **Parallel execution** via ``ThreadPoolExecutor`` is used in the
+#    comprehensive analysis node to run all four specialists concurrently,
+#    reducing wall-clock latency.
+#
+# 4. Every node is wrapped in ``_execute_with_trace`` which provides:
+#    - Structured trace logging (timestamps, status, errors)
+#    - Session checkpointing for resumption
+#    - Retry logic with configurable max retries
+#
+# 5. The **verification node** is a lightweight, rule-based QA step that
+#    checks for inconsistencies (e.g. budget exceeds income) before the
+#    final synthesis.
+#
+# 6. Session checkpointing enables **resumable workflows**: if a request
+#    times out or the client disconnects, the next call can pick up from
+#    the last successful phase.
+# ============================================================================

@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Workspace file management routes for uploading, listing, viewing, analyzing,
+ * and deleting files in the user's workspace.
+ *
+ * Endpoints:
+ *   POST   /            - Upload up to 10 files to the workspace (multipart form data)
+ *   GET    /            - List workspace files with pagination and optional search
+ *   GET    /:id         - Get a single workspace file by ID
+ *   POST   /:id/analyze - Trigger AI analysis of a workspace file with optional prompt
+ *   DELETE /:id         - Delete a workspace file
+ *
+ * Middleware:
+ *   - Passport JWT authentication applied to all routes
+ *   - Multer file upload (workspaceFileUpload) on upload endpoint, max 10 files
+ *   - Zod validation (common, fileSchemas) on params, query, and body
+ *
+ * Controllers: fileController
+ */
 import { Router } from "express";
 import passport from "passport";
 

@@ -1,3 +1,16 @@
+/**
+ * @fileoverview Chat Suggestions Component
+ *
+ * Displays clickable suggestion cards when a chat session has no messages.
+ * Provides common financial questions to help users get started.
+ *
+ * LOCALIZATION:
+ * Uses useOrgFormatters to format currency amounts in the suggestions
+ * according to the user's org settings (e.g., "₹1,00,000" vs "$100,000").
+ *
+ * @module features/chat/ChatSuggestions
+ */
+
 import { motion } from "framer-motion";
 import { Sparkles, PiggyBank, TrendingUp, Calculator } from "lucide-react";
 import { Card } from "@/components/ui/Card";

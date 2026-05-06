@@ -1,13 +1,33 @@
+/**
+ * @fileoverview V1 Collaboration API
+ *
+ * Provides two collaboration primitives for organisation-scoped teamwork:
+ *
+ * 1. **Activity Feed**: A chronological stream of events (transaction created,
+ *    goal completed, member joined, etc.) with cursor-based pagination.
+ *    Events include actor info and structured payloads for rendering.
+ * 2. **Comments**: Threaded comments on any resource (identified by
+ *    `resource_type` + `resource_id`). Supports mentions, editing, and
+ *    soft-deletion. Parent/child threading via `parent_id`.
+ *
+ * These features enable teams to collaborate on shared financial data
+ * with full audit trails and contextual discussions.
+ *
+ * All endpoints are scoped to the active organisation via the `apiClient`.
+ */
+
 import { apiClient } from "../core";
 
 // ─── Types ────────────────────────────────────────────────
 
+/** The user who performed an activity feed action. */
 export interface ActivityActor {
   id: string;
   name: string;
   avatar: string | null;
 }
 
+/** A single event in the organisation's activity feed. */
 export interface ActivityItem {
   id: string;
   event_type: string;
@@ -34,6 +54,7 @@ export interface CommentAuthor {
   avatar: string | null;
 }
 
+/** A single comment on a resource, with optional threading and mentions. */
 export interface CommentItem {
   id: string;
   text: string;
@@ -60,6 +81,10 @@ export interface CommentCreateResponse {
 
 // ─── Activity Feed API ──────────────────────────────────
 
+/**
+ * Fetch the organisation's activity feed with cursor-based pagination.
+ * Use `before` (a cursor from a previous response) to load older events.
+ */
 export async function getActivityFeed(params?: {
   limit?: number;
   before?: string;
@@ -77,6 +102,7 @@ export async function getActivityFeed(params?: {
 
 // ─── Comments API ───────────────────────────────────────
 
+/** List all comments on a specific resource. */
 export async function listResourceComments(
   resourceType: string,
   resourceId: string
@@ -86,6 +112,7 @@ export async function listResourceComments(
   );
 }
 
+/** Create a new comment on a resource, with optional mentions and threading. */
 export async function createComment(params: {
   resource_type: string;
   resource_id: string;
@@ -99,6 +126,7 @@ export async function createComment(params: {
   });
 }
 
+/** Edit an existing comment's text (sets `edited_at` timestamp). */
 export async function updateComment(
   commentId: string,
   text: string
@@ -109,6 +137,7 @@ export async function updateComment(
   });
 }
 
+/** Soft-delete a comment by ID. */
 export async function deleteComment(commentId: string): Promise<{ deleted: boolean }> {
   return apiClient(`/v1/comments/${encodeURIComponent(commentId)}`, {
     method: "DELETE",

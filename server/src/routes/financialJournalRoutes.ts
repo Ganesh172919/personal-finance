@@ -1,3 +1,20 @@
+/**
+ * @fileoverview Financial journal routes for handwritten journal entry management and AI insights.
+ *
+ * Endpoints:
+ *   POST   /financial-journal/recognize-handwriting  - Upload an image and OCR-recognize handwriting
+ *   GET    /financial-journal/entries                 - List journal entries with pagination
+ *   GET    /financial-journal/entries/:id             - Get a single journal entry by ID
+ *   PATCH  /financial-journal/entries/:id             - Update a journal entry's recognized text
+ *   POST   /financial-journal/entries/:id/insights    - Generate AI insights for a journal entry
+ *
+ * Middleware:
+ *   - Passport JWT authentication applied to all routes
+ *   - Multer file upload (journalUpload) on handwriting recognition
+ *   - Zod validation (common, journalSchemas) on params, query, and body
+ *
+ * Controllers: financialJournalController
+ */
 import { Router } from "express";
 import passport from "passport";
 import { validate } from "../middleware/validate";

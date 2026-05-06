@@ -1,3 +1,28 @@
+/**
+ * @fileoverview Settings page with Profile, Security, API Keys, and Preferences tabs.
+ *
+ * Centralises account and workspace configuration in a four-tab layout:
+ * - Profile: display name, email (read-only), avatar, and bio editing.
+ * - Security: password change, 2FA setup/verify/disable (TOTP-based),
+ *   with QR code display and backup code generation.
+ * - API Keys: create keys with granular scopes, view last-four prefix,
+ *   copy to clipboard, and revoke with confirmation.
+ * - Preferences: currency, locale, timezone, and theme selection.
+ *
+ * Key data flows:
+ * - updateProfile() / changePassword() mutate user account fields.
+ * - setup2FA() / verify2FA() / disable2FA() / get2FAStatus() manage
+ *   the two-factor authentication lifecycle.
+ * - listApiKeys() / createApiKey() / revokeApiKey() handle API key
+ *   CRUD via the v1 API.
+ * - useAppConfig() provides current workspace settings and entitlements.
+ *
+ * Each sub-component (ProfileSection, SecuritySection, ApiKeysSection,
+ * PreferencesSection) manages its own form state and mutations.
+ *
+ * Routed at /settings; accessible from the sidebar for authenticated users.
+ */
+
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { User, Shield, Key, Settings as SettingsIcon, Copy, Eye, EyeOff } from "lucide-react";

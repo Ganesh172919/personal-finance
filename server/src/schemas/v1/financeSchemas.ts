@@ -1,3 +1,42 @@
+/**
+ * @fileoverview Zod validation schemas for core finance domain entities (accounts, merchants,
+ * budgets, and recurring rules).
+ *
+ * Exported schemas:
+ *   Shared:
+ *     currencyCodeSchema          - Validates ISO 4217 currency codes (3 uppercase letters, e.g., "USD")
+ *     periodKeySchema             - Validates period keys in YYYY-MM format
+ *     periodKeyParamSchema        - Validates :periodKey route param
+ *     accountTypeSchema           - Enum: checking | savings | credit | brokerage | cash
+ *
+ *   Accounts:
+ *     createAccountBodySchema     - Validates creating a finance account (name, institution, type, currency, etc.)
+ *     updateAccountBodySchema     - Validates updating an account (all fields optional)
+ *
+ *   Merchants:
+ *     listMerchantsQuerySchema    - Validates merchant search query (q, limit)
+ *     upsertMerchantBodySchema    - Validates creating/updating a merchant (name, category_default, aliases)
+ *
+ *   Budgets:
+ *     budgetAllocationUpsertBodySchema  - Validates upserting a budget allocation (category, amount, currency)
+ *     listBudgetAllocationsQuerySchema  - Validates listing allocations query (limit)
+ *
+ *   Recurring Rules:
+ *     recurringRuleIdParamSchema        - Validates :id route param
+ *     createRecurringRuleBodySchema     - Validates creating a recurring rule (name, cron, status, etc.)
+ *     updateRecurringRuleBodySchema     - Validates updating a recurring rule (partial of create + status)
+ *
+ * Used by: v1Routes (finance/accounts, finance/merchants, finance/budgets, finance/recurring)
+ *
+ * Key validation rules:
+ *   - Currency codes: exactly 3 uppercase letters (ISO 4217)
+ *   - Period keys: YYYY-MM format (e.g., "2026-01")
+ *   - Account types: checking | savings | credit | brokerage | cash
+ *   - Merchant aliases: up to 50 alternative names for matching
+ *   - Budget allocations: amount is non-negative (can be 0 for clearing)
+ *   - Recurring rules: cron expression 5-120 chars, status active | disabled
+ *   - Recurring rules support merchant_id (ObjectId) or merchant_name (string) lookup
+ */
 import { z } from "zod";
 
 export const currencyCodeSchema = z
@@ -26,6 +65,10 @@ export const createAccountBodySchema = z
     type: accountTypeSchema.default("checking"),
     currency: currencyCodeSchema.default("USD"),
     mask: z.string().trim().min(2).max(16).optional(),
+    opening_balance: z.number().optional(),
+    last_statement_balance: z.number().optional(),
+    last_statement_date: z.coerce.date().optional(),
+    last_reconciled_at: z.coerce.date().optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
@@ -37,6 +80,10 @@ export const updateAccountBodySchema = z
     type: accountTypeSchema.optional(),
     currency: currencyCodeSchema.optional(),
     mask: z.string().trim().min(2).max(16).optional(),
+    opening_balance: z.number().optional(),
+    last_statement_balance: z.number().nullable().optional(),
+    last_statement_date: z.coerce.date().optional(),
+    last_reconciled_at: z.coerce.date().optional(),
     status: z.enum(["active", "closed"]).optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
   })

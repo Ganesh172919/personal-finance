@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Blog Controller
+ *
+ * Public-facing blog content controller. Provides endpoints for listing,
+ * filtering, and interacting with blog posts. Uses a class-based pattern
+ * (unlike the function-export pattern in other controllers).
+ *
+ * Routes served:
+ *   GET    /api/blog/posts             - getPosts (paginated, filterable)
+ *   GET    /api/blog/posts/featured    - getFeaturedPosts
+ *   GET    /api/blog/posts/:slug       - getPostBySlug
+ *   GET    /api/blog/categories        - getCategories
+ *   POST   /api/blog/posts/:id/like    - toggleLike
+ *   POST   /api/blog/posts             - createPost (auth required)
+ *
+ * Key patterns:
+ *   - Class-based controller (singleton instance exported)
+ *   - Public read endpoints; createPost requires authentication
+ *   - readTime auto-calculated from word count (~200 words/min)
+ *   - Delegates all data access to blogService
+ *
+ * @module controllers/blogController
+ */
+
 import type { Request, Response } from "express";
 import { blogService } from "../services/blogService";
 import { HttpError } from "../middleware/httpError";

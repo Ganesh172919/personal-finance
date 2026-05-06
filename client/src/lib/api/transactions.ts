@@ -1,14 +1,37 @@
+/**
+ * @fileoverview Transaction API Client
+ *
+ * Functions for CRUD operations on financial transactions, plus dashboard
+ * and portfolio summary endpoints. All functions use the shared `apiClient`
+ * for consistent auth, error handling, and org context.
+ *
+ * MUTATION TRACKING:
+ * Every transaction can have a `MutationSource` that records how it was
+ * created (manual, CSV import, receipt OCR, AI plan, etc.). This enables
+ * audit trails and helps users understand where their data came from.
+ *
+ * QUERY PARAMETERS:
+ * Transaction listing supports pagination, date range filtering, type
+ * filtering, category filtering, and review status filtering. The
+ * `needs_review` flag is used for the transaction review queue.
+ *
+ * @module lib/api/transactions
+ */
+
 import { apiClient } from "./core";
 
+/** Transaction category type */
 export type TransactionType = "income" | "expense" | "investment";
+
+/** How a transaction was created — tracks data provenance */
 export type MutationOrigin =
-  | "manual"
-  | "csv_import"
-  | "receipt_ocr"
-  | "journal"
-  | "task_completion"
-  | "ai_plan"
-  | "connector";
+  | "manual"          // User entered via form
+  | "csv_import"      // Bulk imported from CSV file
+  | "receipt_ocr"     // Created from receipt scan
+  | "journal"         // Created from financial journal entry
+  | "task_completion" // Created when user completed an AI-suggested task
+  | "ai_plan"         // Created by an AI-generated plan
+  | "connector";      // Synced from a bank connector
 
 export interface MutationSource {
   origin: MutationOrigin;
@@ -38,6 +61,8 @@ export interface TransactionsQuery {
   to?: string;
   type?: TransactionType;
   category?: string;
+  needs_review?: boolean;
+  review_flag?: "uncategorized" | "suspected_duplicate" | "needs_merchant_match" | "split_candidate" | "recurring_candidate";
 }
 
 export interface TransactionsResponse {
@@ -49,6 +74,27 @@ export interface TransactionsResponse {
     date: string;
     type: TransactionType;
     source?: MutationSource;
+    review?: {
+      needs_attention: boolean;
+      flags: Array<"uncategorized" | "suspected_duplicate" | "needs_merchant_match" | "split_candidate" | "recurring_candidate">;
+      notes?: string[];
+      attention_score?: number;
+    };
+    reconciliation?: {
+      status?: "unreconciled" | "cleared" | "reconciled";
+      reference?: string;
+      statementDate?: string;
+      statementBalance?: number;
+      reconciledAt?: string;
+    };
+    import_details?: {
+      importId?: string;
+      fileName?: string;
+      rowIndex?: number;
+      duplicateKey?: string;
+      committedAt?: string;
+    };
+    running_balance?: number;
   }>;
   pagination: {
     page: number;
@@ -67,6 +113,8 @@ export async function getTransactions(query: TransactionsQuery = {}): Promise<Tr
   if (query.to) params.set("to", query.to);
   if (query.type) params.set("type", query.type);
   if (query.category) params.set("category", query.category);
+  if (query.needs_review !== undefined) params.set("needs_review", String(query.needs_review));
+  if (query.review_flag) params.set("review_flag", query.review_flag);
 
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return apiClient(`/transactions${suffix}`);
@@ -150,6 +198,46 @@ export interface DashboardSummaryResponse {
     dismissed: number;
     upcoming: Array<{ id: string; title: string; dueDate?: string; priority: string }>;
   };
+  review_queue: {
+    needs_attention: number;
+    uncategorized: number;
+    needs_merchant_match: number;
+    suspected_duplicates: number;
+    recurring_candidates: number;
+  };
+  monthly_close: {
+    period_key: string;
+    status: string;
+    totals: {
+      income: number;
+      expenses: number;
+      net: number;
+      tx_count: number;
+    };
+    budget: null | {
+      planned: number;
+      spent: number;
+      remaining: number;
+      unbudgeted_spent: number;
+    };
+    ready_to_close: boolean;
+  };
+  signals: {
+    anomalies: Array<{
+      id: string;
+      title: string;
+      severity: string;
+      metric: number;
+      detail: string;
+    }>;
+    recurring_candidates: Array<{
+      id: string;
+      title: string;
+      confidence: number;
+      cadence: string;
+    }>;
+    upcoming_reminders: number;
+  };
   completeness: {
     has_income: boolean;
     has_expenses: boolean;
@@ -216,3 +304,142 @@ export async function importTransactions(rows: Array<Required<TransactionPayload
     body: JSON.stringify({ rows }),
   });
 }
+
+// ── Command Center ──────────────────────────────────────────────────────────
+
+export type PriorityLevel = "act_now" | "review_this_week" | "safe_to_ignore";
+
+export interface CommandCenterSignal {
+  id: string;
+  title: string;
+  detail: string;
+  priority: PriorityLevel;
+  metric?: number;
+  action_href?: string;
+}
+
+export interface CommandCenterResponse {
+  generated_at: string;
+  time_of_day: "morning" | "afternoon" | "evening";
+  cash_runway: {
+    liquid_balance: number;
+    avg_daily_expense: number;
+    days_remaining: number | null;
+    currency: string;
+  };
+  budget_burn: {
+    period_key: string;
+    total_planned: number;
+    total_spent: number;
+    burn_rate_pct: number;
+    day_of_month: number;
+    days_in_month: number;
+    month_elapsed_pct: number;
+    projected_total: number;
+    on_pace: boolean;
+    overshoot_amount: number;
+    categories_over_budget: Array<{
+      category: string;
+      planned: number;
+      spent: number;
+      over_by: number;
+    }>;
+  };
+  upcoming_bills: Array<{
+    id: string;
+    name: string;
+    amount_estimate: number;
+    due_date: string;
+    category?: string;
+  }>;
+  risky_subscriptions: Array<{
+    id: string;
+    description: string;
+    amount_avg: number;
+    cadence: string;
+    confidence: number;
+  }>;
+  debt_pressure: {
+    total_minimum_due: number;
+    total_debt_balance: number;
+    debt_count: number;
+    pressure_level: PriorityLevel;
+  };
+  pending_tasks: {
+    open: number;
+    due_soon: number;
+    overdue: number;
+  };
+  goals_snapshot: {
+    total: number;
+    on_track: number;
+    at_risk: number;
+    overall_progress_pct: number;
+  };
+  priority_signals: CommandCenterSignal[];
+}
+
+export const getCommandCenter = async (): Promise<CommandCenterResponse> => {
+  return apiClient("/command-center");
+};
+
+// ── Budget Health ───────────────────────────────────────────────────────────
+
+export interface BurnRateAlert {
+  category: string;
+  planned: number;
+  spent: number;
+  burn_rate_pct: number;
+  month_elapsed_pct: number;
+  projected_end_of_month: number;
+  overshoot_amount: number;
+  severity: "warning" | "critical";
+  message: string;
+}
+
+export interface BudgetHealthResponse {
+  generated_at: string;
+  period_key: string;
+  health_score: {
+    total: number;
+    budget_adherence: number;
+    review_cleanliness: number;
+    goal_progress: number;
+    debt_management: number;
+  };
+  burn_rate_alerts: BurnRateAlert[];
+  pace_comparison: {
+    current_week_avg_daily: number;
+    last_week_avg_daily: number;
+    monthly_avg_daily: number;
+    trend: "improving" | "stable" | "worsening";
+  };
+  projection: {
+    if_you_continue: string;
+    projected_month_end_spend: number;
+    budget_planned: number;
+    delta: number;
+  };
+}
+
+export const getBudgetHealth = async (): Promise<BudgetHealthResponse> => {
+  return apiClient("/budget-health");
+};
+
+// ── Transaction Review Actions ──────────────────────────────────────────────
+
+export const approveTransaction = async (id: string): Promise<any> => {
+  return apiClient(`/transactions/${id}/approve`, { method: "POST" });
+};
+
+export const bulkApproveTransactions = async (transactionIds: string[]): Promise<{ modified: number }> => {
+  return apiClient("/transactions/bulk-approve", {
+    method: "POST",
+    body: JSON.stringify({ transaction_ids: transactionIds }),
+  });
+};
+
+export const alwaysCategorize = async (id: string): Promise<any> => {
+  return apiClient(`/transactions/${id}/always-categorize`, { method: "POST" });
+};
+

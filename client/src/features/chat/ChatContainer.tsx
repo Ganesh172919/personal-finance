@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Chat Container (Orchestration Component)
+ *
+ * The main chat orchestrator that wires together the message list, input,
+ * suggestions, and chat store. Manages session lifecycle and message flow.
+ *
+ * RESPONSIBILITIES:
+ * - Load session on mount (if sessionId provided)
+ * - Create new session if none exists
+ * - Delegate message sending to the chat store
+ * - Show suggestions when no messages exist
+ * - Show loading/error states
+ *
+ * ARCHITECTURE:
+ * This is a "smart" component that connects the chat store (state) to
+ * "dumb" presentational components (ChatMessageList, ChatInput, ChatSuggestions).
+ *
+ * @module features/chat/ChatContainer
+ */
+
 import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { useChatStore } from "@/stores/chatStore";

@@ -1,3 +1,32 @@
+/**
+ * @fileoverview Chat Controller
+ *
+ * Manages chat sessions and AI-powered conversations for the finance application.
+ * Handles session CRUD, message persistence, and AI response generation with caching.
+ *
+ * Routes served:
+ *   POST   /api/chat/sessions              - createSession
+ *   GET    /api/chat/sessions              - getSessions
+ *   GET    /api/chat/sessions/:sessionId   - getSession
+ *   DELETE /api/chat/sessions/:sessionId   - deleteSession
+ *   PATCH  /api/chat/sessions/:sessionId   - renameSession
+ *   GET    /api/chat/sessions/:sessionId/messages - getMessages
+ *   POST   /api/chat/sessions/:sessionId/messages - sendMessage
+ *   GET    /api/chat/insights              - getConversationInsights
+ *
+ * Key patterns:
+ *   - Thin controllers: validate input, call services, format responses
+ *   - Org context extracted via requireOrgId helper (throws 401 if missing)
+ *   - AI responses cached in AiResponseCacheModel to avoid redundant LLM calls
+ *   - Session summaries built deterministically every 8 user messages
+ *   - Workspace file attachments injected into AI context as extracted text
+ *   - Autopilot runs auto-created when AI response contains tool calls
+ *   - Entitlement enforcement via enforceFeatureLimit before AI calls
+ *   - AgentOutput persisted for every assistant message (enables feedback/tasks)
+ *
+ * @module controllers/chatController
+ */
+
 import { Request, Response } from "express";
 import ChatSessionModel, { IChatSessionDocument } from "../models/chatSessionModel";
 import ChatMessageModel, { IChatMessageDocument } from "../models/chatMessageModel";
@@ -21,12 +50,14 @@ import { recordAiCache, recordAiFallback } from "../observability/metrics";
 import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements";
 import { recordAuditEvent } from "../services/auditLog";
 import { publishDomainEvent } from "../services/domainEvents";
+import { buildAiFinanceGrounding } from "../services/financeGrounding";
 import { HttpError } from "../middleware/httpError";
 import { logger } from "../config/logger";
 
 const getSingleParam = (value: string | string[] | undefined) =>
   Array.isArray(value) ? value[0] : value;
 
+// Extracts org context injected by orgContext middleware; throws 401 if missing
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -508,13 +539,16 @@ export async function sendMessage(req: Request, res: Response) {
         recordAiCache({ endpoint: "chat-message", hit: true });
       } else {
         recordAiCache({ endpoint: "chat-message", hit: false });
-        const txResult = await fetchTransactionsForAi({ orgId, userId: user._id });
-
-        const orgSettings = await getOrgAiSettings(orgId);
+        const [txResult, orgSettings, grounding] = await Promise.all([
+          fetchTransactionsForAi({ orgId, userId: user._id }),
+          getOrgAiSettings(orgId),
+          buildAiFinanceGrounding({ orgId, userId: user._id, selectedWorkspaceFileIds: requestedFileIds }),
+        ]);
 
          const { request: aiRequest, stats } = buildProcessRequest({
            userInput: aiUserInput,
            profile: financialProfile,
+           financeContext: grounding.finance_context,
            orgId: orgId.toString(),
            userId: user._id.toString(),
            sessionId: session.aiSessionId,
@@ -552,6 +586,15 @@ export async function sendMessage(req: Request, res: Response) {
             plan: normalizedPlan,
             planValid,
             toolCalls: aiResponse.tool_calls || [],
+            evidence: aiResponse.evidence || grounding.evidence,
+            confidence: aiResponse.confidence || grounding.confidence,
+            suggestedActions:
+              aiResponse.suggested_actions ||
+              [
+                ...(normalizedPlan.actions?.next_7_days || []),
+                ...(normalizedPlan.actions?.next_30_days || []),
+              ].slice(0, 3),
+            linkedEntityIds: aiResponse.linked_entity_ids || {},
             detailedAnalysis: aiResponse.detailed_analysis || {},
             workflowTrace: aiResponse.workflow_trace || [],
             fallbackUsed: aiResponse.fallback_used || false,
@@ -766,6 +809,7 @@ export async function sendMessage(req: Request, res: Response) {
 
     const nextMessageCount = (updatedSession?.messageCount ?? session.messageCount + 2) as number;
     const nextUserMessageCount = Math.floor(nextMessageCount / 2);
+    // Regenerate summary on first message and every 8 user messages thereafter
     const shouldUpdateSummary =
       !session.summary ||
       session.summary.trim().length === 0 ||
@@ -870,11 +914,12 @@ export async function getConversationInsights(req: Request, res: Response) {
       });
     }
 
-    const [profile, journalContext, orgSettings, txResult] = await Promise.all([
+    const [profile, journalContext, orgSettings, txResult, grounding] = await Promise.all([
       ensureProfileWithMigration({ orgId, userId: user._id }),
       getJournalContextForAi({ orgId, userId: user._id }),
       getOrgAiSettings(orgId),
       fetchTransactionsForAi({ orgId, userId: user._id }),
+      buildAiFinanceGrounding({ orgId, userId: user._id }),
     ]);
 
     const summarySections = await Promise.all(
@@ -932,6 +977,7 @@ export async function getConversationInsights(req: Request, res: Response) {
     const { request: aiRequest } = buildProcessRequest({
       userInput: prompt,
       profile,
+      financeContext: grounding.finance_context,
       orgId: orgId.toString(),
       userId: user._id.toString(),
       orgSettings,
@@ -948,6 +994,8 @@ export async function getConversationInsights(req: Request, res: Response) {
       success: true,
       response: aiResponse.final_output,
       plan: normalizedPlan,
+      evidence: aiResponse.evidence || grounding.evidence,
+      confidence: aiResponse.confidence || grounding.confidence,
       analysis_type: "conversation_insights",
       agents_involved: aiResponse.agents_involved,
       workflow_trace: aiResponse.workflow_trace || [],

@@ -1,3 +1,26 @@
+/**
+ * @fileoverview ConversationInsightsPanel — displays cross-conversation AI intelligence
+ * including a markdown summary, session count, agent badges, and recommended next moves.
+ *
+ * WHAT IT DOES
+ *  - Fetches `/api/chat/insights/conversation` which synthesises patterns across the
+ *    user's recent AI chat sessions.
+ *  - Renders: session count badge, fallback indicator, agent involvement badges,
+ *    a markdown-rendered summary, and up to N action items ("Recommended next moves")
+ *    extracted from the plan's 7-day, 30-day, and 12-month action buckets.
+ *  - Supports a `compact` mode (smaller padding, fewer items, smaller typography) for
+ *    embedding in constrained spaces like the chat sidebar.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `compact` (boolean) — toggles between full and compact rendering.
+ *  - `className` (string) — additional classes for the outer Card.
+ *  - `collectActionItems` helper flattens and slices the plan's action buckets.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used in the AI Chat page sidebar and potentially in the dashboard copilot panel.
+ *  - `staleTime: 60_000` prevents excessive re-fetching since insights change slowly.
+ *  - Refresh button triggers manual `refetch` for on-demand updates.
+ */
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BrainCircuit, RefreshCcw } from "lucide-react";

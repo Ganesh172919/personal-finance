@@ -1,3 +1,26 @@
+/**
+ * @fileoverview Analytics Detail Controller (v1)
+ *
+ * Detailed financial analytics endpoints: spending heatmap, category trends,
+ * income vs. expense summaries, account balances, and top merchants.
+ * All endpoints use MongoDB aggregation pipelines for efficient computation.
+ *
+ * Routes served:
+ *   GET /api/v1/analytics/spending-heatmap    - getSpendingHeatmap
+ *   GET /api/v1/analytics/category-trends     - getCategoryTrends
+ *   GET /api/v1/analytics/income-expense      - getIncomeExpenseSummary
+ *   GET /api/v1/analytics/account-balances    - getAccountBalances
+ *   GET /api/v1/analytics/top-merchants       - getTopMerchants
+ *
+ * Key patterns:
+ *   - All endpoints scoped to org + authenticated user
+ *   - Aggregation pipelines compute summaries server-side (not in JS)
+ *   - Spending amounts stored as negative; absolute values returned to client
+ *   - Date ranges clamped to prevent excessive data scans
+ *
+ * @module controllers/v1/analyticsDetailController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

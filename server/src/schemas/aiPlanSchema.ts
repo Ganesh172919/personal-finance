@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Zod validation schemas for AI-generated financial plans.
+ *
+ * Exported schemas:
+ *   actionItemSchema  - Validates an individual action item (title, why, steps, priority, expected_impact)
+ *   planSchema        - Validates a full AI plan with executive summary, key metrics, actions
+ *                       (7-day, 30-day, 12-month buckets), assumptions, and data warnings
+ *
+ * Exported types:
+ *   AiPlan            - Inferred TypeScript type from planSchema
+ *
+ * Exported helpers:
+ *   buildPlanValidationFallback  - Creates a safe fallback plan when validation fails
+ *   normalizeAiPlan              - Parses and normalizes raw AI plan output; returns { plan, valid }
+ *
+ * Used by: aiController (plan normalization), taskSchemas (tasks-from-plan body validation)
+ *
+ * Key validation rules:
+ *   - All numeric metrics are nullable and optional (handles missing AI data gracefully)
+ *   - Action items have priority enum: low | medium | high
+ *   - Plan structure uses .passthrough() to allow extra fields from the AI without failing
+ */
 import { z } from "zod";
 
 const nullableNumber = z.number().nullable().optional();

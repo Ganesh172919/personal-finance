@@ -1,3 +1,29 @@
+/**
+ * @fileoverview Zod validation schemas for blog and growth story content endpoints.
+ *
+ * Exported schemas - Blog:
+ *   blogListQuerySchema        - Validates blog list query (page, limit, category, tag, sort, isFeatured, search)
+ *   blogFeaturedQuerySchema    - Validates featured posts query (limit: 1-50)
+ *   blogSlugParamSchema        - Validates blog slug param (non-empty string)
+ *   blogIdParamSchema          - Validates blog ID param (non-empty string)
+ *   createBlogPostBodySchema   - Validates blog post creation (title, content, excerpt, category, tags, etc.)
+ *
+ * Exported schemas - Growth Stories:
+ *   growthStoryListQuerySchema     - Validates growth story list query (page, limit, category, difficulty, etc.)
+ *   growthStoryFeaturedQuerySchema - Validates featured stories query (limit: 1-50)
+ *   growthStorySlugParamSchema     - Validates growth story slug param
+ *   growthStoryIdParamSchema       - Validates growth story ID param
+ *   createGrowthStoryBodySchema    - Validates growth story creation (title, journey, category, difficulty, etc.)
+ *
+ * Used by: blogRoutes, growthStoryRoutes
+ *
+ * Key validation rules:
+ *   - Sort options: newest | oldest | popular
+ *   - isFeatured: string "true"/"false" transformed to boolean
+ *   - Tags: array of non-empty strings
+ *   - Cover images: validated as URLs when provided
+ *   - Content/journey: required non-empty strings
+ */
 import { z } from "zod";
 
 // ─── Blog Schemas ────────────────────────────────────────

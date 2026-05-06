@@ -1,3 +1,20 @@
+"""
+contracts/responses.py - HTTP Response Data Contracts
+=======================================================
+
+Defines the Pydantic models for the ``/api/agents/process`` endpoint
+response.  ``ProcessResponse`` is the top-level response model that
+FastAPI uses for automatic JSON serialisation and OpenAPI schema
+generation.
+
+The response includes:
+- The synthesised financial plan (always present).
+- Workflow trace (timestamps for each agent that ran).
+- Tool calls (automation suggestions for the client to present).
+- LLM usage metadata (tokens, cost, models used).
+- Session state (for resumable workflows).
+"""
+
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -8,6 +25,7 @@ from .trace import WorkflowTraceEntry
 
 
 class UsageMetadata(BaseModel):
+    """LLM token and cost usage for the current request."""
     tokens_in: int = 0
     tokens_out: int = 0
     total_tokens: int = 0

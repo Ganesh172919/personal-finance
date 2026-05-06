@@ -1,3 +1,25 @@
+/**
+ * @fileoverview InsightDetailModal — full-screen dialog for viewing a single AI-generated
+ * insight with markdown-rendered analysis, task creation, thumbs-up/down feedback, and
+ * a contextual action button.
+ *
+ * WHAT IT DOES
+ *  - Fetches an `IAgentOutput` by `insightId` from `/api/agent-outputs/:id`.
+ *  - Renders the insight's `response` field as rich Markdown (headings, lists, code blocks).
+ *  - Offers "Add to tasks" to convert an embedded plan into trackable tasks via the API.
+ *  - Collects user feedback (thumbs up/down) on the insight via `submitAgentOutputFeedback`.
+ *  - Maps `actionType` to an in-app route for the "Take Action" button.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `insightId` (string | null) — the ID to fetch; null hides the dialog.
+ *  - `isOpen` / `onClose` — controlled dialog visibility.
+ *  - Mutations: `createTasksFromPlan`, `submitAgentOutputFeedback`.
+ *
+ * ARCHITECTURE NOTES
+ *  - Opened from `ActionableInsights` when a user clicks on an insight card.
+ *  - Uses the same markdown component map as `AiCommandBar` for visual consistency.
+ *  - All API errors are formatted with request IDs for support traceability.
+ */
 import {
   Dialog,
   DialogContent,
@@ -8,7 +30,7 @@ import {
   DialogClose
 } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge"; 
+import { Badge } from "@/components/ui/Badge";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IAgentOutput } from "@/types";

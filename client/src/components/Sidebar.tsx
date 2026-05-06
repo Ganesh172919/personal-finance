@@ -1,3 +1,29 @@
+/**
+ * @fileoverview Sidebar — the primary application navigation shell, rendering as a fixed
+ * desktop sidebar on large screens and a bottom tab bar + slide-in drawer on mobile.
+ *
+ * WHAT IT DOES
+ *  - Defines all navigation items grouped into four sections: Daily flow, Planning,
+ *    Workspace, and Library. Each item has a route, icon, section, and optional feature gate.
+ *  - Desktop: renders a 22rem-wide fixed sidebar with BrandBlock (logo + theme toggle +
+ *    notification bell), grouped navigation sections, and a user panel with logout.
+ *  - Mobile: renders a bottom tab bar with pinned items (AI Chat, Dashboard, Transactions,
+ *    Finance OS, Settings) plus a "More" button that opens the full drawer.
+ *  - Integrates `NotificationCenter` (slide-in panel) and `NotificationBell` (badge trigger).
+ *  - Feature-gates navigation items (Tasks, Receipts, Notes) based on app config.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — all data comes from `useAuth`, `useAppConfig`, `useNotifications`, and `useLocation`.
+ *  - `navigationItems` array defines the canonical route map for the entire application.
+ *  - `groupedNavItems` is memoised from `visibleNavItems` (filtered by feature flags).
+ *
+ * ARCHITECTURE NOTES
+ *  - The single source of truth for app navigation; routes added here automatically appear
+ *    in both desktop and mobile layouts.
+ *  - Sub-components: `BrandBlock`, `NavigationSections`, `UserPanel`, `DesktopSidebar`,
+ *    `MobileBottomBar`, `MobileDrawer` — each is a local function component for readability.
+ *  - Uses `useIsMobile()` hook to switch between desktop and mobile layouts.
+ */
 import { useCallback, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";

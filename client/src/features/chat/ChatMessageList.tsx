@@ -1,3 +1,20 @@
+/**
+ * @fileoverview Chat Message List Component
+ *
+ * Renders the scrollable list of chat messages with auto-scroll behavior.
+ * Shows a typing indicator when the AI is processing.
+ *
+ * AUTO-SCROLL:
+ * Automatically scrolls to the bottom when new messages arrive.
+ * Uses a sentinel div at the bottom and scrollIntoView for smooth scrolling.
+ *
+ * LOADING STATES:
+ * - isLoading: Initial message load (shows skeleton)
+ * - isSending: Message being processed (shows TypingIndicator)
+ *
+ * @module features/chat/ChatMessageList
+ */
+
 import { useEffect, useRef } from "react";
 import { AnimatePresence } from "framer-motion";
 import { ChatMessage } from "./ChatMessage";
@@ -13,9 +30,9 @@ interface ChatMessageListProps {
   currentAgent?: string | null;
 }
 
-export function ChatMessageList({ 
-  messages, 
-  isLoading, 
+export function ChatMessageList({
+  messages,
+  isLoading,
   isSending,
   currentPhase,
   currentAgent

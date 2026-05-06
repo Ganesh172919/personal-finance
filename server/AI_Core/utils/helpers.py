@@ -1,3 +1,32 @@
+"""
+helpers.py - Utility Functions and Logging Setup
+=================================================
+
+Provides general-purpose utility functions used throughout the AI Core:
+
+Logging
+-------
+- ``setup_logging()`` -- configures JSON-structured logging with
+  request-id correlation.  Every log line includes a ``request_id``
+  field so that all events for a single HTTP request can be correlated.
+- ``RequestIdFilter`` -- logging filter that injects the current
+  request-id from ``contextvars`` into each log record.
+- ``JsonFormatter`` -- formats log records as JSON for structured
+  log aggregation (e.g. ELK stack, Datadog).
+
+Financial helpers
+-----------------
+- ``format_currency()`` -- formats amounts in Indian Rupees.
+- ``parse_financial_input()`` -- extracts financial figures from
+  free-text user input using regex.
+- ``calculate_age()``, ``calculate_months_between()`` -- date math.
+
+General helpers
+---------------
+- ``validate_email()``, ``safe_json_loads()``, ``generate_report_id()``.
+- ``ColorFormatter`` -- ANSI color codes for CLI console output.
+"""
+
 import json
 import logging
 import os
@@ -10,6 +39,11 @@ from utils.request_metrics import get_request_id
 
 
 class RequestIdFilter(logging.Filter):
+    """Injects the current request-id into every log record.
+
+    Uses ``contextvars`` so that concurrent FastAPI requests each
+    get their own request-id without cross-contamination.
+    """
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = get_request_id()
         return True

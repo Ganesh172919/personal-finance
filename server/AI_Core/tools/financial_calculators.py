@@ -1,15 +1,44 @@
+"""
+tools/financial_calculators.py - Financial Calculation Utilities
+================================================================
+
+Provides ``FinancialCalculators``, a collection of static methods for
+common financial calculations used by the specialist agents.
+
+Calculations provided
+---------------------
+- **Compound interest** -- supports annual, monthly, quarterly, and
+  daily compounding frequencies.
+- **Loan amortisation** -- monthly payment, total interest, and total
+  payment for a fixed-rate loan.
+- **Debt snowball** -- month-by-month payoff simulation for the
+  snowball method (smallest balance first).
+- **Retirement projection** -- future value of current savings plus
+  monthly contributions at an expected return rate.
+- **Risk profile assessment** -- weighted scoring across age, experience,
+  time horizon, and risk tolerance.
+
+The ``RiskProfile`` enum (conservative/moderate/aggressive) is used
+by the ``InvestmentAdvisorAgent`` to determine portfolio allocation.
+"""
+
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, List
 
 
 class RiskProfile(str, Enum):
+    """Investor risk profile classification."""
+
     CONSERVATIVE = "conservative"
     MODERATE = "moderate"
     AGGRESSIVE = "aggressive"
 
 class FinancialCalculators:
-    """Financial calculation utilities"""
+    """Financial calculation utilities.
+
+    All methods are static -- no instance state is needed.
+    """
     
     @staticmethod
     def calculate_compound_interest(principal: float, rate: float, years: int, 

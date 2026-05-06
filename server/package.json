@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24.14.1 <25",
+    "npm": ">=11"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "worker:dev": "tsx watch src/worker/worker.ts",

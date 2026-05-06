@@ -1,3 +1,25 @@
+/**
+ * @fileoverview AgentWorkflowVisualizer — displays the multi-agent AI workflow trace
+ * that produced a given financial analysis response.
+ *
+ * WHAT IT DOES
+ *  - Receives a `workflowTrace` array (or a fallback built from `agentsInvolved`)
+ *    and renders each agent step as an animated row with status, duration, and error info.
+ *  - Maps agent keys (e.g. "budget_planner") to human-friendly labels, icons, and
+ *    colors via the `AGENT_VISUALS` lookup table.
+ *  - Shows summary metadata: total LLM call count and whether a fallback path was used.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `workflowTrace` (IWorkflowTraceEntry[]) — the primary data source from the AI backend.
+ *  - `agentsInvolved` (string[]) — used as a fallback when no detailed trace is provided.
+ *  - `fallbackUsed` / `llmCallCount` — read-only badges shown in the component header.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used inside `AiCommandBar` (and `InsightDetailModal`) to give users transparency
+ *    into which AI agents participated in generating their financial advice.
+ *  - Pure presentational — no side-effects, API calls, or state mutations.
+ *  - Framer Motion stagger animation (0.04 s delay per row) provides a sequential reveal.
+ */
 import { motion } from "framer-motion";
 import { Crown, Calculator, TrendingUp, PiggyBank, GraduationCap, BrainCircuit } from "lucide-react";
 import { IWorkflowTraceEntry } from "@/types";

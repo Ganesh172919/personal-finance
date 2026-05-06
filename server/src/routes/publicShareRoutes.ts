@@ -1,3 +1,17 @@
+/**
+ * @fileoverview Public share routes for accessing shared financial stories without authentication.
+ *
+ * Endpoints:
+ *   GET    /shares/financial-story/:token   - Retrieve a publicly shared financial story by token
+ *
+ * Middleware:
+ *   - Zod validation (shareSchemas: shareTokenParamSchema) on route params
+ *
+ * Controllers: shareController
+ *
+ * Note: These routes are intentionally unauthenticated -- the share token itself acts as
+ * the authorization mechanism, allowing users to share read-only financial snapshots via link.
+ */
 import { Router } from "express";
 
 import { validate } from "../middleware/validate";

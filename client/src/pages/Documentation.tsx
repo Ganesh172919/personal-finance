@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Full product documentation page.
+ *
+ * A self-contained docs site with a sticky sidebar table of contents,
+ * feature deep-dives, getting-started steps, API integrations list,
+ * keyboard shortcuts reference, and an FAQ accordion. All content is
+ * statically defined -- no API calls.
+ *
+ * Key behaviors:
+ * - Filters features and FAQ items by a client-side search query.
+ * - Tracks the active section via IntersectionObserver-style scroll
+ *   detection for sidebar highlighting.
+ * - Smooth-scrolls to sections when sidebar items are clicked.
+ *
+ * Acts as the in-app reference for all platform capabilities, reachable
+ * from the sidebar "Docs" link and the NotFound page.
+ */
+
 import { useState, useMemo, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import {

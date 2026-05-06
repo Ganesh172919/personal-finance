@@ -1,6 +1,28 @@
+/**
+ * @fileoverview Typing Indicator / Workflow Progress Component
+ *
+ * Displays a visual indicator showing the AI's current processing phase.
+ * Instead of a simple "typing..." dot, it shows the actual workflow stage
+ * (routing, planning, research, execution, verification, synthesis).
+ *
+ * WORKFLOW PHASES:
+ * 1. connecting — Establishing SSE connection
+ * 2. routing — Determining which AI agent to use
+ * 3. planning — Creating an action plan
+ * 4. research — Gathering data from the database
+ * 5. execution — Running analysis or tool calls
+ * 6. verification — Validating results
+ * 7. synthesis — Generating the final response
+ * 8. complete — Done
+ * 9. error — Something went wrong
+ *
+ * @module features/chat/TypingIndicator
+ */
+
 import { motion, AnimatePresence } from "framer-motion";
 
-export type WorkflowPhase = 
+/** All possible workflow phases during AI processing */
+export type WorkflowPhase =
   | "connecting"
   | "routing"
   | "planning"
@@ -17,6 +39,7 @@ interface WorkflowProgressIndicatorProps {
   showDetails?: boolean;
 }
 
+/** Phase metadata: display label, icon, and color for each phase */
 const PHASE_INFO: Record<WorkflowPhase, { label: string; icon: string; color: string }> = {
   connecting: { label: "Connecting...", icon: "", color: "text-muted-foreground" },
   routing: { label: "Analyzing request", icon: "", color: "text-blue-400" },

@@ -1,3 +1,26 @@
+/**
+ * @fileoverview EmptyState — reusable placeholder shown when a list, section, or page
+ * has no data to display, with an optional icon, title, description, and action button.
+ *
+ * WHAT IT DOES
+ *  - Renders a dashed-border card with centred content: optional Lucide icon in a
+ *    primary-tinted circle, title, description, and an optional action slot (button, link, etc.).
+ *  - Used throughout the app wherever empty data states need a friendly, consistent look.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `title` (string) — the heading text.
+ *  - `description` (string) — explanatory subtext.
+ *  - `icon` (LucideIcon, optional) — displayed in a rounded container above the text.
+ *  - `action` (ReactNode, optional) — rendered below the text (e.g. a "Create" button).
+ *  - `className` (string, optional) — additional classes for the outer container.
+ *
+ * ARCHITECTURE NOTES
+ *  - A building-block component used by TasksWidget, RecentActivity, ActionableInsights,
+ *    NotificationCenter, and many page-level views.
+ *  - Pure presentational — no hooks, no state, no side effects.
+ *  - The dashed border and muted background visually signal "nothing here yet" without
+ *    feeling like an error.
+ */
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 

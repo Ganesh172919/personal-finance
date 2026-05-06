@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Invite Controller (v1)
+ *
+ * Handles organization invite acceptance. The invite creation flow lives
+ * in orgController.addOrgMember; this controller only handles token-based
+ * acceptance by the invitee.
+ *
+ * Routes served:
+ *   POST /api/v1/invites/accept - acceptInvite
+ *
+ * Key patterns:
+ *   - Invite token passed in request body (not URL) for security
+ *   - Validates token, creates org membership, marks invite as accepted
+ *   - Audit events recorded for both success and blocked attempts
+ *   - Blocked attempts (e.g., seat limit reached) still produce audit trails
+ *
+ * @module controllers/v1/inviteController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -14,6 +33,7 @@ export const acceptInvite = async (req: Request, res: Response) => {
     throw new HttpError(400, "INVALID_TOKEN", "Invalid invite token");
   }
 
+  // Accept invite; on failure, still record an audit event for blocked attempts
   const result = await acceptOrgInvite({
     token: body.token,
     userId: user._id,

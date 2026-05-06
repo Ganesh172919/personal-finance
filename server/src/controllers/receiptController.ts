@@ -1,3 +1,28 @@
+/**
+ * @fileoverview Receipt Controller
+ *
+ * Handles receipt image upload, OCR parsing, and confirmation workflow.
+ * Users upload a receipt image, the OCR service extracts structured data,
+ * and the user confirms/corrects the extracted fields before a transaction is created.
+ *
+ * Routes served:
+ *   POST   /api/receipts/parse          - parseReceipt (upload + OCR)
+ *   POST   /api/receipts/:id/confirm    - confirmReceipt (create transaction)
+ *   GET    /api/receipts                - listReceipts
+ *   GET    /api/receipts/:id            - getReceiptById
+ *   DELETE /api/receipts/:id            - deleteReceipt
+ *
+ * Key patterns:
+ *   - Feature-gated: endpoints return 404 when RECEIPTS_OCR_ENABLED is false
+ *   - OCR quota enforced via entitlement system before processing
+ *   - Images stored in GridFS; receipt metadata in ReceiptModel
+ *   - confirmReceipt creates an expense transaction and publishes domain events
+ *   - Cannot delete a receipt that has already been confirmed (409 conflict)
+ *   - Currency hint resolved from org settings if not provided by user
+ *
+ * @module controllers/receiptController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import { getEnv } from "../config/env";

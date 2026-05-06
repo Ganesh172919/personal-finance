@@ -1,3 +1,31 @@
+"""
+investment_advisor.py - Investment Advisor Agent
+==================================================
+
+The ``InvestmentAdvisorAgent`` provides personalised investment advice
+based on a user's risk profile, age, time horizon, and experience level.
+It operates entirely deterministically -- no LLM calls are made.
+
+Key responsibilities
+--------------------
+- Assess the user's risk profile (conservative/moderate/aggressive) using
+  a weighted scoring system across age, experience, time horizon, and
+  stated risk tolerance.
+- Create an investment strategy with focus areas and rebalancing cadence.
+- Generate a portfolio allocation across asset classes (domestic equity,
+  international equity, bonds, real assets, cash).
+- Calculate expected returns (annual, inflation-adjusted, compounded).
+- Produce a markdown recommendation with vehicle guidance and risk controls.
+
+Design decisions
+----------------
+- Risk profile scoring: age (1-3), experience (0-3), time horizon (1-3),
+  tolerance (0-2).  Score >= 8 = aggressive, >= 5 = moderate, else conservative.
+- Expert investors get a 5% "Alternatives" sleeve (private equity, etc.).
+- Expected returns use long-term historical averages: equities ~9%,
+  bonds ~4.5%, cash ~2%.
+"""
+
 import logging
 from typing import Any, Dict
 
@@ -8,7 +36,12 @@ logger = logging.getLogger(__name__)
 
 
 class InvestmentAdvisorAgent:
-    """Provides personalized investment advice and portfolio recommendations."""
+    """Provides personalized investment advice and portfolio recommendations.
+
+    This agent is part of the multi-agent financial advisory system.
+    It receives a user profile dict and returns a structured investment
+    plan with risk assessment, allocation, and expected returns.
+    """
 
     def __init__(self):
         self.calculators = FinancialCalculators()

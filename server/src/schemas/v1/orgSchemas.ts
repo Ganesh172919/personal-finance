@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Zod validation schemas for organization management.
+ *
+ * Exported schemas:
+ *   createOrgBodySchema         - Validates creating a new organization (name, optional slug)
+ *   orgIdParamSchema            - Validates :orgId route param as a 24-char hex ObjectId
+ *   addOrgMemberBodySchema      - Validates adding a member to an organization (email, role)
+ *   updateOrgSettingsBodySchema - Validates updating organization settings (currency, locale, timezone)
+ *
+ * Used by: v1Routes (GET /orgs/me, POST /orgs, POST /orgs/:orgId/members, PATCH /orgs/:orgId/settings)
+ *
+ * Key validation rules:
+ *   - name: required, 2-120 chars
+ *   - slug: optional, 3-80 chars, lowercase alphanumeric with hyphens, must start/end with alphanumeric
+ *   - Member email: valid email, lowercased, max 200 chars
+ *   - Member role: enum owner | admin | member (default "member")
+ *   - Currency: optional, 3 uppercase letters (ISO 4217)
+ *   - Locale: optional, 2-50 chars
+ *   - Timezone: optional, 1-80 chars (e.g., "America/New_York")
+ *   - All schemas use .strict() to reject unknown fields
+ */
 import { z } from "zod";
 
 const objectIdRegex = /^[a-f\d]{24}$/i;

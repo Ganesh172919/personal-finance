@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Single blog post detail view with markdown rendering.
+ *
+ * Fetches a blog post by slug (from the URL route) and renders it with
+ * full markdown support (remark-gfm), a reading progress bar, like
+ * button with optimistic cache update, share/copy link, and related
+ * posts at the bottom.
+ *
+ * Key data flows:
+ * - getBlogBySlug(slug) loads the post, author info, and metadata.
+ * - toggleBlogLike(slug) increments the like count; the React Query
+ *   cache is updated optimistically via setQueryData.
+ *
+ * Cover images and author avatars are resolved through resolveBlogCoverImage
+ * and resolveAuthorAvatar helpers for CDN-aware URLs.
+ *
+ * Routed at /blogs/:slug; linked from the Blogs listing page.  Shows
+ * a skeleton while loading and an error alert if the post is not found.
+ */
+
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";

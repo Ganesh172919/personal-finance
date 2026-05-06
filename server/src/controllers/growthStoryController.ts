@@ -1,3 +1,26 @@
+/**
+ * @fileoverview Growth Story Controller
+ *
+ * Public-facing growth stories controller. Similar to blogController but
+ * serves user-submitted financial growth journeys with category/difficulty filtering.
+ *
+ * Routes served:
+ *   GET    /api/growth-stories             - getStories (paginated, filterable)
+ *   GET    /api/growth-stories/featured    - getFeaturedStories
+ *   GET    /api/growth-stories/:slug       - getStoryBySlug
+ *   GET    /api/growth-stories/categories  - getCategories
+ *   POST   /api/growth-stories/:id/like    - toggleLike
+ *   POST   /api/growth-stories             - createStory (auth required)
+ *
+ * Key patterns:
+ *   - Class-based controller (singleton instance exported)
+ *   - Public read endpoints; createStory requires authentication
+ *   - readTime auto-calculated from journey text word count
+ *   - Delegates all data access to growthStoryService
+ *
+ * @module controllers/growthStoryController
+ */
+
 import type { Request, Response } from "express";
 import { growthStoryService } from "../services/growthStoryService";
 import { HttpError } from "../middleware/httpError";

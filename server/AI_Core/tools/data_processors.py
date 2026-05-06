@@ -1,3 +1,30 @@
+"""
+tools/data_processors.py - Transaction Data Processing
+=======================================================
+
+Provides ``DataProcessor``, a collection of static methods for
+processing, categorising, and analysing financial transaction data.
+
+Key capabilities
+----------------
+- **Categorisation** -- classifies transactions into income, expenses,
+  investments, and transfers using explicit type fields and keyword
+  matching on descriptions.
+- **Trend analysis** -- computes monthly spending breakdowns by
+  category using pandas groupby operations.
+- **Financial ratios** -- calculates savings rate, debt-to-income,
+  net worth, and emergency fund runway.
+- **Anomaly detection** -- flags transactions with z-scores above a
+  configurable threshold (default 2.0 standard deviations).
+
+Design decisions
+----------------
+- Uses ``pandas`` for efficient aggregation on large transaction sets.
+- All outputs are JSON-safe (str keys, float values, no pandas objects).
+- The ``type`` field on transactions takes precedence over keyword
+  matching when present.
+"""
+
 import logging
 from typing import Any, Dict, List
 
@@ -6,7 +33,10 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 class DataProcessor:
-    """Data processing utilities for financial data"""
+    """Data processing utilities for financial data.
+
+    All methods are static -- no instance state is needed.
+    """
     
     @staticmethod
     def categorize_transactions(transactions: List[Dict]) -> Dict[str, List[Dict]]:

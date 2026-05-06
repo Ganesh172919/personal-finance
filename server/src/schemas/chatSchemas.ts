@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Zod validation schemas for chat session and message endpoints.
+ *
+ * Exported schemas:
+ *   sessionListQuerySchema   - Validates session list query (inherits pagination, strict mode)
+ *   renameSessionBodySchema  - Validates session rename (title: required, 1-200 chars)
+ *   getMessagesQuerySchema   - Validates message list query (inherits pagination, strict mode)
+ *   sendMessageBodySchema    - Validates sending a chat message
+ *
+ * Used by: chatRoutes
+ *
+ * Key validation rules:
+ *   - Message content: required, 1-4000 characters
+ *   - fileIds: optional array of valid 24-char hex ObjectIds, max 10 files per message
+ *   - options.narrative: optional boolean flag for AI response style
+ *   - Session title: required, 1-200 characters
+ *   - All schemas use .strict() to reject unknown fields
+ */
 import { z } from "zod";
 import { paginationQuerySchema } from "./common";
 

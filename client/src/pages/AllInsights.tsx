@@ -1,3 +1,22 @@
+/**
+ * @fileoverview All AI-Generated Insights page.
+ *
+ * Displays every AI-generated insight for the current user in a flat list,
+ * without the truncation applied on the Dashboard. Each insight card shows
+ * an icon mapped to the originating agent type, a priority badge color,
+ * and an optional "Take Action" button that navigates to the relevant page
+ * (e.g. Portfolio, Scenarios, Financial Story).
+ *
+ * Key data flows:
+ * - Fetches all agent outputs via /api/agent-outputs/user using the userId
+ *   from useAuth (or localStorage fallback).
+ * - Maps action types to internal routes for quick navigation.
+ * - Opens an InsightDetailModal when a card is clicked.
+ *
+ * Fits into the app as the "see all" view for AI insights surfaced on the
+ * Dashboard, giving power users a way to browse the full history.
+ */
+
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Star, BarChart3, GraduationCap, TrendingUp, CreditCard, PiggyBank } from "lucide-react";

@@ -1,3 +1,34 @@
+"""
+tools/plan_builder.py - Deterministic Plan Builder
+====================================================
+
+Builds a structured ``Plan`` object from the outputs of the specialist
+agents.  This is the **tool-first** approach: the plan is constructed
+entirely from deterministic arithmetic before any LLM narrative polish
+is applied.
+
+Key functions
+-------------
+- ``build_plan(inputs)`` -- the main entry point.  Takes a ``PlanInputs``
+  dataclass containing the user profile and specialist agent outputs,
+  and returns a ``Plan`` with executive summary, key metrics, action
+  items, assumptions, and data warnings.
+- ``render_plan_markdown(plan)`` -- renders the plan as deterministic
+  markdown suitable for display or LLM polish.
+- ``_build_actions()`` -- generates action items in three urgency
+  buckets (7 days, 30 days, 12 months) based on the user's financial
+  metrics.
+
+Design decisions
+----------------
+- The plan is **always** generated, even when the LLM is unavailable.
+  This guarantees the user always receives actionable guidance.
+- Action items use deterministic IDs (SHA-256 hash of bucket+title)
+  so the same plan always produces the same IDs (idempotent).
+- The ``PlanInputs`` dataclass accepts optional specialist outputs;
+  missing analyses produce generic actions with appropriate warnings.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -8,6 +39,7 @@ from contracts.plan import ActionBuckets, ActionItem, KeyMetrics, Plan
 
 
 def _safe_float(value: Any) -> Optional[float]:
+    """Safely convert a value to float, returning None on failure."""
     try:
         if value is None:
             return None

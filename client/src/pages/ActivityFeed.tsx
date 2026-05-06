@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Organization activity feed page.
+ *
+ * Shows a real-time, filterable timeline of events across the user's
+ * organization -- transactions, budgets, goals, AI actions, workflow runs,
+ * and member changes. Activities are grouped by day and rendered with
+ * icon-coded timeline nodes.
+ *
+ * Key data flows:
+ * - Calls getActivityFeed() from the collaboration API with optional
+ *   event_type filter and cursor-based pagination.
+ * - Auto-refreshes every 30 seconds via React Query refetchInterval.
+ * - Supports manual "Load more" for older entries.
+ *
+ * Serves as the organization-level audit trail, complementing the
+ * per-user Dashboard activity widget.
+ */
+
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";

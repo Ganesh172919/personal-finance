@@ -1,3 +1,26 @@
+/**
+ * @fileoverview Login page with email/password form and Google OAuth.
+ *
+ * Presents a split layout: left side shows feature highlights (multi-agent
+ * guidance, local-first security, team-ready auth), right side contains
+ * the login form with email/password fields and an optional Google
+ * sign-in button (shown only when the provider is enabled).
+ *
+ * Key data flows:
+ * - POST /api/auth/login authenticates with email and password.
+ * - GET /api/auth/providers checks whether Google OAuth is available.
+ * - checkAuthStatus() refreshes the auth context after successful login.
+ * - Post-auth redirect: reads ?next= query param or a stored
+ *   sessionStorage key (finwise.post_auth_redirect) to navigate the
+ *   user to their intended destination, defaulting to /dashboard.
+ *
+ * Form validation uses react-hook-form with zod (email format, non-empty
+ * password).  Already-authenticated users are redirected immediately
+ * via a useEffect guard.
+ *
+ * Routed at /login; linked from NotFound, sidebar, and registration.
+ */
+
 import { motion } from "framer-motion";
 import { Brain, Shield, TrendingUp, Users } from "lucide-react";
 import {

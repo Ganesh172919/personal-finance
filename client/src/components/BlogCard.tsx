@@ -1,3 +1,25 @@
+/**
+ * @fileoverview BlogCard — renders a blog post as either a large featured hero card
+ * or a standard grid card, with cover image, category badge, author avatar, and engagement stats.
+ *
+ * WHAT IT DOES
+ *  - When `featured=true`: renders a full-width hero with gradient overlay, large title,
+ *    excerpt, author info, read time, views, and likes.
+ *  - When `featured=false`: renders a compact card with cover image, category badge,
+ *    title, excerpt, and footer with author + engagement stats.
+ *  - Uses `LazyImage` for performant cover image loading and `formatDistanceToNow` for
+ *    relative publish dates.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `post` (IBlogPost) — the blog post data object.
+ *  - `featured` (boolean) — toggles hero vs. grid layout.
+ *  - `resolveBlogCoverImage` / `resolveAuthorAvatar` — media URL resolution helpers.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used on the /blogs listing page; featured variant appears at the top of the page.
+ *  - Links to `/blogs/:slug` via wouter's `<Link>` for client-side navigation.
+ *  - `CATEGORY_COLORS` maps nine blog categories to theme-aware background/text classes.
+ */
 import { motion } from "framer-motion";
 import { Clock, Eye, Heart, TrendingUp } from "lucide-react";
 import { Link } from "wouter";

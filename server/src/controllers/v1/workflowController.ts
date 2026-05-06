@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Workflow Controller (v1)
+ *
+ * Automation workflows: define triggers and actions that run automatically
+ * or on-demand. Supports listing, creating, and manually running workflows.
+ *
+ * Routes served:
+ *   GET    /api/v1/workflows              - listOrgWorkflows
+ *   GET    /api/v1/workflows/templates    - listOrgWorkflowTemplates
+ *   POST   /api/v1/workflows              - createOrgWorkflow (admin)
+ *   POST   /api/v1/workflows/:id/run      - runOrgWorkflow (admin)
+ *
+ * Key patterns:
+ *   - List and templates readable by any org member; create/run require admin
+ *   - Workflows have a trigger definition and an array of action steps
+ *   - runOrgWorkflow enqueues a workflow run (may execute async)
+ *   - Idempotency key supported on workflow runs to prevent duplicate executions
+ *   - Templates are pre-built workflow definitions available for quick setup
+ *
+ * @module controllers/v1/workflowController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -91,6 +113,7 @@ export const runOrgWorkflow = async (req: Request, res: Response) => {
   const workflowId = new mongoose.Types.ObjectId(workflowIdRaw);
 
   const body = req.body as { idempotency_key?: string };
+  // Idempotency key prevents duplicate workflow runs from retry/network issues
   const idempotencyKey = body?.idempotency_key ? String(body.idempotency_key) : undefined;
 
   const result = await enqueueWorkflowRun({

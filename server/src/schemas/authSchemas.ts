@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Zod validation schemas for authentication request bodies.
+ *
+ * Exported schemas:
+ *   registerBodySchema          - Validates user registration (name, email, password, phone, referral code)
+ *   loginBodySchema             - Validates login credentials (email, password)
+ *   verifyEmailBodySchema       - Validates email verification (email + 6-digit OTP)
+ *   resendVerificationBodySchema - Validates resend verification request (email only)
+ *
+ * Used by: authRoutes
+ *
+ * Key validation rules:
+ *   - Password: 8-128 chars, must include uppercase, lowercase, and digit
+ *   - Email: standard email format validation
+ *   - OTP: exactly 6 digits
+ *   - Referral code: 6-16 alphanumeric characters (uppercased)
+ *   - Phone number: optional, 10-15 digits with optional leading +
+ *   - All schemas use .strict() to reject unknown fields
+ */
 import { z } from "zod";
 
 const phoneRegex = /^[+]?[0-9]{10,15}$/;

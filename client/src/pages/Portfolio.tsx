@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Investment portfolio dashboard with holdings, charts, and AI analysis.
+ *
+ * Displays the user's investment portfolio across three tabs:
+ * - Holdings: table of individual investment transactions with totals.
+ * - Performance: line chart of portfolio value over time and pie chart
+ *   of asset allocation by investment type.
+ * - AI Analysis: markdown-rendered insights from the investment advisor
+ *   agent, fetched from agent outputs.
+ *
+ * Key data flows:
+ * - getTransactions({ type: "investment" }) provides raw holdings data.
+ * - getPortfolioSummary({ months: 12 }) returns aggregated performance
+ *   and allocation breakdowns for the Recharts visualizations.
+ * - Agent outputs are fetched via apiClient for the AI analysis tab.
+ *
+ * An "Add Investment" dialog allows manual entry of new investment
+ * transactions, which invalidate the relevant queries on success.
+ *
+ * Accessible from the sidebar under "Portfolio" for authenticated users.
+ */
+
 import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";

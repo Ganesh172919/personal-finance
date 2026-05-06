@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Zod validation schemas for marketplace plugin management.
+ *
+ * Exported schemas:
+ *   pluginKeyParamSchema              - Validates plugin key route param (:id, lowercase alphanumeric key)
+ *   marketplaceCatalogQuerySchema     - Validates catalog search query (q, status filter)
+ *   installMarketplacePluginBodySchema - Validates installing a plugin (plugin_key, version, permissions)
+ *   updateInstalledPluginBodySchema   - Validates updating an installed plugin's version
+ *
+ * Used by: v1Routes (GET /marketplace/catalog, POST /marketplace/install,
+ *          POST /plugins/:id/update, POST /plugins/:id/uninstall)
+ *
+ * Key validation rules:
+ *   - Plugin key: 3-120 chars, lowercase alphanumeric with . _ - : separators
+ *   - Catalog status filter: active | preview | deprecated
+ *   - Install body: plugin_key required, version optional (1-40 chars),
+ *     permissions array up to 100 items (each 1-120 chars)
+ *   - Update body: version required, 1-40 chars
+ */
 import { z } from "zod";
 
 const pluginKeySchema = z

@@ -1,3 +1,35 @@
+/**
+ * @fileoverview AI and financial profile routes for processing natural-language commands,
+ * what-if scenarios, financial profiles, agent outputs, and AI Core proxy endpoints.
+ *
+ * Endpoints:
+ *   POST   /process-command                        - Process an AI command (natural language)
+ *   POST   /ai/process/stream                      - Stream AI command processing (SSE)
+ *   POST   /scenarios/what-if                      - Run a what-if financial scenario
+ *   GET    /ai-core/status                         - Get AI Core service status
+ *   GET    /ai-core/providers                      - List available AI providers (proxied)
+ *   GET    /ai-core/ai/status                      - Enhanced AI status (proxied)
+ *   GET    /ai-core/ai/sessions                    - List AI sessions (proxied)
+ *   GET    /ai-core/ai/sessions/:sessionId         - Get AI session detail (proxied)
+ *   POST   /ai-core/ai/sessions/:sessionId/resume  - Resume an AI session (proxied)
+ *   GET    /ai-core/ai/models                      - List available AI models (proxied)
+ *   POST   /financial-profiles/investments         - Add an investment to user's profile
+ *   GET    /financial-profiles/me                  - Get current user's financial profile
+ *   PUT    /financial-profiles/me                  - Update current user's financial profile
+ *   GET    /financial-profiles/:userId             - [Deprecated] Get financial profile by user ID
+ *   PUT    /financial-profiles/:userId             - [Deprecated] Update financial profile by user ID
+ *   GET    /agent-outputs/recent                   - List recent agent outputs
+ *   GET    /agent-outputs/:id                      - Get a single agent output by ID
+ *   POST   /agent-outputs/:id/feedback             - Submit feedback (thumbs up/down) on an agent output
+ *   GET    /agent-outputs/user/:userId             - List agent outputs for a specific user
+ *
+ * Middleware:
+ *   - Passport JWT authentication applied to all routes
+ *   - Zod validation (aiSchemas, common) on params, query, and body
+ *
+ * Controllers: aiController, aiStatusController
+ * Note: Several /ai-core/* endpoints proxy requests to an external Python AI Core service.
+ */
 import { Router } from "express";
 import passport from "passport";
 import {

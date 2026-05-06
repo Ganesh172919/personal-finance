@@ -1,3 +1,30 @@
+"""
+vision/preprocess.py - Image Preprocessing for OCR
+====================================================
+
+Provides image decoding and preprocessing functions that prepare
+raw image bytes for OCR.  The preprocessing pipeline improves OCR
+accuracy on real-world photos of receipts and handwritten notes.
+
+Pipeline steps
+--------------
+1. ``decode_image()`` -- decode raw bytes to a BGR numpy array
+   using OpenCV's ``imdecode``.
+2. ``preprocess_for_ocr()`` -- apply light preprocessing:
+   - Convert to grayscale
+   - Denoise (``fastNlMeansDenoising``)
+   - Histogram equalisation (improve contrast)
+   - Otsu binarization (separate text from background)
+   - Convert back to BGR (PaddleOCR expects 3-channel input)
+
+Design decisions
+----------------
+- Otsu binarization works well for both printed receipts and
+  handwritten text -- it automatically finds the optimal threshold.
+- The denoising strength (h=12) is tuned for typical smartphone
+  photos of paper documents.
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -6,6 +33,7 @@ from .errors import VisionDependencyError
 
 
 def decode_image(image_bytes: bytes) -> np.ndarray:
+    """Decode raw image bytes into a BGR numpy array using OpenCV."""
     try:
         import cv2  # type: ignore
     except Exception as exc:  # pragma: no cover

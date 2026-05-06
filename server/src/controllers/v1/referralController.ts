@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Referral Controller (v1)
+ *
+ * Referral program: get your referral code/share URL, and redeem a referral code
+ * to receive rewards (free months, feature units).
+ *
+ * Routes served:
+ *   GET  /api/v1/referrals/my     - getMyReferral
+ *   POST /api/v1/referrals/redeem - redeemReferral
+ *
+ * Key patterns:
+ *   - Referral codes are per-org (generated lazily on first access)
+ *   - Share URL includes the referral code as a query parameter
+ *   - Redemption is idempotent (re-redeeming returns existing result)
+ *   - Rewards defined as constants: REFERRAL_REWARD_MONTHS and REFERRAL_REWARD_UNITS
+ *   - Both referrer and referred org receive rewards on successful redemption
+ *
+ * @module controllers/v1/referralController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Dashboard.test — Vitest test suite providing smoke tests for the Skeleton
+ * UI primitive and a basic Dashboard rendering check with MSW mock server.
+ *
+ * WHAT IT DOES
+ *  - Sets up MSW (Mock Service Worker) via `beforeAll`/`afterEach`/`afterAll` lifecycle hooks
+ *    to intercept API calls during tests.
+ *  - "Skeleton component" suite: verifies default classes (`animate-pulse`, `rounded-md`)
+ *    and custom className passthrough.
+ * *  - "Dashboard smoke test" suite: renders a placeholder inside a `TestWrapper` (QueryClient +
+ *    AuthProvider) and asserts the text appears after loading.
+ *
+ * KEY PATTERNS
+ *  - `TestWrapper` provides `QueryClientProvider` (with retry: false) and `AuthProvider` to
+ *    simulate the real app's context providers.
+ *  - MSW `server.use()` can override handlers per-test for specific API responses.
+ *
+ * ARCHITECTURE NOTES
+ *  - Located alongside components for co-location, though it tests integration behaviour.
+ *  - Uses `@testing-library/react` for DOM queries and `vitest` for assertions.
+ *  - MSW server config lives in `@/test/mocks/server`.
+ */
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

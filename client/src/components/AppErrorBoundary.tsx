@@ -1,3 +1,27 @@
+/**
+ * @fileoverview AppErrorBoundary — React class component that catches unhandled render
+ * errors anywhere in the component tree and displays a user-friendly recovery screen.
+ *
+ * WHAT IT DOES
+ *  - Implements `getDerivedStateFromError` + `componentDidCatch` to capture errors and
+ *    component stack traces.
+ *  - Automatically reports errors via `errorReporting.report()` and `reportError()` API.
+ *  - Renders a dark-themed fallback UI with: error message preview, "Reload App" and
+ *    "Go to Dashboard" recovery buttons, and a collapsible "Technical details" panel
+ *    showing full stack trace + component stack.
+ *  - Provides a copy-to-clipboard button for sharing error details with support.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `children` (ReactNode) — the wrapped component tree; rendered as-is when no error.
+ *  - Internal state tracks: hasError, error, errorInfo, showDetails, copied, reportSent.
+ *
+ * ARCHITECTURE NOTES
+ *  - Wraps the entire app at the top level (typically in App.tsx or main.tsx).
+ *  - Uses a class component because React error boundaries require `componentDidCatch`
+ *    which is not available in function components.
+ *  - The dark gradient background and self-contained styling ensure the error screen
+ *    looks correct even if the theme system has crashed.
+ */
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, Copy, RefreshCw } from "lucide-react";
 

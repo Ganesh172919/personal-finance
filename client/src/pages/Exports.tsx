@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Data exports page for CSV and PDF generation.
+ *
+ * Provides two export forms -- Transactions CSV (with date range, type,
+ * and category filters) and Monthly Summary PDF (by YYYY-MM period key).
+ * A status-filtered table lists recent export jobs with auto-refresh
+ * while jobs are queued or running.
+ *
+ * Key data flows:
+ * - createExport() enqueues a new export job on the server.
+ * - listExports() with optional status filter loads the export history;
+ *   refetchInterval polls every 4 seconds while in-flight jobs exist.
+ * - downloadExportFile() fetches the blob and triggers a browser download
+ *   via triggerBrowserDownload().
+ *
+ * Tenant-scoped: all exports are isolated to the active organization.
+ */
+
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 

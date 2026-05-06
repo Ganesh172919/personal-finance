@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Multi-step onboarding wizard for new users.
+ *
+ * Guides first-time users through six steps: Basics (name, currency),
+ * Income, Goals, Debts, Transactions (CSV import), and Review.  Each
+ * step collects data that populates the user's financial profile.
+ *
+ * Key data flows:
+ * - GET /api/financial-profiles/me loads existing profile data.
+ * - updateFinancialProfile() saves basics and income fields.
+ * - createGoal / createDebt persist individual goal and debt records.
+ * - importTransactions() bulk-creates transactions from parsed CSV.
+ * - Papa.parse (papaparse) handles client-side CSV parsing with
+ *   automatic column mapping via pickFirstMatchingColumn().
+ *
+ * On completion navigates to /chat so the user can immediately start
+ * interacting with the AI agents using their populated profile.
+ *
+ * Rendered at /onboarding; shown once after registration or when the
+ * profile is incomplete.
+ */
+
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";

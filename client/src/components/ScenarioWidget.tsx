@@ -1,3 +1,24 @@
+/**
+ * @fileoverview ScenarioWidget — compact "what-if" expense simulator on the dashboard.
+ *
+ * WHAT IT DOES
+ *  - Accepts a numeric amount input and submits it to `processScenario` (expense type)
+ *    which runs a multi-agent AI analysis.
+ *  - Displays three impact metrics: remaining budget, savings impact, and goal delay
+ *    (in months), plus a list of suggested spending adjustments.
+ *  - Provides a "Full View" link to the dedicated /scenarios page for deeper analysis.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — fully self-contained state (amount input + results).
+ *  - Mutation: `processScenario` → returns `ScenarioResponse` (newBudget, savingsImpact,
+ *    goalDelay, adjustments[]).
+ *  - Uses `useOrgFormatters` for currency display and symbol.
+ *
+ * ARCHITECTURE NOTES
+ *  - Lightweight entry point to the full scenario planning feature.
+ *  - Uses `AnimatePresence` to smoothly reveal results after AI analysis completes.
+ *  - The "AI agents are analyzing..." pulsing text indicates background processing.
+ */
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";

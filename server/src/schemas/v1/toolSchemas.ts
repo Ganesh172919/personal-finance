@@ -1,3 +1,42 @@
+/**
+ * @fileoverview Zod validation schemas for the tool execution system (AI-driven actions).
+ *
+ * Exported schemas:
+ *   toolCallSchema            - Union of all supported tool call types (builtin + plugin)
+ *   toolsSimulateBodySchema   - Validates simulating a tool call (dry-run)
+ *   toolsExecuteBodySchema    - Validates executing a tool call with real effects
+ *   internalToolsBodySchema   - Validates internal tool calls (used by AI Core, includes org_id + user_id)
+ *
+ * Exported types:
+ *   ToolCallInput - Inferred TypeScript type from toolCallSchema
+ *
+ * Built-in tool types (discriminated on "tool" field):
+ *   transactions.create           - Create a transaction
+ *   goals.createOrUpdate          - Create or update a financial goal
+ *   debts.createOrUpdate          - Create or update a debt entry
+ *   workflows.create              - Create a workflow
+ *   workflows.enable/disable      - Toggle workflow enabled state
+ *   workflows.run                 - Trigger a workflow execution
+ *   exports.create                - Create a data export
+ *   notifications.sendEmail       - Send an email notification
+ *   notifications.send            - Send notification via any channel (email, in_app)
+ *   finance.lookupAccount         - Search for an account by name
+ *   finance.lookupMerchant        - Search for a merchant by name
+ *   finance.lookupRecurringRule   - Search for a recurring rule
+ *   finance.detectRecurringCandidates - Detect recurring transaction patterns
+ *   budgets.recommendAllocations  - AI-recommended budget allocations
+ *   closeMonth.run                - Run month-end close process
+ *
+ * Used by: v1Routes (POST /tools/simulate, /tools/execute), internalToolsRoutes (POST /simulate, /execute)
+ *
+ * Key validation rules:
+ *   - Each tool call requires: id (4-128), title (2-160), description (2-2000)
+ *   - requires_confirmation: defaults to true (safety for destructive actions)
+ *   - risk: enum low | medium | high (default low)
+ *   - Plugin tools must have tool name starting with "plugin."
+ *   - notifications.send: cross-field validation prevents "to" when channel=in_app
+ *   - budgets.recommendAllocations: supports category exclusion list and buffer percentage
+ */
 import { z } from "zod";
 
 import { createWorkflowBodySchema } from "./workflowSchemas";

@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Chat routes for managing AI chat sessions and messages.
+ *
+ * Endpoints:
+ *   POST   /sessions                       - Create a new chat session
+ *   GET    /sessions                       - List all chat sessions with pagination
+ *   GET    /sessions/:sessionId            - Get a single session by ID
+ *   DELETE /sessions/:sessionId            - Delete a chat session
+ *   PATCH  /sessions/:sessionId            - Rename a chat session
+ *   GET    /sessions/:sessionId/messages   - Get messages in a session with pagination
+ *   GET    /insights/conversation          - Get AI-generated conversation insights
+ *   POST   /sessions/:sessionId/messages   - Send a message to the AI in a session
+ *
+ * Middleware:
+ *   - Passport JWT authentication applied to all routes
+ *   - Zod validation (common, chatSchemas) on params, query, and body
+ *
+ * Controllers: chatController
+ */
 import { Router } from "express";
 import passport from "passport";
 import {

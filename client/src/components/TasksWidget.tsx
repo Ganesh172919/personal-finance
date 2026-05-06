@@ -1,3 +1,25 @@
+/**
+ * @fileoverview TasksWidget — dashboard card listing open tasks bucketed into "Next 7 days"
+ * and "Next 30 days" with quick-action buttons for completing, applying, or dismissing each task.
+ *
+ * WHAT IT DOES
+ *  - Fetches open tasks from `/api/tasks?status=open&limit=50` (feature-gated on `tasks_enabled`).
+ *  - Splits tasks into two time buckets and renders up to 5 per bucket.
+ *  - Three actions per task: checkmark (mark completed), rocket (open TaskApplyDialog to
+ *    convert into financial actions), X (dismiss with "dismissed" status).
+ *  - Uses optimistic updates: on mutate, the task is immediately removed from the list;
+ *    on error, the previous list is restored.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — data is fully server-fetched and feature-gated.
+ *  - Embeds `TaskApplyDialog` for the "apply" flow; `applyTask` state controls its visibility.
+ *  - Mutation: `updateTaskStatus` with onMutate/onError rollback.
+ *
+ * ARCHITECTURE NOTES
+ *  - Feature-gated: shows "Tasks are disabled" when `tasks_enabled` is false in app config.
+ *  - Optimistic UI pattern with `cancelQueries` + `setQueryData` for snappy interactions.
+ *  - Invalidates all `/api/tasks` queries on success to keep other views in sync.
+ */
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Rocket, XCircle } from "lucide-react";

@@ -1,3 +1,18 @@
+/**
+ * @fileoverview 404 page for unmatched routes.
+ *
+ * Renders a centered EmptyState with a compass icon explaining the
+ * route is unavailable.  Authenticated users see a "Go to dashboard"
+ * button plus a link to the in-app documentation; unauthenticated
+ * users see only a "Go to login" button.
+ *
+ * No API calls; purely presentational.  The useAuth hook determines
+ * which navigation targets to show.
+ *
+ * Mounted as the catch-all route ("*") in the app router so any
+ * undefined path lands here gracefully.
+ */
+
 import { Compass, Home, LifeBuoy } from "lucide-react";
 import { Link } from "wouter";
 

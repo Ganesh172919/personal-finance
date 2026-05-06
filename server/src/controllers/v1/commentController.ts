@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Comment Controller (v1)
+ *
+ * Threaded commenting system for financial resources (transactions, budgets,
+ * goals, workflows, insights). Supports mentions, replies, and soft-delete.
+ *
+ * Routes served:
+ *   GET    /api/v1/comments           - listComments (by resource_type + resource_id)
+ *   POST   /api/v1/comments           - createComment
+ *   PUT    /api/v1/comments/:id       - updateComment (author only)
+ *   DELETE /api/v1/comments/:id       - deleteComment (soft; author or admin)
+ *
+ * Key patterns:
+ *   - Comments are polymorphic: resource_type + resource_id identify the parent
+ *   - Soft-delete via deletedAt timestamp (not hard delete)
+ *   - Only the author can edit; author or admin can soft-delete
+ *   - Mentions capped at 20 per comment
+ *   - Valid resource types: transaction, budget, goal, workflow, insight
+ *
+ * @module controllers/v1/commentController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 

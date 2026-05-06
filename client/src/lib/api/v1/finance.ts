@@ -1,8 +1,36 @@
+/**
+ * @fileoverview V1 Finance Accounts API
+ *
+ * The largest API module -- manages the core financial domain entities:
+ * accounts, merchants, budget allocations, recurring rules, and forecasts.
+ * All endpoints are scoped to the active organisation via the `apiClient`.
+ *
+ * Sections:
+ * 1. **Accounts** -- Bank/financial accounts (checking, savings, credit,
+ *    brokerage, cash) with full CRUD and balance tracking.
+ * 2. **Merchants** -- Normalised merchant records with aliases and default
+ *    categories, used for transaction classification.
+ * 3. **Budget Allocations** -- Per-period, per-category spending limits
+ *    (e.g., "Groceries: $500 for 2026-05"). Uses PUT for upsert semantics.
+ * 4. **Recurring Rules** -- Cron-based rules that model expected recurring
+ *    transactions (rent, subscriptions, etc.) for forecasting.
+ * 5. **Budget Envelopes** -- A read-only view that compares planned vs.
+ *    actual spending per category for a given period.
+ * 6. **Recurring Candidates** -- Server-side analysis that detects patterns
+ *    in transaction history and suggests new recurring rules.
+ * 7. **Forecast** -- Projected income/expense/net for upcoming months,
+ *    incorporating recurring rules and historical averages.
+ */
+
 import { apiClient } from "../core";
 
+/** Supported financial account types. */
 export type AccountType = "checking" | "savings" | "credit" | "brokerage" | "cash";
 export type AccountStatus = "active" | "closed";
 
+/** ─── Accounts ─────────────────────────────────────────────────── */
+
+/** Full representation of a financial account. */
 export type Account = {
   id: string;
   name: string;
@@ -10,6 +38,12 @@ export type Account = {
   type: AccountType;
   currency: string;
   mask: string | null;
+  opening_balance: number;
+  current_balance: number;
+  transaction_count: number;
+  last_statement_balance: number | null;
+  last_statement_date: string | null;
+  last_reconciled_at: string | null;
   status: AccountStatus;
   metadata: Record<string, unknown>;
   created_at: string | null;
@@ -45,10 +79,12 @@ export type UpdateAccountResponse = {
   request_id: string;
 };
 
+/** Fetch all accounts for the active organisation. */
 export async function listAccounts(): Promise<ListAccountsResponse> {
   return apiClient("/v1/finance/accounts");
 }
 
+/** Create a new financial account. */
 export async function createAccount(body: CreateAccountRequest): Promise<CreateAccountResponse> {
   return apiClient("/v1/finance/accounts", {
     method: "POST",
@@ -56,6 +92,7 @@ export async function createAccount(body: CreateAccountRequest): Promise<CreateA
   });
 }
 
+/** Partially update an existing account. */
 export async function updateAccount(accountId: string, body: UpdateAccountRequest): Promise<UpdateAccountResponse> {
   return apiClient(`/v1/finance/accounts/${encodeURIComponent(accountId)}`, {
     method: "PATCH",
@@ -63,6 +100,9 @@ export async function updateAccount(accountId: string, body: UpdateAccountReques
   });
 }
 
+/** ─── Merchants ────────────────────────────────────────────────── */
+
+/** Normalised merchant record with aliases for fuzzy matching. */
 export type Merchant = {
   id: string;
   name: string;
@@ -93,6 +133,7 @@ export type UpsertMerchantResponse = {
   request_id: string;
 };
 
+/** List merchants with optional text search and limit. */
 export async function listMerchants(params?: { q?: string; limit?: number }): Promise<ListMerchantsResponse> {
   const search = new URLSearchParams();
   if (params?.q) search.set("q", params.q);
@@ -101,6 +142,7 @@ export async function listMerchants(params?: { q?: string; limit?: number }): Pr
   return apiClient(`/v1/finance/merchants${suffix}`);
 }
 
+/** Create or update a merchant (upsert by name). */
 export async function upsertMerchant(body: UpsertMerchantRequest): Promise<UpsertMerchantResponse> {
   return apiClient("/v1/finance/merchants", {
     method: "POST",
@@ -108,6 +150,9 @@ export async function upsertMerchant(body: UpsertMerchantRequest): Promise<Upser
   });
 }
 
+/** ─── Budget Allocations ───────────────────────────────────────── */
+
+/** A single budget allocation: a spending limit for one category in one period. */
 export type BudgetAllocation = {
   id: string;
   period_key: string;
@@ -140,6 +185,7 @@ export type UpsertBudgetAllocationResponse = {
   request_id: string;
 };
 
+/** List budget allocations for a given period (e.g., "2026-05"). */
 export async function listBudgetAllocations(
   periodKey: string,
   params?: { limit?: number }
@@ -150,6 +196,7 @@ export async function listBudgetAllocations(
   return apiClient(`/v1/finance/budgets/${encodeURIComponent(periodKey)}/allocations${suffix}`);
 }
 
+/** Create or update a budget allocation for a category in a period (PUT = upsert). */
 export async function upsertBudgetAllocation(
   periodKey: string,
   body: UpsertBudgetAllocationRequest
@@ -159,6 +206,8 @@ export async function upsertBudgetAllocation(
     body: JSON.stringify(body),
   });
 }
+
+/** ─── Recurring Rules ──────────────────────────────────────────── */
 
 export type RecurringRuleStatus = "active" | "disabled";
 
@@ -211,6 +260,7 @@ export type UpdateRecurringRuleResponse = {
   request_id: string;
 };
 
+/** List all recurring transaction rules. */
 export async function listRecurringRules(params?: { limit?: number }): Promise<ListRecurringRulesResponse> {
   const search = new URLSearchParams();
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
@@ -218,6 +268,7 @@ export async function listRecurringRules(params?: { limit?: number }): Promise<L
   return apiClient(`/v1/finance/recurring${suffix}`);
 }
 
+/** Create a new recurring transaction rule with a cron schedule. */
 export async function createRecurringRule(body: CreateRecurringRuleRequest): Promise<CreateRecurringRuleResponse> {
   return apiClient("/v1/finance/recurring", {
     method: "POST",
@@ -225,6 +276,7 @@ export async function createRecurringRule(body: CreateRecurringRuleRequest): Pro
   });
 }
 
+/** Partially update an existing recurring rule. */
 export async function updateRecurringRule(ruleId: string, body: UpdateRecurringRuleRequest): Promise<UpdateRecurringRuleResponse> {
   return apiClient(`/v1/finance/recurring/${encodeURIComponent(ruleId)}`, {
     method: "PATCH",
@@ -232,6 +284,9 @@ export async function updateRecurringRule(ruleId: string, body: UpdateRecurringR
   });
 }
 
+/** ─── Budget Envelopes (read-only view) ────────────────────────── */
+
+/** One row in the budget envelope view: planned vs. actual per category. */
 export type BudgetEnvelopeRow = {
   category: string;
   planned: number;
@@ -258,10 +313,14 @@ export type BudgetEnvelopesResponse = {
   request_id: string;
 };
 
+/** Fetch the budget envelope view: planned vs. actual spending per category for a period. */
 export async function getBudgetEnvelopes(periodKey: string): Promise<BudgetEnvelopesResponse> {
   return apiClient(`/v1/finance/budgets/${encodeURIComponent(periodKey)}/envelopes`);
 }
 
+/** ─── Recurring Candidates (server-side pattern detection) ──────── */
+
+/** A suggested recurring rule derived from detected transaction patterns. */
 export type RecurringRuleSuggestion = {
   name: string;
   cron: string;
@@ -301,6 +360,7 @@ export type RecurringCandidatesResponse = {
   request_id: string;
 };
 
+/** Detect recurring transaction patterns and suggest new recurring rules. */
 export async function listRecurringCandidates(params?: {
   days_back?: number;
   limit?: number;
@@ -314,6 +374,9 @@ export async function listRecurringCandidates(params?: {
   return apiClient(`/v1/finance/recurring/candidates${suffix}`);
 }
 
+/** ─── Forecast ─────────────────────────────────────────────────── */
+
+/** One category's average monthly expense in the forecast. */
 export type ForecastCategoryRow = {
   category: string;
   expense_monthly_avg: number;
@@ -345,6 +408,7 @@ export type ForecastResponse = {
   request_id: string;
 };
 
+/** Fetch a financial forecast: projected income/expense/net for upcoming months. */
 export async function getForecast(params?: {
   period_key?: string;
   months?: number;

@@ -1,3 +1,65 @@
+"""
+api_service.py - FinWise AI Core HTTP Service Entry Point
+=========================================================
+
+This module is the FastAPI-based HTTP gateway for the FinWise AI Core.  It is
+the single process that external callers (the Node/Express backend or a
+browser via the backend proxy) talk to.  Every AI-powered feature -- financial
+analysis, what-if scenarios, vision/OCR, session management, streaming
+responses -- is exposed through the REST endpoints defined here.
+
+Architecture overview
+---------------------
+1. **Lifespan** -- On startup the ``lifespan`` async context-manager creates a
+   singleton ``FinancialWorkflow`` (the LangGraph multi-agent graph).  On
+   shutdown it logs a goodbye message.
+
+2. **Middleware** -- Two middleware layers are registered:
+   - ``CORSMiddleware`` for cross-origin requests from the frontend.
+   - A custom ``attach_request_id`` middleware that (a) assigns a UUID-based
+     request-id to every request, (b) records Prometheus metrics for duration
+     and LLM call counts, and (c) attaches structured log events.
+
+3. **Endpoints** -- Grouped by concern:
+   - ``/health``                      -- liveness probe
+   - ``/metrics``                     -- Prometheus scrape endpoint (token-gated)
+   - ``/api/providers``               -- list LLM providers
+   - ``/api/ai/status``               -- comprehensive AI system diagnostics
+   - ``/api/ai/sessions*``            -- session CRUD and resumption
+   - ``/api/ai/models``               -- model catalog browsing
+   - ``/api/vision/*``                -- receipt OCR, handwriting, generic OCR
+   - ``/api/rate-limit/*``            -- rate-limiter introspection and reset
+   - ``/api/agents/process``          -- main financial analysis pipeline
+   - ``/api/agents/process/stream``   -- SSE streaming variant of the above
+   - ``/api/agents/what-if-scenario`` -- deterministic scenario modelling
+   - ``/api/agents/budget``           -- standalone budget agent
+   - ``/api/agents/investment``       -- standalone investment agent
+   - ``/api/agents/debt``             -- standalone debt agent
+
+4. **Memory** -- An optional ``MemoryStore`` (SQLite-backed) enriches each
+   request with user-specific memories (preferences, facts) and persists newly
+   extracted memories after the workflow completes.
+
+Key design decisions
+--------------------
+- The service degrades gracefully: if no LLM API key is configured, endpoints
+  still respond using deterministic fallback logic.
+- ``_simplify_for_json`` recursively converts pandas objects, Pydantic models,
+  and arbitrary nested structures into plain JSON-safe dicts/lists/scalars.
+- Tool-call validation against the FinWise server is optional and
+  best-effort; connectivity failures silently disable validation rather than
+  blocking the response.
+
+File structure
+--------------
+- Windows UTF-8 workaround
+- Memory store bootstrap
+- Helper utilities (_tool_id, _simplify_for_json, etc.)
+- Pydantic request/response models
+- Endpoint definitions (grouped above)
+- ``if __name__ == "__main__"`` runner
+"""
+
 import hashlib
 import os
 import sys
@@ -6,7 +68,7 @@ from time import perf_counter
 from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
-import pandas as pd  # For serializer
+import pandas as pd  # Used by _simplify_for_json to handle Series/DataFrame objects
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,7 +97,10 @@ from vision.errors import VisionDependencyError
 from vision.handwriting_parser import extract_handwriting
 from vision.receipt_parser import extract_receipt
 
-# Ensure UTF-8 output on Windows without breaking pytest capture.
+# --- Windows UTF-8 workaround ---
+# On Windows the default console encoding is often cp1252, which cannot
+# represent many Unicode characters the LLM may produce (e.g. currency
+# symbols).  Reconfigure stdout/stderr to UTF-8 at import time.
 if sys.platform == "win32":
     try:
         if hasattr(sys.stdout, "reconfigure"):
@@ -45,9 +110,15 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# Setup logging
+# --- Logging ---
 logger = setup_logging()
 
+# --- Memory store (optional) ---
+# The memory store is a lightweight SQLite database that persists user-level
+# facts and preferences extracted from past conversations.  It is enriched
+# into the ``session_summary`` field so that downstream agents can personalise
+# their responses.  If the dependency is missing or the DB cannot be opened,
+# the entire memory subsystem is silently disabled.
 _memory_store = None
 _extract_memories = None
 try:
@@ -65,6 +136,12 @@ except Exception as _mem_exc:
 
 
 def _tool_id(seed: str) -> str:
+    """Generate a deterministic, short tool-call identifier from a human-readable seed.
+
+    The SHA-256 digest is truncated to 12 hex characters so that every call
+    with the same seed produces the same id, enabling idempotent tool
+    execution on the client side.
+    """
     digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
     return digest[:12]
 
@@ -73,16 +150,31 @@ def _build_default_tool_calls(plan: Plan, user_profile: Dict[str, Any]) -> List[
     """
     Build deterministic, low-risk tool calls to improve retention and execution.
 
-    This is used as a fallback when the routed agent does not emit tool calls.
-    All returned calls must be safe-by-default and require explicit user confirmation.
+    This is used as a fallback when the routed agent does not emit tool calls
+    (e.g. when the LLM is unavailable and a deterministic plan is generated).
+
+    Each tool call is a **suggestion** that the client may present to the user.
+    They all set ``requires_confirmation=True`` and ``risk="low"`` to ensure
+    that no money-moving or destructive action happens without explicit consent.
+
+    The calls are conditionally added based on the user's financial metrics:
+    - Weekly money check-in       -- always added (consistency habit)
+    - Emergency fund top-up       -- only when runway < 3 months
+    - Debt payoff check-in        -- only when total debt > 0
+    - Transaction review trigger  -- only when monthly cash flow is negative
+
+    Returns at most 5 tool calls to avoid overwhelming the user.
     """
 
+    # Guard: no profile means no personalised suggestions are possible.
     if not user_profile or not isinstance(user_profile, dict):
         return []
 
+    # Extract key metrics from the structured Plan object.
     plan_dict = plan.model_dump() if hasattr(plan, "model_dump") else {}
     key_metrics = plan_dict.get("key_metrics") if isinstance(plan_dict, dict) else {}
 
+    # Pull the three metrics that drive conditional tool-call generation.
     monthly_net_cash_flow = None
     emergency_fund_months = None
     total_debt = None
@@ -94,6 +186,10 @@ def _build_default_tool_calls(plan: Plan, user_profile: Dict[str, Any]) -> List[
 
     tool_calls: List[ToolCall] = []
 
+    # --- Tool call 1: Weekly money check-in (always included) ---
+    # Rationale: a short weekly review habit is universally beneficial and has
+    # no negative financial side-effects.  The cron trigger fires every Monday
+    # at 09:00 UTC.
     tool_calls.append(
         ToolCall(
             id=_tool_id("workflow:weekly-review:v1"),
@@ -127,6 +223,10 @@ def _build_default_tool_calls(plan: Plan, user_profile: Dict[str, Any]) -> List[
         )
     )
 
+    # --- Tool call 2: Emergency fund top-up (conditional) ---
+    # Only triggered when the user's emergency fund covers fewer than 3 months
+    # of expenses -- a widely accepted minimum threshold for financial
+    # resilience.
     try:
         fund_months = float(emergency_fund_months) if emergency_fund_months is not None else None
     except Exception:
@@ -166,6 +266,10 @@ def _build_default_tool_calls(plan: Plan, user_profile: Dict[str, Any]) -> List[
             )
         )
 
+    # --- Tool call 3: Debt payoff check-in (conditional) ---
+    # Only included when the user carries any outstanding debt.  A monthly
+    # reminder to confirm minimums and direct surplus toward the highest-rate
+    # debt accelerates payoff.
     try:
         debt_total = float(total_debt) if total_debt is not None else None
     except Exception:
@@ -205,6 +309,10 @@ def _build_default_tool_calls(plan: Plan, user_profile: Dict[str, Any]) -> List[
             )
         )
 
+    # --- Tool call 4: Transaction review trigger (conditional) ---
+    # When the user's monthly cash flow is negative (expenses > income),
+    # an event-based automation reviews each new transaction to help
+    # establish a rapid feedback loop and reduce impulse spending.
     try:
         net_flow = float(monthly_net_cash_flow) if monthly_net_cash_flow is not None else None
     except Exception:
@@ -243,10 +351,14 @@ def _build_default_tool_calls(plan: Plan, user_profile: Dict[str, Any]) -> List[
             )
         )
 
+    # Cap at 5 to avoid overwhelming the client with too many suggestions.
     return tool_calls[:5]
 
 
-# Validate API key
+# --- API key validation (non-fatal) ---
+# At least one LLM provider key must be configured for AI features to work.
+# If none is present we log a warning and continue in fallback-capable mode
+# where all endpoints still respond using deterministic heuristics.
 try:
     settings.validate_api_key()
 except ValueError as e:
@@ -254,20 +366,28 @@ except ValueError as e:
     logger.warning("Continuing in fallback-capable mode (deterministic outputs + no LLM narrative).")
 
 
-# Lifespan for startup (fixes deprecation)
+# --- Application lifespan ---
+# FastAPI's ``lifespan`` context-manager replaces the deprecated
+# ``@app.on_event("startup")`` pattern.  The code before ``yield`` runs once
+# at startup; the code after ``yield`` runs once at shutdown.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global workflow
     logger.info("Initializing FinWise AI Core...")
+    # Create the LangGraph multi-agent workflow (expensive: instantiates all
+    # specialist agents and compiles the state graph).
     workflow = create_financial_workflow()
     logger.info("AI Core ready!")
     yield
     logger.info("Shutting down FinWise AI Core...")
 
 
+# --- FastAPI application ---
 app = FastAPI(title="FinWise AI Core", version="1.0.0", lifespan=lifespan)
 
-# Add CORS middleware
+# --- CORS middleware ---
+# Origins are configurable via the ``AI_CORE_ALLOWED_ORIGINS`` env var
+# (comma-separated).  Defaults to the local Next.js dev server.
 allowed_origins = [
     origin.strip()
     for origin in os.getenv("AI_CORE_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
@@ -285,6 +405,12 @@ app.add_middleware(
 
 @app.get("/metrics")
 async def metrics(authorization: Optional[str] = Header(default=None)):
+    """Prometheus scrape endpoint.
+
+    Protected by a simple Bearer token (``AI_CORE_METRICS_TOKEN``).  If the
+    token is not configured, the endpoint returns 404 so that unauthenticated
+    scanners cannot even confirm its existence.
+    """
     token = (os.getenv("AI_CORE_METRICS_TOKEN") or "").strip()
     if not token:
         raise HTTPException(status_code=404, detail="Metrics disabled")
@@ -298,6 +424,18 @@ async def metrics(authorization: Optional[str] = Header(default=None)):
 
 @app.middleware("http")
 async def attach_request_id(request: Request, call_next):
+    """Request-id middleware with Prometheus metric recording.
+
+    For every HTTP request this middleware:
+    1. Reads or generates a ``x-request-id`` header and stores it on
+       ``request.state`` so downstream code can reference it.
+    2. Calls ``begin_request_metrics`` to initialise per-request LLM usage
+       counters.
+    3. Times the request and records duration into a Prometheus histogram.
+    4. Increments the LLM calls counter (aggregated across the request).
+    5. Emits structured ``request_started`` / ``request_completed`` log
+       events for observability.
+    """
     request_id = request.headers.get("x-request-id") or str(uuid4())
     request.state.request_id = request_id
     begin_request_metrics(request_id)
@@ -346,7 +484,21 @@ async def attach_request_id(request: Request, call_next):
 
 
 def _simplify_for_json(obj: Any) -> Any:
-    """Recursively simplify objects for JSON serialization (pandas-safe)"""
+    """Recursively convert an arbitrary object tree into JSON-safe primitives.
+
+    The multi-agent workflow can produce a mix of Pydantic models, pandas
+    Series/DataFrames, and plain dicts.  FastAPI's JSON encoder does not
+    know how to serialise pandas objects, so this helper walks the tree and
+    converts:
+    - ``pd.Series``  -> dict
+    - ``pd.DataFrame`` -> list of dicts (one per row)
+    - Pydantic ``BaseModel`` -> dict via ``model_dump()``
+    - objects with ``__dict__`` -> their attribute dict
+    - everything else -> ``str(obj)``
+
+    All dict keys are cast to ``str`` to avoid unhashable-key errors during
+    serialisation.
+    """
     if obj is None:
         return None
     elif isinstance(obj, (str, int, float, bool)):
@@ -356,7 +508,7 @@ def _simplify_for_json(obj: Any) -> Any:
     elif isinstance(obj, pd.DataFrame):
         return [_simplify_for_json(row.to_dict()) for _, row in obj.iterrows()]
     elif isinstance(obj, dict):
-        # === ENHANCED: Str keys to avoid unhashable ===
+        # Cast keys to str to avoid unhashable-key serialisation errors.
         cleaned = {}
         for k, v in obj.items():
             str_k = str(k)
@@ -365,15 +517,27 @@ def _simplify_for_json(obj: Any) -> Any:
     elif isinstance(obj, (list, tuple)):
         return [_simplify_for_json(item) for item in obj]
     elif hasattr(obj, "model_dump"):
+        # Pydantic v2 models
         return _simplify_for_json(obj.model_dump())
     elif hasattr(obj, "__dict__"):
+        # Arbitrary Python objects -- fall back to attribute dict
         return _simplify_for_json(obj.__dict__)
     else:
         return str(obj)
 
 
-# Request/Response Models (unchanged)
+# ---------------------------------------------------------------------------
+# Pydantic Request / Response Models
+# ---------------------------------------------------------------------------
+# These models define the contract between the Node/Express backend (or any
+# HTTP caller) and the AI Core service.  FastAPI uses them for automatic
+# request body validation, OpenAPI schema generation, and response encoding.
+# ---------------------------------------------------------------------------
+
+
 class FinancialGoalRequest(BaseModel):
+    """A single financial goal submitted by the caller (e.g. "emergency fund")."""
+
     name: str
     target: float
     timeline_months: int
@@ -381,6 +545,8 @@ class FinancialGoalRequest(BaseModel):
 
 
 class DebtRequest(BaseModel):
+    """A single debt entry (credit card, loan, etc.)."""
+
     name: str
     balance: float
     interest_rate: float
@@ -388,6 +554,8 @@ class DebtRequest(BaseModel):
 
 
 class TransactionRequest(BaseModel):
+    """A single financial transaction."""
+
     amount: float
     category: str
     description: str
@@ -396,6 +564,12 @@ class TransactionRequest(BaseModel):
 
 
 class UserProfileRequest(BaseModel):
+    """Complete financial profile of the requesting user.
+
+    Passed to every agent so they can tailor recommendations.  All fields
+    have sensible defaults so callers can send partial profiles.
+    """
+
     age: int
     annual_income: float
     monthly_expenses: float
@@ -412,15 +586,31 @@ class UserProfileRequest(BaseModel):
 
 
 class ConversationMessage(BaseModel):
+    """A single message in a multi-turn conversation."""
+
     role: str
     content: str
 
 
 class ProcessOptions(BaseModel):
+    """Options that tweak workflow behaviour.
+
+    ``narrative`` -- When True, the master agent asks the LLM to rewrite the
+    deterministic plan into friendlier prose.  When False, the raw markdown
+    plan is returned (cheaper and deterministic).
+    """
+
     narrative: bool = False
 
 
 class ProcessRequest(BaseModel):
+    """Payload for the main ``/api/agents/process`` endpoint.
+
+    At minimum ``user_input`` is required.  All other fields are optional and
+    enable richer analysis (profile), multi-turn context (history), and
+    session resumption (session_id + resume_from_checkpoint).
+    """
+
     user_input: str
     user_profile: Optional[UserProfileRequest] = None
     org_id: Optional[str] = None
@@ -433,12 +623,27 @@ class ProcessRequest(BaseModel):
 
 
 class ScenarioAssumptions(BaseModel):
+    """Macro assumptions for what-if scenario modelling.
+
+    ``months``              -- projection horizon (1-120 months)
+    ``expected_return_pct`` -- annualised return assumption for investment scenarios
+    ``inflation_pct``       -- annualised inflation assumption
+    """
+
     months: int = Field(default=12, ge=1, le=120)
     expected_return_pct: Optional[float] = Field(default=None, ge=-100, le=100)
     inflation_pct: Optional[float] = Field(default=None, ge=-50, le=100)
 
 
 class WhatIfScenarioRequest(BaseModel):
+    """Request body for ``/api/agents/what-if-scenario``.
+
+    Three scenario types are supported:
+    - ``expense``    -- "What if I spent an extra X per month?"
+    - ``income``     -- "What if I earned an extra X per month?"
+    - ``investment`` -- "What if I invested X per month at Y% return?"
+    """
+
     user_profile: UserProfileRequest
     scenario_type: Literal["expense", "income", "investment"]
     amount: float = Field(gt=0)
@@ -448,7 +653,13 @@ class WhatIfScenarioRequest(BaseModel):
 
 @app.get("/health")
 async def health_check(request: Request):
-    """Health check endpoint"""
+    """Liveness probe endpoint.
+
+    Returns basic service identity plus the active LLM provider/model and
+    vision dependency status.  Used by container orchestrators (Docker,
+    Kubernetes) and load balancers to decide whether this instance is ready
+    to receive traffic.
+    """
     vision_status = get_vision_dependency_status()
     from utils.provider_registry import _resolve_provider_name, get_provider_config, resolve_provider_chain
 
@@ -479,13 +690,19 @@ async def list_llm_providers(request: Request):
 
 @app.get("/api/ai/status")
 async def get_ai_status(request: Request):
-    """
-    Get comprehensive AI system status including:
-    - Provider/model information
-    - Key pool health and rotation stats per provider
-    - Session manager stats
-    - Model catalog summary
-    - Rate limiter status
+    """Comprehensive AI system diagnostics endpoint.
+
+    Aggregates information from every subsystem and returns it in a single
+    JSON payload.  Useful for debugging production issues:
+    - **Provider** -- which LLM provider/model is active and its fallback chain
+    - **Key pools** -- per-provider API key health, rotation stats, circuit breaker state
+    - **Model catalog** -- how many models are known, enabled, etc.
+    - **Model health** -- success rates and latency per model
+    - **Sessions** -- active session count, checkpoint stats
+    - **Rate limiter** -- current token-bucket fill levels
+    - **LLM usage** -- token counts and estimated cost for the current request
+    - **Vision** -- whether OCR dependencies are installed
+    - **Memory** -- whether the SQLite memory store is available
     """
     from utils.provider_registry import (
         _resolve_provider_name,
@@ -937,7 +1154,26 @@ async def rate_limit_reset(request: Request):
 
 @app.post("/api/agents/process", response_model=ProcessResponse)
 async def process_financial_request(request: ProcessRequest, http_request: Request):
-    """Main endpoint to process financial requests through multi-agent system"""
+    """Main endpoint to process financial requests through the multi-agent system.
+
+    High-level flow:
+    1. Parse and validate the request body (Pydantic).
+    2. Build a ``UserProfile`` domain object from the request.
+    3. Enrich ``session_summary`` with persisted memories (if memory store is
+       available).
+    4. Invoke ``workflow.process_request(...)`` -- this runs the LangGraph
+       state graph through routing -> specialist analysis -> verification ->
+       synthesis.
+    5. Extract memories from the user input and persist them for future calls.
+    6. Build a structured ``Plan`` (always present) and optional tool calls.
+    7. Optionally validate tool calls against the FinWise server (RBAC +
+       eligibility checks).
+    8. Return a ``ProcessResponse`` with the plan, narrative, trace, and
+       metadata.
+
+    If anything throws, a safe fallback response is returned (never a 500
+    for the caller to handle -- the error is logged server-side).
+    """
     request_id = getattr(http_request.state, "request_id", str(uuid4()))
 
     try:
@@ -1325,7 +1561,20 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
 
 @app.post("/api/agents/what-if-scenario")
 async def process_what_if_scenario(request: WhatIfScenarioRequest, http_request: Request):
-    """Process what-if financial scenarios"""
+    """Process what-if financial scenarios (deterministic, no LLM call).
+
+    This endpoint is fully deterministic -- it performs arithmetic projection
+    based on the user's current financial snapshot and the requested scenario.
+    Three scenario types are supported:
+
+    - **expense**    -- models the impact of a new recurring monthly expense
+    - **income**     -- models the impact of a new recurring monthly income
+    - **investment** -- models the projected value of recurring monthly
+      investments at a given expected return rate
+
+    The response includes baseline vs. delta metrics (surplus change, emergency
+    fund runway change, goal timeline impact) and actionable recommendations.
+    """
     try:
         request_id = http_request.state.request_id
         user_profile_dict = request.user_profile.model_dump()
@@ -1448,7 +1697,11 @@ async def process_what_if_scenario(request: WhatIfScenarioRequest, http_request:
 
 @app.post("/api/agents/budget")
 async def get_budget_recommendations(request: UserProfileRequest):
-    """Get budget recommendations"""
+    """Standalone budget recommendation endpoint.
+
+    Runs only the ``BudgetPlannerAgent`` without the full workflow graph.
+    Useful for lightweight calls where only a budget plan is needed.
+    """
     try:
         from agents.budget_planner import BudgetPlannerAgent
 
@@ -1463,7 +1716,10 @@ async def get_budget_recommendations(request: UserProfileRequest):
 
 @app.post("/api/agents/investment")
 async def get_investment_advice(request: UserProfileRequest):
-    """Get investment recommendations"""
+    """Standalone investment advice endpoint.
+
+    Runs only the ``InvestmentAdvisorAgent`` without the full workflow graph.
+    """
     try:
         from agents.investment_advisor import InvestmentAdvisorAgent
 
@@ -1478,7 +1734,10 @@ async def get_investment_advice(request: UserProfileRequest):
 
 @app.post("/api/agents/debt")
 async def optimize_debt(request: UserProfileRequest):
-    """Get debt optimization strategy"""
+    """Standalone debt optimization endpoint.
+
+    Runs only the ``DebtOptimizerAgent`` without the full workflow graph.
+    """
     try:
         from agents.debt_optimizer import DebtOptimizerAgent
 
@@ -1494,15 +1753,23 @@ async def optimize_debt(request: UserProfileRequest):
 
 @app.post("/api/agents/process/stream")
 async def process_financial_request_stream(request: ProcessRequest, http_request: Request):
-    """SSE streaming variant of /api/agents/process.
+    """SSE streaming variant of ``/api/agents/process``.
 
-    Emits Server-Sent Events so the client can show live progress:
-      - phase:routing  — request accepted, routing to agents
-      - phase:trace    — each agent start/finish as it happens
-      - phase:complete — full result payload (same shape as ProcessResponse)
-      - phase:error    — if something went wrong
+    Instead of waiting for the entire workflow to finish, this endpoint emits
+    Server-Sent Events (SSE) so the frontend can show a live progress
+    indicator.  The event lifecycle is::
 
-    Falls back to a single error event if the workflow fails entirely.
+        1. ``phase:routing``  -- request accepted, routing to agents
+        2. ``phase:trace``    -- one event per agent start/finish
+        3. ``phase:complete`` -- full result payload (same shape as ProcessResponse)
+        4. ``[DONE]``         -- sentinel that closes the stream
+
+    If something goes wrong a ``phase:error`` event is emitted followed by
+    ``[DONE]``.
+
+    The response uses ``StreamingResponse`` with ``text/event-stream`` media
+    type and ``Cache-Control: no-cache`` to ensure proxies do not buffer
+    events.
     """
     import json as _json
     from starlette.responses import StreamingResponse
@@ -1739,11 +2006,44 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
 
 
 def nowIso() -> str:
-    """Return current UTC time as ISO string."""
+    """Return current UTC time as ISO 8601 string."""
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).isoformat()
 
 
+# --- Direct execution ---
+# When run as ``python api_service.py``, start a Uvicorn server on port 8001.
+# In production, the process is typically started via ``uvicorn api_service:app``.
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)
+
+
+# ============================================================================
+# END-OF-FILE SUMMARY -- api_service.py
+# ============================================================================
+# Key takeaways:
+#
+# 1. This is the **single HTTP entry point** for the entire AI Core subsystem.
+#    Every AI feature (analysis, vision, sessions, streaming) is accessed
+#    through the REST endpoints defined above.
+#
+# 2. The service is **resilient by design**: if no LLM key is configured or
+#    the LLM fails, endpoints still return useful deterministic responses
+#    (never a bare 500 to the caller).
+#
+# 3. The main ``/api/agents/process`` endpoint follows a pipeline:
+#    request validation -> memory enrichment -> LangGraph workflow invocation
+#    -> memory extraction -> plan building -> tool-call validation -> response.
+#
+# 4. ``_simplify_for_json`` is a critical utility that bridges the gap between
+#    the rich Python objects produced by agents (Pydantic, pandas) and the
+#    plain JSON that HTTP clients expect.
+#
+# 5. Tool calls are **suggestions only** -- they are always low-risk, require
+#    explicit user confirmation, and are optionally validated against the
+#    FinWise server for RBAC compliance.
+#
+# 6. Observability is baked in: every request gets a UUID, Prometheus metrics
+#    are recorded, and structured log events are emitted throughout.
+# ============================================================================

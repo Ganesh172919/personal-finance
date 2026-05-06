@@ -1,3 +1,37 @@
+/**
+ * @fileoverview Financial Data Controller
+ *
+ * Core financial CRUD operations: transactions, goals, debts, dashboard, and portfolio.
+ * This is the largest controller — it owns the primary financial data lifecycle.
+ *
+ * Routes served:
+ *   POST   /api/financial-data/transactions          - createTransaction
+ *   POST   /api/financial-data/transactions/import    - importTransactions
+ *   GET    /api/financial-data/transactions           - listTransactions
+ *   PUT    /api/financial-data/transactions/:id       - updateTransaction
+ *   DELETE /api/financial-data/transactions/:id       - deleteTransaction
+ *   GET    /api/financial-data/transactions/recent    - listRecentTransactions
+ *   GET    /api/financial-data/transactions/summary   - getTransactionsSummary
+ *   POST   /api/financial-data/goals                  - createGoal
+ *   PUT    /api/financial-data/goals/:goalId          - updateGoal
+ *   DELETE /api/financial-data/goals/:goalId          - deleteGoal
+ *   POST   /api/financial-data/debts                  - createDebt
+ *   PUT    /api/financial-data/debts/:debtId          - updateDebt
+ *   DELETE /api/financial-data/debts/:debtId          - deleteDebt
+ *   GET    /api/financial-data/dashboard              - getDashboardSummary
+ *   GET    /api/financial-data/portfolio              - getPortfolioSummary
+ *
+ * Key patterns:
+ *   - Every mutation records provenance (MutationSource) for audit trail
+ *   - Transaction amounts normalized: income positive, expense/investment negative
+ *   - Dashboard and portfolio responses are cached with responseCache service
+ *   - Dashboard aggregates data from transactions, tasks, budgets, and reminders
+ *   - Goals and debts are embedded sub-documents on the FinancialProfile model
+ *   - Review enrichment (enrichTransactionsForReview) flags anomalies for UI
+ *
+ * @module controllers/financialDataController
+ */
+
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import {
@@ -8,8 +42,11 @@ import {
 import TaskModel from "../models/taskModel";
 import TransactionModel, { TransactionType } from "../models/transactionModel";
 import { IUserDocument } from "../models/userModel";
+import CalendarReminderModel from "../models/calendarReminderModel";
+import MonthCloseModel from "../models/monthCloseModel";
 import { recordResponseCache } from "../observability/metrics";
 import { publishDomainEvent } from "../services/domainEvents";
+import { detectRecurringCandidates, getBudgetEnvelopes } from "../services/financeIntelligence";
 import {
   bumpTransactionMetadata,
   ensureProfile,
@@ -27,6 +64,7 @@ import {
 import type { MutationSource } from "../types/provenance";
 import { HttpError } from "../middleware/httpError";
 import { logger } from "../config/logger";
+import { enrichTransactionsForReview } from "../services/transactionReview";
 
 type TransactionInput = {
   amount: number;
@@ -44,6 +82,7 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+// Convention: income is positive, expense/investment is negative (enables simple summation)
 const normalizeTransactionAmount = (
   amount: number,
   type: "income" | "expense" | "investment"
@@ -52,6 +91,7 @@ const normalizeTransactionAmount = (
   return type === "income" ? absoluteAmount : -absoluteAmount;
 };
 
+// Escapes special regex chars to prevent injection in user-supplied search strings
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const mapTransactionRecord = (transaction: {
@@ -62,6 +102,10 @@ const mapTransactionRecord = (transaction: {
   date: Date;
   type: TransactionType;
   source?: unknown;
+  review?: unknown;
+  reconciliation?: unknown;
+  importDetails?: unknown;
+  runningBalance?: unknown;
 }) => ({
   id: String(transaction._id),
   amount: transaction.amount,
@@ -69,7 +113,14 @@ const mapTransactionRecord = (transaction: {
   description: transaction.description,
   date: transaction.date,
   type: transaction.type,
-  source: transaction.source || undefined
+  source: transaction.source || undefined,
+  review: transaction.review || undefined,
+  reconciliation: transaction.reconciliation || undefined,
+  import_details: transaction.importDetails || undefined,
+  running_balance:
+    transaction.runningBalance === undefined || transaction.runningBalance === null
+      ? undefined
+      : Number(transaction.runningBalance),
 });
 
 const mapGoal = (goal: IFinancialGoal) => ({
@@ -156,6 +207,13 @@ export const createTransaction = async (req: Request, res: Response) => {
       source
     });
 
+    const createdReview = await enrichTransactionsForReview({ orgId, userId: user._id, transactions: [created.toObject()] });
+    const reviewState = createdReview.get(created._id.toString());
+    if (reviewState) {
+      created.review = { ...reviewState, updatedAt: new Date() } as any;
+      await created.save();
+    }
+
     await publishDomainEvent({
       orgId,
       userId: user._id,
@@ -179,7 +237,7 @@ export const createTransaction = async (req: Request, res: Response) => {
     res.status(201).json({
       message: "Transaction created",
       source,
-      transaction: mapTransactionRecord(created)
+      transaction: mapTransactionRecord(created.toObject())
     });
   } catch (error: any) {
     logger.error(`[requestId=${req.requestId}] Error creating transaction:`, error);
@@ -252,7 +310,9 @@ export const listTransactions = async (req: Request, res: Response) => {
       from,
       to,
       type,
-      category
+      category,
+      needs_review,
+      review_flag,
     } = req.query as {
       page?: number;
       limit?: number;
@@ -260,6 +320,8 @@ export const listTransactions = async (req: Request, res: Response) => {
       to?: Date;
       type?: "income" | "expense" | "investment";
       category?: string;
+      needs_review?: boolean;
+      review_flag?: string;
     };
 
     const orgId = requireOrgId(req);
@@ -297,13 +359,48 @@ export const listTransactions = async (req: Request, res: Response) => {
     const safeLimit = Math.max(1, Number(limit) || 20);
     const skip = (safePage - 1) * safeLimit;
 
+    // Review filters require fetching a larger set first, then filtering in-memory
+    // because review state is computed on-the-fly (not stored on every transaction)
+    const needsReviewFilter = Boolean(needs_review) || Boolean(review_flag);
+
+    if (needsReviewFilter) {
+      const docs = await TransactionModel.find(filter).sort({ date: -1 }).limit(500).lean();
+      const reviewById = await enrichTransactionsForReview({ orgId, userId: user._id, transactions: docs as any[] });
+      const reviewedDocs = docs
+        .map((doc: any) => {
+          const review = reviewById.get(String(doc._id)) || doc.review;
+          return {
+            ...doc,
+            review,
+          };
+        })
+        .filter((doc: any) => (Boolean(needs_review) ? Boolean(doc.review?.needs_attention) : true))
+        .filter((doc: any) => (review_flag ? Array.isArray(doc.review?.flags) && doc.review.flags.includes(review_flag) : true));
+
+      const pagedDocs = reviewedDocs.slice(skip, skip + safeLimit);
+      return res.json({
+        transactions: pagedDocs.map((doc) => mapTransactionRecord(doc as any)),
+        pagination: {
+          page: safePage,
+          limit: safeLimit,
+          total: reviewedDocs.length,
+          totalPages: Math.max(1, Math.ceil(reviewedDocs.length / safeLimit)),
+        }
+      });
+    }
+
     const [total, docs] = await Promise.all([
       TransactionModel.countDocuments(filter),
       TransactionModel.find(filter).sort({ date: -1 }).skip(skip).limit(safeLimit).lean()
     ]);
+    const reviewById = await enrichTransactionsForReview({ orgId, userId: user._id, transactions: docs as any[] });
+    const docsWithReview = docs.map((doc: any) => ({
+      ...doc,
+      review: reviewById.get(String(doc._id)) || doc.review,
+    }));
 
     res.json({
-      transactions: docs.map(doc => mapTransactionRecord(doc as any)),
+      transactions: docsWithReview.map(doc => mapTransactionRecord(doc as any)),
       pagination: {
         page: safePage,
         limit: safeLimit,
@@ -360,6 +457,15 @@ export const updateTransaction = async (req: Request, res: Response) => {
       { new: true }
     );
 
+    if (updated) {
+      const updatedReview = await enrichTransactionsForReview({ orgId, userId: user._id, transactions: [updated.toObject()] });
+      const reviewState = updatedReview.get(updated._id.toString());
+      if (reviewState) {
+        updated.review = { ...reviewState, updatedAt: new Date() } as any;
+        await updated.save();
+      }
+    }
+
     bumpTransactionMetadata(profile, { deltaCount: 0 });
     setProfileMutationSource(profile, source);
     await profile.save();
@@ -367,7 +473,7 @@ export const updateTransaction = async (req: Request, res: Response) => {
     return res.json({
       message: "Transaction updated",
       source,
-      transaction: updated ? mapTransactionRecord(updated) : mapTransactionRecord(existing)
+      transaction: updated ? mapTransactionRecord(updated.toObject()) : mapTransactionRecord(existing.toObject())
     });
   } catch (error: any) {
     logger.error(`[requestId=${req.requestId}] Error updating transaction:`, error);
@@ -815,7 +921,22 @@ export const getDashboardSummary = async (req: Request, res: Response) => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-    const [monthlyRows, topCategoriesRows, taskOpen, taskCompleted, taskDismissed, nextTasks] = await Promise.all([
+    const reviewCutoff = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+
+    const [
+      monthlyRows,
+      topCategoriesRows,
+      taskOpen,
+      taskCompleted,
+      taskDismissed,
+      nextTasks,
+      uncategorizedCount,
+      needsMerchantMatchCount,
+      duplicateRows,
+      budgetEnvelopeSnapshot,
+      recurringCandidateResult,
+      upcomingReminderCount,
+    ] = await Promise.all([
       TransactionModel.aggregate([
         {
           $match: {
@@ -856,7 +977,50 @@ export const getDashboardSummary = async (req: Request, res: Response) => {
       TaskModel.find({ orgId, userId: user._id, status: "open" })
         .sort({ dueDate: 1, createdAt: -1 })
         .limit(5)
-        .lean()
+        .lean(),
+      TransactionModel.countDocuments({
+        orgId,
+        userId: user._id,
+        category: { $in: [/^other$/i, /^uncategorized$/i, /^misc$/i] },
+      }),
+      TransactionModel.countDocuments({
+        orgId,
+        userId: user._id,
+        merchantId: { $exists: false },
+        type: { $in: ["expense", "investment"] },
+      }),
+      TransactionModel.aggregate([
+        {
+          $match: {
+            orgId,
+            userId: user._id,
+            date: { $gte: reviewCutoff },
+          }
+        },
+        {
+          $group: {
+            _id: {
+              amount: "$amount",
+              description: "$description",
+              date: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
+            },
+            count: { $sum: 1 },
+          }
+        },
+        { $match: { count: { $gt: 1 } } },
+      ]),
+      getBudgetEnvelopes({ orgId, periodKey: currentMonth }).catch(() => null),
+      detectRecurringCandidates({ orgId, daysBack: 365, limit: 8, minOccurrences: 3 }).catch(() => ({
+        org_id: orgId.toString(),
+        days_back: 365,
+        candidates: [],
+      })),
+      CalendarReminderModel.countDocuments({
+        orgId,
+        userId: user._id,
+        completed: false,
+        date: { $gte: now.toISOString().slice(0, 10) },
+      }),
     ]);
 
     const currentKey = currentMonth;
@@ -887,6 +1051,83 @@ export const getDashboardSummary = async (req: Request, res: Response) => {
       has_debts: Array.isArray(profile.debts) && profile.debts.length > 0,
       has_transactions: Number(profile.transactionsCount || 0) > 0
     };
+
+    const duplicateGroups = Array.isArray(duplicateRows) ? duplicateRows.length : 0;
+    const monthlyClose = {
+      period_key: currentMonth,
+      status: "ready",
+      totals: {
+        income: Number(monthlyRows.find((row: any) => row._id === currentKey)?.income || 0),
+        expenses: currentExpense,
+        net: Number(monthlyRows.find((row: any) => row._id === currentKey)?.income || 0) - currentExpense,
+        tx_count: Number(profile.transactionsCount || 0),
+      },
+      budget:
+        budgetEnvelopeSnapshot
+          ? {
+              planned: budgetEnvelopeSnapshot.totals.planned,
+              spent: budgetEnvelopeSnapshot.totals.spent,
+              remaining: budgetEnvelopeSnapshot.totals.remaining,
+              unbudgeted_spent: budgetEnvelopeSnapshot.totals.unbudgeted_spent,
+            }
+          : null,
+      ready_to_close:
+        Boolean(profile.transactionsCount) &&
+        uncategorizedCount === 0 &&
+        duplicateGroups === 0 &&
+        Number(budgetEnvelopeSnapshot?.totals?.unbudgeted_spent || 0) === 0,
+    };
+
+    await MonthCloseModel.findOneAndUpdate(
+      { orgId, periodKey: currentMonth },
+      {
+        $set: {
+          createdByUserId: user._id,
+          status: "succeeded",
+          totals: monthlyClose.totals,
+          budget: monthlyClose.budget || {},
+          topCategories: topCategoriesRows.slice(0, 5).map((row: any) => ({
+            category: String(row?._id || "Other"),
+            spent: Number(row?.amount || 0),
+          })),
+          metadata: {
+            source: "dashboard_summary",
+            ready_to_close: monthlyClose.ready_to_close,
+          },
+        },
+      },
+      { upsert: true, new: true }
+    ).catch(() => null);
+
+    const anomalies = [
+      spendingChangePct >= 20
+        ? {
+            id: "spending_spike",
+            title: "Spending is running above last month",
+            severity: spendingChangePct >= 40 ? "high" : "medium",
+            metric: Number(spendingChangePct.toFixed(1)),
+            detail: `Current-month expenses are up ${spendingChangePct.toFixed(1)}% versus last month.`,
+          }
+        : null,
+      Number(budgetEnvelopeSnapshot?.totals?.unbudgeted_spent || 0) > 0
+        ? {
+            id: "unbudgeted_spend",
+            title: "Unbudgeted spend needs categorization",
+            severity: "medium",
+            metric: Number(budgetEnvelopeSnapshot?.totals?.unbudgeted_spent || 0),
+            detail: `${Number(budgetEnvelopeSnapshot?.totals?.unbudgeted_spent || 0).toFixed(0)} is outside your planned envelopes.`,
+          }
+        : null,
+      recurringCandidateResult.candidates.length > 0
+        ? {
+            id: "recurring_candidates",
+            title: "Recurring charges detected",
+            severity: "low",
+            metric: recurringCandidateResult.candidates.length,
+            detail: `${recurringCandidateResult.candidates.length} charges look recurring and can be formalized into reminders or rules.`,
+          }
+        : null,
+    ].filter(Boolean);
 
     const responsePayload = {
       generated_at: now.toISOString(),
@@ -926,6 +1167,24 @@ export const getDashboardSummary = async (req: Request, res: Response) => {
           dueDate: task.dueDate,
           priority: task.priority
         }))
+      },
+      review_queue: {
+        needs_attention: uncategorizedCount + needsMerchantMatchCount + duplicateGroups,
+        uncategorized: uncategorizedCount,
+        needs_merchant_match: needsMerchantMatchCount,
+        suspected_duplicates: duplicateGroups,
+        recurring_candidates: recurringCandidateResult.candidates.length,
+      },
+      monthly_close: monthlyClose,
+      signals: {
+        anomalies,
+        recurring_candidates: recurringCandidateResult.candidates.slice(0, 3).map((candidate) => ({
+          id: candidate.candidate_id,
+          title: candidate.description_sample,
+          confidence: candidate.confidence,
+          cadence: candidate.cadence,
+        })),
+        upcoming_reminders: upcomingReminderCount,
       },
       completeness
     };
@@ -1094,5 +1353,179 @@ export const getPortfolioSummary = async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error(`[requestId=${req.requestId}] Error building portfolio summary:`, error);
     return res.status(500).json({ message: "Failed to build portfolio summary", request_id: req.requestId });
+  }
+};
+
+// ── Command Center ──────────────────────────────────────────────────────────
+import { buildCommandCenterPayload } from "../services/commandCenterService";
+
+export const getCommandCenter = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
+    await ensureProfileWithMigration({ orgId, userId: user._id });
+
+    const payload = await buildCommandCenterPayload({ orgId, userId: user._id });
+    return res.json(payload);
+  } catch (error: any) {
+    logger.error(`[requestId=${req.requestId}] Error building command center:`, error);
+    return res.status(500).json({ message: "Failed to build command center", request_id: req.requestId });
+  }
+};
+
+// ── Budget Health ───────────────────────────────────────────────────────────
+import { buildBudgetHealthPayload } from "../services/budgetHealthService";
+
+export const getBudgetHealth = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
+    await ensureProfileWithMigration({ orgId, userId: user._id });
+
+    const payload = await buildBudgetHealthPayload({ orgId, userId: user._id });
+    return res.json(payload);
+  } catch (error: any) {
+    logger.error(`[requestId=${req.requestId}] Error building budget health:`, error);
+    return res.status(500).json({ message: "Failed to build budget health", request_id: req.requestId });
+  }
+};
+
+// ── Transaction Approve / Bulk Approve / Always Categorize ──────────────────
+import {
+  approveTransaction as approveTransactionService,
+  bulkApproveTransactions as bulkApproveTransactionsService,
+} from "../services/transactionReview";
+import CategoryRuleModel from "../models/categoryRuleModel";
+
+export const approveTransactionEndpoint = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as IUserDocument;
+    const id = String(req.params.id || "");
+    const orgId = requireOrgId(req);
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid transaction ID", request_id: req.requestId });
+    }
+
+    const updated = await approveTransactionService({
+      orgId,
+      userId: user._id,
+      transactionId: id,
+      reviewedBy: user._id.toString(),
+    });
+
+    if (!updated) {
+      return res.status(404).json({ message: "Transaction not found", request_id: req.requestId });
+    }
+
+    return res.json({
+      message: "Transaction approved",
+      transaction: mapTransactionRecord(updated.toObject()),
+    });
+  } catch (error: any) {
+    logger.error(`[requestId=${req.requestId}] Error approving transaction:`, error);
+    return res.status(500).json({ message: "Failed to approve transaction", request_id: req.requestId });
+  }
+};
+
+export const bulkApproveEndpoint = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
+    const { transaction_ids } = req.body as { transaction_ids: string[] };
+
+    if (!Array.isArray(transaction_ids) || transaction_ids.length === 0) {
+      return res.status(400).json({ message: "transaction_ids array required", request_id: req.requestId });
+    }
+
+    if (transaction_ids.length > 200) {
+      return res.status(400).json({ message: "Maximum 200 transactions per bulk approve", request_id: req.requestId });
+    }
+
+    const result = await bulkApproveTransactionsService({
+      orgId,
+      userId: user._id,
+      transactionIds: transaction_ids,
+      reviewedBy: user._id.toString(),
+    });
+
+    return res.json({
+      message: "Transactions approved",
+      modified: result.modified,
+    });
+  } catch (error: any) {
+    logger.error(`[requestId=${req.requestId}] Error bulk approving transactions:`, error);
+    return res.status(500).json({ message: "Failed to bulk approve", request_id: req.requestId });
+  }
+};
+
+export const alwaysCategorizeEndpoint = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as IUserDocument;
+    const id = String(req.params.id || "");
+    const orgId = requireOrgId(req);
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid transaction ID", request_id: req.requestId });
+    }
+
+    const transaction = await TransactionModel.findOne({ _id: id, orgId, userId: user._id }).lean();
+    if (!transaction) {
+      return res.status(404).json({ message: "Transaction not found", request_id: req.requestId });
+    }
+
+    const description = String(transaction.description || "").trim();
+    const category = String(transaction.category || "").trim();
+
+    if (!description || !category) {
+      return res.status(400).json({ message: "Transaction needs both description and category to create a rule", request_id: req.requestId });
+    }
+
+    // Create or update a category rule for this description pattern
+    const rule = await CategoryRuleModel.findOneAndUpdate(
+      {
+        orgId,
+        pattern: description.toLowerCase(),
+      },
+      {
+        $set: {
+          orgId,
+          userId: user._id,
+          pattern: description.toLowerCase(),
+          targetCategory: category,
+          matchType: "exact",
+          matchField: "description" as const,
+          merchantId: transaction.merchantId || undefined,
+          enabled: true,
+          updatedAt: new Date(),
+        },
+        $setOnInsert: {
+          createdAt: new Date(),
+          priority: 0,
+          appliedCount: 0,
+        },
+      },
+      { upsert: true, new: true }
+    );
+
+    // Also approve the transaction itself
+    await approveTransactionService({
+      orgId,
+      userId: user._id,
+      transactionId: id,
+      reviewedBy: user._id.toString(),
+    });
+
+    return res.json({
+      message: "Category rule created and transaction approved",
+      rule: {
+        id: rule._id?.toString(),
+        pattern: rule.pattern,
+        category: rule.targetCategory,
+      },
+    });
+  } catch (error: any) {
+    logger.error(`[requestId=${req.requestId}] Error creating category rule:`, error);
+    return res.status(500).json({ message: "Failed to create category rule", request_id: req.requestId });
   }
 };

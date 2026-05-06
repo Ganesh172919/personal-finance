@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Single growth story detail view with transformation metrics.
+ *
+ * Fetches a growth story by slug and renders the full narrative with
+ * challenge, journey, and outcome sections in markdown.  A sidebar
+ * displays financial metrics (income change, debt reduction, savings
+ * growth) and the strategies list.  The FinancialTransformationChart
+ * component visualizes before/after financial data.
+ *
+ * Key data flows:
+ * - getGrowthStoryBySlug(slug) loads the story, metrics, and metadata.
+ * - toggleGrowthStoryLike(slug) increments the like count with
+ *   optimistic React Query cache update.
+ *
+ * Cover images are resolved via resolveGrowthStoryCoverImage for
+ * CDN-aware URLs.  Monetary values use INR formatting.
+ *
+ * Routed at /growth-stories/:slug; linked from the GrowthStories
+ * listing page.  Shows a skeleton while loading and an error alert
+ * if the story is not found.
+ */
+
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";

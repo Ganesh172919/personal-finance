@@ -1,3 +1,14 @@
+/**
+ * @fileoverview Placeholder page for features under development.
+ *
+ * A reusable component rendered for routes whose features are not yet
+ * built. Accepts a title and description prop so the router can show
+ * contextual text while keeping navigation links stable.
+ *
+ * No API calls or complex state; purely presentational.
+ * Used as the default export for incomplete feature routes in the app.
+ */
+
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";
 

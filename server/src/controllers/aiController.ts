@@ -1,31 +1,69 @@
-import { Request, Response } from "express";
-import FinancialProfileModel from "../models/financialProfileModel";
-import AgentOutputModel from "../models/agentOutputModel";
-import AiResponseCacheModel from "../models/aiResponseCacheModel";
-import TaskModel from "../models/taskModel";
-import { IUserDocument } from "../models/userModel";
-import { v4 as uuidv4 } from "uuid";
-import mongoose from "mongoose";
-import OrganizationModel from "../models/organizationModel";
-import { processAiCoreRequest, processAiCoreScenario } from "../services/aiCoreClient";
-import { buildProcessRequest } from "../services/aiRequestBuilder";
-import { buildProcessCommandCacheKey, ttlMs } from "../services/aiCache";
-import TransactionModel from "../models/transactionModel";
-import { fetchTransactionsForAi } from "../services/transactionService";
-import { getJournalContextForAi } from "../services/journalContext";
-import { normalizeAiPlan } from "../schemas/aiPlanSchema";
-import { recordAiCache, recordAiFallback, recordScenarioDuration } from "../observability/metrics";
-import { publishDomainEvent } from "../services/domainEvents";
+/**
+ * @fileoverview AI Controller
+ *
+ * This module handles AI-related endpoints for the Personal Finance application.
+ * It provides endpoints for processing AI commands, streaming AI responses,
+ * running what-if scenarios, and managing financial profiles.
+ *
+ * KEY FEATURES:
+ * - AI command processing with caching
+ * - Real-time AI streaming via Server-Sent Events (SSE)
+ * - What-if scenario analysis
+ * - Financial profile management (CRUD)
+ * - Investment tracking
+ * - Agent output management and feedback
+ * - Entitlement enforcement (rate limiting)
+ * - Audit logging and metrics
+ *
+ * ARCHITECTURE:
+ * - Uses Python AI Core service for AI processing
+ * - Implements response caching for performance
+ * - Supports streaming responses for real-time updates
+ * - Integrates with entitlement system for rate limiting
+ * - Publishes domain events for audit trail
+ *
+ * @module controllers/aiController
+ */
+
+import { Request, Response } from "express"; // Express types
+import FinancialProfileModel from "../models/financialProfileModel"; // Financial profile model
+import AgentOutputModel from "../models/agentOutputModel"; // Agent output model
+import AiResponseCacheModel from "../models/aiResponseCacheModel"; // AI response cache model
+import TaskModel from "../models/taskModel"; // Task model
+import { IUserDocument } from "../models/userModel"; // User document type
+import { v4 as uuidv4 } from "uuid"; // UUID generation
+import mongoose from "mongoose"; // MongoDB ODM
+import OrganizationModel from "../models/organizationModel"; // Organization model
+import { processAiCoreRequest, processAiCoreScenario } from "../services/aiCoreClient"; // AI Core client
+import { buildProcessRequest } from "../services/aiRequestBuilder"; // AI request builder
+import { buildProcessCommandCacheKey, ttlMs } from "../services/aiCache"; // AI caching utilities
+import TransactionModel from "../models/transactionModel"; // Transaction model
+import { fetchTransactionsForAi } from "../services/transactionService"; // Transaction service
+import { getJournalContextForAi } from "../services/journalContext"; // Journal context service
+import { normalizeAiPlan } from "../schemas/aiPlanSchema"; // AI plan normalization
+import { recordAiCache, recordAiFallback, recordScenarioDuration } from "../observability/metrics"; // Metrics
+import { publishDomainEvent } from "../services/domainEvents"; // Domain event publishing
+import { buildAiFinanceGrounding } from "../services/financeGrounding"; // Finance grounding service
 import {
   bumpTransactionMetadata,
   ensureProfile,
   ensureProfileWithMigration,
   setProfileMutationSource,
-} from "../services/profileService";
-import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements";
-import { HttpError } from "../middleware/httpError";
-import { logger } from "../config/logger";
-const DEFAULT_GOAL_TIMELINE_MONTHS = 12;
+} from "../services/profileService"; // Profile service
+import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements"; // Entitlements
+import { HttpError } from "../middleware/httpError"; // Custom HTTP error
+import { logger } from "../config/logger"; // Application logger
+
+/**
+ * Constants
+ */
+const DEFAULT_GOAL_TIMELINE_MONTHS = 12; // Default goal timeline in months
+
+/**
+ * Profile Updatable Fields
+ *
+ * List of fields that can be updated in the financial profile.
+ */
 const PROFILE_UPDATABLE_FIELDS = [
   "age",
   "annual_income",
@@ -39,9 +77,18 @@ const PROFILE_UPDATABLE_FIELDS = [
   "investment_experience"
 ] as const;
 
+/**
+ * Sanitizes profile update payload.
+ *
+ * Filters out invalid fields and returns only updatable fields.
+ *
+ * @param {Record<string, unknown>} payload - Raw update payload
+ * @returns {Partial<Record<(typeof PROFILE_UPDATABLE_FIELDS)[number], unknown>>} Sanitized update object
+ */
 const sanitizeProfileUpdate = (payload: Record<string, unknown>) => {
   const sanitized: Partial<Record<(typeof PROFILE_UPDATABLE_FIELDS)[number], unknown>> = {};
 
+  // Only include valid updatable fields
   for (const field of PROFILE_UPDATABLE_FIELDS) {
     if (Object.prototype.hasOwnProperty.call(payload, field) && payload[field] !== undefined) {
       sanitized[field] = payload[field];
@@ -51,6 +98,12 @@ const sanitizeProfileUpdate = (payload: Record<string, unknown>) => {
   return sanitized;
 };
 
+/**
+ * Calculates timeline months from deadline string.
+ *
+ * @param {string} [deadline] - Deadline date string
+ * @returns {number} Timeline in months (minimum 1)
+ */
 const getTimelineMonths = (deadline?: string) => {
   if (!deadline) {
     return DEFAULT_GOAL_TIMELINE_MONTHS;
@@ -69,9 +122,22 @@ const getTimelineMonths = (deadline?: string) => {
   return Math.max(1, months);
 };
 
+/**
+ * Gets single parameter value from array or string.
+ *
+ * @param {string | string[] | undefined} value - Parameter value
+ * @returns {string | undefined} Single parameter value
+ */
 const getSingleParam = (value: string | string[] | undefined) =>
   Array.isArray(value) ? value[0] : value;
 
+/**
+ * Requires and validates organization ID from request.
+ *
+ * @param {Request} req - Express request object
+ * @returns {mongoose.Types.ObjectId} Valid organization ID
+ * @throws {HttpError} If organization ID is missing or invalid
+ */
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -80,6 +146,12 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+/**
+ * Gets organization AI settings.
+ *
+ * @param {mongoose.Types.ObjectId} orgId - Organization ID
+ * @returns {Promise<{currency: string, locale: string, timezone: string}>} Organization settings
+ */
 const getOrgAiSettings = async (orgId: mongoose.Types.ObjectId) => {
   const org = await OrganizationModel.findById(orgId)
     .select({ currency: 1, locale: 1, timezone: 1 })
@@ -135,6 +207,22 @@ const normalizeScenarioParameters = (input: ScenarioParametersInput) => {
 };
 
 
+/**
+ * Processes an AI command and returns the response.
+ *
+ * This endpoint:
+ * 1. Enforces feature limits (rate limiting)
+ * 2. Fetches user profile, journal context, and organization settings
+ * 3. Checks for cached response
+ * 4. Builds and sends request to Python AI Core
+ * 5. Stores agent output and insights
+ * 6. Caches response for future use
+ * 7. Records feature usage and metrics
+ *
+ * @param {Request} req - Express request object
+ * @param {Response} res - Express response object
+ * @returns {Promise<void>} JSON response with AI analysis
+ */
 export const processAICommand = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
@@ -143,6 +231,7 @@ export const processAICommand = async (req: Request, res: Response) => {
     const narrative = typeof options?.narrative === "boolean" ? options.narrative : false;
     const orgId = requireOrgId(req);
 
+    // Enforce feature limits (rate limiting)
     await enforceFeatureLimit({
       orgId,
       userId: user._id,
@@ -151,12 +240,14 @@ export const processAICommand = async (req: Request, res: Response) => {
       requestId,
     });
 
+    // Fetch user profile, journal context, and organization settings in parallel
     const [profile, journalContext, orgSettings] = await Promise.all([
       ensureProfileWithMigration({ orgId, userId: user._id }),
       getJournalContextForAi({ orgId, userId: user._id }),
       getOrgAiSettings(orgId),
     ]);
 
+    // Build cache key for response caching
     const profileUpdatedAt = profile.updatedAt ? new Date(profile.updatedAt).toISOString() : "unknown";
     const transactionsUpdatedAt = profile.transactionsUpdatedAt
       ? new Date(profile.transactionsUpdatedAt as unknown as Date).toISOString()
@@ -171,6 +262,7 @@ export const processAICommand = async (req: Request, res: Response) => {
       narrative,
     });
 
+    // Check for cached response
     const cached = await AiResponseCacheModel.findOne({ cacheKey }).lean();
     if (cached?.responseData && typeof cached.responseData === "object") {
       logger.info(`[requestId=${requestId}] process-command cache_hit=true`);
@@ -180,11 +272,17 @@ export const processAICommand = async (req: Request, res: Response) => {
 
     recordAiCache({ endpoint: "process-command", hit: false });
 
-    const txResult = await fetchTransactionsForAi({ orgId, userId: user._id });
+    // Fetch transactions and build finance grounding in parallel
+    const [txResult, grounding] = await Promise.all([
+      fetchTransactionsForAi({ orgId, userId: user._id }),
+      buildAiFinanceGrounding({ orgId, userId: user._id }),
+    ]);
 
+    // Build AI request
     const { request: aiRequest, stats } = buildProcessRequest({
       userInput: command,
       profile,
+      financeContext: grounding.finance_context,
       orgId: orgId.toString(),
       userId: user._id.toString(),
       orgSettings,
@@ -194,38 +292,44 @@ export const processAICommand = async (req: Request, res: Response) => {
       narrative,
     });
 
+    // Log request details
     logger.info(`[requestId=${requestId}] Sending command to Python AI Core`);
     logger.info(`[requestId=${requestId}] userInputLength=${command?.length ?? 0}`);
     logger.info(
       `[requestId=${requestId}] profileAge=${profile.age} transactionCountSent=${stats.sentTransactions} droppedTransactions=${stats.droppedTransactions}`
     );
 
+    // Send request to Python AI Core
     const aiStartedAt = Date.now();
     const aiResponse = await processAiCoreRequest(aiRequest, requestId, { userId: user._id.toString() });
     const aiDurationMs = Date.now() - aiStartedAt;
+
+    // Record fallback usage
     if (aiResponse.fallback_used) {
       recordAiFallback({ endpoint: "process-command" });
     }
 
+    // Normalize AI plan
     const { plan: normalizedPlan, valid: planValid } = normalizeAiPlan(aiResponse.plan);
     if (!planValid) {
       logger.warn(`[requestId=${requestId}] ai.plan_validation_failed=true`);
     }
-    
+
+    // Log response details
     logger.info(
       `[requestId=${requestId}] aiCore.durationMs=${aiDurationMs} fallback_used=${aiResponse.fallback_used} llm_call_count=${aiResponse.llm_call_count} analysis_type=${aiResponse.analysis_type}`
     );
-    
+
     logger.info(
       `[requestId=${requestId}] Python response agent=${aiResponse.agent} analysisType=${aiResponse.analysis_type} responseLength=${aiResponse.final_output?.length || 0}`
     );
 
     // Extract and store complete agent output
     const sessionId = uuidv4();
-    
+
     const priority = aiResponse.priority || 'medium';
     const actionable = !!(aiResponse.actionType || aiResponse.insights?.length > 0);
-    
+
     // Create main agent output
     const mainOutput = await AgentOutputModel.create({
       orgId,
@@ -242,6 +346,15 @@ export const processAICommand = async (req: Request, res: Response) => {
         insights: aiResponse.insights || [],
         plan: normalizedPlan,
         tool_calls: aiResponse.tool_calls || [],
+        evidence: aiResponse.evidence || grounding.evidence,
+        confidence: aiResponse.confidence || grounding.confidence,
+        suggested_actions:
+          aiResponse.suggested_actions ||
+          [
+            ...(normalizedPlan.actions?.next_7_days || []),
+            ...(normalizedPlan.actions?.next_30_days || []),
+          ].slice(0, 3),
+        linked_entity_ids: aiResponse.linked_entity_ids || {},
         fallback_used: aiResponse.fallback_used,
         llm_call_count: aiResponse.llm_call_count,
         active_provider: aiResponse.active_provider,
@@ -286,6 +399,7 @@ export const processAICommand = async (req: Request, res: Response) => {
       }
     }
 
+    // Build response payload
     const responsePayload = {
       success: true,
       response: aiResponse.final_output,
@@ -297,6 +411,15 @@ export const processAICommand = async (req: Request, res: Response) => {
       priority,
       insights: aiResponse.insights,
       tool_calls: aiResponse.tool_calls || [],
+      evidence: aiResponse.evidence || grounding.evidence,
+      confidence: aiResponse.confidence || grounding.confidence,
+      suggested_actions:
+        aiResponse.suggested_actions ||
+        [
+          ...(normalizedPlan.actions?.next_7_days || []),
+          ...(normalizedPlan.actions?.next_30_days || []),
+        ].slice(0, 3),
+      linked_entity_ids: aiResponse.linked_entity_ids || {},
       workflow_trace: aiResponse.workflow_trace || [],
       detailed_analysis: aiResponse.detailed_analysis || {},
       fallback_used: aiResponse.fallback_used,
@@ -313,6 +436,7 @@ export const processAICommand = async (req: Request, res: Response) => {
       recovered_from_checkpoint: aiResponse.recovered_from_checkpoint,
     };
 
+    // Cache response for future use
     await AiResponseCacheModel.findOneAndUpdate(
       { cacheKey },
       {
@@ -327,6 +451,7 @@ export const processAICommand = async (req: Request, res: Response) => {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
+    // Record feature usage and metrics
     await recordFeatureUsage({
       orgId,
       userId: user._id,
@@ -343,9 +468,11 @@ export const processAICommand = async (req: Request, res: Response) => {
       },
     });
 
+    // Return response
     res.json({ ...responsePayload, cache_hit: false });
 
   } catch (error: any) {
+    // Handle HTTP errors
     if (error instanceof HttpError) {
       return res.status(error.statusCode).json({
         message: error.message,
@@ -353,10 +480,11 @@ export const processAICommand = async (req: Request, res: Response) => {
         request_id: req.requestId,
       });
     }
+    // Log and return generic error
     logger.error(`[requestId=${req.requestId}] AI processing error status=${error.response?.status ?? "unknown"}`);
     logger.error(`[requestId=${req.requestId}]`, error.response?.data || error.message);
-    
-    res.status(500).json({ 
+
+    res.status(500).json({
       success: false,
       message: "Failed to process AI command",
       error: error.response?.data?.detail || error.message,

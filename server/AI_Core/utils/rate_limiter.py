@@ -1,6 +1,29 @@
 """
-Rate Limiter and Retry Handler for Gemini API calls.
-Provides exponential backoff, request throttling, and graceful error handling.
+rate_limiter.py - Token Bucket Rate Limiter and Retry Handler
+==============================================================
+
+Provides outbound request throttling for LLM API calls using a **token
+bucket** algorithm with two time windows (per-minute and per-day).
+
+Key components
+--------------
+- ``TokenBucketRateLimiter`` -- thread-safe rate limiter that enforces
+  requests-per-minute and requests-per-day quotas.  Tokens are refilled
+  continuously based on elapsed time.
+- ``RetryHandler`` -- determines whether a failed API call should be
+  retried (transient errors like timeouts) or fail fast (429, 403, 404).
+  Uses exponential backoff with jitter.
+- ``with_rate_limit_and_retry`` -- decorator that wraps any function
+  with rate limiting + retry logic.
+
+Design decisions
+----------------
+- The default quotas (10 RPM, 1200 RPD) are conservative estimates for
+  Gemini's free tier (15 RPM, 1500 RPD).
+- 429 and 403 errors are **not retried** -- they trigger immediate
+  failover to the next provider/key in the ``RateLimitedLLM`` wrapper.
+- 404 errors are **not retried** -- they trigger model failover.
+- Only transient errors (timeout, connection, 502, 503) are retried.
 """
 
 import logging
@@ -16,18 +39,24 @@ T = TypeVar('T')
 
 
 class RateLimitError(Exception):
-    """Custom exception for rate limit errors with retry information."""
+    """Raised when the local rate limiter blocks a request.
+
+    Carries ``retry_after`` so callers know how long to wait.
+    """
     def __init__(self, message: str, retry_after: float = 60.0):
         super().__init__(message)
         self.retry_after = retry_after
 
 
 class TokenBucketRateLimiter:
+    """Token bucket rate limiter for controlling API request rates.
+
+    Maintains two token buckets: one refilled per minute, one per day.
+    Each request consumes one token from each bucket.  If tokens are
+    exhausted, the caller either waits (minute bucket) or raises
+    ``RateLimitError`` (daily bucket).
     """
-    Token bucket rate limiter for controlling API request rates.
-    More sophisticated than simple time-based limiting.
-    """
-    
+
     def __init__(
         self,
         requests_per_minute: int = 10,
@@ -37,23 +66,23 @@ class TokenBucketRateLimiter:
         self.rpm = requests_per_minute
         self.rpd = requests_per_day
         self.burst = burst_allowance
-        
-        # Token buckets
+
+        # Token buckets (current fill levels)
         self.minute_tokens = float(requests_per_minute)
         self.day_tokens = float(requests_per_day)
-        
-        # Timing
+
+        # Timestamps for calculating token refill
         self.last_refill_minute = time.time()
         self.last_refill_day = time.time()
-        
-        # Thread safety
+
+        # Thread safety for concurrent FastAPI requests
         self._lock = Lock()
-        
-        # Request tracking
-        self.request_history = deque(maxlen=1500)  # Track last 1500 requests
-        
+
+        # Sliding window of recent request timestamps (for status reporting)
+        self.request_history = deque(maxlen=1500)
+
     def _refill_tokens(self):
-        """Refill tokens based on elapsed time."""
+        """Refill tokens based on elapsed time since last refill."""
         now = time.time()
         
         # Refill minute tokens

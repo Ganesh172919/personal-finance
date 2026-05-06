@@ -1,3 +1,22 @@
+/**
+ * @fileoverview Finance OS -- the internal "operating system" for money management.
+ *
+ * A tabbed admin panel exposing five subsystems:
+ * 1. Accounts -- create/link bank accounts (checking, savings, credit, etc.)
+ * 2. Merchants -- normalize merchant names with aliases and default categories
+ * 3. Budgets -- envelope-style allocations per month (YYYY-MM)
+ * 4. Insights -- budget envelopes (planned vs spent), recurring charge
+ *    candidates detected from transaction history, and cashflow forecast
+ * 5. Recurring -- cron-based recurring rules that drive automations
+ *
+ * Key data flows:
+ * - Each tab has its own React Query hooks calling the /v1/finance/* API.
+ * - Admin-only mutations are gated by canAdmin (org role check).
+ * - Currency defaults come from useAppConfig().org.currency.
+ *
+ * Central to the Finance OS feature set; all data is org-scoped.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 

@@ -1,3 +1,28 @@
+/**
+ * @fileoverview Dashboard Page
+ *
+ * The main landing page after login. Provides a high-level overview of the
+ * user's financial state and quick access to key features.
+ *
+ * PAGE SECTIONS (top to bottom):
+ * 1. Hero — Time-based greeting, AI command bar, quick-launch cards
+ * 2. Conversation Insights — Recent chat sessions, file workspace CTA
+ * 3. Financial Vitals — Key financial metrics (income, expenses, savings)
+ * 4. Trust & Close — Review queue, monthly close status, proactive signals
+ * 5. AI Insights — Actionable recommendations from AI analysis
+ *
+ * DATA FETCHING:
+ * - sessionsQuery: Recent chat sessions for the "conversations" sidebar
+ * - summaryQuery: Dashboard summary (cash flow, goals, review queue, signals)
+ * Both use React Query with default caching settings.
+ *
+ * ANIMATION:
+ * Uses Framer Motion for staggered entrance animations on sections and cards.
+ * The `delay` property creates a cascading reveal effect.
+ *
+ * @module pages/Dashboard
+ */
+
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Bell, FolderOpen, MessageSquare, ReceiptText, Sparkles, Target } from "lucide-react";
@@ -5,12 +30,17 @@ import { Link } from "wouter";
 
 import { AICommandBar } from "@/components/AiCommandBar";
 import { ActionableInsights } from "@/components/ActionableInsights";
+import BudgetHealthCard from "@/components/BudgetHealthCard";
+import CommandCenter from "@/components/CommandCenter";
 import { ConversationInsightsPanel } from "@/components/ConversationInsightsPanel";
 import { FinancialVitals } from "@/components/FinancialVitals";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
 import { useAuth } from "@/hooks/useAuth";
+import { getDashboardSummary } from "@/lib/apiClient";
 import { fetchSessions } from "@/services/chatApi";
 
+/** Quick-launch cards for common actions */
 const quickLaunches = [
   {
     href: "/chat",
@@ -63,6 +93,10 @@ export default function Dashboard() {
   const sessionsQuery = useQuery({
     queryKey: ["/api/chat/sessions", "dashboard"],
     queryFn: () => fetchSessions(1, 5),
+  });
+  const summaryQuery = useQuery({
+    queryKey: ["/api/dashboard/summary", "dashboard"],
+    queryFn: getDashboardSummary,
   });
 
   const firstName = user?.name?.split(" ")[0] || "there";
@@ -159,6 +193,26 @@ export default function Dashboard() {
           </div>
         </motion.section>
 
+        {/* ── Financial Command Center ──────────────────── */}
+        <section className="space-y-5">
+          <DashboardSectionHeading
+            eyebrow="Command center"
+            title="Today in FinWise"
+            description="Your daily financial cockpit — everything you need at a glance."
+          />
+          <CommandCenter />
+        </section>
+
+        {/* ── Budget Health ────────────────────────────── */}
+        <section className="space-y-5">
+          <DashboardSectionHeading
+            eyebrow="Budget coach"
+            title="Your weekly financial health"
+            description="Score, projections, and proactive alerts to keep your spending on track."
+          />
+          <BudgetHealthCard />
+        </section>
+
         <section className="space-y-5">
           <DashboardSectionHeading
             eyebrow="Conversation first"
@@ -241,6 +295,64 @@ export default function Dashboard() {
           />
           <FinancialVitals />
         </section>
+
+        {summaryQuery.data ? (
+          <section className="space-y-5">
+            <DashboardSectionHeading
+              eyebrow="Trust and close"
+              title="Keep the ledger clean and close with confidence"
+              description="Review queue metrics and monthly close status — now powered by the review queue."
+            />
+            <div className="grid gap-5 lg:grid-cols-3">
+              <Card className="rounded-[calc(var(--radius)+8px)] border border-border/80 bg-card/95 p-5">
+                <div className="text-sm font-semibold text-foreground">Review queue</div>
+                <div className="mt-3 text-3xl font-semibold text-foreground">
+                  {summaryQuery.data.review_queue.needs_attention}
+                </div>
+                <div className="mt-2 text-sm text-muted-foreground">
+                  {summaryQuery.data.review_queue.uncategorized} uncategorized,{" "}
+                  {summaryQuery.data.review_queue.suspected_duplicates} duplicate groups,{" "}
+                  {summaryQuery.data.review_queue.needs_merchant_match} merchant matches.
+                </div>
+                <Link href="/transactions?tab=review" className="mt-4 inline-flex no-underline">
+                  <Button variant="outline" className="rounded-2xl">Open review queue</Button>
+                </Link>
+              </Card>
+
+              <Card className="rounded-[calc(var(--radius)+8px)] border border-border/80 bg-card/95 p-5">
+                <div className="text-sm font-semibold text-foreground">Monthly close</div>
+                <div className="mt-3 text-3xl font-semibold text-foreground">
+                  {summaryQuery.data.monthly_close.ready_to_close ? "Ready" : "In progress"}
+                </div>
+                <div className="mt-2 text-sm text-muted-foreground">
+                  {summaryQuery.data.monthly_close.period_key} net {summaryQuery.data.monthly_close.totals.net.toFixed(0)} with{" "}
+                  {summaryQuery.data.monthly_close.budget?.unbudgeted_spent || 0} unbudgeted spend.
+                </div>
+                <Link href="/finance" className="mt-4 inline-flex no-underline">
+                  <Button variant="outline" className="rounded-2xl">Inspect budget envelope</Button>
+                </Link>
+              </Card>
+
+              <Card className="rounded-[calc(var(--radius)+8px)] border border-border/80 bg-card/95 p-5">
+                <div className="text-sm font-semibold text-foreground">Proactive signals</div>
+                <div className="mt-3 text-3xl font-semibold text-foreground">
+                  {summaryQuery.data.signals.anomalies.length}
+                </div>
+                <div className="mt-2 text-sm text-muted-foreground">
+                  {summaryQuery.data.signals.recurring_candidates.length} recurring candidates and{" "}
+                  {summaryQuery.data.signals.upcoming_reminders} upcoming reminders.
+                </div>
+                <div className="mt-4 space-y-2">
+                  {summaryQuery.data.signals.anomalies.slice(0, 2).map((signal) => (
+                    <div key={signal.id} className="rounded-2xl border border-border/70 bg-background/60 px-3 py-2 text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground">{signal.title}:</span> {signal.detail}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          </section>
+        ) : null}
 
         <motion.section
           initial={{ opacity: 0, y: 18 }}
