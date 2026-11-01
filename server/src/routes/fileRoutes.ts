@@ -26,10 +26,20 @@ import {
   listWorkspaceFiles,
   uploadWorkspaceFiles,
 } from "../controllers/fileController";
+import {
+  downloadRenderedPdf,
+  renderPdfFromPromptText,
+  renderPdfFromWorkspaceTextFile,
+} from "../controllers/pdfController";
 import { workspaceFileUpload } from "../middleware/uploads";
 import { validate } from "../middleware/validate";
-import { objectIdSchema } from "../schemas/common";
-import { analyzeWorkspaceFileBodySchema, listWorkspaceFilesQuerySchema } from "../schemas/fileSchemas";
+import { fileIdParamSchema, objectIdSchema } from "../schemas/common";
+import {
+  analyzeWorkspaceFileBodySchema,
+  listWorkspaceFilesQuerySchema,
+  renderPdfFromTextBodySchema,
+  renderWorkspaceFilePdfBodySchema,
+} from "../schemas/fileSchemas";
 import { asyncRoute } from "../utils/asyncRoute";
 
 const router = Router();
@@ -37,12 +47,19 @@ const router = Router();
 router.use(passport.authenticate("jwt", { session: false }));
 
 router.post("/", workspaceFileUpload().array("files", 10), asyncRoute(uploadWorkspaceFiles));
+router.post("/render-pdf", validate({ body: renderPdfFromTextBodySchema }), asyncRoute(renderPdfFromPromptText));
+router.get("/rendered/:fileId/download", validate({ params: fileIdParamSchema }), asyncRoute(downloadRenderedPdf));
 router.get("/", validate({ query: listWorkspaceFilesQuerySchema }), asyncRoute(listWorkspaceFiles));
 router.get("/:id", validate({ params: objectIdSchema }), asyncRoute(getWorkspaceFile));
 router.post(
   "/:id/analyze",
   validate({ params: objectIdSchema, body: analyzeWorkspaceFileBodySchema }),
   asyncRoute(analyzeWorkspaceFile)
+);
+router.post(
+  "/:id/render-pdf",
+  validate({ params: objectIdSchema, body: renderWorkspaceFilePdfBodySchema }),
+  asyncRoute(renderPdfFromWorkspaceTextFile)
 );
 router.delete("/:id", validate({ params: objectIdSchema }), asyncRoute(deleteWorkspaceFile));
 

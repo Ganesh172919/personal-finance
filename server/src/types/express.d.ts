@@ -1,9 +1,13 @@
+import type { Logger } from "pino";
+
 export {};
 
 declare global {
   namespace Express {
     interface Request {
       requestId: string;
+      traceId: string;
+      log: Logger;
       org?: {
         orgId: string;
         memberId: string;

@@ -38,7 +38,7 @@ export type AutopilotRun = AutopilotRunResponse["run"];
 
 /** Phase 1: Generate an AI-powered financial action plan. */
 export async function createAutopilotPlan(body: AutopilotPlanRequest): Promise<AutopilotRunResponse> {
-  return apiClient("/v1/autopilot/plan", {
+  return apiClient("/autopilot/plan", {
     method: "POST",
     body: JSON.stringify(body),
   }) as Promise<AutopilotRunResponse>;
@@ -46,7 +46,7 @@ export async function createAutopilotPlan(body: AutopilotPlanRequest): Promise<A
 
 /** Phase 2: Simulate the plan in a dry-run sandbox (no real changes). */
 export async function simulateAutopilotRun(body: AutopilotRunIdRequest): Promise<AutopilotRunResponse> {
-  return apiClient("/v1/autopilot/simulate", {
+  return apiClient("/autopilot/simulate", {
     method: "POST",
     body: JSON.stringify(body),
   }) as Promise<AutopilotRunResponse>;
@@ -54,7 +54,7 @@ export async function simulateAutopilotRun(body: AutopilotRunIdRequest): Promise
 
 /** Phase 3: User approves the simulated plan for execution. */
 export async function approveAutopilotRun(body: AutopilotApproveRequest): Promise<AutopilotRunResponse> {
-  return apiClient("/v1/autopilot/approve", {
+  return apiClient("/autopilot/approve", {
     method: "POST",
     body: JSON.stringify(body),
   }) as Promise<AutopilotRunResponse>;
@@ -62,7 +62,7 @@ export async function approveAutopilotRun(body: AutopilotApproveRequest): Promis
 
 /** Phase 4: Execute the approved plan, applying real financial changes. */
 export async function executeAutopilotRun(body: AutopilotRunIdRequest): Promise<AutopilotRunResponse> {
-  return apiClient("/v1/autopilot/execute", {
+  return apiClient("/autopilot/execute", {
     method: "POST",
     body: JSON.stringify(body),
   }) as Promise<AutopilotRunResponse>;
@@ -70,7 +70,7 @@ export async function executeAutopilotRun(body: AutopilotRunIdRequest): Promise<
 
 /** Fetch the current state of an autopilot run by ID. */
 export async function getAutopilotRun(runId: string): Promise<AutopilotRunResponse> {
-  return apiClient(`/v1/autopilot/runs/${encodeURIComponent(runId)}`) as Promise<AutopilotRunResponse>;
+  return apiClient(`/autopilot/runs/${encodeURIComponent(runId)}`) as Promise<AutopilotRunResponse>;
 }
 
 

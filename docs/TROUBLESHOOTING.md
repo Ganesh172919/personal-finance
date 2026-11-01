@@ -4,6 +4,10 @@
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## Quick Diagnostics
 
 ### Health Check Endpoints
@@ -446,3 +450,64 @@ mongosh --eval "db.growthStories.countDocuments()"
 ---
 
 _See also_: [SETUP.md](./SETUP.md) · [ENV_VARIABLES.md](./ENV_VARIABLES.md) · [OBSERVABILITY.md](./OBSERVABILITY.md)
+
+## Troubleshooting & Diagnostic Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#dc2626', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#b91c1c', 'lineColor': '#8b5cf6', 'secondaryColor': '#f59e0b', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((🚨 FinWise Diagnostic Matrix))
+    🗄️ Database Anomalies
+      Mongo ECONNREFUSED (docker-compose status)
+      Replica Set Not Initialized (rs.initiate())
+      Slow Query Spikes (Missing compound index)
+      Mongoose Schema Validation Failures
+    ⚡ Redis & Queue Issues
+      Redis Memory Exhaustion (FLUSHALL / maxmemory-policy)
+      BullMQ Stalled Jobs (Worker thread deadlocks)
+      SSE Disconnects / Broken Pipe
+    🧠 AI Core & Provider Faults
+      HTTP 429 Provider Quota (KeyPool cooldown rotation)
+      Model Catalog Deserialization Failure
+      Pydantic Contract Parsing Errors
+      FastAPI Port Conflict (8000 vs 8001)
+    🌐 Ingress & Browser Errors
+      CORS Origin Mismatch (CLIENT_URL alignment)
+      Missing X-CSRF-Token Cookie
+      JWT Expired (Token refresh loop)
+```
+
+## Systematic Incident Triage & Resolution ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔴 INCIDENT OCCURRENCE: Error reported in console / logs               │
+│    Symptom: 500 Internal Error / AI Chat Freezes / DB Timeout          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔍 STEP 1: LOG INSPECTION & CORRELATION ID TRACING                     │
+│    ├─► Extract X-Request-Id from failed response header                │
+│    ├─► Search server logs: grep <X-Request-Id> server.log              │
+│    └─► Categorize fault domain: Mongo ➔ Redis ➔ AI Core ➔ Auth         │
+└───────────────────┬────────────────────────────────┬───────────────────┘
+                    │                                │
+                    ▼                                ▼
+┌──────────────────────────────────┐┌────────────────────────────────────┐
+│ 🗄️ PERSISTENCE / REDIS FAILURE    ││ 🧠 AI CORE / PROVIDER FAILURE      │
+│  ├─ $ mongosh --eval "rs.status()"││  ├─ Check KeyPool status endpoint │
+│  ├─ $ redis-cli ping              ││  ├─ Rotate expired/rate-limited key│
+│  └─ Restart container if crashed  ││  └─ Activate Ollama local fallback│
+└──────────────────┬───────────────┘└────────────────┬───────────────────┘
+                   │                                 │
+                   └────────────────┬────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧪 STEP 3: RUN LOCAL HEALTH CHECK PROBES                               │
+│    ├─► GET http://localhost:3000/api/health (Node Gateway) ──► 200 OK 🟢   │
+│    ├─► GET http://localhost:8001/health (AI Core) ──► 200 OK 🟢       │
+│    └─► Confirm recovery and update post-mortem logs 🟢                 │
+└────────────────────────────────────────────────────────────────────────┘
+```

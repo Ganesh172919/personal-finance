@@ -21,16 +21,21 @@
  *  - `staleTime: 60_000` prevents excessive re-fetching since insights change slowly.
  *  - Refresh button triggers manual `refetch` for on-demand updates.
  */
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useSyncExternalStore } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BrainCircuit, RefreshCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Link } from "wouter";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/utils";
+import { splitAnswerAndPlan } from "@/lib/chatResponse";
+import { useAuth } from "@/hooks/useAuth";
+import { getActiveOrgId, subscribeActiveOrgId } from "@/lib/orgContext";
+import { ApiError } from "@/lib/apiError";
 import { fetchConversationInsights } from "@/services/chatApi";
 import type { ActionItem } from "@/types/ai.types";
 
@@ -38,6 +43,13 @@ type ConversationInsightsPanelProps = {
   compact?: boolean;
   className?: string;
 };
+
+function InsightMarkdown({ children }: { children: string }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+    h1: ({ children }) => <h3>{children}</h3>,
+    h2: ({ children }) => <h3>{children}</h3>,
+  }}>{children}</ReactMarkdown>;
+}
 
 const collectActionItems = (plan?: {
   actions?: {
@@ -59,16 +71,33 @@ export function ConversationInsightsPanel({
   compact = false,
   className,
 }: ConversationInsightsPanelProps) {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const orgId = useSyncExternalStore(subscribeActiveOrgId, getActiveOrgId, () => null);
+  const queryKey = ["/api/chat/insights/conversation", user?.id || "", orgId || ""];
   const insightsQuery = useQuery({
-    queryKey: ["/api/chat/insights/conversation"],
-    queryFn: fetchConversationInsights,
-    staleTime: 60_000,
+    queryKey,
+    queryFn: () => fetchConversationInsights({ orgId: orgId || undefined }),
+    // Recheck current context when returning from a chat or finance edit. The
+    // server reuses unchanged snapshots, so this does not repeat model work.
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+    enabled: Boolean(user?.id && orgId),
   });
+  const refreshMutation = useMutation({
+    mutationFn: (submittedKey: string[]) => fetchConversationInsights({ refresh: true, orgId: submittedKey[2] }),
+    onSuccess: (data, submittedKey) => queryClient.setQueryData(submittedKey, data),
+  });
+  const refreshIsCurrent = refreshMutation.variables?.join("|") === queryKey.join("|");
+  const isRefreshing = insightsQuery.isFetching || (refreshIsCurrent && refreshMutation.isPending);
+  const currentError = refreshIsCurrent && refreshMutation.isError ? refreshMutation.error : insightsQuery.error;
+  const atLimit = currentError instanceof ApiError && currentError.status === 402;
 
   const actionItems = useMemo(
     () => collectActionItems(insightsQuery.data?.plan, compact ? 1 : 3),
     [compact, insightsQuery.data?.plan]
   );
+  const responseParts = splitAnswerAndPlan(insightsQuery.data?.response || "");
 
   return (
     <Card className={className}>
@@ -101,13 +130,20 @@ export function ConversationInsightsPanel({
             variant="ghost"
             size="icon"
             className={cn("rounded-2xl", compact ? "h-6 w-6" : "")}
-            onClick={() => insightsQuery.refetch()}
-            disabled={insightsQuery.isFetching}
+            onClick={() => refreshMutation.mutate(queryKey)}
+            disabled={isRefreshing}
             aria-label="Refresh conversation insights"
           >
-            <RefreshCcw className={`${compact ? "h-3 w-3" : "h-4 w-4"} ${insightsQuery.isFetching ? "animate-spin" : ""}`} />
+            <RefreshCcw className={`${compact ? "h-3 w-3" : "h-4 w-4"} ${isRefreshing ? "animate-spin" : ""}`} />
           </Button>
         </div>
+
+        {refreshIsCurrent && refreshMutation.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            {atLimit ? <>Your monthly AI limit has been reached. <Link href="/billing" className="underline">View plan limits</Link>. The previous summary is still shown.</>
+              : "Refresh failed. The previous summary is still shown. Try again."}
+          </p>
+        )}
 
         {insightsQuery.isLoading ? (
           <div className="rounded-[calc(var(--radius)-8px)] border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
@@ -115,7 +151,8 @@ export function ConversationInsightsPanel({
           </div>
         ) : insightsQuery.isError ? (
           <div className="rounded-[calc(var(--radius)-8px)] border border-destructive/20 bg-destructive/5 p-4 text-sm text-muted-foreground">
-            Conversation insights are temporarily unavailable.
+            {atLimit ? <>Your monthly AI limit has been reached. <Link href="/billing" className="underline">View plan limits</Link>. Your existing chats are still available.</>
+              : "Conversation insights are temporarily unavailable."}
           </div>
         ) : insightsQuery.data ? (
           <>
@@ -124,10 +161,15 @@ export function ConversationInsightsPanel({
                 {insightsQuery.data.sessions_considered} session
                 {insightsQuery.data.sessions_considered === 1 ? "" : "s"}
               </Badge>
+              {insightsQuery.data.cache_hit && (
+                <Badge variant="outline" title={`Reused summary from ${insightsQuery.data.generated_at || "the current context"}. Refresh checks again.`}>
+                  Saved summary
+                </Badge>
+              )}
               {insightsQuery.data.fallback_used ? (
-                <Badge variant="outline" className={compact ? "px-1.5 py-0 text-[9px]" : undefined}>Fallback response</Badge>
+                <Badge variant="outline" title="AI narration was unavailable or did not pass the summary checks. This recap uses your saved conversation context." className={compact ? "px-1.5 py-0 text-[9px]" : undefined}>Basic summary</Badge>
               ) : null}
-              {(insightsQuery.data.agents_involved || []).slice(0, compact ? 2 : 4).map((agent) => (
+              {(insightsQuery.data.agents_involved || []).filter(agent => agent !== "conversation_summarizer").slice(0, compact ? 2 : 4).map((agent) => (
                 <Badge key={agent} className={cn("bg-primary/10 text-primary", compact ? "px-1.5 py-0 text-[9px]" : "")}>
                   {agent}
                 </Badge>
@@ -135,9 +177,13 @@ export function ConversationInsightsPanel({
             </div>
 
             <div className={cn("max-w-none text-foreground dark:prose-invert", compact ? "prose prose-xs" : "prose prose-sm")}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {insightsQuery.data.response}
-              </ReactMarkdown>
+              <InsightMarkdown>{responseParts.answer}</InsightMarkdown>
+              {responseParts.plan && (
+                <details className="mt-3">
+                  <summary className="cursor-pointer font-medium">View full financial plan</summary>
+                  <InsightMarkdown>{responseParts.plan}</InsightMarkdown>
+                </details>
+              )}
             </div>
 
             {actionItems.length ? (

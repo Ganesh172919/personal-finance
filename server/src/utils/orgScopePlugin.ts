@@ -36,30 +36,34 @@ import type { Schema } from "mongoose";
 import { logger } from "../config/logger";
 
 /**
- * Mongoose plugin that warns when queries omit the orgId filter.
+ * Mongoose plugin that enforces multi-tenant data isolation.
  *
- * This is a data isolation safety net for multi-tenant applications.
- * It hooks into find, findOne, countDocuments, and aggregate operations.
+ * In **development** mode: logs a warning when queries omit the orgId filter.
+ * In **production** mode: throws an error to prevent cross-tenant data leaks.
  *
  * @param schema - The Mongoose schema to apply the plugin to
  */
 export function orgScopePlugin(schema: Schema): void {
+  const isProduction = process.env.NODE_ENV === "production";
+
   // Query methods that must include orgId in their filter
-  const guardedHooks = [
-    "find",
-    "findOne",
-    "countDocuments",
-  ] as const;
+  const guardedHooks = ["find", "findOne", "countDocuments"] as const;
 
   // Attach pre-hooks to each guarded query method
   for (const hook of guardedHooks) {
     schema.pre(hook, function (next) {
-      // Get the current query filter
       const filter = (this as any).getFilter?.() ?? {};
 
-      // Warn if orgId is missing (development mode only)
-      if (!filter.orgId && process.env.NODE_ENV === "development") {
+      if (!filter.orgId) {
         const modelName = (this as any).model?.modelName ?? "Unknown";
+
+        if (isProduction) {
+          // In production, block queries without orgId to prevent data leaks
+          next(new Error(`[orgScopePlugin] ${modelName}.${hook}() blocked: orgId is required in production`));
+          return;
+        }
+
+        // In development, warn but allow
         logger.warn(
           { event: "org_scope_missing", model: modelName, hook },
           `[orgScopePlugin] Query on ${modelName}.${hook}() without orgId filter!`,
@@ -73,13 +77,17 @@ export function orgScopePlugin(schema: Schema): void {
   // Aggregate pipelines: check first $match stage for orgId
   schema.pre("aggregate", function (next) {
     const pipeline = (this as any).pipeline?.() ?? [];
-    // Find the first $match stage in the pipeline
     const firstMatch = pipeline.find((stage: any) => stage.$match);
     const hasOrgId = firstMatch?.$match?.orgId !== undefined;
 
-    // Warn if orgId is missing from the first $match (development mode only)
-    if (!hasOrgId && process.env.NODE_ENV === "development") {
+    if (!hasOrgId) {
       const modelName = (this as any)._model?.modelName ?? "Unknown";
+
+      if (isProduction) {
+        next(new Error(`[orgScopePlugin] ${modelName}.aggregate() blocked: orgId is required in production`));
+        return;
+      }
+
       logger.warn(
         { event: "org_scope_missing_aggregate", model: modelName },
         `[orgScopePlugin] Aggregate on ${modelName} without orgId in first $match stage!`,

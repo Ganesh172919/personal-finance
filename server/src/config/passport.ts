@@ -52,8 +52,13 @@ import { logger } from "./logger";                                  // Applicati
 export const configurePassport = () => {
   const env = getEnv();
 
+  logger.info("[Passport] Configuring authentication strategies...");
+
   // ── JWT Strategy ──────────────────────────────────────────────────
-  // This strategy validates JWT tokens from HTTP-only cookies
+  // This strategy validates JWT tokens from HTTP-only cookies.
+  // JWT is extracted from the "jwt" cookie (not Authorization header)
+  // because HTTP-only cookies provide XSS protection.
+  logger.info("[Passport] Registering JWT strategy (cookie-based)");
   passport.use(
     "jwt",
     new JwtStrategy(
@@ -87,8 +92,14 @@ export const configurePassport = () => {
   );
 
   // ── Google OAuth 2.0 Strategy ─────────────────────────────────────
-  // Only configured if Google OAuth credentials are provided
+  // Only configured if Google OAuth credentials are provided.
+  // The callback URL must match what's configured in Google Cloud Console.
   if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
+    const callbackURL = env.GOOGLE_CALLBACK_URL || "/api/auth/google/callback";
+    logger.info(`[Passport] Registering Google OAuth strategy`);
+    logger.info(`[Passport]   Client ID : ${env.GOOGLE_CLIENT_ID.substring(0, 12)}...`);
+    logger.info(`[Passport]   Callback  : ${callbackURL}`);
+
     passport.use(
       "google",
       new GoogleStrategy(
@@ -96,7 +107,7 @@ export const configurePassport = () => {
           clientID: env.GOOGLE_CLIENT_ID,       // From Google Cloud Console
           clientSecret: env.GOOGLE_CLIENT_SECRET, // From Google Cloud Console
           // Callback URL that Google redirects to after user approves
-          callbackURL: env.GOOGLE_CALLBACK_URL || "/api/v1/auth/google/callback",
+          callbackURL,
         },
         // This callback receives the OAuth tokens and the user's Google profile
         // _accessToken and _refreshToken are not used (we issue our own JWT)
@@ -139,8 +150,11 @@ export const configurePassport = () => {
     );
   } else if (env.NODE_ENV !== "test") {
     // Log a warning if Google OAuth is not configured (except in test environment)
-    logger.warn("Google OAuth credentials not found; Google authentication will not work");
+    logger.warn("[Passport] Google OAuth DISABLED — credentials not found in environment");
+    logger.warn("[Passport] Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to enable Google sign-in");
   }
+
+  logger.info("[Passport] Strategy configuration complete");
 };
 
 // Export the configured passport instance for use in middleware

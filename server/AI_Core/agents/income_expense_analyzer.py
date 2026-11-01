@@ -17,6 +17,80 @@ Key responsibilities
   cash flow, and fixed expense ratio.
 - Generate deterministic insight text (no LLM calls).
 
+MINDMAP FLOW
+------------
+::
+
+    IncomeExpenseAnalyzerAgent
+    ├── 1. Transaction Ingestion & Preprocessing
+    │   ├── Raw JSON List -> Pandas DataFrame Conversion
+    │   ├── DateTime Normalization (ISO parser)
+    │   └── Data Cleansing (NaN filling, absolute amounts, category standardizing)
+    ├── 2. Categorization & Aggregations
+    │   ├── Cash Inflow (Salary, Dividends, Transfers)
+    │   ├── Cash Outflow (Fixed Bills, Needs, Discretionary Wants)
+    │   └── Monthly Time-Series Groupings
+    ├── 3. Statistical Pattern & Anomaly Detection
+    │   ├── Category-wise Z-Score Computation (Threshold > 2.0 or 2.5)
+    │   ├── Recurring Charge & Subscription Identification
+    │   └── Period-over-Period Variance Tracking
+    ├── 4. Financial Vital Health Scoring (0 - 100)
+    │   ├── Savings Rate Component (up to 30 pts)
+    │   ├── Net Cashflow Stability Component (+/- 20 pts)
+    │   ├── Fixed Expense Burden Ratio (Target < 50%)
+    │   └── Discretionary Ratio Adjustments
+    └── 5. Serialization & Reporting
+        ├── Deterministic Markdown Generation
+        ├── JSON-Safe Data Conversion (_serialize_dict, NumPy/Pandas casts)
+        └── Output Dictionary Packaging for Workflow & UI Charts
+
+ASCII FLOW
+----------
+::
+
+    +---------------------------------------------------------------+
+    |            Input: Transaction List [ {date, amount, ...} ]    |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |             Pandas DataFrame Loading & Normalization          |
+    |  - Convert date strings to timestamps                         |
+    |  - Validate amount column and transaction types               |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                    Transaction Aggregation                    |
+    |  - Total Income, Total Expenses, Net Cash Flow                |
+    |  - Breakdown by Category (Needs vs Wants)                     |
+    |  - Monthly Historical Trend Timeseries                        |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                  Advanced Pattern Detection                   |
+    +-------------------------------+-------------------------------+
+            |                                               |
+            v                                               v
+     [Anomaly Detection]                            [Recurring Patterns]
+     - Compute category Z-scores                    - Group by merchant / amount
+     - Flag outlier high charges                    - Flag active subscriptions
+            |                                               |
+            +-----------------------+-----------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |              Financial Health Score (0 - 100)                 |
+    |  - Savings Rate + Cashflow Ratio + Fixed Burden Matrix        |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    | Assemble Output: { overview, category_breakdown, trends,      |
+    |   anomalies, recurring, health_score, recommendations }       |
+    +---------------------------------------------------------------+
+
 Design decisions
 ----------------
 - Uses ``pandas`` for efficient groupby/aggregate operations on
@@ -93,7 +167,7 @@ class IncomeExpenseAnalyzerAgent:
         category_analysis = self._analyze_categories(categorized)
         recurring = self._identify_recurring_transactions(transactions)
 
-        data = {
+        return {
             "categorized_transactions": categorized,
             "spending_trends": spending_trends,
             "anomalies": anomalies,
@@ -101,8 +175,6 @@ class IncomeExpenseAnalyzerAgent:
             "recurring_transactions": recurring,
             "time_period_analysis": self._analyze_time_periods(transactions)
         }
-
-        return self._serialize_dict(data)
 
     def _analyze_categories(self, categorized: Dict[str, List[Dict]]) -> Dict[str, float]:
         """Analyze spending by category with percentages"""
@@ -142,8 +214,12 @@ class IncomeExpenseAnalyzerAgent:
         monthly_data = {}
         for t in transactions:
             try:
-                date = parse_date(str(t.get('date', '')))
-                key = date.strftime("%Y-%m")
+                raw_date = str(t.get('date', ''))
+                if len(raw_date) >= 7 and raw_date[4] == '-' and raw_date[:4].isdigit() and raw_date[5:7].isdigit():
+                    key = raw_date[:7]
+                else:
+                    date = parse_date(raw_date)
+                    key = date.strftime("%Y-%m")
                 amt = float(t.get('amount', 0))
                 monthly_data.setdefault(key, {"income": 0.0, "expenses": 0.0})
                 if amt > 0:
@@ -344,7 +420,7 @@ class IncomeExpenseAnalyzerAgent:
         if isinstance(obj, pd.Series):
             return {str(k): float(v) for k, v in obj.to_dict().items()}
         if isinstance(obj, pd.DataFrame):
-            return [self._serialize_dict(r.to_dict()) for _, r in obj.iterrows()]
+            return obj.to_dict(orient="records")
         if isinstance(obj, dict):
             return {str(k): self._serialize_dict(v) for k, v in obj.items()}
         if isinstance(obj, list):

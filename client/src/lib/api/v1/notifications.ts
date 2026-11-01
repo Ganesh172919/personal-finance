@@ -58,7 +58,7 @@ export async function listNotifications(params?: {
     search.set("limit", String(params.limit));
   }
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
-  return apiClient(`/v1/notifications${suffix}`);
+  return apiClient(`/notifications${suffix}`);
 }
 
 /** Mark a single notification as read. */
@@ -66,7 +66,7 @@ export async function markNotificationRead(
   notificationId: string,
 ): Promise<NotificationReadResponse> {
   return apiClient(
-    `/v1/notifications/${encodeURIComponent(notificationId)}/read`,
+    `/notifications/${encodeURIComponent(notificationId)}/read`,
     {
       method: "POST",
     },

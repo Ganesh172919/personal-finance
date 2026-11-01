@@ -14,12 +14,14 @@
  *
  * ARCHITECTURE NOTES
  *  - Rendered at the top of the Dashboard page, above all other cards.
- *  - Shows "No data" defaults when the summary endpoint returns no data (e.g. new user).
+ *  - Distinguishes loading, unavailable, cached, and freshly loaded summaries.
  *  - Framer Motion stagger (0.1 s) for card entry animation.
  */
 import { motion } from "framer-motion";
 import { Wallet, TrendingUp, PiggyBank, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { DashboardSummaryResponse, getDashboardSummary } from "@/lib/apiClient";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
@@ -29,69 +31,64 @@ interface Metric {
   label: string;
   value: string;
   change: string;
-  isPositive: boolean;
+  isPositive: boolean | null;
 }
 
 export function FinancialVitals() {
   const { formatMoney } = useOrgFormatters();
-  const { data: summary } = useQuery<DashboardSummaryResponse>({
+  const { data: summary, isPending, isError, isFetching, refetch } = useQuery<DashboardSummaryResponse>({
     queryKey: ["/api/dashboard/summary"],
     queryFn: getDashboardSummary,
   });
 
-  const calculateMetrics = (): Metric[] => {
-    if (!summary) {
-      return [
-        {
-          icon: Wallet,
-          label: "Cash Flow",
-          value: formatMoney(0, { maximumFractionDigits: 0 }),
-          change: "No data",
-          isPositive: true,
-        },
-        {
-          icon: TrendingUp,
-          label: "Savings Rate",
-          value: "0%",
-          change: "No data",
-          isPositive: true,
-        },
-        {
-          icon: PiggyBank,
-          label: "Total Savings",
-          value: formatMoney(0, { maximumFractionDigits: 0 }),
-          change: "No data",
-          isPositive: true,
-        },
-        {
-          icon: Trophy,
-          label: "Goals Progress",
-          value: "0%",
-          change: "No goals",
-          isPositive: true,
-        },
-      ];
-    }
+  if (isPending) {
+    return (
+      <div role="status" aria-label="Loading financial summary" className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map(index => (
+          <Card key={index} className="space-y-4 p-5" aria-hidden="true">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-3 w-40" />
+          </Card>
+        ))}
+        <span className="sr-only">Loading your financial summary.</span>
+      </div>
+    );
+  }
 
+  if (!summary) {
+    return (
+      <Card role="alert" className="mb-8 space-y-3 p-5">
+        <p className="text-sm text-muted-foreground">Your financial summary could not be loaded.</p>
+        <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
+          {isFetching ? "Retrying..." : "Try again"}
+        </Button>
+      </Card>
+    );
+  }
+
+  const calculateMetrics = (): Metric[] => {
     const cashFlow = Number(summary.cash_flow.net || 0);
     const savingsRate = Number(summary.cash_flow.savings_rate_pct || 0);
     const goalsProgress = Number(summary.goals.progress_pct || 0);
     const goalsOnTrack = Number(summary.goals.on_track || 0);
+    const hasIncome = Number(summary.cash_flow.monthly_income) > 0;
+    const hasCashFlow = hasIncome || Number(summary.cash_flow.monthly_expenses) > 0;
 
     return [
       {
         icon: Wallet,
         label: "Cash Flow",
-        value: formatMoney(cashFlow, { maximumFractionDigits: 0 }),
-        change: cashFlow > 0 ? "Positive cash flow" : "Negative cash flow",
-        isPositive: cashFlow > 0,
+        value: hasCashFlow ? formatMoney(cashFlow, { maximumFractionDigits: 0 }) : "—",
+        change: !hasCashFlow ? "Add income or expenses" : cashFlow > 0 ? "Positive cash flow" : cashFlow < 0 ? "Negative cash flow" : "Balanced cash flow",
+        isPositive: hasCashFlow ? cashFlow >= 0 : null,
       },
       {
         icon: TrendingUp,
         label: "Savings Rate",
-        value: `${savingsRate.toFixed(1)}%`,
-        change: savingsRate > 20 ? "Above target" : "Below target",
-        isPositive: savingsRate > 20,
+        value: hasIncome ? `${savingsRate.toFixed(1)}%` : "—",
+        change: !hasIncome ? "Add income to calculate" : savingsRate > 20 ? "Above target" : savingsRate === 20 ? "At target" : "Below target",
+        isPositive: hasIncome ? savingsRate >= 20 : null,
       },
       {
         icon: PiggyBank,
@@ -107,7 +104,7 @@ export function FinancialVitals() {
         icon: Trophy,
         label: "Goals Progress",
         value: `${goalsProgress.toFixed(0)}%`,
-        change: `${goalsOnTrack} goals on track`,
+        change: summary.goals.total_count === 0 ? "No goals added" : `${goalsOnTrack} goals on track`,
         isPositive: goalsProgress > 50,
       },
     ];
@@ -116,7 +113,13 @@ export function FinancialVitals() {
   const metrics = calculateMetrics();
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div className="mb-8">
+      {isError ? (
+        <p role="status" className="mb-3 text-sm text-muted-foreground">
+          Could not refresh the summary. Showing the last loaded values.
+        </p>
+      ) : null}
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
       {metrics.map((metric, index) => (
         <motion.div
           key={metric.label}
@@ -125,13 +128,12 @@ export function FinancialVitals() {
           transition={{ delay: index * 0.1 }}
           data-testid={`vital-${metric.label.toLowerCase().replace(/\s/g, "-")}`}
         >
-          <Card className="group relative cursor-pointer overflow-hidden p-6">
-            <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/8 to-transparent opacity-80 blur-2xl transition-opacity duration-300 group-hover:opacity-100" />
+          <Card className="relative overflow-hidden p-5">
             <div className="relative flex items-center justify-between mb-5">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/60 bg-white/5 text-foreground">
                 <metric.icon className="h-5 w-5" />
               </div>
-              <span className="rounded-full bg-background/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              <span className="text-sm font-medium text-muted-foreground">
                 {metric.label}
               </span>
             </div>
@@ -147,8 +149,8 @@ export function FinancialVitals() {
               </motion.div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span
-                  className="inline-block h-2 w-2 rounded-full"
-                  style={{ backgroundColor: metric.isPositive ? "hsl(0 0% 100%)" : "hsl(0 0% 50%)" }}
+                  aria-hidden="true"
+                  className={`inline-block h-2 w-2 rounded-full ${metric.isPositive === null ? "bg-muted-foreground" : metric.isPositive ? "bg-emerald-600 dark:bg-emerald-400" : "bg-amber-600 dark:bg-amber-400"}`}
                 />
                 {metric.change}
               </div>
@@ -156,6 +158,7 @@ export function FinancialVitals() {
           </Card>
         </motion.div>
       ))}
+    </div>
     </div>
   );
 }

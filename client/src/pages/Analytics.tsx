@@ -27,16 +27,20 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
+  Activity,
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
   Building2,
   Calendar,
+  Clock,
+  Flame,
   PiggyBank,
   ShoppingBag,
   TrendingDown,
   TrendingUp,
   Wallet,
+  Zap,
 } from "lucide-react";
 import {
   Area,
@@ -57,6 +61,7 @@ import {
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { InlineLoader } from "@/components/feedback/InlineLoader";
 import { PageIntro } from "@/components/layout/PageIntro";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -64,6 +69,7 @@ import {
   getAccountBalances,
   getCategoryTrends,
   getIncomeExpenseSummary,
+  getSpendingHeatmap,
   getTopMerchants,
   type IncomeExpenseMonth,
 } from "@/lib/api/v1/analytics";
@@ -79,24 +85,6 @@ const CHART_COLORS = [
   "hsl(173 61% 39%)",
 ];
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
-function formatCompactCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(amount);
-}
-
 function formatMonth(monthStr: string): string {
   const [year, month] = monthStr.split("-");
   const date = new Date(Number.parseInt(year, 10), Number.parseInt(month, 10) - 1);
@@ -104,6 +92,7 @@ function formatMonth(monthStr: string): string {
 }
 
 function AnalyticsTooltip({ active, payload, label }: any) {
+  const { formatMoney } = useOrgFormatters();
   if (!active || !payload?.length) {
     return null;
   }
@@ -116,7 +105,7 @@ function AnalyticsTooltip({ active, payload, label }: any) {
           <div key={`${entry.name}-${index}`} className="flex items-center gap-2 text-xs">
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: entry.color }} />
             <span className="text-muted-foreground">{entry.name}</span>
-            <span className="font-medium text-foreground">{formatCurrency(entry.value)}</span>
+            <span className="font-medium text-foreground">{formatMoney(entry.value)}</span>
           </div>
         ))}
       </div>
@@ -133,6 +122,7 @@ function AnalyticsStatCard({
   trendLabel,
   trendDirection,
   delay,
+  testId,
 }: {
   title: string;
   value: string;
@@ -142,6 +132,7 @@ function AnalyticsStatCard({
   trendLabel?: string;
   trendDirection?: "up" | "down";
   delay: number;
+  testId?: string;
 }) {
   const toneClasses = {
     income: {
@@ -164,7 +155,10 @@ function AnalyticsStatCard({
 
   return (
     <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay }}>
-      <Card className="relative overflow-hidden border-border/70 bg-card/90 shadow-[0_18px_45px_-34px_rgba(15,23,42,0.45)]">
+      <Card
+        className="relative overflow-hidden border-border/70 bg-card/90 shadow-[0_18px_45px_-34px_rgba(15,23,42,0.45)]"
+        data-testid={testId}
+      >
         <div className={`pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-br ${toneClasses.glow}`} />
         <CardContent className="relative p-5">
           <div className="flex items-start justify-between gap-4">
@@ -223,6 +217,10 @@ function AnalyticsLoadingState() {
 
 export default function Analytics() {
   const [timeRange, setTimeRange] = useState(12);
+  const { formatMoney, currency } = useOrgFormatters();
+  const formatCurrency = (amount: number) => formatMoney(amount);
+  const formatCompactCurrency = (amount: number) =>
+    formatMoney(amount, { notation: "compact", maximumFractionDigits: 1 });
 
   const incomeExpenseQuery = useQuery({
     queryKey: ["analytics", "income-expense", timeRange],
@@ -261,6 +259,8 @@ export default function Analytics() {
         )
       : 0;
   const accounts = balancesQuery.data?.accounts ?? [];
+  const chartAccounts = accounts.filter(account => account.currency === currency);
+  const hasOtherCurrencies = chartAccounts.length !== accounts.length;
   const netWorth = balancesQuery.data?.summary?.net_worth ?? 0;
 
   const categoryData = categoryQuery.data?.data ?? [];
@@ -299,17 +299,118 @@ export default function Analytics() {
         : "down"
       : undefined;
 
+  const [heatmapRange, setHeatmapRange] = useState(90);
+
+  const heatmapQuery = useQuery({
+    queryKey: ["analytics", "spending-heatmap", heatmapRange],
+    queryFn: () => getSpendingHeatmap(heatmapRange),
+    staleTime: 60_000,
+  });
+
+  const heatmapItems = heatmapQuery.data?.data ?? [];
+
+  // Day of week analysis & spending velocity
+  const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
+
+  const dayStats = DAYS_OF_WEEK.map((name) => ({
+    name,
+    shortName: name.slice(0, 3),
+    total: 0,
+    count: 0,
+    activeDatesCount: 0,
+    avgDailySpend: 0,
+    pctOfTotal: 0,
+    isPeak: false,
+  }));
+
+  let totalHeatmapSpend = 0;
+  let peakSingleDay: { date: string; total: number; count: number } | null = null;
+
+  for (const item of heatmapItems) {
+    const amount = Number(item.total || 0);
+    const count = Number(item.count || 0);
+    totalHeatmapSpend += amount;
+
+    if (!peakSingleDay || amount > peakSingleDay.total) {
+      peakSingleDay = { date: item.date, total: amount, count };
+    }
+
+    const [y, m, d] = item.date.split("-").map(Number);
+    if (y && m && d) {
+      const utcDay = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+      const dayIdx = (utcDay + 6) % 7;
+      dayStats[dayIdx].total += amount;
+      dayStats[dayIdx].count += count;
+      dayStats[dayIdx].activeDatesCount += 1;
+    }
+  }
+
+  let maxDayTotal = 0;
+  for (const day of dayStats) {
+    if (day.total > maxDayTotal) {
+      maxDayTotal = day.total;
+    }
+  }
+
+  let peakDayName = "N/A";
+  let peakDayStat = dayStats[0];
+  for (const day of dayStats) {
+    day.pctOfTotal = totalHeatmapSpend > 0 ? Math.round((day.total / totalHeatmapSpend) * 100) : 0;
+    day.avgDailySpend = day.activeDatesCount > 0 ? day.total / day.activeDatesCount : 0;
+    if (maxDayTotal > 0 && day.total === maxDayTotal) {
+      day.isPeak = true;
+      peakDayName = day.name;
+      peakDayStat = day;
+    }
+  }
+
+  const weekdaySpend = dayStats.slice(0, 5).reduce((acc, d) => acc + d.total, 0);
+  const weekdayPct = totalHeatmapSpend > 0 ? Math.round((weekdaySpend / totalHeatmapSpend) * 100) : 0;
+  const weekendPct = totalHeatmapSpend > 0 ? 100 - weekdayPct : 0;
+
+  const dailyBurnRate = heatmapRange > 0 ? totalHeatmapSpend / heatmapRange : 0;
+
+  const liquidCash = accounts
+    .filter((acc) => ["checking", "savings"].includes(acc.type?.toLowerCase()) && acc.currency === currency)
+    .reduce((acc, a) => acc + Math.max(0, a.balance), 0);
+
+  const runwayDays = dailyBurnRate > 0 && liquidCash > 0 ? Math.floor(liquidCash / dailyBurnRate) : null;
+  const runwayMonths = runwayDays !== null ? (runwayDays / 30.4375).toFixed(1) : null;
+
   const isLoading =
     incomeExpenseQuery.isLoading ||
     categoryQuery.isLoading ||
     balancesQuery.isLoading ||
-    merchantsQuery.isLoading;
+    merchantsQuery.isLoading ||
+    heatmapQuery.isLoading;
 
   const hasAnyData =
-    incomeExpenseData.length > 0 || pieData.length > 0 || merchants.length > 0 || accounts.length > 0;
+    incomeExpenseData.length > 0 ||
+    pieData.length > 0 ||
+    merchants.length > 0 ||
+    accounts.length > 0 ||
+    heatmapItems.length > 0;
+
+  if ([incomeExpenseQuery, categoryQuery, balancesQuery, merchantsQuery, heatmapQuery].some(query => query.isError)) {
+    return (
+      <div className="page-grid flex-1 p-4 sm:p-6" data-testid="analytics-page">
+        <Card className="mx-auto w-full max-w-xl p-6" role="alert">
+          <h1 className="text-xl font-semibold">Analytics could not load</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Some financial records are unavailable. Retry to see the complete totals.
+          </p>
+          <Button className="mt-4" onClick={() => {
+            for (const query of [incomeExpenseQuery, categoryQuery, balancesQuery, merchantsQuery, heatmapQuery]) {
+              if (query.isError) void query.refetch();
+            }
+          }}>Retry analytics</Button>
+        </Card>
+      </div>
+    );
+  }
 
   return (
-    <div className="page-grid flex-1 overflow-auto">
+    <div className="page-grid flex-1 overflow-auto" data-testid="analytics-page">
       <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
         <PageIntro
           icon={BarChart3}
@@ -327,7 +428,7 @@ export default function Analytics() {
             },
             {
               label: "Net worth snapshot",
-              value: formatCompactCurrency(netWorth),
+              value: hasOtherCurrencies ? "Not combined" : formatCompactCurrency(netWorth),
             },
           ]}
           actions={
@@ -342,13 +443,14 @@ export default function Analytics() {
                         ? "bg-primary text-primary-foreground shadow-sm"
                         : "text-muted-foreground hover:bg-accent hover:text-foreground"
                     }`}
+                    data-testid={`range-${range}m`}
                   >
                     {range}M
                   </button>
                 ))}
               </div>
               <Badge variant="outline" className="h-fit rounded-full px-3 py-2 text-xs">
-                Refreshes every minute
+                Based on saved records
               </Badge>
             </>
           }
@@ -357,7 +459,7 @@ export default function Analytics() {
         {isLoading ? (
           <AnalyticsLoadingState />
         ) : !hasAnyData ? (
-          <Card className="surface-panel border-border/70 p-8">
+          <Card className="surface-panel border-border/70 p-8" data-testid="analytics-empty-state">
             <EmptyState
               title="Not enough analytics data yet"
               description="Add transactions and accounts to unlock trend lines, category breakdowns, and account comparisons here."
@@ -375,6 +477,7 @@ export default function Analytics() {
                 icon={TrendingUp}
                 tone="income"
                 delay={0}
+                testId="stat-total-income"
               />
               <AnalyticsStatCard
                 title="Total expenses"
@@ -389,14 +492,18 @@ export default function Analytics() {
                 trendLabel={spendingChange}
                 trendDirection={spendingTrend}
                 delay={0.08}
+                testId="stat-total-expenses"
               />
               <AnalyticsStatCard
                 title="Net worth"
-                value={formatCurrency(netWorth)}
-                subtitle={`${accounts.length} account${accounts.length === 1 ? "" : "s"} represented`}
+                value={hasOtherCurrencies ? "Not combined" : formatCurrency(netWorth)}
+                subtitle={hasOtherCurrencies
+                  ? "Accounts use different currencies; no exchange rates applied"
+                  : `${accounts.length} account${accounts.length === 1 ? "" : "s"} represented`}
                 icon={Wallet}
                 tone="wealth"
                 delay={0.16}
+                testId="stat-net-worth"
               />
               <AnalyticsStatCard
                 title="Average savings rate"
@@ -411,12 +518,13 @@ export default function Analytics() {
                 trendLabel={latestMonth && prevMonth ? `${Math.abs(latestMonth.savings_rate - prevMonth.savings_rate)} pts` : undefined}
                 trendDirection={savingsTrend}
                 delay={0.24}
+                testId="stat-savings-rate"
               />
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
               <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}>
-                <Card className="surface-panel h-full border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]">
+                <Card data-testid="card-income-expenses" className="surface-panel h-full border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-primary" />
@@ -482,7 +590,7 @@ export default function Analytics() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.08 }}
               >
-                <Card className="surface-panel h-full border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]">
+                <Card data-testid="card-category-distribution" className="surface-panel h-full border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <ShoppingBag className="h-4 w-4 text-primary" />
@@ -538,7 +646,7 @@ export default function Analytics() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.12 }}
               >
-                <Card className="surface-panel h-full border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]">
+                <Card data-testid="card-top-merchants" className="surface-panel h-full border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Building2 className="h-4 w-4 text-primary" />
@@ -618,21 +726,26 @@ export default function Analytics() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.16 }}
               >
-                <Card className="surface-panel h-full border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]">
+                <Card data-testid="card-account-balances" className="surface-panel h-full border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Wallet className="h-4 w-4 text-primary" />
                       Account balances
                     </CardTitle>
                     <CardDescription>
-                      Assets at a glance, with liabilities clearly separated.
+                      Balances in {currency}, with liabilities clearly separated.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    {accounts.length > 0 ? (
+                    {hasOtherCurrencies && (
+                      <p className="mb-4 text-sm text-muted-foreground">
+                        Only {currency} accounts are shown. Other currencies are excluded; no exchange rates are applied.
+                      </p>
+                    )}
+                    {chartAccounts.length > 0 ? (
                       <ResponsiveContainer width="100%" height={340}>
                         <BarChart
-                          data={accounts.map((account) => ({
+                          data={chartAccounts.map((account) => ({
                             name: account.name,
                             Balance: account.balance,
                             fill:
@@ -662,7 +775,7 @@ export default function Analytics() {
                           />
                           <Tooltip content={<AnalyticsTooltip />} />
                           <Bar dataKey="Balance" radius={[0, 5, 5, 0]}>
-                            {accounts.map((account, index) => (
+                            {chartAccounts.map((account, index) => (
                               <Cell
                                 key={`${account.name}-${index}`}
                                 fill={
@@ -688,9 +801,201 @@ export default function Analytics() {
               </motion.div>
             </div>
 
+            <motion.div
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+            >
+              <Card
+                data-testid="card-spending-velocity"
+                className="surface-panel border-border/70 shadow-[0_22px_60px_-40px_rgba(15,23,42,0.5)]"
+              >
+                <CardHeader>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Activity className="h-4 w-4 text-primary" />
+                        Spending velocity & day-of-week heatmap
+                      </CardTitle>
+                      <CardDescription>
+                        Analyze which days drive peak spending, your daily burn rate, and projected cash runway.
+                      </CardDescription>
+                    </div>
+
+                    <div className="flex items-center gap-1 rounded-2xl border border-border/70 bg-background/80 p-1">
+                      {[30, 90, 180, 365].map((days) => (
+                        <button
+                          key={days}
+                          type="button"
+                          onClick={() => setHeatmapRange(days)}
+                          className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
+                            heatmapRange === days
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                          }`}
+                          data-testid={`heatmap-range-${days}`}
+                        >
+                          {days}D
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-1">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1.5 font-medium">
+                          <Flame className="h-3.5 w-3.5 text-rose-500" />
+                          Daily burn rate
+                        </span>
+                      </div>
+                      <p className="text-xl font-bold tracking-tight text-foreground" data-testid="metric-daily-burn-rate">
+                        {formatCurrency(dailyBurnRate)}
+                        <span className="text-xs font-normal text-muted-foreground"> / day</span>
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {totalHeatmapSpend > 0
+                          ? `${formatCompactCurrency(totalHeatmapSpend)} over ${heatmapRange} days`
+                          : "No expense records in range"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-1">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1.5 font-medium">
+                          <Zap className="h-3.5 w-3.5 text-amber-500" />
+                          Peak spending day
+                        </span>
+                        {peakDayName !== "N/A" && (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold"
+                            data-testid="badge-peak-day"
+                          >
+                            Peak Day
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xl font-bold tracking-tight text-foreground" data-testid="metric-peak-day">
+                        {peakDayName}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {peakDayStat && peakDayStat.total > 0
+                          ? `${formatCurrency(peakDayStat.total)} (${peakDayStat.pctOfTotal}% of total spend)`
+                          : "No expense activity"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-1">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1.5 font-medium">
+                          <Clock className="h-3.5 w-3.5 text-primary" />
+                          Weekday vs. weekend
+                        </span>
+                      </div>
+                      <p className="text-xl font-bold tracking-tight text-foreground" data-testid="metric-weekday-weekend-ratio">
+                        {weekdayPct}% <span className="text-sm font-normal text-muted-foreground">/</span> {weekendPct}%
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {weekdayPct >= 65
+                          ? "Heavily concentrated on weekdays"
+                          : weekendPct >= 40
+                          ? "High weekend leisure expenditure"
+                          : "Evenly balanced across the week"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-1">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1.5 font-medium">
+                          <Wallet className="h-3.5 w-3.5 text-sky-500" />
+                          Cash runway
+                        </span>
+                      </div>
+                      <p className="text-xl font-bold tracking-tight text-foreground" data-testid="metric-cash-runway">
+                        {runwayDays !== null ? `${runwayDays} days` : "Indefinite"}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {runwayMonths !== null
+                          ? `~${runwayMonths} months based on liquid cash`
+                          : "Based on available checking and savings"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3" data-testid="dow-heatmap-container">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between text-xs text-muted-foreground px-1">
+                      <span className="font-semibold uppercase tracking-wider text-[11px]">
+                        Day of week spending heatmap
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <span data-testid="metric-active-days">
+                          {heatmapItems.length} active spending days in {heatmapRange}D
+                        </span>
+                        {peakSingleDay && (
+                          <span className="hidden sm:inline" data-testid="metric-peak-single-day">
+                            Peak date: {peakSingleDay.date} ({formatCurrency(peakSingleDay.total)})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2.5 sm:grid-cols-7">
+                      {dayStats.map((day) => {
+                        const maxVal = maxDayTotal || 1;
+                        const barHeightPct = Math.max(8, Math.round((day.total / maxVal) * 100));
+
+                        return (
+                          <div
+                            key={day.name}
+                            data-testid={`dow-bar-${day.name.toLowerCase()}`}
+                            className={`relative flex flex-col justify-between rounded-xl border p-3 transition-all ${
+                              day.isPeak
+                                ? "border-primary/50 bg-primary/5 shadow-sm"
+                                : "border-border/60 bg-card/60 hover:bg-muted/30"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-1 mb-2">
+                              <span className="text-xs font-semibold text-foreground">{day.shortName}</span>
+                              {day.isPeak && (
+                                <span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[9px] font-bold text-primary">
+                                  TOP
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="space-y-2">
+                              <p className="text-sm font-bold text-foreground">
+                                {formatCurrency(day.total)}
+                              </p>
+
+                              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${
+                                    day.isPeak ? "bg-primary" : "bg-primary/50"
+                                  }`}
+                                  style={{ width: `${barHeightPct}%` }}
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                <span>{day.count} tx</span>
+                                <span>{day.pctOfTotal}%</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
             <p className="pb-4 text-center text-xs text-muted-foreground">
               Analytics are based on transaction history across the last {timeRange} months and
-              refresh automatically on a rolling cadence.
+              update when the workspace is refreshed or the selected window changes.
             </p>
           </>
         )}

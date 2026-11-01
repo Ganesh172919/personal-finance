@@ -4,6 +4,57 @@
  * This module defines the User schema and model for the Personal Finance application.
  * It handles user authentication, profile management, and security features.
  *
+ * ============================================================================
+ * MINDMAP FLOW: USER IDENTITY, CREDENTIAL LIFECYCLE & SECURITY
+ * ============================================================================
+ * - User Model & Identity Architecture
+ *     ├── 1. Authentication Strategies
+ *     │   ├── Native: Email + Bcrypt password (10 salt rounds)
+ *     │   ├── Federated: Google OAuth 2.0 (googleId sparse index)
+ *     │   └── Provider Tagging: authProvider ('email' | 'google')
+ *     ├── 2. Two-Factor Authentication (2FA / TOTP)
+ *     │   ├── twoFactorEnabled: Boolean toggle
+ *     │   ├── twoFactorSecret: Base32 TOTP secret (select: false)
+ *     │   ├── twoFactorPendingSecret: Staging key during QR code confirmation
+ *     │   └── twoFactorBackupCodes: Hashed recovery codes
+ *     ├── 3. Account Verification & Referrals
+ *     │   ├── isEmailVerified & verification tokens with TTL
+ *     │   └── Referral attribution (pendingReferralCode, referralRedeemedAt)
+ *     ├── 4. Field Projection Guardrails
+ *     │   └── Sensitive fields excluded by default: password, tokens, 2FA secrets
+ *     └── 5. Pre-Save Mongoose Middleware
+ *         └── Automatic bcrypt hashing whenever password field is dirty
+ *
+ * ============================================================================
+ * ASCII FLOW: USER REGISTRATION & PASSWORD HASHING LIFECYCLE
+ * ============================================================================
+ *                   [ Inbound User Registration / Password Change ]
+ *                                         |
+ *                                         v
+ *                    +------------------------------------+
+ *                    |     userSchema.pre('save') Hook    |
+ *                    +--------------------+---------------+
+ *                                         |
+ *                               Is password modified?
+ *                                     /        \
+ *                              Yes   /          \ No
+ *                                   v            v
+ *                    +-----------------------+  [ Proceed to Save ]
+ *                    | bcrypt.genSalt(10)    |
+ *                    | bcrypt.hash(password) |
+ *                    +-----------+-----------+
+ *                                |
+ *                                v
+ *                    +-----------------------+
+ *                    | user.password = hash  |
+ *                    +-----------+-----------+
+ *                                |
+ *                                v
+ *                    +------------------------------------+
+ *                    | Save Document to MongoDB 'users'   |
+ *                    | (password excluded on query select)|
+ *                    +------------------------------------+
+ *
  * KEY FEATURES:
  * - Email/password authentication
  * - Google OAuth authentication

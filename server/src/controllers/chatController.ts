@@ -4,6 +4,89 @@
  * Manages chat sessions and AI-powered conversations for the finance application.
  * Handles session CRUD, message persistence, and AI response generation with caching.
  *
+ * ============================================================================
+ * MINDMAP FLOW: CHAT SESSION MANAGEMENT & AGENTIC CONVERSATION PIPELINE
+ * ============================================================================
+ * - Conversational AI Controller
+ *     ├── 1. Session Lifecycle Management
+ *     │   ├── CRUD: POST/GET/DELETE/PATCH /api/chat/sessions
+ *     │   ├── Session Summaries: Rolling deterministic summary generated every 8 user turns
+ *     │   └── Multi-Tenancy: Strict orgId context validation via requireOrgId
+ *     ├── 2. Multimodal Context Aggregation
+ *     │   ├── User Financial Profile (Income, debts, investments, goals)
+ *     │   ├── Transaction Window (30-day recent transactions)
+ *     │   ├── Journal Context (Recent qualitative financial notes)
+ *     │   └── Workspace File Attachments: Extracted PDF/text content + OCR warnings
+ *     ├── 3. Caching & Deterministic AI Core Dispatch
+ *     │   ├── SHA-256 Chat Message Cache Key (query + context + session state)
+ *     │   ├── AI Core FastAPI Invocation (LangGraph subagent DAG)
+ *     │   └── Fallback Safety Plan Generation if AI Core is unavailable
+ *     ├── 4. Agentic Tool Execution & Autopilot
+ *     │   ├── Structured Tool Call Parsing (toolCallSchema validation)
+ *     │   ├── Autopilot Run Generation: Automatic execution envelope for executable plans
+ *     │   └── AgentOutputModel Persistence: Enables user ratings, reviews, and task conversion
+ *     └── 5. Observability, Auditing & Domain Events
+ *         ├── Entitlement Enforcement: Feature quotas verified before invocation
+ *         ├── High-Resolution Latency & Cache Metrics recording
+ *         └── Domain Event Publishing: Event bus broadcasting for downstream listeners
+ *
+ * ============================================================================
+ * ASCII FLOW: CHAT MESSAGE EXECUTION & AUTOPILOT ENVELOPE LIFECYCLE
+ * ============================================================================
+ *              Client Send Message (POST /api/chat/sessions/:id/messages)
+ *                                      |
+ *                                      v
+ *                   +--------------------------------------+
+ *                   | Validate Org & User Context (Auth)   |
+ *                   | Enforce Feature Limits (Entitlements)|
+ *                   +------------------+-------------------+
+ *                                      |
+ *                                      v
+ *                   +--------------------------------------+
+ *                   | Save User Message in ChatMessageModel|
+ *                   +------------------+-------------------+
+ *                                      |
+ *                   +------------------+-------------------+
+ *                   | Context Assembly Pipeline:           |
+ *                   | - Extract text from attached files   |
+ *                   | - Query recent transactions          |
+ *                   | - Check rolling session summary (8th)|
+ *                   +------------------+-------------------+
+ *                                      |
+ *                                      v
+ *                   +--------------------------------------+
+ *                   | Check AiResponseCacheModel           |
+ *                   +------------------+-------------------+
+ *                                /          \
+ *                       Cache Hit            Cache Miss
+ *                              /              \
+ *                             v                v
+ *                  [ Instant Reply ]     +-----------------------------+
+ *                                        | Dispatch to AI Core Service |
+ *                                        | (Master Agent & Specialists)|
+ *                                        +--------------+--------------+
+ *                                                       |
+ *                                                       v
+ *                                        +-----------------------------+
+ *                                        | Parse Response & Tool Calls |
+ *                                        | Does it contain Tool Calls? |
+ *                                        +--------------+--------------+
+ *                                                    /      \
+ *                                                Yes /        \ No
+ *                                                   v          v
+ *                                     +------------------+   +---------+
+ *                                     | Auto-create      |   | Standard|
+ *                                     | AutopilotRunModel|   | Reply   |
+ *                                     +--------+---------+   +----+----+
+ *                                              |                  |
+ *                                              +-------->---------+
+ *                                                       |
+ *                                                       v
+ *                                     +---------------------------------+
+ *                                     | Save Assistant Message & Output |
+ *                                     | Publish Domain Event to UI      |
+ *                                     +---------------------------------+
+ *
  * Routes served:
  *   POST   /api/chat/sessions              - createSession
  *   GET    /api/chat/sessions              - getSessions
@@ -53,6 +136,8 @@ import { publishDomainEvent } from "../services/domainEvents";
 import { buildAiFinanceGrounding } from "../services/financeGrounding";
 import { HttpError } from "../middleware/httpError";
 import { logger } from "../config/logger";
+import { buildSavedActivityDocument, createChatDocument, parseChatDocumentRequest } from "../services/chatDocuments";
+import { getOrGenerateConversationInsights } from "../services/conversationInsightsCache";
 
 const getSingleParam = (value: string | string[] | undefined) =>
   Array.isArray(value) ? value[0] : value;
@@ -493,7 +578,8 @@ export async function sendMessage(req: Request, res: Response) {
     });
 
     // Get the user's financial profile for AI context
-    const financialProfile = await ensureProfileWithMigration({ orgId, userId: user._id });
+    const documentRequest = parseChatDocumentRequest(content);
+    const financialProfile = documentRequest ? null : await ensureProfileWithMigration({ orgId, userId: user._id });
 
     let aiResponseContent = "I apologize, but I'm having trouble processing your request right now. Please try again.";
     let aiMetadata: any = {};
@@ -504,6 +590,26 @@ export async function sendMessage(req: Request, res: Response) {
 
     try {
       const aiStartedAt = Date.now();
+
+      if (documentRequest) {
+        const startedAt = new Date().toISOString();
+        aiMetadata = { analysisType: "document_creation", agentsInvolved: ["document_renderer"], llmCallCount: 0, fallbackUsed: false, requestId };
+        const savedContent = !documentRequest.content ? await buildSavedActivityDocument({
+          orgId, userId: user._id, request: content, currency: (await getOrgAiSettings(orgId)).currency,
+        }) : null;
+        if (!documentRequest.content && !savedContent) {
+          aiResponseContent = "I can create a PDF and save it in Files. Include the text after Content:, for example:\n\nCreate a PDF document titled Monthly checklist.\nContent:\n# Monthly checklist\n- Review spending\n- Check savings progress";
+        } else {
+          const document = await createChatDocument({ orgId, userId: user._id, requestId, ...documentRequest,
+            title: savedContent && documentRequest.title === "Chat document" ? "Your saved activity" : documentRequest.title,
+            content: documentRequest.content || savedContent!,
+          });
+          aiResponseContent = `Created **${document.title}** as a PDF from ${savedContent ? "your saved workspace records" : "the text you supplied"}. It is saved in Files.`;
+          aiMetadata.generatedDocuments = [document];
+        }
+        aiMetadata.aiCoreDurationMs = 0;
+        aiMetadata.workflowTrace = [{ agent: "PDF document renderer", startedAt, endedAt: new Date().toISOString(), status: "success" }];
+      } else {
 
       const profileUpdatedAt = financialProfile?.updatedAt ? new Date(financialProfile.updatedAt).toISOString() : "unknown";
       const transactionsUpdatedAt = financialProfile?.transactionsUpdatedAt
@@ -542,7 +648,12 @@ export async function sendMessage(req: Request, res: Response) {
         const [txResult, orgSettings, grounding] = await Promise.all([
           fetchTransactionsForAi({ orgId, userId: user._id }),
           getOrgAiSettings(orgId),
-          buildAiFinanceGrounding({ orgId, userId: user._id, selectedWorkspaceFileIds: requestedFileIds }),
+          buildAiFinanceGrounding({
+            orgId,
+            userId: user._id,
+            selectedWorkspaceFileIds: requestedFileIds,
+            retrievalQuery: String(content || ""),
+          }),
         ]);
 
          const { request: aiRequest, stats } = buildProcessRequest({
@@ -635,9 +746,12 @@ export async function sendMessage(req: Request, res: Response) {
           { upsert: true, new: true, setDefaultsOnInsert: true }
         );
       }
+      }
     } catch (aiError: any) {
-      logger.error({ error: aiError?.message ?? aiError }, `[requestId=${requestId}] AI service error`);
-      aiResponseContent = "I'm currently experiencing some difficulties connecting to the AI service. Please try again in a moment.";
+      logger.error({ error: aiError?.message ?? aiError }, `[requestId=${requestId}] ${documentRequest ? "Document creation error" : "AI service error"}`);
+      aiResponseContent = documentRequest
+        ? "I couldn't create the PDF. Your request is saved in this conversation. Send it again to retry."
+        : "I'm currently experiencing some difficulties connecting to the AI service. Please try again in a moment.";
     }
 
     try {
@@ -919,7 +1033,7 @@ export async function getConversationInsights(req: Request, res: Response) {
       getJournalContextForAi({ orgId, userId: user._id }),
       getOrgAiSettings(orgId),
       fetchTransactionsForAi({ orgId, userId: user._id }),
-      buildAiFinanceGrounding({ orgId, userId: user._id }),
+      buildAiFinanceGrounding({ orgId, userId: user._id, retrievalQuery: "conversation insights summary" }),
     ]);
 
     const summarySections = await Promise.all(
@@ -969,42 +1083,79 @@ export async function getConversationInsights(req: Request, res: Response) {
       "- Focus on recurring priorities, blind spots, and patterns.",
       "- Keep it practical and action-oriented.",
       "- Avoid restating the same advice twice.",
-      "",
-      "Conversation summaries:",
-      summarySections.join("\n\n---\n\n"),
     ].join("\n");
+    // Historical questions are context, not fresh routing instructions. Mixing
+    // them into user_input can trigger a direct answer to an earlier question.
+    const conversationContext = [
+      journalContext.summary,
+      "Recent finance conversation summaries:",
+      summarySections.join("\n\n---\n\n"),
+    ].filter(Boolean).join("\n\n");
 
     const { request: aiRequest } = buildProcessRequest({
       userInput: prompt,
       profile,
-      financeContext: grounding.finance_context,
+      financeContext: {
+        ...grounding.finance_context,
+        conversation_sessions: sessions.map((session, index) => ({
+          id: String(session._id), title: String(session.title),
+          summary: summarySections[index],
+        })),
+      },
       orgId: orgId.toString(),
       userId: user._id.toString(),
       orgSettings,
       transactions: txResult.transactions,
       totalTransactions: txResult.stats.totalTransactions,
-      sessionSummary: journalContext.summary || undefined,
+      sessionSummary: conversationContext,
       narrative: true,
     });
 
-    const aiResponse = await processAiCoreRequest(aiRequest, req.requestId, { userId: user._id.toString() });
-    const { plan: normalizedPlan } = normalizeAiPlan(aiResponse.plan);
+    // Earlier questions inside summaries are context, not a new request to
+    // quote a file. Keep evidence while suppressing direct-document prefixes.
+    aiRequest.options = { ...aiRequest.options, include_document_passages: false, task_type: "conversation_insights" };
+    const snapshot = await getOrGenerateConversationInsights({
+      orgId, userId: user._id, request: aiRequest,
+      refresh: req.query.refresh === "1",
+      generate: async () => {
+        await enforceFeatureLimit({ orgId, userId: user._id, feature: "monthly_ai_calls", units: 1, requestId: req.requestId });
+        const aiResponse = await processAiCoreRequest(aiRequest, req.requestId, { userId: user._id.toString() });
+        await recordFeatureUsage({
+          orgId, userId: user._id, feature: "monthly_ai_calls", units: 1, requestId: req.requestId,
+          tokensIn: aiResponse.usage?.tokens_in, tokensOut: aiResponse.usage?.tokens_out,
+          costUsd: aiResponse.usage?.cost_usd, modelName: aiResponse.usage?.models?.[0],
+          context: { endpoint: "chat/conversation-insights" },
+        });
+        const { plan: normalizedPlan } = normalizeAiPlan(aiResponse.plan);
+        return {
+          success: true,
+          response: aiResponse.final_output,
+          plan: normalizedPlan,
+          evidence: aiResponse.evidence || grounding.evidence,
+          confidence: aiResponse.confidence || grounding.confidence,
+          analysis_type: "conversation_insights",
+          agents_involved: aiResponse.agents_involved,
+          workflow_trace: aiResponse.workflow_trace || [],
+          fallback_used: aiResponse.fallback_used || false,
+          llm_call_count: aiResponse.llm_call_count || 0,
+          sessions_considered: sessions.length,
+        };
+      },
+    });
+    recordAiCache({ endpoint: "conversation-insights", hit: snapshot.cacheHit });
 
     return res.json({
-      success: true,
-      response: aiResponse.final_output,
-      plan: normalizedPlan,
-      evidence: aiResponse.evidence || grounding.evidence,
-      confidence: aiResponse.confidence || grounding.confidence,
-      analysis_type: "conversation_insights",
-      agents_involved: aiResponse.agents_involved,
-      workflow_trace: aiResponse.workflow_trace || [],
-      fallback_used: aiResponse.fallback_used || false,
-      llm_call_count: aiResponse.llm_call_count || 0,
-      request_id: aiResponse.request_id || req.requestId,
-      sessions_considered: sessions.length,
+      ...snapshot.data,
+      cache_hit: snapshot.cacheHit,
+      generated_at: snapshot.generatedAt,
+      // A reused trace is historical; do not present it as new model work.
+      ...(snapshot.cacheHit ? { llm_call_count: 0, workflow_trace: [] } : {}),
+      request_id: req.requestId,
     });
   } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.statusCode).json({ message: error.message, code: error.code, request_id: req.requestId });
+    }
     logger.error({ error }, `[requestId=${req.requestId}] Error generating conversation insights`);
     return res.status(500).json({ message: "Failed to generate conversation insights", request_id: req.requestId });
   }

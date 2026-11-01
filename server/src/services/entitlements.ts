@@ -6,6 +6,79 @@
  * which features users can access and how much they can use based on their
  * subscription plan (Free, Pro, Team, Enterprise).
  *
+ * ============================================================================
+ * MINDMAP FLOW: ENTITLEMENTS, QUOTA GATING & USAGE LEDGER
+ * ============================================================================
+ * - Entitlement & Metering Engine
+ *     ├── 1. Subscription Plan Catalog (PLAN_CATALOG)
+ *     │   ├── Free: 60 AI calls, 30 scenarios, 20 OCR, export: false
+ *     │   ├── Pro: 600 AI calls, 300 scenarios, 200 OCR, export: true
+ *     │   ├── Team: 3,000 AI calls, 1,500 scenarios, 1,000 OCR, export: true
+ *     │   └── Enterprise: 20,000 AI calls, 10,000 scenarios, unlimited exports
+ *     ├── 2. Credit Grant Addition Engine
+ *     │   ├── Promotional & compensation credits (CreditGrantModel)
+ *     │   └── Stacking formula: Effective Limit = Plan Base + Credit Balance
+ *     ├── 3. Pre-Execution Enforcement Gate (enforceFeatureLimit)
+ *     │   ├── Boolean Feature Gating (e.g. export_access check)
+ *     │   ├── Counter Feature Gating (Effective Limit - Current Ledger Usage >= requested)
+ *     │   └── 402 Payment Required Error thrown on quota exhaustion
+ *     ├── 4. Dual-Store Usage Accounting
+ *     │   ├── Aggregated Counter: UsageLedgerModel (indexed by month period_key)
+ *     │   ├── Granular Event Log: UsageEventModel (audit trail with timestamps & metadata)
+ *     │   └── Prometheus Metrics: recordUsageEvent counters
+ *     └── 5. Tiered Performance Caching
+ *         ├── Redis Cache: 60-second TTL for rapid entitlement balance evaluation
+ *         └── Cache Eviction: Targeted invalidation upon recordFeatureUsage dispatch
+ *
+ * ============================================================================
+ * ASCII FLOW: FEATURE QUOTA ENFORCEMENT & USAGE RECORDING
+ * ============================================================================
+ *                 [ Protected Feature Invocation (e.g., AI Call) ]
+ *                                       |
+ *                                       v
+ *                     +-----------------------------------+
+ *                     | enforceFeatureLimit(orgId, feature|
+ *                     +-----------------+-----------------+
+ *                                       |
+ *                                       v
+ *                     +-----------------------------------+
+ *                     | Check Redis Entitlement Cache     |
+ *                     +-----------------+-----------------+
+ *                                  /         \
+ *                         Hit     /           \ Miss
+ *                                v             v
+ *                    [ Use Cached Limit ]   +---------------------------+
+ *                                |          | Query MongoDB:            |
+ *                                |          | - EntitlementModel (tier) |
+ *                                |          | - sumCreditsByFeature()   |
+ *                                |          | - UsageLedgerModel (spend)|
+ *                                |          +-------------+-------------+
+ *                                |                        |
+ *                                +------------<-----------+
+ *                                             |
+ *                                             v
+ *                              Effective Limit = Base + Credits - Spend
+ *                                             |
+ *                                Is Quota >= Requested Units?
+ *                                       /             \
+ *                                 Yes  /               \ No
+ *                                     v                 v
+ *                      [ Allow Execution ]   +-------------------------+
+ *                              |             | Throw HttpError(402,    |
+ *                              |             | "PAYMENT_REQUIRED",     |
+ *                              |             | upgradeUrl, currentSpend|
+ *                              |             +-------------------------+
+ *                              v
+ *                      [ Action Completes ]
+ *                              |
+ *                              v
+ *                      +----------------------------------+
+ *                      | recordFeatureUsage(org, units)   |
+ *                      | 1. Increment UsageLedgerModel    |
+ *                      | 2. Append UsageEventModel record |
+ *                      | 3. Invalidate Redis Cache Entry  |
+ *                      +----------------------------------+
+ *
  * CORE CONCEPTS:
  * 1. PLAN TIERS: Each plan (free/pro/team/enterprise) has predefined limits
  *    for features like AI calls, OCR quota, API requests, etc.

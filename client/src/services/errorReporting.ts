@@ -2,7 +2,7 @@
  * @fileoverview Client-side Error Reporting Service
  *
  * Captures unhandled errors, React boundary crashes, and custom events.
- * Reports via POST /api/v1/client-errors when available, and logs to
+ * Reports via POST /api/client-errors when available, and logs to
  * console in development. Designed as a drop-in for future Sentry migration.
  *
  * BREADCRUMB SYSTEM:
@@ -80,7 +80,7 @@ async function report(error: Error, componentStack?: string) {
 
   // Best-effort server report (non-blocking, swallow errors)
   try {
-    await fetch("/api/v1/client-errors", {
+    await fetch("/api/client-errors", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

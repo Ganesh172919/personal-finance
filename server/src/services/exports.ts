@@ -132,26 +132,38 @@ const buildTransactionsCsv = async (params: {
 
   let bytes = 0;
 
-  const header = [
-    "id",
-    "date",
-    "type",
-    "amount",
-    "category",
-    "description",
-    "source_origin",
-    "source_request_id",
-    "source_task_id",
-    "source_agent_output_id",
-    "source_receipt_id",
-    "source_journal_entry_id",
-    "source_action_link_id",
-    "source_actor_type",
-    "source_source_ref",
-    "source_note",
-    "created_at",
-    "updated_at",
-  ].join(",");
+  const ALL_COLUMNS: Array<{ key: string; extract: (tx: any, source: any) => string }> = [
+    { key: "id", extract: (tx) => toCsvCell(tx._id) },
+    { key: "date", extract: (tx) => toCsvCell(tx.date ? toDayKey(new Date(tx.date)) : "") },
+    { key: "type", extract: (tx) => toCsvCell(tx.type) },
+    { key: "amount", extract: (tx) => toCsvCell(tx.amount) },
+    { key: "category", extract: (tx) => toCsvCell(tx.category) },
+    { key: "description", extract: (tx) => toCsvCell(tx.description) },
+    { key: "source_origin", extract: (_tx, source) => toCsvCell(source.origin) },
+    { key: "source_request_id", extract: (_tx, source) => toCsvCell(source.request_id) },
+    { key: "source_task_id", extract: (_tx, source) => toCsvCell(source.task_id) },
+    { key: "source_agent_output_id", extract: (_tx, source) => toCsvCell(source.agent_output_id) },
+    { key: "source_receipt_id", extract: (_tx, source) => toCsvCell(source.receipt_id) },
+    { key: "source_journal_entry_id", extract: (_tx, source) => toCsvCell(source.journal_entry_id) },
+    { key: "source_action_link_id", extract: (_tx, source) => toCsvCell(source.action_link_id) },
+    { key: "source_actor_type", extract: (_tx, source) => toCsvCell(source.actor_type) },
+    { key: "source_source_ref", extract: (_tx, source) => toCsvCell(source.source_ref) },
+    { key: "source_note", extract: (_tx, source) => toCsvCell(source.note) },
+    { key: "created_at", extract: (tx) => toCsvCell(tx.createdAt ? new Date(tx.createdAt).toISOString() : "") },
+    { key: "updated_at", extract: (tx) => toCsvCell(tx.updatedAt ? new Date(tx.updatedAt).toISOString() : "") },
+  ];
+
+  const requestedColumns = Array.isArray(params.jobParams.columns)
+    ? (params.jobParams.columns as string[]).map((c) => String(c).trim().toLowerCase())
+    : [];
+
+  const columnMap = new Map(ALL_COLUMNS.map((c) => [c.key, c]));
+  const activeColumns = requestedColumns.length > 0
+    ? requestedColumns.map((colKey) => columnMap.get(colKey)).filter((c): c is (typeof ALL_COLUMNS)[0] => Boolean(c))
+    : ALL_COLUMNS;
+
+  const colsToRender = activeColumns.length > 0 ? activeColumns : ALL_COLUMNS;
+  const header = colsToRender.map((c) => c.key).join(",");
 
   const writeLine = async (line: string) => {
     bytes += Buffer.byteLength(line, "utf8");
@@ -169,26 +181,7 @@ const buildTransactionsCsv = async (params: {
 
     for await (const tx of cursor) {
       const source: any = (tx as any).source || {};
-      const row = [
-        toCsvCell((tx as any)._id),
-        toCsvCell((tx as any).date ? toDayKey(new Date((tx as any).date)) : ""),
-        toCsvCell((tx as any).type),
-        toCsvCell((tx as any).amount),
-        toCsvCell((tx as any).category),
-        toCsvCell((tx as any).description),
-        toCsvCell(source.origin),
-        toCsvCell(source.request_id),
-        toCsvCell(source.task_id),
-        toCsvCell(source.agent_output_id),
-        toCsvCell(source.receipt_id),
-        toCsvCell(source.journal_entry_id),
-        toCsvCell(source.action_link_id),
-        toCsvCell(source.actor_type),
-        toCsvCell(source.source_ref),
-        toCsvCell(source.note),
-        toCsvCell((tx as any).createdAt ? new Date((tx as any).createdAt).toISOString() : ""),
-        toCsvCell((tx as any).updatedAt ? new Date((tx as any).updatedAt).toISOString() : ""),
-      ].join(",");
+      const row = colsToRender.map((c) => c.extract(tx, source)).join(",");
       await writeLine(`${row}\n`);
     }
 
@@ -311,9 +304,12 @@ const buildMonthlySummaryPdf = async (params: {
     pdf.fontSize(20).text("Personal Finance Monthly Summary", { align: "left" });
     pdf.moveDown(0.5);
 
+    const currencyCode = safeString((org as any)?.currency || "USD").toUpperCase();
+
     pdf.fontSize(11).fillColor("#333");
     pdf.text(`Period: ${periodKey} (UTC)`);
     pdf.text(`Organization: ${safeString((org as any)?.name || "Unknown")}`);
+    pdf.text(`Currency: ${currencyCode}`);
     pdf.text(`User: ${safeString((user as any)?.name || (user as any)?.email || "Unknown")}`);
     pdf.moveDown(1);
 
@@ -321,9 +317,9 @@ const buildMonthlySummaryPdf = async (params: {
     pdf.moveDown(0.25);
     pdf.fontSize(11).fillColor("#333");
     pdf.text(`Transactions: ${txCount}`);
-    pdf.text(`Income: ${incomeTotal.toFixed(2)}`);
-    pdf.text(`Expenses: ${expenseTotal.toFixed(2)}`);
-    pdf.text(`Net: ${netTotal.toFixed(2)}`);
+    pdf.text(`Income: ${currencyCode} ${incomeTotal.toFixed(2)}`);
+    pdf.text(`Expenses: ${currencyCode} ${expenseTotal.toFixed(2)}`);
+    pdf.text(`Net: ${currencyCode} ${netTotal.toFixed(2)}`);
     pdf.moveDown(1);
 
     pdf.fontSize(14).fillColor("#000").text("Top Expense Categories");
@@ -337,7 +333,7 @@ const buildMonthlySummaryPdf = async (params: {
         const category = safeString(row?._id || "Other");
         const total = Number(row?.total || 0);
         const count = Number(row?.count || 0);
-        pdf.text(`${category}: ${total.toFixed(2)} (${count} tx)`);
+        pdf.text(`${category}: ${currencyCode} ${total.toFixed(2)} (${count} tx)`);
       }
     }
 

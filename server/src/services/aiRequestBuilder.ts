@@ -7,6 +7,64 @@
  * this module handles DATA TRANSFORMATION -- converting user profiles, transactions,
  * and settings into the normalized payload the Python AI service needs.
  *
+ * ============================================================================
+ * MINDMAP FLOW: AI REQUEST BUILDER & CONTEXT NORMALIZATION
+ * ============================================================================
+ * - AI Request Transformation Engine
+ *     ├── 1. Financial Profile Sanitization
+ *     │   ├── Baseline figures: annual_income, monthly_expenses, savings
+ *     │   ├── Structured Debts: principal, interest_rate, minimum_payment
+ *     │   ├── Goals Matrix: target_amount, deadline, timeline_months (default: 12)
+ *     │   └── Risk & Horizon: risk_tolerance, investment_experience, time_horizon (default: 10y)
+ *     ├── 2. Transaction Windowing & Budget Guardrails
+ *     │   ├── Recency Filtering: DEFAULT_TX_MAX_AGE_DAYS (365 days max history)
+ *     │   ├── Volume Capping: DEFAULT_TX_MAX_ITEMS (300 transactions max to prevent context blowout)
+ *     │   └── Categorical Normalization: amount sanitization, date formatting, type classification
+ *     ├── 3. Organization Localization Settings
+ *     │   ├── Currency ISO Code (default: USD)
+ *     │   ├── Locale BCP-47 Code (default: en-US)
+ *     │   └── Timezone IANA Name (default: UTC)
+ *     ├── 4. Grounding & RAG Evidence Ingestion
+ *     │   ├── Extracted document chunks from WorkspaceFileModel
+ *     │   ├── Verified financial metrics and formula inputs
+ *     │   └── Chat history turns with role preservation ('user' | 'assistant')
+ *     └── 5. Typed Schema Delivery
+ *         └── Returns strictly typed AiCoreProcessRequest ready for FastAPI dispatch
+ *
+ * ============================================================================
+ * ASCII FLOW: CONTEXT TRANSFORMATION & PAYLOAD ASSEMBLY
+ * ============================================================================
+ *   [ Raw MongoDB Entities: UserProfile, Transactions, OrgSettings, Files ]
+ *                                      |
+ *                                      v
+ *                  +--------------------------------------+
+ *                  |   buildProcessRequest(inputParams)   |
+ *                  +------------------+-------------------+
+ *                                     |
+ *      +-----------------------+------+-----------------------+
+ *      |                       |                              |
+ *      v                       v                              v
+ *  [Profile Shaping]    [Transaction Pruning]         [Org & Local Setting]
+ *  - Sanitize income    - Filter age <= 365 days      - Validate currency
+ *  - Normalize debts    - Slice to max 300 txns       - Default locale: en-US
+ *  - Default 12m goals  - Math.abs on expense amts    - Default tz: UTC
+ *      |                       |                              |
+ *      +-----------------------+------+-----------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Grounding & Evidence Integration     |
+ *                  | - Attach RAG evidence items          |
+ *                  | - Inject file text context           |
+ *                  | - Map conversation turn history      |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Emit AiCoreProcessRequest Object     |
+ *                  | Dispatched to Python AI Core Service |
+ *                  +--------------------------------------+
+ *
  * WHY A SEPARATE BUILDER?
  * 1. The AI service has strict input requirements (specific field names, types, ranges)
  * 2. Our internal data model may differ (different field names, nullable fields)
@@ -106,6 +164,7 @@ type FinancialProfileLike = {
   goals?: Array<{
     name?: unknown; // Goal name
     target?: unknown; // Target amount
+    current?: unknown; // Saved progress; missing values must remain unknown
     deadline?: unknown; // Goal deadline
     priority?: unknown; // Goal priority
   }>;
@@ -461,7 +520,14 @@ export const buildProcessRequest = (params: {
     request: {
       user_input: params.userInput,
       user_profile,
-      finance_context: params.financeContext,
+      finance_context: {
+        ...params.financeContext,
+        as_of: new Date().toISOString(),
+        goals: (params.profile?.goals || []).slice(0, 20).map(goal => ({
+          name: toStringOrEmpty(goal.name), target: goal.target, current: goal.current,
+          deadline: toStringOrEmpty(goal.deadline), priority: goal.priority,
+        })),
+      },
       org_id: params.orgId,
       user_id: params.userId,
       session_id: params.sessionId,

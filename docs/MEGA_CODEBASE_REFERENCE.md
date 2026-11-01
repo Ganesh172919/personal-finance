@@ -23,6 +23,10 @@ Conventions used in this atlas:
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## A) Root-Level Layout
 
 Root folders:
@@ -834,3 +838,156 @@ They are intentionally short and line-oriented.
 - Validate uploads (mime + max bytes).
 - Sanitize inputs to prevent NoSQL injection.
 
+
+## Documentation mind map
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#06b6d4', 'secondaryColor': '#7c3aed', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((🗺️ FinWise Codebase Atlas))
+    🖥️ Client SPA (client/)
+      Vite + React 18 (TypeScript)
+      Tailwind CSS + Lucide Icons
+      FinanceOS Cockpit Pages
+      Zustand Store Architecture
+      Hooks & SSE Stream Consumers
+    🚀 Node Gateway (server/)
+      Express 5 TypeScript Pipeline
+      60 Domain Services
+      52 Mongoose Models
+      BullMQ Async Queues & Workers
+      Passport JWT & OAuth Auth
+    🧠 AI Core (server/AI_Core/)
+      FastAPI Microservice (Port 8001)
+      LangGraph Multi-Agent Workflows
+      SubAgent Manager & Task Decomposer
+      RAG Phase 2 Grounding Engine
+      Dynamic KeyPool & Failover
+    📦 Shared Packages (packages/)
+      TypeScript Contracts
+      Zod Schema Validation
+      Common Type Definitions
+    📚 Documentation Suite (docs/)
+      Architecture & Database Catalogs
+      Security & Observability Runbooks
+      Local Setup & Deployment Guides
+```
+
+## System Architecture & Component ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🌐 CLIENT TIER: React 18 SPA (Port 5173 / Vite)                         │
+│    ├── src/pages/ (FinanceOS, Dashboard, Transactions, Budgets)        │
+│    ├── src/components/ (CommandCenter, ReviewQueue, HealthGauge)       │
+│    ├── src/stores/ (chatStore, authStore, filterStore)                 │
+│    └── src/hooks/ (useAIStream, useSocket, useRealtimeUpdates)         │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ HTTP / REST / SSE / WebSockets
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔷 API GATEWAY TIER: Express 5 + TypeScript (Port 3000)                │
+│    ├── src/app.ts (Composition root, middleware pipeline, CORS)        │
+│    ├── src/routes/ (v1Routes: 60+ domain route handlers)               │
+│    ├── src/services/ (60 domain services: transactions, budgets, etc.) │
+│    ├── src/models/ (52 Mongoose models with OrgScopePlugin)            │
+│    └── src/jobs/ (BullMQ workers: newsletter, DLQ, background tasks)   │
+└──────────────────┬─────────────────────────────────┬───────────────────┘
+                   │                                 │
+                   ▼                                 ▼
+┌──────────────────────────────────────┐  ┌──────────────────────────────┐
+│ 🗄️ PERSISTENCE TIER                  │  │ 🧠 AI ENGINE: Python FastAPI │
+│  ├── MongoDB 7.0 (Port 27017)        │  │  │   (Port 8001 / LangGraph) │
+│  │   └── 52 Multi-Tenant Collections │  │  ├── api_service.py          │
+│  └── Redis 7.0 (Port 6379)           │  │  ├── sub_agent_manager.py    │
+│      ├── BullMQ Queues               │  │  ├── rag_service.py (BM25)   │
+│      └── Rate Limiting Buckets       │  │  └── key_pool.py (Gemini/    │
+└──────────────────────────────────────┘  │          Groq/OpenAI/Ollama) │
+                                          └──────────────────────────────┘
+```
+
+## Composition Root Implementation Blueprint (`server/src/server.ts`)
+
+```typescript
+import { createApp } from "./app";
+import { connectDB, closeDB } from "./config/database";
+import { configurePassport } from "./config/passport";
+import { getEnv } from "./config/env";
+import { logger } from "./utils/logger";
+import { startAllQueues, stopAllQueues } from "./jobs/queueManager";
+
+export async function bootstrap(): Promise<void> {
+  const env = getEnv();
+
+  // 1. Initialize persistent storage connections
+  await connectDB(env.DATABASE_URL);
+  logger.info({ context: "boot" }, "Connected to MongoDB 7.0 primary replica set");
+
+  // 2. Configure Passport authentication strategies
+  configurePassport();
+
+  // 3. Mount Express application middleware and routes
+  const app = createApp();
+
+  // 4. Initialize background BullMQ workers and dead-letter queues
+  await startAllQueues();
+
+  // 5. Bind HTTP listener
+  const server = app.listen(env.PORT, () => {
+    logger.info({ port: env.PORT, env: env.NODE_ENV }, "FinWise API Gateway listening");
+  });
+
+  // Graceful shutdown lifecycle
+  const shutdown = async (signal: string) => {
+    logger.info({ signal }, "Received termination signal, draining connections");
+    server.close(async () => {
+      await stopAllQueues();
+      await closeDB();
+      logger.info("Graceful shutdown complete. Exiting process.");
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+}
+```
+
+
+---
+
+## Q) Latest Platform Additions & File Inventory (2026 Phase 1–5 Additions)
+
+### Q.1 Frontend Components & Cockpit Views (`client/src/`)
+- `client/src/components/CommandCenter.tsx`: The primary dashboard hero ("Today in FinWise") displaying liquid cash runway in days, 4 core KPI cards, urgency priority signal chips ("Act now", "Review this week", "Safe to ignore"), and 7-day upcoming bills list with Framer Motion animations.
+- `client/src/components/BudgetHealthCard.tsx`: Circular SVG animated health gauge (0–100) with 4 score breakdown bars (adherence 40pts, review cleanliness 20pts, goals 20pts, debts 20pts), weekly spending trend indicator, and burn-rate alert chips.
+- `client/src/components/TransactionReviewQueue.tsx`: Interactive review table filtering transactions by categorization confidence ($< 0.70$), featuring one-click approval, bulk approval (up to 200 items), and direct promotion into permanent `CategoryRule` models.
+
+---
+
+### Q.2 Backend Domain Services (`server/src/services/`)
+- `server/src/services/commandCenterService.ts`: Aggregates 9 data sources (accounts, transactions, budgets, recurring rules, calendar reminders, tasks, goals, debts, candidates) into a unified daily cockpit payload.
+- `server/src/services/budgetHealthService.ts`: Computes weekly 0–100 composite health score and evaluates category burn-rate alerts with pace comparisons and forward projections.
+- `server/src/services/transactionReview.ts`: Heuristic confidence scorer ($\text{Confidence} = \max(0.10, 1.0 - 0.20 \cdot N_{\text{flags}} + 0.10 \cdot \mathbf{1}_{\text{merchant}})$), single approval, bulk approval, and category rule creator.
+- `server/src/services/retrievalService.ts`: Bounded window chunker (1,800 characters with 260 character overlap), hybrid lexical BM25 + dense semantic cosine scoring ($G \ge 0.70$), and verifiable citation generation.
+- `server/src/services/newsletterService.ts` & `newsletterScheduler.ts`: BullMQ scheduled weekly digest dispatching aligned to subscriber UTC preferences.
+- `server/src/services/deadLetterQueue.ts`: Redis DLQ quarantining poisoned background jobs after 3 consecutive failed attempts with automatic credential and PII scrubbing.
+- `server/src/services/pdfRequestServer.ts`: Streams PDFKit-rendered vector financial reports directly into MongoDB GridFS and HTTP responses with zero V8 heap buffering.
+- `server/src/services/conversationInsightsCache.ts`: High-performance in-process 64-slot Promise coalescing buffer preventing thundering-herd LLM evaluations.
+- `server/src/services/transactionIndexes.ts`: Startup verification and background creation of critical compound B-Tree indexes on transactions collection.
+- `server/src/services/healthScoreService.ts`: Evaluates the 100-point composite financial health score across adherence, cleanliness, goals, and debt pillars.
+
+---
+
+### Q.3 Database Models (`server/src/models/`)
+- `server/src/models/HealthScore.ts`: Persists historical weekly health score snapshots with compound index `{ orgId: 1, userId: 1, periodEnd: -1 }`.
+- `server/src/models/newsletterPreferenceModel.ts`: Stores subscriber delivery preferences and scheduled dispatch windows with compound index `{ orgId: 1, enabled: 1, preferredDay: 1 }`.
+- `server/src/models/workspaceKnowledgeChunkModel.ts`: Stores bounded 1,800-character document chunks with full-text search indexes `{ text: "text" }` for grounded RAG retrieval.
+
+---
+
+### Q.4 AI Core Orchestration & Evals (`server/AI_Core/`)
+- `server/AI_Core/agents/sub_agent_manager.py`: Kahn's topological sort scheduler for parallel specialist agent dispatch.
+- `server/AI_Core/agents/aggregator.py`: Mathematical number safety guard enforcing $\sum \Delta B_i = 0$ and $\text{Candidate Digits} \subseteq \text{Reference Digits}$.
+- `server/AI_Core/evals/`: Invariant test harness (`test_number_safety.py`, `test_routing_accuracy.py`, `test_determinism.py`, `runner.py`).
+- `server/AI_Core/lora/`: Low-rank parameter-efficient fine-tuning module ($r=8, \alpha=16$) for personal finance intent classification.

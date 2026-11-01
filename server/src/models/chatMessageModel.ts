@@ -109,6 +109,24 @@ export interface IChatMessageMetadata {
   /** Full analysis results stored as a flexible object for complex data structures */
   detailedAnalysis?: Record<string, unknown>;
 
+  evidence?: Array<{
+    id?: string;
+    type?: string;
+    label?: string;
+    snippet?: string;
+    entity_id?: string;
+    page_number?: number;
+  }>;
+  confidence?: {
+    score?: number;
+    label?: string;
+    notes?: string[];
+    coverage?: Record<string, unknown>;
+  };
+  suggestedActions?: Array<Record<string, unknown>>;
+  linkedEntityIds?: Record<string, string[]>;
+  generatedDocuments?: Array<{ workspaceFileId: string; fileId: string; title: string; filename: string; mimeType: string; sizeBytes: number }>;
+
   /**
    * Trace of the multi-agent workflow showing each agent's execution timeline.
    * Enables the UI to render a visual timeline of how the AI composed its response
@@ -286,6 +304,14 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
         type: Schema.Types.Mixed,
         default: {}
       },
+
+      // Explicit paths keep Mongoose's strict schema from dropping citations
+      // and grounding context when the assistant message is saved/reloaded.
+      evidence: { type: [Schema.Types.Mixed], default: [] },
+      confidence: { type: Schema.Types.Mixed, default: undefined },
+      suggestedActions: { type: [Schema.Types.Mixed], default: [] },
+      linkedEntityIds: { type: Schema.Types.Mixed, default: undefined },
+      generatedDocuments: { type: [Schema.Types.Mixed], default: [] },
 
       // Multi-agent workflow trace showing execution timeline per agent
       workflowTrace: {

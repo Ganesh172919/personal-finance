@@ -240,4 +240,113 @@ describe("transactions API", () => {
 
     expect(summary3.body.cache_hit).toBe(false);
   }, 15000);
+
+  it("supports bulk-categorize and bulk-delete with isolation and validation", async () => {
+    // Create 3 transactions
+    const t1 = await request(app)
+      .post("/api/transactions")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ amount: 15, category: "Uncategorized", description: "Snack 1", type: "expense", date: "2026-02-10" })
+      .expect(201);
+
+    const t2 = await request(app)
+      .post("/api/transactions")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ amount: 25, category: "Uncategorized", description: "Snack 2", type: "expense", date: "2026-02-11" })
+      .expect(201);
+
+    const t3 = await request(app)
+      .post("/api/transactions")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ amount: 100, category: "Bills", description: "Electric", type: "expense", date: "2026-02-12" })
+      .expect(201);
+
+    const id1 = t1.body.transaction.id as string;
+    const id2 = t2.body.transaction.id as string;
+    const id3 = t3.body.transaction.id as string;
+
+    // Validation: empty array should fail
+    await request(app)
+      .post("/api/transactions/bulk-categorize")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ transaction_ids: [], category: "Groceries" })
+      .expect(400);
+
+    // Validation: missing category should fail
+    await request(app)
+      .post("/api/transactions/bulk-categorize")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ transaction_ids: [id1], category: "" })
+      .expect(400);
+
+    // Bulk categorize t1 and t2 to "Groceries"
+    const catRes = await request(app)
+      .post("/api/transactions/bulk-categorize")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ transaction_ids: [id1, id2], category: "Groceries" })
+      .expect(200);
+
+    expect(catRes.body).toMatchObject({
+      message: "Transactions categorized",
+      modified_count: 2,
+      category: "Groceries",
+    });
+
+    // Check transactions list
+    const list = await request(app)
+      .get("/api/transactions?page=1&limit=10")
+      .set("Cookie", [cookie, csrfCookie])
+      .expect(200);
+
+    const fetched1 = list.body.transactions.find((tx: any) => tx.id === id1);
+    const fetched2 = list.body.transactions.find((tx: any) => tx.id === id2);
+    const fetched3 = list.body.transactions.find((tx: any) => tx.id === id3);
+    expect(fetched1.category).toBe("Groceries");
+    expect(fetched2.category).toBe("Groceries");
+    expect(fetched3.category).toBe("Bills");
+
+    // Foreign user isolation test
+    const foreignAuth = await createAuthedUser();
+    const foreignCsrf = await request(app).get("/api/auth/csrf").expect(200);
+    const foreignCsrfCookie = (foreignCsrf.headers["set-cookie"]?.[0] || "").split(";")[0] || "";
+    const foreignCsrfToken = foreignCsrf.body.csrf_token as string;
+
+    // Foreign user attempting to delete user 1's transactions should delete 0
+    const foreignDel = await request(app)
+      .post("/api/transactions/bulk-delete")
+      .set("Cookie", [foreignAuth.cookie, foreignCsrfCookie])
+      .set("X-CSRF-Token", foreignCsrfToken)
+      .send({ transaction_ids: [id1, id2] })
+      .expect(200);
+
+    expect(foreignDel.body.deleted_count).toBe(0);
+
+    // Legitimate bulk delete of id1 and id2
+    const delRes = await request(app)
+      .post("/api/transactions/bulk-delete")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ transaction_ids: [id1, id2] })
+      .expect(200);
+
+    expect(delRes.body).toMatchObject({
+      message: "Transactions deleted",
+      deleted_count: 2,
+    });
+
+    // Confirm only id3 remains
+    const remaining = await request(app)
+      .get("/api/transactions?page=1&limit=10")
+      .set("Cookie", [cookie, csrfCookie])
+      .expect(200);
+
+    expect(remaining.body.transactions.length).toBe(1);
+    expect(remaining.body.transactions[0].id).toBe(id3);
+  });
 });

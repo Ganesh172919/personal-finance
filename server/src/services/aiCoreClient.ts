@@ -44,6 +44,76 @@
  *   OPEN --[timeout expires]--> CLOSED (allow requests again)
  *   CLOSED --[success]--> stays CLOSED, failure counter resets to 0
  *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * AiCoreClient Service
+ * ├── 1. Client Configuration & Lifecycle
+ * │   ├── AI_CORE_SERVICE_URL Resolution
+ * │   ├── Axios Client Factory with Default Timeouts (30-60s)
+ * │   ├── Concurrency Limiter (runWithAiCoreConcurrency)
+ * │   └── Health Check Cache (TTL 10-30s)
+ * ├── 2. Circuit Breaker Protection
+ * │   ├── State: CLOSED | OPEN | HALF_OPEN
+ * │   ├── Failure Threshold Counter (consecutive timeouts/5xx)
+ * │   ├── Reset Timeout & Cooldown Interval
+ * │   └── Immediate Fallback on Circuit Open
+ * ├── 3. Execution Operations
+ * │   ├── processAiCoreRequest: Orchestrated multi-agent pipeline
+ * │   ├── streamAiCoreRequest: SSE real-time stream pipe to client
+ * │   ├── processAiCoreScenario: What-if Monte Carlo simulations
+ * │   ├── processAiCoreNewsletter: Automated email newsletter content
+ * │   └── Vision/OCR: Receipts, Handwriting, General OCR
+ * ├── 4. Response Normalization & Grounding
+ * │   ├── Grounding Evidence & Citation Passthrough
+ * │   ├── Confidence Metric Extraction
+ * │   ├── Execution Trace Injection
+ * │   └── Plan Model Mapping
+ * └── 5. Observability & Telemetry
+ *     ├── Prometheus Latency & Fallback Counters
+ *     ├── Request ID Tracing Correlation
+ *     └── Structured JSON Logging
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +---------------------------------------------------------------+
+ *   |               Caller (e.g. aiController / Chat)              |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |                   Circuit Breaker Check                       |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                         [Is Circuit Closed?]
+ *                                /          \
+ *                              YES           NO (Circuit OPEN)
+ *                              /              \
+ *                             v                v
+ *   +-------------------------------+   +-----------------------------+
+ *   | Acquire Concurrency Slot      |   | Return Deterministic        |
+ *   | (runWithAiCoreConcurrency)    |   | Fallback Response           |
+ *   +---------------+---------------+   +-----------------------------+
+ *                   |
+ *                   v
+ *   +---------------------------------------------------------------+
+ *   |   HTTP POST to Python AI Core (e.g. /api/agents/process)      |
+ *   +-------------------------------+-------------------------------+
+ *                   |
+ *           [HTTP Call Status]
+ *               /        \
+ *           SUCCESS     FAILURE / TIMEOUT
+ *             /            \
+ *            v              v
+ *   +----------------+   +------------------------------------------+
+ *   | Reset Breaker  |   | Increment Failure Counter                |
+ *   | Return Result  |   | Trip Circuit if threshold exceeded       |
+ *   +----------------+   | Return Deterministic Domain Fallback     |
+ *                        +------------------------------------------+
+ * ```
+ *
  * @module services/aiCoreClient
  */
 
@@ -51,6 +121,10 @@ import axios, { AxiosError, type AxiosInstance } from "axios"; // HTTP client li
 import { getEnv, type Env } from "../config/env"; // Typed access to environment variables
 import { recordAiCoreRequest, setAiCircuitBreakerState } from "../observability/metrics"; // Prometheus-style metrics for monitoring
 import { runWithAiCoreConcurrency } from "./aiConcurrency"; // Semaphore-based concurrency limiter
+import { createServiceLogger, logEntry, logExit, logSlowOperation } from "../utils/serviceLogger"; // Structured service logging
+
+// Service-scoped logger for AI Core client operations
+const svcLog = createServiceLogger("aiCoreClient");
 
 /**
  * Workflow Trace Entry Interface
@@ -68,6 +142,14 @@ export interface WorkflowTraceEntry {
   endedAt: string; // ISO timestamp when agent finished
   status: string; // Execution status (e.g., "completed", "failed", "skipped")
   error?: string; // Error message if the agent encountered a failure
+  phase?: string;
+  latencyMs?: number;
+  llmCalls?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  tokenCount?: number;
+  fallbackUsed?: boolean;
+  cacheHit?: boolean;
 }
 
 /**
@@ -85,7 +167,7 @@ export interface AiCoreProcessRequest {
   resume_from_checkpoint?: boolean; // Whether to resume from checkpoint
   conversation_history?: Array<{ role: "user" | "assistant"; content: string }>; // Conversation history
   session_summary?: string; // Session summary
-  options?: { narrative?: boolean; include_evidence?: boolean; include_confidence?: boolean; include_actions?: boolean }; // Processing options
+  options?: { narrative?: boolean; llm_decomposition?: boolean; include_evidence?: boolean; include_document_passages?: boolean; include_confidence?: boolean; include_actions?: boolean; task_type?: "finance" | "conversation_insights" }; // Processing options
 }
 
 /**
@@ -140,6 +222,7 @@ export interface AiCoreProcessResponse {
     label?: string; // Evidence label
     snippet?: string; // Evidence snippet
     entity_id?: string; // Related entity ID
+    page_number?: number; // Verified physical PDF page
   }>;
   confidence?: {
     score?: number; // Confidence score (0-1)
@@ -195,6 +278,7 @@ let lastHealthError: string | null = null; // Error detail for diagnostics
 let http: AxiosInstance | null = null; // Lazily created Axios instance
 let httpBaseUrl = ""; // Tracks the URL to detect config changes
 let httpTimeoutMs = 0; // Tracks timeout to detect config changes
+let httpInternalToken = "";
 
 /**
  * Gets or creates an HTTP client for the AI Core service.
@@ -210,14 +294,16 @@ const getHttpClient = () => {
   const env = getEnv();
 
   // Create new client if none exists or base URL changed
-  if (!http || httpBaseUrl !== env.PYTHON_API_URL) {
+  if (!http || httpBaseUrl !== env.PYTHON_API_URL || httpInternalToken !== (env.AI_CORE_INTERNAL_TOKEN || "")) {
     httpBaseUrl = env.PYTHON_API_URL;
     httpTimeoutMs = env.AI_CORE_TIMEOUT_MS;
+    httpInternalToken = env.AI_CORE_INTERNAL_TOKEN || "";
     http = axios.create({
       baseURL: httpBaseUrl,
       timeout: httpTimeoutMs,
       headers: {
         "Content-Type": "application/json",
+        ...(httpInternalToken ? { "X-Internal-Token": httpInternalToken } : {}),
       },
     });
     return http;
@@ -261,6 +347,12 @@ const normalizeProcessResponse = (data: any, requestId: string): AiCoreProcessRe
         endedAt: String(entry?.endedAt || nowIso()),
         status: String(entry?.status || "unknown"),
         error: entry?.error ? String(entry.error) : undefined,
+        phase: entry?.phase ? String(entry.phase) : undefined,
+        ...Object.fromEntries(["latencyMs", "llmCalls", "inputTokens", "outputTokens", "tokenCount"].map((key) => [
+          key, Number.isFinite(Number(entry?.[key])) ? Math.max(0, Number(entry[key])) : 0,
+        ])),
+        fallbackUsed: entry?.fallbackUsed === true,
+        cacheHit: entry?.cacheHit === true,
       }))
     : [];
 
@@ -323,6 +415,8 @@ const normalizeProcessResponse = (data: any, requestId: string): AiCoreProcessRe
           label: entry.label ? String(entry.label) : undefined,
           snippet: entry.snippet ? String(entry.snippet) : undefined,
           entity_id: entry.entity_id ? String(entry.entity_id) : undefined,
+          ...(typeof entry.page_number === "number" && Number.isSafeInteger(entry.page_number) && entry.page_number > 0
+            ? { page_number: entry.page_number } : {}),
         }))
     : undefined;
 
@@ -604,6 +698,8 @@ export const processAiCoreRequest = async (
   options?: { userId?: string }
 ): Promise<AiCoreProcessResponse> => {
   const startedAt = Date.now();
+  const logCtx = { requestId, userId: options?.userId, endpoint: "process" };
+  logEntry(svcLog, "processAiCoreRequest", logCtx);
 
   // runWithAiCoreConcurrency acts as a semaphore, limiting concurrent AI requests
   // per user to prevent a single user from exhausting shared AI resources
@@ -614,7 +710,9 @@ export const processAiCoreRequest = async (
 
       // STEP 1: Circuit breaker check -- fastest possible rejection path
       if (isCircuitOpen()) {
-        recordAiCoreRequest({ endpoint: "process", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        const durationMs = Date.now() - startedAt;
+        svcLog.warn({ ...logCtx, reason: "circuit_open", duration_ms: durationMs }, "AI Core request rejected: circuit breaker open");
+        recordAiCoreRequest({ endpoint: "process", durationMs, fallbackUsed: true });
         return buildFallbackResponse(requestId, "AI core circuit breaker open", {
           includeReasonInOutput: env.NODE_ENV !== "production",
         });
@@ -625,7 +723,9 @@ export const processAiCoreRequest = async (
       const healthy = await checkAiCoreHealth(env, requestId);
       if (!healthy) {
         markFailure(env);
-        recordAiCoreRequest({ endpoint: "process", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        const durationMs = Date.now() - startedAt;
+        svcLog.warn({ ...logCtx, reason: "health_check_failed", lastHealthError, duration_ms: durationMs }, "AI Core request failed: health check");
+        recordAiCoreRequest({ endpoint: "process", durationMs, fallbackUsed: true });
         const detail = lastHealthError ? `AI core health check failed: ${lastHealthError}` : "AI core health check failed";
         // In development, include a helpful hint about starting the AI service
         const hint =
@@ -648,15 +748,20 @@ export const processAiCoreRequest = async (
 
         // Success resets the circuit breaker failure counter
         markSuccess();
-        recordAiCoreRequest({ endpoint: "process", durationMs: Date.now() - startedAt, fallbackUsed: false });
+        const durationMs = Date.now() - startedAt;
+        recordAiCoreRequest({ endpoint: "process", durationMs, fallbackUsed: false });
+        logExit(svcLog, "processAiCoreRequest", { ...logCtx, agent: data?.agent, fallback_used: false }, durationMs);
+        logSlowOperation(svcLog, "processAiCoreRequest", durationMs, 10_000);
         // NOTE: Usage tracking (tokens, cost) happens in the background.
         // We intentionally don't await it to minimize response latency.
         return normalizeProcessResponse(data, requestId);
       } catch (error) {
         // STEP 4: On failure, record the error and return a safe fallback
         markFailure(env);
-        recordAiCoreRequest({ endpoint: "process", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        const durationMs = Date.now() - startedAt;
+        recordAiCoreRequest({ endpoint: "process", durationMs, fallbackUsed: true });
         const detail = extractErrorReason(error);
+        svcLog.error({ ...logCtx, error: detail, duration_ms: durationMs, fallback_used: true }, "AI Core request failed");
         const hint = env.NODE_ENV !== "production" ? ` (AI Core base URL: ${env.PYTHON_API_URL})` : "";
         return buildFallbackResponse(requestId, `${detail}${hint}`, {
           includeReasonInOutput: env.NODE_ENV !== "production",
@@ -691,6 +796,8 @@ export const streamAiCoreRequest = async (
   options?: { userId?: string }
 ): Promise<any> => {
   const startedAt = Date.now();
+  const logCtx = { requestId, userId: options?.userId, endpoint: "process_stream" };
+  logEntry(svcLog, "streamAiCoreRequest", logCtx);
 
   const env = getEnv();
 
@@ -698,14 +805,18 @@ export const streamAiCoreRequest = async (
   // The controller (SSE endpoint) is responsible for catching these and
   // sending an appropriate error event to the client.
   if (isCircuitOpen()) {
-    recordAiCoreRequest({ endpoint: "process_stream", durationMs: Date.now() - startedAt, fallbackUsed: true });
+    const durationMs = Date.now() - startedAt;
+    svcLog.warn({ ...logCtx, reason: "circuit_open", duration_ms: durationMs }, "AI Core stream rejected: circuit breaker open");
+    recordAiCoreRequest({ endpoint: "process_stream", durationMs, fallbackUsed: true });
     throw new Error("AI core circuit breaker open");
   }
 
   const healthy = await checkAiCoreHealth(env, requestId);
   if (!healthy) {
     markFailure(env);
-    recordAiCoreRequest({ endpoint: "process_stream", durationMs: Date.now() - startedAt, fallbackUsed: true });
+    const durationMs = Date.now() - startedAt;
+    svcLog.warn({ ...logCtx, reason: "health_check_failed", duration_ms: durationMs }, "AI Core stream failed: health check");
+    recordAiCoreRequest({ endpoint: "process_stream", durationMs, fallbackUsed: true });
     const detail = lastHealthError ? `AI core health check failed: ${lastHealthError}` : "AI core health check failed";
     throw new Error(detail);
   }
@@ -722,11 +833,15 @@ export const streamAiCoreRequest = async (
     });
 
     markSuccess();
-    recordAiCoreRequest({ endpoint: "process_stream", durationMs: Date.now() - startedAt, fallbackUsed: false });
+    const durationMs = Date.now() - startedAt;
+    recordAiCoreRequest({ endpoint: "process_stream", durationMs, fallbackUsed: false });
+    logExit(svcLog, "streamAiCoreRequest", { ...logCtx, fallback_used: false }, durationMs);
     return response.data; // This is a Readable stream
   } catch (error) {
     markFailure(env);
-    recordAiCoreRequest({ endpoint: "process_stream", durationMs: Date.now() - startedAt, fallbackUsed: true });
+    const durationMs = Date.now() - startedAt;
+    recordAiCoreRequest({ endpoint: "process_stream", durationMs, fallbackUsed: true });
+    svcLog.error({ ...logCtx, error: extractErrorReason(error), duration_ms: durationMs }, "AI Core stream failed");
     throw new Error(extractErrorReason(error));
   }
 };
@@ -790,13 +905,17 @@ export const processAiCoreScenario = async (
   });
 
   const startedAt = Date.now();
+  const logCtx = { requestId, userId: options?.userId, endpoint: "what-if" };
+  logEntry(svcLog, "processAiCoreScenario", logCtx);
 
   return runWithAiCoreConcurrency({
     userId: options?.userId,
     task: async () => {
       const env = getEnv();
       if (isCircuitOpen()) {
-        recordAiCoreRequest({ endpoint: "what-if", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        const durationMs = Date.now() - startedAt;
+        svcLog.warn({ ...logCtx, reason: "circuit_open", duration_ms: durationMs }, "AI Core scenario rejected: circuit breaker open");
+        recordAiCoreRequest({ endpoint: "what-if", durationMs, fallbackUsed: true });
         return buildScenarioFallback("AI core temporarily unavailable");
       }
 
@@ -808,7 +927,10 @@ export const processAiCoreScenario = async (
           },
         });
         markSuccess();
-        recordAiCoreRequest({ endpoint: "what-if", durationMs: Date.now() - startedAt, fallbackUsed: false });
+        const durationMs = Date.now() - startedAt;
+        recordAiCoreRequest({ endpoint: "what-if", durationMs, fallbackUsed: false });
+        logExit(svcLog, "processAiCoreScenario", { ...logCtx, fallback_used: false }, durationMs);
+        logSlowOperation(svcLog, "processAiCoreScenario", durationMs, 10_000);
         return {
           ...data,
           request_id: data?.request_id || requestId,
@@ -816,7 +938,9 @@ export const processAiCoreScenario = async (
         };
       } catch (error) {
         markFailure(env);
-        recordAiCoreRequest({ endpoint: "what-if", durationMs: Date.now() - startedAt, fallbackUsed: true });
+        const durationMs = Date.now() - startedAt;
+        recordAiCoreRequest({ endpoint: "what-if", durationMs, fallbackUsed: true });
+        svcLog.error({ ...logCtx, error: extractErrorReason(error), duration_ms: durationMs }, "AI Core scenario failed");
         return buildScenarioFallback(extractErrorReason(error));
       }
     },

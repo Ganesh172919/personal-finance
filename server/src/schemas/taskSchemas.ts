@@ -53,6 +53,40 @@ export const tasksFromPlanBodySchema = z
   })
   .strict();
 
+export const recurrenceCadenceSchema = z.enum([
+  "none",
+  "daily",
+  "weekly",
+  "biweekly",
+  "monthly",
+  "quarterly",
+  "yearly",
+]);
+
+export const recurrenceSchema = z
+  .object({
+    cadence: recurrenceCadenceSchema.default("none"),
+    nextDueDate: z.coerce.date().optional(),
+    parentTaskId: z.string().trim().max(64).optional(),
+    generation: z.number().int().min(1).default(1).optional(),
+  })
+  .strict();
+
+export const createTaskBodySchema = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    why: z.string().trim().min(1).max(500),
+    steps: z.array(z.string().trim().min(1).max(200)).max(20).optional().default([]),
+    priority: z.enum(["low", "medium", "high"]).optional().default("medium"),
+    expected_impact: z.string().trim().max(300).optional(),
+    kind: z.enum(["cashflow", "budget", "debt", "invest", "goal", "education", "generic"]).optional(),
+    bucket: z.union([z.literal(7), z.literal(30), z.literal(365)]).optional().default(30),
+    due_days: z.number().int().positive().max(3650).optional(),
+    dueDate: z.coerce.date().optional(),
+    recurrence: recurrenceSchema.optional(),
+  })
+  .strict();
+
 export const listTasksQuerySchema = z
   .object({
     status: z.enum(["open", "completed", "dismissed"]).optional().default("open"),
@@ -128,6 +162,7 @@ export const updateTaskBodySchema = z
       .optional(),
     apply_status: z.enum(["pending", "succeeded", "failed"]).optional(),
     apply_error_code: z.string().trim().max(80).optional(),
+    recurrence: recurrenceSchema.optional(),
   })
   .strict();
 
@@ -138,6 +173,39 @@ export const applyTaskBodySchema = z
     completed_at: z.coerce.date().optional(),
     note: z.string().trim().max(1000).optional(),
     effects: z.array(taskEffectSchema).max(20).optional().default([]),
+  })
+  .strict();
+
+export const taskWebhookTokenParamSchema = z
+  .object({
+    token: z.string().trim().min(16).max(128),
+  })
+  .strict();
+
+export const inboundTaskWebhookBodySchema = z
+  .object({
+    action: z.enum(["create", "complete"]).optional().default("create"),
+    title: z.string().trim().min(1).max(200).optional(),
+    why: z.string().trim().max(500).optional(),
+    steps: z.array(z.string().trim().min(1).max(200)).max(20).optional().default([]),
+    priority: z.enum(["low", "medium", "high"]).optional().default("medium"),
+    expected_impact: z.string().trim().max(300).optional(),
+    kind: z.enum(["cashflow", "budget", "debt", "invest", "goal", "education", "generic"]).optional(),
+    bucket: z.union([z.literal(7), z.literal(30), z.literal(365)]).optional().default(30),
+    due_days: z.number().int().positive().max(3650).optional(),
+    dueDate: z.coerce.date().optional(),
+    recurrence: recurrenceSchema.optional(),
+    taskId: z.string().trim().max(128).optional(),
+    note: z.string().trim().max(1000).optional(),
+  })
+  .passthrough();
+
+export const dispatchTasksWebhookBodySchema = z
+  .object({
+    target: z.enum(["generic", "linear", "todoist", "jira", "slack"]).default("generic"),
+    webhook_url: z.string().url("Valid webhook URL required"),
+    task_ids: z.array(z.string().trim().min(8).max(128)).min(1).max(100),
+    headers: z.record(z.string(), z.string()).optional(),
   })
   .strict();
 

@@ -44,7 +44,7 @@ export type FinancialStoryShareCreateResponse = {
 export async function createFinancialStoryShare(
   body: FinancialStoryShareCreateRequest = {}
 ): Promise<FinancialStoryShareCreateResponse> {
-  return apiClient("/v1/shares/financial-story", {
+  return apiClient("/shares/financial-story", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -93,5 +93,5 @@ export type PublicFinancialStoryShareResponse = {
  */
 export async function getPublicFinancialStoryShare(token: string): Promise<PublicFinancialStoryShareResponse> {
   const safe = encodeURIComponent(String(token || ""));
-  return apiClient(`/v1/public/shares/financial-story/${safe}`);
+  return apiClient(`/public/shares/financial-story/${safe}`);
 }

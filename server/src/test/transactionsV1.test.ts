@@ -5,6 +5,7 @@ import { createApp } from "../app";
 import { configurePassport } from "../config/passport";
 import { createAuthedUser } from "./authHelpers";
 import { clearTestDb, startTestDb, stopTestDb } from "./testDb";
+import TransactionModel from "../models/transactionModel";
 
 describe("transactions v1 API", () => {
   const app = createApp();
@@ -14,6 +15,7 @@ describe("transactions v1 API", () => {
 
   beforeAll(async () => {
     await startTestDb();
+    await TransactionModel.init();
     configurePassport();
   });
 
@@ -26,15 +28,15 @@ describe("transactions v1 API", () => {
     const auth = await createAuthedUser();
     cookie = auth.cookie;
 
-    const csrf = await request(app).get("/api/v1/auth/csrf").expect(200);
+    const csrf = await request(app).get("/api/auth/csrf").expect(200);
     csrfCookie = (csrf.headers["set-cookie"]?.[0] || "").split(";")[0] || "";
     csrfToken = String(csrf.body.csrf_token || "");
     expect(csrfToken.length).toBeGreaterThan(10);
   });
 
-  it("supports create/list/summary/dashboard on /api/v1 with request context", async () => {
+  it("supports create/list/summary/dashboard on /api with request context", async () => {
     const created = await request(app)
-      .post("/api/v1/transactions")
+      .post("/api/transactions")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({
@@ -51,7 +53,7 @@ describe("transactions v1 API", () => {
     expect(created.body.org_id).toBeTruthy();
 
     const listed = await request(app)
-      .get("/api/v1/transactions?page=1&limit=10")
+      .get("/api/transactions?page=1&limit=10")
       .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 
@@ -62,7 +64,7 @@ describe("transactions v1 API", () => {
     expect(listed.body.org_id).toBeTruthy();
 
     const summary = await request(app)
-      .get("/api/v1/transactions/summary?from=2026-02-01&to=2026-02-28&groupBy=month")
+      .get("/api/transactions/summary?from=2026-02-01&to=2026-02-28&groupBy=month")
       .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 
@@ -71,7 +73,7 @@ describe("transactions v1 API", () => {
     expect(summary.body.org_id).toBeTruthy();
 
     const dashboard = await request(app)
-      .get("/api/v1/dashboard/summary")
+      .get("/api/dashboard/summary")
       .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 

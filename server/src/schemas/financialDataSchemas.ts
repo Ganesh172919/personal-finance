@@ -55,13 +55,21 @@ export const debtIdParamSchema = z.object({
   debtId: z.string().regex(objectIdRegex, "Invalid debt id format")
 });
 
+export const transactionSplitItemSchema = z
+  .object({
+    category: z.string().trim().min(1).max(100),
+    amount: z.number().positive(),
+  })
+  .strict();
+
 export const createTransactionBodySchema = z
   .object({
     amount: z.number().positive(),
     category: z.string().trim().min(1).max(100),
     description: z.string().trim().min(1).max(250),
     date: z.coerce.date().optional(),
-    type: transactionTypeSchema
+    type: transactionTypeSchema,
+    splits: z.array(transactionSplitItemSchema).optional()
   })
   .strict();
 
@@ -87,7 +95,8 @@ export const updateTransactionBodySchema = z
     category: z.string().trim().min(1).max(100).optional(),
     description: z.string().trim().min(1).max(250).optional(),
     date: z.coerce.date().optional(),
-    type: transactionTypeSchema.optional()
+    type: transactionTypeSchema.optional(),
+    splits: z.array(transactionSplitItemSchema).optional()
   })
   .strict()
   .refine(body => Object.keys(body).length > 0, "Provide at least one field to update");

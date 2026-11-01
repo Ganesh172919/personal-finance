@@ -1,10 +1,10 @@
-﻿/**
+/**
  * @fileoverview Workflow automation page for creating and managing automated tasks.
  *
  * Provides a three-tab interface: existing workflows, a create form,
- * and a template gallery.  Workflows combine triggers (manual, cron
- * schedule, or event-based) with actions (task creation, export report,
- * or send notification).
+ * and a template gallery. Workflows combine triggers (manual, cron
+ * schedule, event-based, or inbound webhook) with actions (task creation,
+ * export report, or send notification) and multi-step conditional branch logic.
  *
  * Key data flows:
  * - listWorkflows() loads existing workflows; listWorkflowTemplates()
@@ -14,9 +14,8 @@
  *   exports as configured.
  * - Template deep-links are parsed from the URL query string via
  *   parseWorkflowTemplateParam() and pre-populate the create form.
- *
- * Action-specific sub-forms render conditionally (e.g., period key for
- * monthly PDF export, CSV filters for transaction export).
+ * - Inbound Webhook triggers receive external JSON payloads at POST /api/workflows/webhook/:token
+ *   and support templated string interpolation ({{field}}) and multi-step branch filters.
  *
  * Accessible from the sidebar under "Workflows" for authenticated users.
  */
@@ -47,7 +46,7 @@ import {
   type Workflow,
 } from "@/lib/apiClient";
 
-import type { TaskKind, TaskPriority, WorkflowAction } from "@/types/apiTypes";
+import type { TaskKind, TaskPriority, WorkflowAction, WorkflowConditionOperator } from "@/types/apiTypes";
 
 import {
   builtinWorkflowTemplates,
@@ -98,6 +97,7 @@ export default function WorkflowsPage() {
   const [location, navigate] = useLocation();
 
   const [activeTab, setActiveTab] = useState<"workflows" | "create" | "templates">("workflows");
+
   const builtinTemplates = useMemo(() => builtinWorkflowTemplates(), []);
 
   const templatesQuery = useQuery({
@@ -204,17 +204,18 @@ export default function WorkflowsPage() {
   const copyToClipboard = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value);
-      toast({ title: "Copied", description: "Link copied to clipboard." });
+      toast({ title: "Copied", description: "Copied to clipboard." });
     } catch (error) {
       reportClientError("Clipboard write failed", error);
       toast({ title: "Copy failed", description: "Couldn't copy to clipboard.", variant: "destructive" });
     }
   };
 
-  const setTriggerType = (type: "manual" | "cron" | "event") => {
+  const setTriggerType = (type: "manual" | "cron" | "event" | "webhook") => {
     if (type === "manual") setDraft((prev) => ({ ...prev, trigger: { type: "manual" } }));
     if (type === "cron") setDraft((prev) => ({ ...prev, trigger: { type: "cron", cron: "0 9 * * 1" } as any }));
     if (type === "event") setDraft((prev) => ({ ...prev, trigger: { type: "event", event_type: "TransactionCreated" } as any }));
+    if (type === "webhook") setDraft((prev) => ({ ...prev, trigger: { type: "webhook" } as any }));
   };
 
   const addAction = (type: WorkflowAction["type"]) => {
@@ -286,50 +287,92 @@ export default function WorkflowsPage() {
   return (
     <div className="p-6 space-y-4" data-testid="workflows-page">
       <div className="space-y-1">
-        <div className="text-xl font-semibold text-foreground">Workflows</div>
+        <h1 className="text-xl font-semibold text-foreground">Workflows</h1>
         <div className="text-sm text-muted-foreground">
-          Automate tasks, exports, and notifications. All actions run through simulation + confirmation.
+          Automate tasks, exports, and notifications with conditional branching and webhook triggers. All actions run through simulation + confirmation.
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
         <TabsList>
-          <TabsTrigger value="workflows">My workflows</TabsTrigger>
-          <TabsTrigger value="create">Create</TabsTrigger>
-          <TabsTrigger value="templates">Templates</TabsTrigger>
+          <TabsTrigger value="workflows" data-testid="tab-workflows" onClick={() => setActiveTab("workflows")}>My workflows</TabsTrigger>
+          <TabsTrigger value="create" data-testid="tab-create" onClick={() => setActiveTab("create")}>Create</TabsTrigger>
+          <TabsTrigger value="templates" data-testid="tab-templates" onClick={() => setActiveTab("templates")}>Templates</TabsTrigger>
         </TabsList>
 
         <TabsContent value="workflows">
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Your workflows</CardTitle>
-              <CardDescription>Enable/disable, run now, and share templates.</CardDescription>
+              <CardDescription>Enable/disable, run now, copy webhook URLs, and share templates.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-end">
-                <Button variant="outline" onClick={() => workflowsQuery.refetch()} disabled={workflowsQuery.isFetching}>
+                <Button variant="outline" onClick={() => workflowsQuery.refetch()} disabled={workflowsQuery.isFetching} data-testid="workflows-refresh-btn">
                   {workflowsQuery.isFetching ? "Refreshing..." : "Refresh"}
                 </Button>
               </div>
 
               {workflowsQuery.isLoading ? (
-                <div className="text-sm text-muted-foreground">Loading...</div>
+                <div className="text-sm text-muted-foreground" data-testid="workflows-loading">Loading...</div>
               ) : workflows.length ? (
                 <div className="space-y-3">
                   {workflows.map((wf: Workflow) => (
-                    <div key={wf.id} className="rounded-md border border-border p-4">
+                    <div key={wf.id} data-testid="workflow-card" className="rounded-md border border-border p-4">
                       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                         <div className="space-y-1">
-                          <div className="text-sm font-medium text-foreground">{wf.name}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-foreground">{wf.name}</span>
+                            {(wf as any).trigger?.type === "webhook" ? (
+                              <span
+                                className="text-[11px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+                                data-testid={`badge-webhook-${wf.id}`}
+                              >
+                                Webhook
+                              </span>
+                            ) : null}
+                          </div>
+
                           <div className="text-xs text-muted-foreground">
                             Trigger: {(wf as any).trigger?.type || "manual"} | Actions:{" "}
                             {Array.isArray((wf as any).actions) ? (wf as any).actions.length : 0}
                           </div>
                           <div className="text-xs text-muted-foreground">Status: {wf.enabled ? "enabled" : "disabled"}</div>
+
+                          {(wf as any).trigger?.type === "webhook" && (wf as any).trigger?.webhook_token ? (
+                            <div className="flex items-center gap-2 pt-1">
+                              <span className="text-[11px] font-mono text-muted-foreground truncate max-w-xs">
+                                ...{String((wf as any).trigger?.webhook_token).slice(-12)}
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 text-[11px] px-2 text-primary hover:text-primary/80"
+                                onClick={() => {
+                                  const url = `${window.location.origin}/api/workflows/webhook/${(wf as any).trigger?.webhook_token}`;
+                                  copyToClipboard(url);
+                                }}
+                                data-testid={`btn-copy-webhook-${wf.id}`}
+                              >
+                                Copy webhook URL
+                              </Button>
+                            </div>
+                          ) : null}
+
                           {Array.isArray((wf as any).actions) && (wf as any).actions.length ? (
                             <ul className="mt-2 list-disc list-inside text-xs text-muted-foreground space-y-1">
                               {(wf as any).actions.slice(0, 6).map((action: WorkflowAction, idx: number) => (
-                                <li key={idx}>{workflowActionLabel(action)}</li>
+                                <li key={idx} className="inline-flex items-center gap-1.5 flex-wrap">
+                                  <span>{workflowActionLabel(action)}</span>
+                                  {(action as any).condition?.field ? (
+                                    <span
+                                      className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border"
+                                      data-testid={`badge-action-condition-${wf.id}-${idx}`}
+                                    >
+                                      rule: {(action as any).condition.field} {(action as any).condition.operator} {String((action as any).condition.value)}
+                                    </span>
+                                  ) : null}
+                                </li>
                               ))}
                               {(wf as any).actions.length > 6 ? <li>...</li> : null}
                             </ul>
@@ -342,6 +385,7 @@ export default function WorkflowsPage() {
                             variant="secondary"
                             onClick={() => requestToolExecution(toolCallForWorkflowRun(wf), "Run workflow")}
                             disabled={simulateMutation.isPending || executeMutation.isPending}
+                            data-testid="workflow-run-btn"
                           >
                             Run now
                           </Button>
@@ -350,6 +394,7 @@ export default function WorkflowsPage() {
                             variant="outline"
                             onClick={() => requestToolExecution(toolCallForWorkflowEnable(wf, !wf.enabled), wf.enabled ? "Disable workflow" : "Enable workflow")}
                             disabled={simulateMutation.isPending || executeMutation.isPending}
+                            data-testid="workflow-toggle-btn"
                           >
                             {wf.enabled ? "Disable" : "Enable"}
                           </Button>
@@ -357,6 +402,7 @@ export default function WorkflowsPage() {
                             size="sm"
                             variant="outline"
                             onClick={() => copyToClipboard(buildWorkflowTemplateLink(workflowToTemplateRequest(wf)))}
+                            data-testid="workflow-share-btn"
                           >
                             Share template
                           </Button>
@@ -366,7 +412,7 @@ export default function WorkflowsPage() {
                   ))}
                 </div>
               ) : (
-                <div className="text-sm text-muted-foreground">
+                <div className="text-sm text-muted-foreground" data-testid="workflows-empty">
                   No workflows yet. Create one from the Create tab or import a template link.
                 </div>
               )}
@@ -378,18 +424,18 @@ export default function WorkflowsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Create workflow</CardTitle>
-              <CardDescription>Build an automation with triggers and actions.</CardDescription>
+              <CardDescription>Build an automation with triggers, actions, and conditional branch filters.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>Name</Label>
-                  <Input className="mt-1" value={draft.name} onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))} />
+                  <Input className="mt-1" data-testid="workflow-name-input" value={draft.name} onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))} />
                 </div>
                 <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
                   <div>
                     <div className="text-sm font-medium text-foreground">Enabled</div>
-                    <div className="text-xs text-muted-foreground">Cron/event triggers can run automatically.</div>
+                    <div className="text-xs text-muted-foreground">Cron, event, or webhook triggers can run automatically.</div>
                   </div>
                   <Switch checked={Boolean(draft.enabled)} onCheckedChange={(v) => setDraft((p) => ({ ...p, enabled: Boolean(v) }))} />
                 </div>
@@ -399,13 +445,14 @@ export default function WorkflowsPage() {
                 <div>
                   <Label>Trigger type</Label>
                   <Select value={(draft.trigger as any).type} onValueChange={(v) => setTriggerType(v as any)}>
-                    <SelectTrigger className="mt-1">
+                    <SelectTrigger className="mt-1" data-testid="trigger-select-trigger">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="manual">manual</SelectItem>
-                      <SelectItem value="cron">cron</SelectItem>
-                      <SelectItem value="event">event</SelectItem>
+                      <SelectItem value="manual" data-testid="trigger-option-manual">manual</SelectItem>
+                      <SelectItem value="cron" data-testid="trigger-option-cron">cron</SelectItem>
+                      <SelectItem value="event" data-testid="trigger-option-event">event</SelectItem>
+                      <SelectItem value="webhook" data-testid="trigger-option-webhook">webhook</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -420,6 +467,19 @@ export default function WorkflowsPage() {
                     <Label>Event type</Label>
                     <Input className="mt-1" value={String((draft.trigger as any).event_type || "")} onChange={(e) => setDraft((p) => ({ ...p, trigger: { type: "event", event_type: e.target.value } as any }))} />
                   </div>
+                ) : (draft.trigger as any).type === "webhook" ? (
+                  <div className="md:col-span-2 rounded-md border border-blue-500/20 bg-blue-500/5 p-3 space-y-1.5" data-testid="webhook-trigger-panel">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">Third-Party Webhook Receiver</span>
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                        POST /api/workflows/webhook/:token
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Generates a secure endpoint token on save. External services (Stripe, GitHub, Zapier, custom scripts) can POST JSON payloads to trigger this workflow.
+                      Actions can reference fields via <code className="font-mono text-foreground font-semibold">{"{{field}}"}</code> and apply conditional branch logic.
+                    </div>
+                  </div>
                 ) : (
                   <div className="md:col-span-2 rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
                     Manual workflows only run when you click Run now.
@@ -430,21 +490,133 @@ export default function WorkflowsPage() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-semibold text-foreground">Actions</div>
-                    <div className="text-xs text-muted-foreground">Actions run in order.</div>
+                    <div className="text-sm font-semibold text-foreground">Actions & Multi-Step Branch Rules</div>
+                    <div className="text-xs text-muted-foreground">Actions run in sequence. Optional branch conditions evaluate against payload context.</div>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => addAction("create_task")}>Add task</Button>
-                    <Button size="sm" variant="outline" onClick={() => addAction("export_report")}>Add export</Button>
-                    <Button size="sm" variant="outline" onClick={() => addAction("send_notification")}>Add email</Button>
+                    <Button size="sm" variant="outline" onClick={() => addAction("create_task")} data-testid="btn-add-action-task">Add task</Button>
+                    <Button size="sm" variant="outline" onClick={() => addAction("export_report")} data-testid="btn-add-action-export">Add export</Button>
+                    <Button size="sm" variant="outline" onClick={() => addAction("send_notification")} data-testid="btn-add-action-notify">Add email</Button>
                   </div>
                 </div>
 
                 {draft.actions.map((action: WorkflowAction, index: number) => (
-                  <div key={index} className="rounded-md border border-border p-4 space-y-4">
+                  <div key={index} className="rounded-md border border-border p-4 space-y-4" data-testid={`action-card-${index}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="text-sm font-medium text-foreground">{index + 1}. {workflowActionLabel(action)}</div>
                       <Button size="sm" variant="destructive" onClick={() => removeAction(index)} disabled={draft.actions.length <= 1}>Remove</Button>
+                    </div>
+
+                    {/* Conditional Branch Logic Configuration */}
+                    <div className="rounded-md border border-border/70 bg-muted/20 p-3 space-y-3" data-testid={`action-condition-box-${index}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Branch Logic:</span>
+                          {(action as any).condition?.field ? (
+                            <span
+                              className="text-xs font-mono px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20"
+                              data-testid={`condition-badge-${index}`}
+                            >
+                              if {(action as any).condition.field} {(action as any).condition.operator} {String((action as any).condition.value)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">Always execute (unconditional)</span>
+                          )}
+                        </div>
+                        {(action as any).condition?.field ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                            onClick={() => {
+                              const next = { ...action } as any;
+                              delete next.condition;
+                              updateAction(index, next);
+                            }}
+                            data-testid={`btn-clear-condition-${index}`}
+                          >
+                            Remove branch rule
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              updateAction(index, {
+                                ...action,
+                                condition: { field: "amount", operator: "gte", value: 100 },
+                              } as any);
+                            }}
+                            data-testid={`btn-add-condition-${index}`}
+                          >
+                            + Add branch filter
+                          </Button>
+                        )}
+                      </div>
+
+                      {(action as any).condition?.field ? (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+                          <div>
+                            <Label className="text-xs">Context Field (or dot path)</Label>
+                            <Input
+                              className="mt-1 h-8 text-xs font-mono"
+                              placeholder="amount, merchant, severity"
+                              value={(action as any).condition?.field || ""}
+                              onChange={(e) =>
+                                updateAction(index, {
+                                  ...action,
+                                  condition: { ...((action as any).condition || {}), field: e.target.value },
+                                } as any)
+                              }
+                              data-testid={`input-condition-field-${index}`}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Operator</Label>
+                            <Select
+                              value={String((action as any).condition?.operator || "eq")}
+                              onValueChange={(v) =>
+                                updateAction(index, {
+                                  ...action,
+                                  condition: { ...((action as any).condition || {}), operator: v as WorkflowConditionOperator },
+                                } as any)
+                              }
+                            >
+                              <SelectTrigger className="mt-1 h-8 text-xs" data-testid={`select-condition-operator-${index}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="eq">Equal to (=)</SelectItem>
+                                <SelectItem value="neq">Not equal to (!=)</SelectItem>
+                                <SelectItem value="gt">Greater than (&gt;)</SelectItem>
+                                <SelectItem value="gte">Greater than or equal (&gt;=)</SelectItem>
+                                <SelectItem value="lt">Less than (&lt;)</SelectItem>
+                                <SelectItem value="lte">Less than or equal (&lt;=)</SelectItem>
+                                <SelectItem value="contains">Contains text</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Comparison Value</Label>
+                            <Input
+                              className="mt-1 h-8 text-xs font-mono"
+                              placeholder="100, high, active"
+                              value={String((action as any).condition?.value ?? "")}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                const num = Number(raw);
+                                const val = !isNaN(num) && raw.trim() !== "" ? num : raw;
+                                updateAction(index, {
+                                  ...action,
+                                  condition: { ...((action as any).condition || {}), value: val },
+                                } as any);
+                              }}
+                              data-testid={`input-condition-value-${index}`}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
 
                     {action.type === "create_task" ? (
@@ -586,7 +758,7 @@ export default function WorkflowsPage() {
                 <Button variant="outline" onClick={() => copyToClipboard(buildWorkflowTemplateLink({ ...draft, enabled: false }))}>
                   Copy template link
                 </Button>
-                <Button onClick={handleCreateWorkflow} disabled={simulateMutation.isPending || executeMutation.isPending}>
+                <Button onClick={handleCreateWorkflow} disabled={simulateMutation.isPending || executeMutation.isPending} data-testid="workflow-create-btn">
                   {simulateMutation.isPending || executeMutation.isPending ? "Working..." : "Simulate + create"}
                 </Button>
               </div>
@@ -608,7 +780,7 @@ export default function WorkflowsPage() {
               ) : null}
 
               {templates.map((t) => (
-                <div key={t.id} className="rounded-md border border-border p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div key={t.id} data-testid="template-card" className="rounded-md border border-border p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                   <div>
                     <div className="text-sm font-medium text-foreground">{t.name}</div>
                     <div className="text-xs text-muted-foreground mt-1">{t.description}</div>
@@ -623,6 +795,7 @@ export default function WorkflowsPage() {
                     <Button
                       size="sm"
                       variant="secondary"
+                      data-testid="template-use-btn"
                       onClick={() => {
                         setDraft(t.request);
                         setActiveTab("create");
@@ -647,7 +820,7 @@ export default function WorkflowsPage() {
       </Tabs>
 
       {pending ? (
-        <Card>
+        <Card data-testid="confirm-dialog">
           <CardHeader>
             <CardTitle className="text-lg">Confirm: {pending.label}</CardTitle>
             <CardDescription>Simulation preview is shown below. Executions are idempotent.</CardDescription>
@@ -657,10 +830,10 @@ export default function WorkflowsPage() {
               <pre className="whitespace-pre-wrap">{JSON.stringify(pending.preview, null, 2)}</pre>
             </div>
             <div className="flex flex-wrap gap-2 justify-end">
-              <Button variant="outline" onClick={() => setPending(null)} disabled={executeMutation.isPending}>
+              <Button variant="outline" onClick={() => setPending(null)} disabled={executeMutation.isPending} data-testid="confirm-cancel-btn">
                 Cancel
               </Button>
-              <Button onClick={() => executeMutation.mutate(pending.toolCall)} disabled={executeMutation.isPending}>
+              <Button onClick={() => executeMutation.mutate(pending.toolCall)} disabled={executeMutation.isPending} data-testid="confirm-execute-btn">
                 {executeMutation.isPending ? "Executing..." : "Confirm + execute"}
               </Button>
             </div>
@@ -670,5 +843,3 @@ export default function WorkflowsPage() {
     </div>
   );
 }
-
-

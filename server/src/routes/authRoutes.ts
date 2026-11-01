@@ -25,7 +25,6 @@
  */
 import { Router } from "express";
 import passport from "passport";
-import rateLimit from "express-rate-limit";
 import {
   register,
   login,
@@ -51,19 +50,17 @@ import { asyncRoute } from "../utils/asyncRoute";
 const router = Router();
 const env = getEnv();
 const CLIENT_URL = env.CLIENT_URL.replace(/\/$/, "");
+
+// Determine if Google OAuth is available based on environment variables.
+// Both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be present.
 const googleEnabled = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
 
-const authRateLimiter = rateLimit({
-  windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
-  max: env.AUTH_RATE_LIMIT_MAX,
-  standardHeaders: true,
-  legacyHeaders: false,
-  passOnStoreError: true,
-  message: {
-    message: "Too many authentication attempts, please try again shortly.",
-    code: "AUTH_RATE_LIMITED",
-  },
-});
+// Log Google OAuth availability on module load
+if (googleEnabled) {
+  console.log("[AuthRoutes] Google OAuth is ENABLED — /api/auth/google is available");
+} else {
+  console.warn("[AuthRoutes] Google OAuth is DISABLED — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET");
+}
 
 router.get("/providers", (req, res) => {
   res.json({ email: true, google: googleEnabled, request_id: req.requestId });
@@ -71,15 +68,14 @@ router.get("/providers", (req, res) => {
 
 router.get("/csrf", asyncRoute(getCsrfToken));
 
-router.post("/register", authRateLimiter, validate({ body: registerBodySchema }), asyncRoute(register));
+router.post("/register", validate({ body: registerBodySchema }), asyncRoute(register));
 
-router.post("/login", authRateLimiter, validate({ body: loginBodySchema }), asyncRoute(login));
+router.post("/login", validate({ body: loginBodySchema }), asyncRoute(login));
 
-router.post("/verify-email", authRateLimiter, validate({ body: verifyEmailBodySchema }), asyncRoute(verifyEmail));
+router.post("/verify-email", validate({ body: verifyEmailBodySchema }), asyncRoute(verifyEmail));
 
 router.post(
   "/resend-verification",
-  authRateLimiter,
   validate({ body: resendVerificationBodySchema }),
   asyncRoute(resendVerification)
 );

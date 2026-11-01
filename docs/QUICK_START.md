@@ -1,13 +1,17 @@
 # FinWise — Quick Start Guide
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 > Get FinWise running locally in 5 minutes.
 
 ## Prerequisites
 
 Ensure you have these installed:
 
-- **Node.js** 18+ and npm 9+
-- **MongoDB** 6+ (running locally or connection URI)
+- **Node.js** >=24.14.1 <25 and **npm** >=11.0.0 (Node 24 LTS)
+- **MongoDB** 7.0+ (running locally or connection URI)
 - **Redis** 7+ (running locally)
 - **Python** 3.11+ (for AI features)
 
@@ -155,3 +159,82 @@ npm start
 ```
 
 See [DEPLOYMENT.md](./DEPLOYMENT.md) for production deployment guide.
+
+## 5-Minute Quick Start Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#10b981', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#059669', 'lineColor': '#6366f1', 'secondaryColor': '#f59e0b', 'tertiaryColor': '#ec4899'}}}%%
+mindmap
+  root((⚡ 5-Minute Quick Start))
+    📦 Infrastructure (Docker)
+      docker-compose up -d mongodb redis
+      MongoDB (localhost:27017)
+      Redis (localhost:6379)
+    🛡️ Node.js API Gateway
+      cd server && npm install
+      npm run dev (Port 3000)
+      Health: GET http://localhost:3000/api/health
+    🧠 Python AI Core (Optional)
+      cd server/AI_Core
+      venv activation & uvicorn api_service:app (Port 8001)
+    💻 React 18 Web App
+      cd client && npm install
+      npm run dev (Port 5173)
+      Browse to http://localhost:5173
+    🎯 First Actions
+      Register new test account
+      Create manual transaction
+      Test AI Copilot chat
+```
+
+## Developer Fast-Track Boot Sequence ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 1: SPIN UP BACKGROUND SERVICES                                 │
+│    $ docker-compose up -d mongodb redis                               │
+│    ► Mongo: localhost:27017 • Redis: localhost:6379                    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔷 STEP 2: START BACKEND API GATEWAY                                   │
+│    $ cd server && cp .env.example .env && npm run dev                  │
+│    ► Express listening on http://localhost:3000                        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧠 STEP 3: START PYTHON AI CORE (Optional for AI copilot)              │
+│    $ cd server/AI_Core && uvicorn api_service:app --port 8001          │
+│    ► FastAPI listening on http://localhost:8001                        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📱 STEP 4: LAUNCH FRONTEND WEB PORTAL                                  │
+│    $ cd client && cp .env.example .env && npm run dev                  │
+│    ► Vite dev server running on http://localhost:5173 🟢               │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2026 Enterprise Quick Smoke Test
+
+Verify the newly added 2026 enterprise capabilities:
+
+1. **Command Center Cockpit**: Browse to `http://localhost:5173/` and verify liquid cash runway in days and priority signal triage chips.
+2. **Transaction Review Queue**: Browse to `http://localhost:5173/transactions?tab=review` and test one-click approval or "Always categorize like this".
+3. **Automated Newsletter Trigger**: Test manual dispatch:
+   ```bash
+   curl -X POST http://localhost:3000/api/v1/newsletter/trigger-now \
+     -H "Authorization: Bearer <USER_TOKEN>"
+   ```
+4. **Server-Side PDF Generation**:
+   ```bash
+   curl -X POST http://localhost:3000/api/v1/files/render-prompt \
+     -H "Authorization: Bearer <USER_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"title":"Test Report","content":"Executive Summary text"}'
+   ```

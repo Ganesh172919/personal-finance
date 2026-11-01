@@ -6,8 +6,12 @@ import ExportJobModel from "../models/exportJobModel";
 import NotificationModel from "../models/notificationModel";
 import UserModel from "../models/userModel";
 import OrganizationModel from "../models/organizationModel";
-import WorkflowModel, { type WorkflowAction } from "../models/workflowModel";
-import WorkflowRunModel from "../models/workflowRunModel";
+import WorkflowModel, {
+  type WorkflowAction,
+  type WorkflowActionCondition,
+  type WorkflowTrigger,
+} from "../models/workflowModel";
+import WorkflowRunModel, { type IWorkflowRunSkippedAction } from "../models/workflowRunModel";
 import { enforceFeatureLimit, recordFeatureUsage } from "./entitlements";
 import { processExportJob } from "./exports";
 import { sendEmail } from "../utils/sendEmail";
@@ -37,19 +41,95 @@ const dueDateFromDays = (days: number) => {
   return new Date(Date.now() + clamped * 24 * 60 * 60 * 1000);
 };
 
+export const evaluateActionCondition = (
+  condition: WorkflowActionCondition | undefined,
+  context: Record<string, unknown>
+): { matches: boolean; reason?: string } => {
+  if (!condition || !condition.field) {
+    return { matches: true };
+  }
+
+  const getNestedValue = (obj: any, path: string): unknown => {
+    if (!obj || typeof obj !== "object") return undefined;
+    const parts = path.split(".");
+    let cur = obj;
+    for (const p of parts) {
+      if (cur == null || typeof cur !== "object") return undefined;
+      cur = cur[p];
+    }
+    return cur;
+  };
+
+  const actual = getNestedValue(context, condition.field);
+  const expected = condition.value;
+
+  let matches = false;
+  switch (condition.operator) {
+    case "eq":
+      matches = String(actual) === String(expected) || actual === expected;
+      break;
+    case "neq":
+      matches = String(actual) !== String(expected) && actual !== expected;
+      break;
+    case "gt":
+      matches = Number(actual) > Number(expected);
+      break;
+    case "gte":
+      matches = Number(actual) >= Number(expected);
+      break;
+    case "lt":
+      matches = Number(actual) < Number(expected);
+      break;
+    case "lte":
+      matches = Number(actual) <= Number(expected);
+      break;
+    case "contains":
+      matches = String(actual ?? "").toLowerCase().includes(String(expected ?? "").toLowerCase());
+      break;
+    default:
+      matches = false;
+  }
+
+  return {
+    matches,
+    reason: matches
+      ? undefined
+      : `Condition not met: '${condition.field}' (${String(actual)}) ${condition.operator} ${String(expected)}`,
+  };
+};
+
+export const interpolateTemplate = (str: string, context: Record<string, unknown>): string => {
+  if (!str || !str.includes("{{")) return str;
+  return str.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, field) => {
+    const parts = field.split(".");
+    let cur: any = context;
+    for (const p of parts) {
+      if (cur == null || typeof cur !== "object") return "";
+      cur = cur[p];
+    }
+    return cur != null ? String(cur) : "";
+  });
+};
+
 export const createWorkflow = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
   name: string;
   enabled?: boolean;
-  trigger: { type: "manual" | "cron" | "event"; cron?: string; event_type?: string };
+  trigger: WorkflowTrigger;
   actions: WorkflowAction[];
 }) => {
   const enabled = params.enabled ?? true;
-  const trigger = params.trigger || { type: "manual" as const };
+  const trigger = params.trigger ? { ...params.trigger } : ({ type: "manual" as const } as WorkflowTrigger);
 
   let scheduleTimezone: string | undefined;
   let nextRunAt: Date | undefined;
+
+  if (trigger.type === "webhook") {
+    if (!trigger.webhook_token || !trigger.webhook_token.trim()) {
+      trigger.webhook_token = crypto.randomBytes(24).toString("hex");
+    }
+  }
 
   if (trigger.type === "cron") {
     const cron = String(trigger.cron || "").trim();
@@ -98,6 +178,7 @@ export const enqueueWorkflowRun = async (params: {
   triggeredByUserId: mongoose.Types.ObjectId;
   requestId?: string;
   idempotencyKey?: string;
+  triggerContext?: Record<string, unknown>;
 }) => {
   const env = getEnv();
   const idempotencyKey = params.idempotencyKey?.trim() ? params.idempotencyKey.trim() : undefined;
@@ -126,6 +207,7 @@ export const enqueueWorkflowRun = async (params: {
         status: "queued",
         idempotencyKey,
         requestId: params.requestId,
+        triggerContext: params.triggerContext || {},
       })
         .then((doc) => {
           createdRun = true;
@@ -199,33 +281,50 @@ export const processWorkflowRun = async (workflowRunId: string) => {
       throw new Error("Workflow not found");
     }
 
+    const context = (run.triggerContext && typeof run.triggerContext === "object" ? run.triggerContext : {}) as Record<string, unknown>;
     const actions = Array.isArray((workflow as any).actions) ? ((workflow as any).actions as WorkflowAction[]) : [];
     const createdTaskIds: string[] = [];
     const createdExportIds: string[] = [];
     const sentNotifications: Array<{ channel: string; to: string; mode: string }> = [];
+    const actionsSkipped: IWorkflowRunSkippedAction[] = [];
 
-    const ops = actions
-      .filter((action) => action && typeof action === "object" && (action as any).type === "create_task")
-      .map((action) => {
-        const a = action as any;
+    for (let index = 0; index < actions.length; index += 1) {
+      const action = actions[index] as any;
+      if (!action || typeof action !== "object") continue;
 
-        const bucket = a.bucket === 7 || a.bucket === 30 || a.bucket === 365 ? a.bucket : 30;
-        const title = String(a.title || "Task").trim();
-        const why = String(a.why || "Workflow task").trim();
-        const steps = Array.isArray(a.steps) ? a.steps.map((s: unknown) => String(s)) : [];
-        const priority: TaskPriority = a.priority === "low" || a.priority === "high" ? a.priority : "medium";
-        const expectedImpact = String(a.expected_impact || "Improves execution.").trim();
+      // Evaluate conditional branching rule if present
+      if (action.condition) {
+        const evalResult = evaluateActionCondition(action.condition, context);
+        if (!evalResult.matches) {
+          actionsSkipped.push({
+            index,
+            action_type: action.type,
+            reason: evalResult.reason || "Branch condition not met",
+          });
+          continue;
+        }
+      }
+
+      if (action.type === "create_task") {
+        const bucket = action.bucket === 7 || action.bucket === 30 || action.bucket === 365 ? action.bucket : 30;
+        const title = interpolateTemplate(String(action.title || "Task").trim(), context);
+        const why = interpolateTemplate(String(action.why || "Workflow task").trim(), context);
+        const steps = Array.isArray(action.steps)
+          ? action.steps.map((s: unknown) => interpolateTemplate(String(s), context))
+          : [];
+        const priority: TaskPriority = action.priority === "low" || action.priority === "high" ? action.priority : "medium";
+        const expectedImpact = interpolateTemplate(String(action.expected_impact || "Improves execution.").trim(), context);
         const kind: TaskKind =
-          a.kind === "cashflow" ||
-          a.kind === "budget" ||
-          a.kind === "debt" ||
-          a.kind === "invest" ||
-          a.kind === "goal" ||
-          a.kind === "education"
-            ? a.kind
+          action.kind === "cashflow" ||
+          action.kind === "budget" ||
+          action.kind === "debt" ||
+          action.kind === "invest" ||
+          action.kind === "goal" ||
+          action.kind === "education"
+            ? action.kind
             : "generic";
 
-        const dueDays = Number.isFinite(Number(a.due_days)) ? Number(a.due_days) : bucket;
+        const dueDays = Number.isFinite(Number(action.due_days)) ? Number(action.due_days) : bucket;
         const dueDate = dueDateFromDays(dueDays);
 
         const id = buildWorkflowTaskId({
@@ -237,43 +336,34 @@ export const processWorkflowRun = async (workflowRunId: string) => {
         });
         createdTaskIds.push(id);
 
-        return {
-          updateOne: {
-            filter: { _id: id, orgId: run.orgId, userId: run.triggeredByUserId },
-            update: {
-              $setOnInsert: {
-                _id: id,
-                orgId: run.orgId,
-                userId: run.triggeredByUserId,
-                source: { requestId: run.requestId },
-                bucket,
-                title,
-                why,
-                steps,
-                priority,
-                expected_impact: expectedImpact,
-                kind,
-                dueDate,
-                status: "open",
-              },
+        await TaskModel.updateOne(
+          { _id: id, orgId: run.orgId, userId: run.triggeredByUserId },
+          {
+            $setOnInsert: {
+              _id: id,
+              orgId: run.orgId,
+              userId: run.triggeredByUserId,
+              source: { requestId: run.requestId },
+              bucket,
+              title,
+              why,
+              steps,
+              priority,
+              expected_impact: expectedImpact,
+              kind,
+              dueDate,
+              status: "open" as const,
             },
-            upsert: true,
           },
-        };
-      });
-
-    if (ops.length > 0) {
-      await TaskModel.bulkWrite(ops, { ordered: false });
-    }
-
-    for (let index = 0; index < actions.length; index += 1) {
-      const action = actions[index] as any;
-      if (!action || typeof action !== "object") continue;
+          { upsert: true }
+        );
+        continue;
+      }
 
       if (action.type === "send_notification") {
         const channel = String(action.channel || "email").trim().toLowerCase();
-        const subject = String(action.subject || "").trim();
-        const message = String(action.message || "").trim();
+        const subject = interpolateTemplate(String(action.subject || "").trim(), context);
+        const message = interpolateTemplate(String(action.message || "").trim(), context);
         if (!subject || !message) {
           throw new Error("send_notification requires subject and message");
         }
@@ -360,6 +450,7 @@ export const processWorkflowRun = async (workflowRunId: string) => {
       tasks_created: createdTaskIds,
       exports_created: createdExportIds,
       notifications_sent: sentNotifications,
+      actions_skipped: actionsSkipped,
     };
     await run.save();
 
@@ -371,4 +462,38 @@ export const processWorkflowRun = async (workflowRunId: string) => {
     await run.save();
     throw error;
   }
+};
+
+export const triggerWebhookWorkflow = async (params: {
+  token: string;
+  payload: Record<string, unknown>;
+  requestId?: string;
+}) => {
+  const workflow = await WorkflowModel.findOne({
+    "trigger.type": "webhook",
+    "trigger.webhook_token": params.token,
+  });
+
+  if (!workflow) {
+    throw new HttpError(404, "WORKFLOW_NOT_FOUND", "No workflow found for this webhook token");
+  }
+
+  if (!workflow.enabled) {
+    throw new HttpError(400, "WORKFLOW_DISABLED", "Workflow is currently disabled");
+  }
+
+  const runResult = await enqueueWorkflowRun({
+    orgId: workflow.orgId,
+    workflowId: workflow._id,
+    triggeredByUserId: workflow.createdByUserId,
+    requestId: params.requestId,
+    triggerContext: params.payload,
+  });
+
+  return {
+    workflow_id: workflow._id.toString(),
+    workflow_name: workflow.name,
+    queued: runResult.queued,
+    run: runResult.run,
+  };
 };

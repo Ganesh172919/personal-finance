@@ -138,3 +138,31 @@ export const upsertBudgetAllocation = async (req: Request, res: Response) => {
   });
 };
 
+export const deleteBudgetAllocation = async (req: Request, res: Response) => {
+  const orgId = requireOrgAdmin(req);
+  const periodKey = String((req as any).params?.periodKey || "").trim();
+  const id = String((req as any).params?.id || "").trim();
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new HttpError(400, "INVALID_ID", "Invalid allocation id");
+  }
+
+  const deleted = await BudgetAllocationModel.findOneAndDelete({
+    _id: new mongoose.Types.ObjectId(id),
+    orgId,
+    periodKey,
+  }).lean();
+
+  if (!deleted) {
+    throw new HttpError(404, "ALLOCATION_NOT_FOUND", "Budget allocation not found");
+  }
+
+  res.status(200).json({
+    message: "Budget allocation deleted",
+    deleted_id: id,
+    period_key: periodKey,
+    category: deleted.category,
+    request_id: req.requestId,
+  });
+};
+

@@ -19,6 +19,7 @@ import { z } from "zod";
 export const billingCheckoutBodySchema = z
   .object({
     plan_tier: z.enum(["pro", "team"]),
+    billing_cycle: z.enum(["monthly", "annual"]).optional().default("monthly"),
     seats: z.number().int().positive().max(10_000).optional(),
     success_url: z.string().url().optional(),
     cancel_url: z.string().url().optional(),
@@ -30,4 +31,26 @@ export const billingPortalQuerySchema = z
     return_url: z.string().url().optional(),
   })
   .strict();
+
+export const purchaseCreditsBodySchema = z
+  .object({
+    pack_id: z.enum(["ai_pack_250", "ocr_pack_100", "scenarios_pack_100", "flex_bundle"]),
+  })
+  .strict();
+
+export const simulateDunningFailureBodySchema = z
+  .object({
+    reason: z.string().trim().max(200).optional(),
+  })
+  .strict();
+
+export const listInvoicesQuerySchema = z
+  .object({
+    currency: z.string().trim().max(10).optional(),
+  })
+  .strict();
+
+export type PurchaseCreditsBody = z.infer<typeof purchaseCreditsBodySchema>;
+export type SimulateDunningFailureBody = z.infer<typeof simulateDunningFailureBodySchema>;
+export type ListInvoicesQuery = z.infer<typeof listInvoicesQuerySchema>;
 

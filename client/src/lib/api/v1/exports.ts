@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @fileoverview V1 Data Export API
  *
  * Manages asynchronous data export jobs. Users can request exports of
@@ -45,13 +45,13 @@ export async function listExports(query?: { status?: ExportJobStatus; limit?: nu
   if (query?.status) params.set("status", query.status);
   if (typeof query?.limit === "number") params.set("limit", String(query.limit));
   const suffix = params.toString();
-  const endpoint = suffix ? `/v1/exports?${suffix}` : "/v1/exports";
+  const endpoint = suffix ? `/exports?${suffix}` : "/exports";
   return apiClient(endpoint);
 }
 
 /** Create a new export job (processed asynchronously on the server). */
 export async function createExport(body: CreateExportRequest): Promise<CreateExportResponse> {
-  return apiClient("/v1/exports", {
+  return apiClient("/exports", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -59,7 +59,7 @@ export async function createExport(body: CreateExportRequest): Promise<CreateExp
 
 /** Fetch the status and metadata of a single export job. */
 export async function getExportById(id: string): Promise<GetExportResponse> {
-  return apiClient(`/v1/exports/${id}`);
+  return apiClient(`/exports/${id}`);
 }
 
 /**
@@ -89,7 +89,7 @@ export async function downloadExportFile(id: string): Promise<{ blob: Blob; file
   const activeOrgId = getActiveOrgId();
   if (activeOrgId) headers.set("X-Org-Id", activeOrgId);
 
-  const response = await fetch(buildApiUrl(`/v1/exports/${id}/download`), {
+  const response = await fetch(buildApiUrl(`/exports/${id}/download`), {
     method: "GET",
     headers,
     credentials: "include",
@@ -130,5 +130,113 @@ export const triggerBrowserDownload = (params: { blob: Blob; filename: string })
     URL.revokeObjectURL(url);
   }
 };
+
+export type ScheduledExportDestination = "email" | "webhook" | "cloud_storage";
+
+export interface ScheduledExportDestinationConfig {
+  webhook_url?: string;
+  auth_header?: string;
+  cloud_provider?: "s3" | "gcs";
+  bucket_name?: string;
+  bucket_region?: string;
+  bucket_prefix?: string;
+  custom_filename?: string;
+}
+
+export interface ScheduledExport {
+  id: string;
+  name: string;
+  type: "transactions_csv" | "monthly_summary_pdf";
+  frequency: "weekly" | "monthly";
+  destination?: ScheduledExportDestination;
+  destination_config?: ScheduledExportDestinationConfig;
+  delivery_email?: string;
+  status: "active" | "paused";
+  params: Record<string, unknown>;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  last_delivery_status: "success" | "failed" | "none";
+  last_delivery_details?: Record<string, unknown>;
+  last_error: string | null;
+  created_at: string | null;
+  updated_at?: string | null;
+}
+
+export interface ListScheduledExportsResponse {
+  schedules: ScheduledExport[];
+  request_id?: string;
+}
+
+export interface CreateScheduledExportRequest {
+  name: string;
+  type: "transactions_csv" | "monthly_summary_pdf";
+  frequency: "weekly" | "monthly";
+  destination?: ScheduledExportDestination;
+  destination_config?: ScheduledExportDestinationConfig;
+  delivery_email?: string;
+  params?: Record<string, unknown>;
+}
+
+export interface UpdateScheduledExportRequest {
+  name?: string;
+  frequency?: "weekly" | "monthly";
+  destination?: ScheduledExportDestination;
+  destination_config?: ScheduledExportDestinationConfig;
+  delivery_email?: string;
+  status?: "active" | "paused";
+  params?: Record<string, unknown>;
+}
+
+export async function listScheduledExports(): Promise<ListScheduledExportsResponse> {
+  return apiClient("/exports/schedules");
+}
+
+export async function createScheduledExport(
+  body: CreateScheduledExportRequest,
+): Promise<{ schedule: ScheduledExport; request_id?: string }> {
+  return apiClient("/exports/schedules", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateScheduledExport(
+  id: string,
+  body: UpdateScheduledExportRequest,
+): Promise<{ schedule: ScheduledExport; request_id?: string }> {
+  return apiClient(`/exports/schedules/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteScheduledExport(
+  id: string,
+): Promise<{ success: boolean; deleted_id: string; request_id?: string }> {
+  return apiClient(`/exports/schedules/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function triggerScheduledExportNow(id: string): Promise<{
+  result: {
+    success: boolean;
+    destination?: string;
+    delivery_email?: string;
+    webhook_url?: string;
+    cloud_uri?: string;
+    checksum_sha256?: string;
+    size_bytes?: number;
+    email_mode?: string;
+    job_id?: string;
+  };
+  schedule?: ScheduledExport;
+  request_id?: string;
+}> {
+  return apiClient(`/exports/schedules/${id}/run`, {
+    method: "POST",
+  });
+}
+
 
 

@@ -81,12 +81,12 @@ export type UpdateAccountResponse = {
 
 /** Fetch all accounts for the active organisation. */
 export async function listAccounts(): Promise<ListAccountsResponse> {
-  return apiClient("/v1/finance/accounts");
+  return apiClient("/finance/accounts");
 }
 
 /** Create a new financial account. */
 export async function createAccount(body: CreateAccountRequest): Promise<CreateAccountResponse> {
-  return apiClient("/v1/finance/accounts", {
+  return apiClient("/finance/accounts", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -94,7 +94,7 @@ export async function createAccount(body: CreateAccountRequest): Promise<CreateA
 
 /** Partially update an existing account. */
 export async function updateAccount(accountId: string, body: UpdateAccountRequest): Promise<UpdateAccountResponse> {
-  return apiClient(`/v1/finance/accounts/${encodeURIComponent(accountId)}`, {
+  return apiClient(`/finance/accounts/${encodeURIComponent(accountId)}`, {
     method: "PATCH",
     body: JSON.stringify(body),
   });
@@ -139,12 +139,12 @@ export async function listMerchants(params?: { q?: string; limit?: number }): Pr
   if (params?.q) search.set("q", params.q);
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
-  return apiClient(`/v1/finance/merchants${suffix}`);
+  return apiClient(`/finance/merchants${suffix}`);
 }
 
 /** Create or update a merchant (upsert by name). */
 export async function upsertMerchant(body: UpsertMerchantRequest): Promise<UpsertMerchantResponse> {
-  return apiClient("/v1/finance/merchants", {
+  return apiClient("/finance/merchants", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -193,7 +193,7 @@ export async function listBudgetAllocations(
   const search = new URLSearchParams();
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
-  return apiClient(`/v1/finance/budgets/${encodeURIComponent(periodKey)}/allocations${suffix}`);
+  return apiClient(`/finance/budgets/${encodeURIComponent(periodKey)}/allocations${suffix}`);
 }
 
 /** Create or update a budget allocation for a category in a period (PUT = upsert). */
@@ -201,9 +201,27 @@ export async function upsertBudgetAllocation(
   periodKey: string,
   body: UpsertBudgetAllocationRequest
 ): Promise<UpsertBudgetAllocationResponse> {
-  return apiClient(`/v1/finance/budgets/${encodeURIComponent(periodKey)}/allocations`, {
+  return apiClient(`/finance/budgets/${encodeURIComponent(periodKey)}/allocations`, {
     method: "PUT",
     body: JSON.stringify(body),
+  });
+}
+
+export type DeleteBudgetAllocationResponse = {
+  message: string;
+  deleted_id: string;
+  period_key: string;
+  category: string;
+  request_id?: string;
+};
+
+/** Delete a budget allocation by ID for a period. */
+export async function deleteBudgetAllocation(
+  periodKey: string,
+  id: string
+): Promise<DeleteBudgetAllocationResponse> {
+  return apiClient(`/finance/budgets/${encodeURIComponent(periodKey)}/allocations/${encodeURIComponent(id)}`, {
+    method: "DELETE",
   });
 }
 
@@ -265,12 +283,12 @@ export async function listRecurringRules(params?: { limit?: number }): Promise<L
   const search = new URLSearchParams();
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
-  return apiClient(`/v1/finance/recurring${suffix}`);
+  return apiClient(`/finance/recurring${suffix}`);
 }
 
 /** Create a new recurring transaction rule with a cron schedule. */
 export async function createRecurringRule(body: CreateRecurringRuleRequest): Promise<CreateRecurringRuleResponse> {
-  return apiClient("/v1/finance/recurring", {
+  return apiClient("/finance/recurring", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -278,7 +296,7 @@ export async function createRecurringRule(body: CreateRecurringRuleRequest): Pro
 
 /** Partially update an existing recurring rule. */
 export async function updateRecurringRule(ruleId: string, body: UpdateRecurringRuleRequest): Promise<UpdateRecurringRuleResponse> {
-  return apiClient(`/v1/finance/recurring/${encodeURIComponent(ruleId)}`, {
+  return apiClient(`/finance/recurring/${encodeURIComponent(ruleId)}`, {
     method: "PATCH",
     body: JSON.stringify(body),
   });
@@ -315,7 +333,7 @@ export type BudgetEnvelopesResponse = {
 
 /** Fetch the budget envelope view: planned vs. actual spending per category for a period. */
 export async function getBudgetEnvelopes(periodKey: string): Promise<BudgetEnvelopesResponse> {
-  return apiClient(`/v1/finance/budgets/${encodeURIComponent(periodKey)}/envelopes`);
+  return apiClient(`/finance/budgets/${encodeURIComponent(periodKey)}/envelopes`);
 }
 
 /** ─── Recurring Candidates (server-side pattern detection) ──────── */
@@ -371,7 +389,7 @@ export async function listRecurringCandidates(params?: {
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   if (typeof params?.min_occurrences === "number") search.set("min_occurrences", String(params.min_occurrences));
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
-  return apiClient(`/v1/finance/recurring/candidates${suffix}`);
+  return apiClient(`/finance/recurring/candidates${suffix}`);
 }
 
 /** ─── Forecast ─────────────────────────────────────────────────── */
@@ -382,6 +400,36 @@ export type ForecastCategoryRow = {
   expense_monthly_avg: number;
 };
 
+export type ForecastBudgetPressureRow = {
+  category: string;
+  planned: number;
+  spent: number;
+  remaining: number;
+  projected_spend: number;
+  projected_over_by: number;
+  burn_rate_pct: number;
+  severity: "watch" | "at_risk" | "over";
+  unbudgeted: boolean;
+};
+
+export type ForecastRiskAlert = {
+  id: string;
+  severity: "info" | "warning" | "critical";
+  title: string;
+  detail: string;
+  recommended_action: string;
+  category?: string;
+  amount?: number;
+};
+
+export type ForecastActionItem = {
+  id: string;
+  priority: "high" | "medium" | "low";
+  title: string;
+  detail: string;
+  impact_estimate: number | null;
+};
+
 export type ForecastResponse = {
   org_id: string;
   currency: string;
@@ -389,6 +437,7 @@ export type ForecastResponse = {
   months: number;
   baseline: {
     days_covered: number;
+    transaction_count: number;
     income_monthly_avg: number;
     expense_monthly_avg: number;
     net_monthly_avg: number;
@@ -404,7 +453,32 @@ export type ForecastResponse = {
     income: number;
     expense: number;
     net: number;
+    cumulative_net: number;
+    projected_cash_balance: number | null;
   }>;
+  budget_pressure: {
+    period_key: string;
+    days_elapsed_ratio: number;
+    projected_total_spend: number;
+    projected_total_over_by: number;
+    over_budget_count: number;
+    at_risk_count: number;
+    unbudgeted_spent: number;
+    categories: ForecastBudgetPressureRow[];
+  };
+  cashflow_health: {
+    score: number;
+    status: "healthy" | "watch" | "at_risk";
+    savings_rate_pct: number;
+    liquidity_balance: number | null;
+    liquidity_accounts: number;
+    runway_months: number | null;
+    projected_end_balance: number | null;
+    confidence: "low" | "medium" | "high";
+    data_quality: string[];
+  };
+  risk_alerts: ForecastRiskAlert[];
+  recommended_actions: ForecastActionItem[];
   request_id: string;
 };
 
@@ -419,5 +493,5 @@ export async function getForecast(params?: {
   if (typeof params?.months === "number") search.set("months", String(params.months));
   if (typeof params?.top_categories === "number") search.set("top_categories", String(params.top_categories));
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
-  return apiClient(`/v1/finance/forecast${suffix}`);
+  return apiClient(`/finance/forecast${suffix}`);
 }

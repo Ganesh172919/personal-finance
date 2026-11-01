@@ -18,6 +18,10 @@ Related docs:
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## 1) Scope and Non-Goals
 
 In scope:
@@ -36,11 +40,11 @@ Out of scope:
 ## 2) System Security Architecture (High-Level)
 
 Key trust boundaries:
-- Browser ↔ API server (HTTP, cookies, CSRF).
-- API server ↔ MongoDB (data store, tenant isolation enforced in queries).
-- API server ↔ Redis (optional; queues/pubsub/caching).
-- API server ↔ AI Core (HTTP; external service call with circuit breaker).
-- API server ↔ Plugin runtime (optional; external registry of tools/connectors).
+- Browser <-> API server (HTTP, cookies, CSRF).
+- API server <-> MongoDB (data store, tenant isolation enforced in queries).
+- API server <-> Redis (optional; queues/pubsub/caching).
+- API server <-> AI Core (HTTP; external service call with circuit breaker).
+- API server <-> Plugin runtime (optional; external registry of tools/connectors).
 
 Primary security principles applied in this repo:
 - Explicit validation at the boundary (Zod).
@@ -739,3 +743,236 @@ Observability upgrades:
   - export downloads,
   - plugin install/uninstall.
 
+
+## Documentation mind map
+
+```text
+FinWise Security Runbook (Mega)
+|
++-- Scope
+|   +-- Purpose: explain the subject covered by this file
+|   +-- Source: docs/MEGA_SECURITY_RUNBOOK.md
+|   +-- Inputs: prerequisites, linked references, and implementation facts
+|   +-- Audience: readers who need to understand, use, or maintain this area
+|
++-- Main path
+|   +-- Establish constraints and entry points
+|   +-- Trace components, decisions, and dependencies
+|   +-- Check outputs, risks, and verification evidence
+|
++-- Maintenance
+    +-- Recheck links and examples after changes
+    +-- Record assumptions, limits, and known drift
+    +-- Keep this map aligned with documented behavior
+```
+
+## Documentation ASCII flow
+
+```text
+[Open FinWise Security Runbook (Mega)]
+        |
+        v
+[Define the scope and required inputs]
+        |
+        v
+[Follow the documented sequence and decision points]
+        |
+        +--> [Missing context or exception?] --yes--> [Read linked reference]
+        |                                               |
+        +---------------------------no-----------------+
+                                                        v
+[Check outputs, risks, and verification evidence]
+        |
+        v
+[Record the change and refresh this document]
+``````mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#be185d', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#9d174d', 'lineColor': '#06b6d4', 'secondaryColor': '#ec4899', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((🛡️ FinWise Security Runbook))
+    🔐 Ingress & Network Defense
+      TLS 1.3 Strict HTTPS Termination
+      Helmet HTTP Response Headers (HSTS, CSP, XSS)
+      Sliding Window Rate Limiter (Redis-backed)
+      CORS Origin Whitelisting (Exact domains)
+    🔑 Identity & Multi-Tenancy
+      Argon2id Password Hashing (Memory: 64MB)
+      TOTP RFC 6238 Multi-Factor Auth
+      OrgScopePlugin Row-Level Tenant Isolation
+      Role-Based Access Control (Admin, Member, Viewer)
+    🛡️ Request Integrity & Mutative Safety
+      Double-Submit Cookie CSRF Protection
+      Zod Strict Schema Validation (Strip unknowns)
+      Cryptographic HMAC Request Signatures
+    📜 Audit & Forensic Compliance
+      26 Immutable Security Event Audit Codes
+      Hashed Sensitive PII at Rest (AES-256-GCM)
+      Account Lockout: 5 Failed Logins -> 15m Lock
+```
+
+## System Architecture & Component ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🌐 INCOMING CLIENT REQUEST: Mutative Operation (POST / PUT / DELETE)   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STAGE 1: HELMET HEADERS & RATE LIMIT VERIFICATION                   │
+│    ├─► CSP: default-src 'self' • HSTS: max-age=31536000                │
+│    └─► Sliding Window Limiter: Check quota in Redis                    │
+│        └── Quota exceeded? ──► Terminate with HTTP 429 🔴              │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ (Allowed)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🍪 STAGE 2: DOUBLE-SUBMIT CSRF VERIFICATION                            │
+│    ├─► Compare cookie: `XSRF-TOKEN` vs header: `x-csrf-token`          │
+│    └─► Mismatch or missing? ──► Terminate with HTTP 403 Forbidden 🔴   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ (Valid)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔑 STAGE 3: AUTHENTICATION & MULTI-TENANT ORG CONTEXT                  │
+│    ├─► Validate JWT signature or SHA-256 API Key hash                  │
+│    ├─► Verify user active membership in `req.orgId`                    │
+│    └─► Inject OrgScopePlugin query filters across all Mongoose models  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📜 STAGE 4: IMMUTABLE AUDIT LOG & COMPLIANCE LOGGING                   │
+│    ├─► Append audit log record: { action, actorId, orgId, ip, ts }     │
+│    └─► Dispatch controller and return secure sanitized response 🟢     │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## Cryptographic Double-Submit CSRF Middleware (`server/src/middleware/csrf.ts`)
+
+```typescript
+import { Request, Response, NextFunction } from "express";
+import crypto from "crypto";
+
+const CSRF_COOKIE_NAME = "XSRF-TOKEN";
+const CSRF_HEADER_NAME = "x-csrf-token";
+
+export function generateCsrfToken(): string {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+export function csrfProtection(req: Request, res: Response, next: NextFunction): void {
+  // Safe HTTP read methods bypass mutation verification
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+    if (!req.cookies[CSRF_COOKIE_NAME]) {
+      const token = generateCsrfToken();
+      res.cookie(CSRF_COOKIE_NAME, token, {
+        httpOnly: false, // Accessible by client Axios interceptor
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+      });
+    }
+    return next();
+  }
+
+  // Mutative methods (POST, PUT, PATCH, DELETE) require strict double-submit token match
+  const cookieToken = req.cookies[CSRF_COOKIE_NAME];
+  const headerToken = req.headers[CSRF_HEADER_NAME];
+
+  if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+    res.status(403).json({
+      error: "CSRF_TOKEN_INVALID",
+      message: "Security validation failed: CSRF double-submit token mismatch or missing",
+    });
+    return;
+  }
+
+  next();
+}
+```
+
+
+---
+
+## 16) Security Controls for Latest Platform Features (Command Center, Review Queue & Newsletters)
+
+### 16.1 Multi-Tenant Ingress Security in CommandCenter (`commandCenterService.ts`)
+The Command Center concurrently executes 9 queries across distinct domain collections. To ensure zero cross-tenant data leakage:
+- Every query explicitly extracts `orgId` from the verified request context (`req.orgId`).
+- Queries are intercepted by `orgScopePlugin` to assert that no query executes without a tenant predicate.
+- Balances, runway metrics, and pending bills are computed in memory per tenant, guaranteeing isolation in shared worker processes.
+
+```typescript
+// Verified tenant boundary pattern in commandCenterService.ts
+export async function getCommandCenterSummary(orgId: string): Promise<CommandCenterSummary> {
+  if (!orgId) {
+    throw new SecurityError('TENANT_ID_REQUIRED', 'CommandCenter queries require verified orgId context');
+  }
+  // All sub-services enforce orgId filtering at query level
+  const [accounts, transactions, budgets] = await Promise.all([
+    Account.find({ orgId }).lean(),
+    Transaction.find({ orgId }).sort({ date: -1 }).limit(100).lean(),
+    Budget.find({ orgId }).lean()
+  ]);
+  // ...
+}
+```
+
+---
+
+### 16.2 Transaction Review & Rule Promotion Guardrails (`transactionReview.ts`)
+When users approve transactions or promote merchants to `CategoryRule` models:
+
+1. **Batch Size Rate Limiting**: The bulk approval endpoint (`POST /api/v1/transactions/bulk-approve`) enforces a hard limit of **200 transactions per request** via Zod validation (`z.array(z.string()).min(1).max(200)`), protecting against Node.js event-loop starvation and MongoDB connection saturation.
+2. **ReDoS (Regular Expression Denial of Service) Protection**: When promoting a merchant description into a category matching rule (`POST /api/v1/transactions/:id/always-categorize`), user-supplied merchant strings are escaped or restricted to `exact` match types rather than arbitrary uncompiled regex patterns.
+3. **Audit Provenance**: Every approval mutation records `reviewed_at: new Date()` and `reviewed_by: req.user.id` on the transaction document, ensuring an unforgeable compliance audit trail.
+
+---
+
+### 16.3 Newsletter Dispatch & Token Security (`newsletterScheduler.ts`)
+1. **Subscriber Delivery Isolation**: BullMQ newsletter jobs are enqueued per tenant with unique job IDs (`newsletter-${orgId}-${userId}-${period}`), preventing duplicate email dispatches.
+2. **Dead Letter Queue (DLQ) Quarantine**: If email transmission fails 3 consecutive times (e.g. SMTP timeout, invalid recipient), the job is quarantined in `newsletter-dlq` rather than continuously hammering the external SMTP gateway.
+
+---
+
+### 16.4 Monotonic Context Revision Security (`contextRevisionGuard.ts`)
+
+In real-time streaming architectures, network jitter or delayed background LLM workers can cause out-of-order packet delivery where an older state evaluation arrives after a newer user action has already been processed.
+
+FinWise enforces **Monotonic Revision Invariants**:
+- Each session transition generates a strictly increasing revision integer $R \in \mathbb{N}$.
+- Every SSE token and state update payload embeds $R$.
+- The receiver verifies $R_{\text{incoming}} > R_{\text{committed}}$.
+- Stale packets ($R_{\text{incoming}} \le R_{\text{committed}}$) are rejected and dropped immediately, preventing race condition rollbacks.
+
+```typescript
+// server/src/services/contextRevisionGuard.ts
+const activeRevisions = new Map<string, number>();
+
+export function checkMonotonicRevision(sessionId: string, revision: number): boolean {
+  const current = activeRevisions.get(sessionId) || 0;
+  if (revision <= current) {
+    logger.warn({ sessionId, revision, current }, "[RevisionGuard] Dropping stale out-of-order context packet");
+    return false;
+  }
+  activeRevisions.set(sessionId, revision);
+  return true;
+}
+```
+
+---
+
+### 16.5 Client-Side Scoped QueryClient Isolation (`client/src/lib/queryClient.ts`)
+
+To prevent cross-account cache bleed on shared terminals (e.g. workstations used by multiple finance team members):
+- Global, long-lived `QueryClient` singletons are prohibited for tenant data.
+- The platform uses `getScopedQueryClient(userId)`.
+- Upon user switch or logout, `queryClient.clear()` is executed immediately, zeroing all in-memory React Query cache entries.
+
+---
+
+### 16.6 Dead Letter Queue (DLQ) PII & Credential Sanitization
+
+When unrecoverable background jobs are routed to `bull:finwise-dlq`:
+- All JWT tokens, cookies, API keys, card numbers, and passwords are recursively scrubbed.
+- Values matching sensitive key heuristics are replaced with `[REDACTED_BY_DLQ_POLICY]` before Redis write.
+- Prevents plaintext exposure of credentials in Redis management dashboards or audit logs.

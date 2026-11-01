@@ -1,13 +1,14 @@
 /**
- * @fileoverview Settings page with Profile, Security, API Keys, and Preferences tabs.
+ * @fileoverview Settings page with Profile, Security, API Keys, Preferences, and Newsletter tabs.
  *
- * Centralises account and workspace configuration in a four-tab layout:
+ * Centralises account and workspace configuration in a five-tab layout:
  * - Profile: display name, email (read-only), avatar, and bio editing.
  * - Security: password change, 2FA setup/verify/disable (TOTP-based),
  *   with QR code display and backup code generation.
  * - API Keys: create keys with granular scopes, view last-four prefix,
  *   copy to clipboard, and revoke with confirmation.
  * - Preferences: currency, locale, timezone, and theme selection.
+ * - Newsletter: daily newsletter subscription, delivery time, content sections.
  *
  * Key data flows:
  * - updateProfile() / changePassword() mutate user account fields.
@@ -25,7 +26,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { User, Shield, Key, Settings as SettingsIcon, Copy, Eye, EyeOff } from "lucide-react";
+import { User, Shield, Key, Settings as SettingsIcon, Copy, Eye, EyeOff, Mail } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { useToast } from "@/hooks/useToast";
@@ -49,6 +50,7 @@ import {
 } from "@/lib/api/settings";
 import { listApiKeys, createApiKey, revokeApiKey } from "@/lib/api/v1/apiKeys";
 import type { ApiKeyListItem } from "@/lib/api/v1/apiKeys";
+import NewsletterSettings from "@/components/NewsletterSettings";
 
 export default function Settings() {
   const { user, checkAuthStatus } = useAuth();
@@ -58,7 +60,7 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState("profile");
 
   return (
-    <div className="page-grid flex-1 overflow-auto">
+    <div className="page-grid flex-1 overflow-auto" data-testid="settings-page">
       <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <PageIntro
           icon={SettingsIcon}
@@ -73,22 +75,26 @@ export default function Settings() {
         />
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 rounded-[calc(var(--radius)-4px)] border border-border/70 bg-card/85 p-1">
-          <TabsTrigger value="profile" className="flex items-center gap-2">
+          <TabsList className="grid w-full grid-cols-5 rounded-[calc(var(--radius)-4px)] border border-border/70 bg-card/85 p-1">
+          <TabsTrigger value="profile" className="flex items-center gap-2" data-testid="tab-profile" onClick={() => setActiveTab("profile")}>
             <User className="w-4 h-4" />
-            <span className="hidden sm:inline">Profile</span>
+            <span className="sr-only sm:not-sr-only">Profile</span>
           </TabsTrigger>
-          <TabsTrigger value="security" className="flex items-center gap-2">
+          <TabsTrigger value="security" className="flex items-center gap-2" data-testid="tab-security" onClick={() => setActiveTab("security")}>
             <Shield className="w-4 h-4" />
-            <span className="hidden sm:inline">Security</span>
+            <span className="sr-only sm:not-sr-only">Security</span>
           </TabsTrigger>
-          <TabsTrigger value="api-keys" className="flex items-center gap-2">
+          <TabsTrigger value="api-keys" className="flex items-center gap-2" data-testid="tab-api-keys" onClick={() => setActiveTab("api-keys")}>
             <Key className="w-4 h-4" />
-            <span className="hidden sm:inline">API Keys</span>
+            <span className="sr-only sm:not-sr-only">API Keys</span>
           </TabsTrigger>
-          <TabsTrigger value="preferences" className="flex items-center gap-2">
+          <TabsTrigger value="preferences" className="flex items-center gap-2" data-testid="tab-preferences" onClick={() => setActiveTab("preferences")}>
             <SettingsIcon className="w-4 h-4" />
-            <span className="hidden sm:inline">Preferences</span>
+            <span className="sr-only sm:not-sr-only">Preferences</span>
+          </TabsTrigger>
+          <TabsTrigger value="newsletter" className="flex items-center gap-2" data-testid="tab-newsletter" onClick={() => setActiveTab("newsletter")}>
+            <Mail className="w-4 h-4" />
+            <span className="sr-only sm:not-sr-only">Newsletter</span>
           </TabsTrigger>
         </TabsList>
 
@@ -106,6 +112,10 @@ export default function Settings() {
 
         <TabsContent value="preferences" className="space-y-4 mt-6">
           <PreferencesSection configQuery={configQuery} toast={toast} queryClient={queryClient} />
+        </TabsContent>
+
+        <TabsContent value="newsletter" className="space-y-4 mt-6">
+          <NewsletterSettings />
         </TabsContent>
         </Tabs>
       </div>
@@ -167,6 +177,7 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
               onChange={(e) => setName(e.target.value)}
               disabled={!isEditing}
               placeholder="Your name"
+              data-testid="profile-name-input"
             />
           </div>
 
@@ -179,6 +190,7 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
               onChange={(e) => setEmail(e.target.value)}
               disabled={!isEditing}
               placeholder="your.email@example.com"
+              data-testid="profile-email-input"
             />
           </div>
 
@@ -191,6 +203,7 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
               onChange={(e) => setPhoneNumber(e.target.value)}
               disabled={!isEditing}
               placeholder="+1 (555) 123-4567"
+              data-testid="profile-phone-input"
             />
           </div>
 
@@ -211,10 +224,10 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
 
         <div className="flex gap-3 pt-4">
           {!isEditing ? (
-            <Button onClick={() => setIsEditing(true)}>Edit Profile</Button>
+            <Button onClick={() => setIsEditing(true)} data-testid="edit-profile-btn">Edit Profile</Button>
           ) : (
             <>
-              <Button onClick={handleSave} disabled={isSaving}>
+              <Button onClick={handleSave} disabled={isSaving} data-testid="save-profile-btn">
                 {isSaving ? "Saving..." : "Save Changes"}
               </Button>
               <Button variant="outline" onClick={handleCancel} disabled={isSaving}>
@@ -301,15 +314,19 @@ function SecuritySection({ user, toast, queryClient }: any) {
                 <div className="relative">
                   <Input
                     id="current-password"
+                    className="pr-12"
                     type={showCurrentPassword ? "text" : "password"}
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="Enter current password"
+                    data-testid="current-password-input"
                   />
                   <button
                     type="button"
                     onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showCurrentPassword ? "Hide current password" : "Show current password"}
+                    aria-pressed={showCurrentPassword}
+                    className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center text-muted-foreground hover:text-foreground"
                   >
                     {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -321,15 +338,19 @@ function SecuritySection({ user, toast, queryClient }: any) {
                 <div className="relative">
                   <Input
                     id="new-password"
+                    className="pr-12"
                     type={showNewPassword ? "text" : "password"}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Enter new password"
+                    data-testid="new-password-input"
                   />
                   <button
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showNewPassword ? "Hide new password" : "Show new password"}
+                    aria-pressed={showNewPassword}
+                    className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center text-muted-foreground hover:text-foreground"
                   >
                     {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -344,6 +365,7 @@ function SecuritySection({ user, toast, queryClient }: any) {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Confirm new password"
+                  data-testid="confirm-password-input"
                 />
               </div>
             </div>
@@ -351,6 +373,7 @@ function SecuritySection({ user, toast, queryClient }: any) {
             <Button
               onClick={handleChangePassword}
               disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}
+              data-testid="change-password-btn"
             >
               {isChangingPassword ? "Changing..." : "Change Password"}
             </Button>
@@ -592,7 +615,7 @@ function TwoFactorSection({ enabled, isLoading, toast, queryClient }: any) {
             password
           </p>
         </div>
-        <Button onClick={handleSetup} disabled={isSettingUp}>
+        <Button onClick={handleSetup} disabled={isSettingUp} data-testid="enable-2fa-btn">
           {isSettingUp ? "Setting up..." : "Enable 2FA"}
         </Button>
       </div>
@@ -712,8 +735,9 @@ function ApiKeysSection({ toast, queryClient }: any) {
               onChange={(e) => setNewKeyName(e.target.value)}
               placeholder="API key name (e.g., Production App)"
               className="flex-1"
+              data-testid="api-key-name-input"
             />
-            <Button onClick={handleCreateKey} disabled={!newKeyName.trim()}>
+            <Button onClick={handleCreateKey} disabled={!newKeyName.trim()} data-testid="create-api-key-btn">
               Create Key
             </Button>
           </div>
@@ -836,7 +860,7 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
     setIsSaving(true);
     try {
       const { apiClient } = await import("@/lib/api/core");
-      await apiClient(`/v1/orgs/${orgId}/settings`, {
+      await apiClient(`/orgs/${orgId}/settings`, {
         method: "PATCH",
         body: JSON.stringify({ currency, locale, timezone }),
       });
@@ -878,6 +902,7 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
               id="currency"
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
+              data-testid="currency-select"
               className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {CURRENCIES.map((c) => (
@@ -895,6 +920,7 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
               id="locale"
               value={locale}
               onChange={(e) => setLocale(e.target.value)}
+              data-testid="locale-select"
               className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {LOCALES.map((l) => (
@@ -912,6 +938,7 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
               id="timezone"
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
+              data-testid="timezone-select"
               className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {TIMEZONES.map((tz) => (
@@ -928,6 +955,7 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
           <Button
             onClick={handleSave}
             disabled={isSaving || !hasChanges}
+            data-testid="save-preferences-btn"
           >
             {isSaving ? "Saving..." : "Save Preferences"}
           </Button>

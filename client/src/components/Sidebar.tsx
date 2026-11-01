@@ -8,7 +8,7 @@
  *  - Desktop: renders a 22rem-wide fixed sidebar with BrandBlock (logo + theme toggle +
  *    notification bell), grouped navigation sections, and a user panel with logout.
  *  - Mobile: renders a bottom tab bar with pinned items (AI Chat, Dashboard, Transactions,
- *    Finance OS, Settings) plus a "More" button that opens the full drawer.
+ *    Finance, Settings) plus a "More" button that opens the full drawer.
  *  - Integrates `NotificationCenter` (slide-in panel) and `NotificationBell` (badge trigger).
  *  - Feature-gates navigation items (Tasks, Receipts, Notes) based on app config.
  *
@@ -68,6 +68,21 @@ import { reportClientError } from "@/lib/runtimeLogger";
 
 type NavigationSectionId = "daily" | "planning" | "workspace" | "library";
 
+/** Minimal user shape needed by the Sidebar. */
+interface SidebarUser {
+  name?: string;
+  email?: string;
+  photoURL?: string;
+}
+
+/** Feature flags that gate navigation items. */
+interface FeatureFlags {
+  tasks_enabled?: boolean;
+  receipts_ocr_enabled?: boolean;
+  journal_enabled?: boolean;
+  [key: string]: boolean | undefined;
+}
+
 type NavigationItem = {
   href: string;
   icon: LucideIcon;
@@ -109,13 +124,15 @@ const navigationSections: Omit<GroupedNavigationSection, "items">[] = [
 
 const navigationItems: NavigationItem[] = [
   { href: "/chat", icon: MessageSquare, label: "AI Chat", section: "daily", mobilePin: true },
-  { href: "/dashboard", icon: Gauge, label: "Strategist's Desk", section: "daily", mobilePin: true },
+  { href: "/dashboard", icon: Gauge, label: "Dashboard", section: "daily", mobilePin: true },
   { href: "/transactions", icon: ReceiptText, label: "Transactions", section: "daily", mobilePin: true },
-  { href: "/finance", icon: Wallet, label: "Finance OS", section: "daily", mobilePin: true },
+  { href: "/finance", icon: Wallet, label: "Finance", section: "daily", mobilePin: true },
   { href: "/files", icon: FolderOpen, label: "Files", section: "daily" },
   { href: "/tasks", icon: ListTodo, label: "Tasks", section: "daily", requiresFeature: "tasks_enabled" },
   { href: "/goals-debts", icon: Target, label: "Goals & Debts", section: "planning" },
   { href: "/portfolio", icon: PieChart, label: "Investment Portfolio", section: "planning" },
+  { href: "/scenarios", icon: TrendingUp, label: "What-if Scenarios", section: "planning" },
+  { href: "/financial-story", icon: BookOpen, label: "Financial Story", section: "planning" },
   { href: "/all-insights", icon: BarChart3, label: "All Insights", section: "planning" },
   { href: "/analytics", icon: BarChart3, label: "Analytics", section: "planning" },
   { href: "/calendar", icon: CalendarDays, label: "Calendar", section: "planning" },
@@ -143,15 +160,15 @@ function BrandBlock({
   notificationUnreadCount: number;
 }) {
   return (
-    <div className="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-gradient-to-br from-primary/14 via-card to-chart-2/10 p-4 shadow-[0_18px_45px_-34px_rgba(15,23,42,0.7)]">
-      <div className="flex items-start justify-between gap-3">
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <Link href="/dashboard" className="flex items-center gap-3 no-underline">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25">
             <Brain className="h-5 w-5" />
           </div>
           <div>
             <h1 className="text-base font-semibold text-foreground">Personal Finance</h1>
-            <p className="text-xs text-muted-foreground">AI strategist workspace</p>
+            <p className="text-xs text-muted-foreground">Personal finance tracker</p>
           </div>
         </Link>
         <div className="flex items-center gap-2">
@@ -180,15 +197,12 @@ function NavigationSections({
   onNavigate?: () => void;
 }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {groupedNavItems.map((section) => (
-        <section key={section.id} className="space-y-3">
+        <section key={section.id} className="space-y-2">
           <div className="px-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+            <p className="text-xs font-semibold text-muted-foreground">
               {section.label}
-            </p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground/90">
-              {section.description}
             </p>
           </div>
 
@@ -206,7 +220,7 @@ function NavigationSections({
                   <Link
                     href={item.href}
                     onClick={onNavigate}
-                    className={`group flex items-center gap-3 rounded-[calc(var(--radius)-4px)] border px-3 py-3 no-underline transition-all duration-200 ${
+                    className={`group flex items-center gap-2 rounded-md border px-2 py-2 no-underline transition-colors ${
                       isActive
                         ? "border-primary/30 bg-primary text-primary-foreground shadow-[0_18px_32px_-24px_rgba(255,255,255,0.24)]"
                         : "border-transparent text-foreground hover:border-border/70 hover:bg-accent/70 hover:shadow-[0_14px_26px_-22px_rgba(15,23,42,0.45)]"
@@ -215,7 +229,7 @@ function NavigationSections({
                     data-testid={`nav-${item.label.toLowerCase().replace(/\s/g, "-")}`}
                   >
                     <div
-                      className={`flex h-10 w-10 items-center justify-center rounded-2xl transition-colors ${
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
                         isActive
                           ? "bg-white/15 text-primary-foreground"
                           : "bg-background/80 text-primary group-hover:bg-primary/10"
@@ -225,13 +239,6 @@ function NavigationSections({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{item.label}</p>
-                      <p
-                        className={`truncate text-xs ${
-                          isActive ? "text-primary-foreground/75" : "text-muted-foreground"
-                        }`}
-                      >
-                        {section.label}
-                      </p>
                     </div>
                   </Link>
                 </motion.div>
@@ -249,7 +256,7 @@ function UserPanel({
   planLabel,
   handleLogout,
 }: {
-  user: any;
+  user: SidebarUser | null;
   planLabel: string;
   handleLogout: () => void;
 }) {
@@ -292,7 +299,7 @@ function DesktopSidebar({
 }: {
   groupedNavItems: GroupedNavigationSection[];
   location: string;
-  user: any;
+  user: SidebarUser | null;
   planLabel: string;
   handleLogout: () => void;
   onNotificationsOpen: () => void;
@@ -300,7 +307,7 @@ function DesktopSidebar({
 }) {
   return (
     <aside
-      className="hidden w-[22rem] shrink-0 border-r border-sidebar-border/80 bg-sidebar/85 lg:flex lg:flex-col lg:backdrop-blur-xl"
+      className="sticky top-0 hidden h-screen w-64 shrink-0 border-r border-sidebar-border bg-sidebar lg:flex lg:flex-col"
       data-testid="sidebar"
     >
       <div className="border-b border-sidebar-border/70 p-5">
@@ -356,7 +363,7 @@ function MobileBottomBar({
             >
               <item.icon className="h-5 w-5" />
               <span className="text-[10px] font-semibold leading-tight">
-                {item.label.split(" ")[0]}
+                {item.href === "/chat" ? "Chat" : item.label}
               </span>
             </Link>
           );
@@ -390,7 +397,7 @@ function MobileDrawer({
   onClose: () => void;
   groupedNavItems: GroupedNavigationSection[];
   location: string;
-  user: any;
+  user: SidebarUser | null;
   planLabel: string;
   handleLogout: () => void;
   onNotificationsOpen: () => void;
@@ -474,7 +481,7 @@ export function Sidebar() {
     () =>
       navigationItems.filter((item) => {
         if (!item.requiresFeature) return true;
-        return features ? Boolean((features as any)[item.requiresFeature]) : true;
+        return features ? Boolean((features as FeatureFlags)[item.requiresFeature]) : true;
       }),
     [features]
   );

@@ -21,9 +21,11 @@
  * - If condition not met: redirect
  *
  * @example
+ * ```tsx
  * <ProtectedRoute>
- *   <Dashboard />  {/* Only rendered if user is authenticated */}
+ *   <Dashboard />
  * </ProtectedRoute>
+ * ```
  *
  * @module routes/routeGuards
  */

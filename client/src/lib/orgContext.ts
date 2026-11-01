@@ -16,8 +16,22 @@
  * @module lib/orgContext
  */
 
+import { retireRequestContext } from "./requestContext";
+
 /** localStorage key for the active organization ID */
 const STORAGE_KEY = "finwise.active_org_id";
+const CHANGE_EVENT = "finwise:active-org-changed";
+
+/** Notify mounted UI immediately when same-tab API organization context changes. */
+export const subscribeActiveOrgId = (listener: () => void) => {
+  if (typeof window === "undefined") return () => undefined;
+  window.addEventListener(CHANGE_EVENT, listener);
+  window.addEventListener("storage", listener);
+  return () => {
+    window.removeEventListener(CHANGE_EVENT, listener);
+    window.removeEventListener("storage", listener);
+  };
+};
 
 /** Get the active org ID from localStorage (null if not set) */
 export const getActiveOrgId = (): string | null => {
@@ -34,11 +48,14 @@ export const getActiveOrgId = (): string | null => {
 export const setActiveOrgId = (orgId: string | null) => {
   if (typeof window === "undefined") return;
   try {
+    const changed = getActiveOrgId() !== (orgId || null);
     if (!orgId) {
       window.localStorage.removeItem(STORAGE_KEY);
-      return;
+    } else {
+      window.localStorage.setItem(STORAGE_KEY, orgId);
     }
-    window.localStorage.setItem(STORAGE_KEY, orgId);
+    if (changed) retireRequestContext();
+    window.dispatchEvent(new Event(CHANGE_EVENT));
   } catch {
     // Ignore storage failures (e.g., quota exceeded, private browsing)
   }

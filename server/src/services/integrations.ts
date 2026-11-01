@@ -8,6 +8,7 @@ import { enforceFeatureLimit, recordFeatureUsage } from "./entitlements";
 import { logger } from "../config/logger";
 import type { MutationSource } from "../types/provenance";
 import { getEnv } from "../config/env";
+import { fireAndForget } from "./deadLetterQueue";
 
 const normalizeConnectorKey = (value: string): ConnectorKey => String(value || "").trim().toLowerCase();
 
@@ -106,20 +107,24 @@ export const enqueueIntegrationSync = async (params: {
     },
   }).then((doc) => doc.toObject());
 
-  await IntegrationConnectionModel.findOneAndUpdate(
-    { orgId: params.orgId, connectorKey },
-    {
-      $set: {
-        status: "syncing",
-        lastError: undefined,
+  fireAndForget(
+    IntegrationConnectionModel.findOneAndUpdate(
+      { orgId: params.orgId, connectorKey },
+      {
+        $set: {
+          status: "syncing",
+          lastError: undefined,
+        },
+        $setOnInsert: {
+          orgId: params.orgId,
+          connectorKey,
+        },
       },
-      $setOnInsert: {
-        orgId: params.orgId,
-        connectorKey,
-      },
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  ).catch(() => null);
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ),
+    "mark integration connection syncing",
+    { orgId: String(params.orgId), connectorKey }
+  );
 
   const runId = String((run as any)._id);
 
@@ -213,33 +218,41 @@ export const processIntegrationSyncRun = async (integrationSyncRunId: string) =>
     };
     await run.save();
 
-    await IntegrationConnectionModel.findOneAndUpdate(
-      { orgId: run.orgId, connectorKey },
-      {
-        $set: {
-          status: "connected",
-          lastSyncAt: run.finishedAt,
-          lastError: undefined,
-          metadata: {
-            ...(typeof (result as any)?.metadata === "object" && (result as any).metadata ? (result as any).metadata : {}),
-            last_sync_run_id: integrationSyncRunId,
-            last_records_synced: run.recordsSynced,
-            last_request_id: run.requestId,
+    fireAndForget(
+      IntegrationConnectionModel.findOneAndUpdate(
+        { orgId: run.orgId, connectorKey },
+        {
+          $set: {
+            status: "connected",
+            lastSyncAt: run.finishedAt,
+            lastError: undefined,
+            metadata: {
+              ...(typeof (result as any)?.metadata === "object" && (result as any).metadata ? (result as any).metadata : {}),
+              last_sync_run_id: integrationSyncRunId,
+              last_records_synced: run.recordsSynced,
+              last_request_id: run.requestId,
+            },
           },
         },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    ).catch(() => null);
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      ),
+      "mark integration connection connected",
+      { orgId: String(run.orgId), connectorKey, integrationSyncRunId }
+    );
 
-    await recordFeatureUsage({
-      orgId: run.orgId as unknown as mongoose.Types.ObjectId,
-      userId: userId as unknown as mongoose.Types.ObjectId,
-      feature: "connector_sync_records",
-      units: run.recordsSynced,
-      requestId: run.requestId,
-      idempotencyKey: `integration_sync:${integrationSyncRunId}`.slice(0, 128),
-      context: { connector_key: connectorKey, sync_run_id: integrationSyncRunId },
-    }).catch(() => null);
+    fireAndForget(
+      recordFeatureUsage({
+        orgId: run.orgId as unknown as mongoose.Types.ObjectId,
+        userId: userId as unknown as mongoose.Types.ObjectId,
+        feature: "connector_sync_records",
+        units: run.recordsSynced,
+        requestId: run.requestId,
+        idempotencyKey: `integration_sync:${integrationSyncRunId}`.slice(0, 128),
+        context: { connector_key: connectorKey, sync_run_id: integrationSyncRunId },
+      }),
+      "record feature usage for connector sync",
+      { orgId: String(run.orgId), connectorKey, integrationSyncRunId }
+    );
 
     return run.toObject();
   } catch (error: any) {
@@ -249,16 +262,20 @@ export const processIntegrationSyncRun = async (integrationSyncRunId: string) =>
     run.error = error instanceof Error ? error.message : String(error);
     await run.save();
 
-    await IntegrationConnectionModel.findOneAndUpdate(
-      { orgId: run.orgId, connectorKey },
-      {
-        $set: {
-          status: "error",
-          lastError: run.error,
+    fireAndForget(
+      IntegrationConnectionModel.findOneAndUpdate(
+        { orgId: run.orgId, connectorKey },
+        {
+          $set: {
+            status: "error",
+            lastError: run.error,
+          },
         },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    ).catch(() => null);
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      ),
+      "mark integration connection error",
+      { orgId: String(run.orgId), connectorKey, error: run.error }
+    );
 
     throw error;
   }

@@ -5,6 +5,71 @@
  * heuristics (uncategorized, suspected duplicates, missing merchant, etc.).
  * This powers the "review queue" in the Transactions page.
  *
+ * ============================================================================
+ * MINDMAP FLOW: TRANSACTION TRIAGE & HEURISTIC REVIEW ENGINE
+ * ============================================================================
+ * - Transaction Review & Quality Assurance
+ *     ├── 1. Ingestion Triggers
+ *     │   ├── Real-time Creation: Manual entry, API ingest
+ *     │   ├── Document Pipelines: CSV / OFX bank statement imports, PDF/OCR parsers
+ *     │   └── Scheduled Jobs: Daily queue re-indexing & rule application
+ *     ├── 2. Automated Heuristic Classifiers
+ *     │   ├── Uncategorized: Category empty or generic ("other", "misc", "uncategorized")
+ *     │   ├── Suspected Duplicate: Identical amount, close timestamp, matching payee
+ *     │   ├── Needs Merchant Match: Unresolved merchant entity id
+ *     │   ├── Split Candidate: High value (> $1,000) with compound delimiters ('/', '+', 'and')
+ *     │   └── Recurring Candidate: Periodic cadence pattern detected
+ *     ├── 3. Attention & Confidence Scoring
+ *     │   ├── Attention Score (0 - 100): Composite sum of weighted heuristic flags
+ *     │   ├── Confidence Score (0.10 - 1.00): Base 1.00 - (0.20 * flag_count) + 0.10 merchant boost
+ *     │   └── Needs Attention Predicate: Boolean flag gating review queue visibility
+ *     └── 4. Review Queue Operations
+ *         ├── Single Transaction Evaluation (buildTransactionReviewState)
+ *         ├── Batch Bulk Scanning (recomputeReviewStateForTransactions)
+ *         └── User Resolution: 1-click approve, category change, split, rule creation
+ *
+ * ============================================================================
+ * ASCII FLOW: TRANSACTION REVIEW & CONFIDENCE SCORING LIFECYCLE
+ * ============================================================================
+ *                   [ Inbound Transaction Record ]
+ *                                 |
+ *                                 v
+ *               +----------------------------------+
+ *               |   Heuristic Classifier Matrix    |
+ *               +-----------------+----------------+
+ *                                 |
+ *      +------------+-------------+-------------+------------+
+ *      |            |             |             |            |
+ *      v            v             v             v            v
+ *  [Missing     [Duplicate    [Merchant     [Split       [Recurring
+ *   Category?]   Detected?]    Missing?]     Candidate?]  Pattern?]
+ *      |            |             |             |            |
+ *      v            v             v             v            v
+ *   FLAG:        FLAG:         FLAG:         FLAG:        FLAG:
+ *  uncategorized duplicate     needs_match   split_cand   recurring_cand
+ *      |            |             |             |            |
+ *      +------------+-------------+-------------+------------+
+ *                                 |
+ *                                 v
+ *               +----------------------------------+
+ *               |   Attention & Confidence Calc    |
+ *               | Attention = sum(flag_weights)    |
+ *               | Confidence = 1.0 - (0.20*flags)  |
+ *               | + 0.10 (if merchantId present)   |
+ *               +-----------------+----------------+
+ *                                 |
+ *                                 v
+ *                    Are any flags present?
+ *                           /      \
+ *                       Yes /        \ No
+ *                          v          v
+ *            +------------------+  +-------------------+
+ *            | needs_attention  |  | needs_attention   |
+ *            | = true           |  | = false           |
+ *            | Route to Review  |  | Ready for Auto-   |
+ *            | Queue Dashboard  |  | Accounting        |
+ *            +------------------+  +-------------------+
+ *
  * REVIEW FLAGS:
  * - uncategorized: Category is missing or generic ("other")
  * - suspected_duplicate: Similar transaction exists (same amount, date, description)
@@ -98,6 +163,7 @@ export const buildTransactionReviewState = (params: {
   merchantId?: mongoose.Types.ObjectId | string | null;
   duplicateCount?: number;
   recurringCount?: number;
+  splits?: Array<{ category: string; amount: number }>;
 }): TransactionReviewState => {
   const flags: TransactionReviewFlag[] = [];
   const notes: string[] = [];
@@ -124,7 +190,7 @@ export const buildTransactionReviewState = (params: {
     notes.push("This looks like part of a recurring spending pattern.");
   }
 
-  if (isLikelySplitCandidate(normalizedDescription, params.amount)) {
+  if (isLikelySplitCandidate(normalizedDescription, params.amount) && !(params.splits && params.splits.length > 1)) {
     flags.push("split_candidate");
     notes.push("Description suggests this transaction may need a split.");
   }
@@ -187,6 +253,7 @@ export const enrichTransactionsForReview = async (params: {
           merchantId: transaction.merchantId,
           duplicateCount: duplicateMatch + 1,
           recurringCount: recurringMatch,
+          splits: (transaction as any).splits,
         })
       );
     })

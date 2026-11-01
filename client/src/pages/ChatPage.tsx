@@ -28,6 +28,7 @@ import { Link, useLocation, useParams } from "wouter";
 import {
   Bot,
   BrainCircuit,
+  FileText,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -38,7 +39,6 @@ import {
 } from "lucide-react";
 
 import { AiStatusDialog } from "@/components/AiStatusDialog";
-import { ConversationInsightsPanel } from "@/components/ConversationInsightsPanel";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -90,7 +90,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="relative flex h-screen flex-col bg-background">
+    <div className="relative flex h-dvh flex-col bg-background">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute left-8 top-0 h-72 w-72 rounded-full bg-white/6 blur-3xl" />
         <div className="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-chart-2/10 blur-3xl" />
@@ -121,22 +121,21 @@ export default function ChatPage() {
                     </div>
                     <div>
                       <div className="text-[13px] font-semibold leading-4 text-foreground">Personal Finance</div>
-                      <div className="text-[11px] leading-4 text-muted-foreground">AI strategist chat</div>
+                      <div className="text-[11px] leading-4 text-muted-foreground">Finance assistant</div>
                     </div>
                   </Link>
 
                   <Badge className="hidden rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-primary sm:inline-flex">
-                    Live agent workspace
+                    AI chat
                   </Badge>
                 </div>
 
                 <div className="max-w-[48rem] space-y-0.5">
-                  <h1 className="text-base font-semibold leading-tight tracking-tight text-foreground sm:text-lg xl:text-[1.55rem]">
-                    Collaborate with your finance agents in one place
+                  <h1 className="sr-only text-base font-semibold leading-tight tracking-tight text-foreground lg:not-sr-only lg:text-lg xl:text-[1.55rem]">
+                    Chat with your finance assistant
                   </h1>
-                  <p className="max-w-3xl text-[11px] leading-4 text-muted-foreground sm:text-xs sm:leading-5">
-                    Ask a question, review the workflow trace, inspect provider failover, and move from
-                    analysis to action without leaving the conversation.
+                  <p className="hidden max-w-3xl text-xs leading-5 text-muted-foreground lg:block">
+                    Ask about your budget, debts, goals, or uploaded files.
                   </p>
                 </div>
 
@@ -160,31 +159,38 @@ export default function ChatPage() {
               <AiStatusDialog />
               <ThemeToggle compact />
 
-              <Button variant="outline" onClick={handleNewSession} className="rounded-2xl">
-                <Plus className="mr-2 h-4 w-4" />
-                New session
+              <Button variant="outline" onClick={handleNewSession} title="New session" className="h-9 w-9 rounded-2xl p-0 sm:h-10 sm:w-auto sm:px-4">
+                <Plus className="h-4 w-4 sm:mr-2" />
+                <span className="sr-only sm:not-sr-only">New session</span>
               </Button>
 
-              <Link href="/workflows">
-                <Button variant="ghost" className="rounded-2xl">
-                  <Workflow className="mr-2 h-4 w-4" />
-                  Workflows
+                <Button asChild variant="ghost" className="h-9 w-9 rounded-2xl p-0 sm:h-10 sm:w-auto sm:px-4">
+                  <Link href="/workflows" title="Workflows">
+                  <Workflow className="h-4 w-4 sm:mr-2" />
+                  <span className="sr-only sm:not-sr-only">Workflows</span>
+                  </Link>
                 </Button>
-              </Link>
 
-              <Link href="/dashboard">
-                <Button variant="ghost" className="rounded-2xl">
-                  <LayoutDashboard className="mr-2 h-4 w-4" />
-                  Dashboard
+                <Button asChild variant="ghost" className="h-9 w-9 rounded-2xl p-0 sm:h-10 sm:w-auto sm:px-4">
+                  <Link href="/dashboard" title="Dashboard">
+                  <LayoutDashboard className="h-4 w-4 sm:mr-2" />
+                  <span className="sr-only sm:not-sr-only">Dashboard</span>
+                  </Link>
                 </Button>
-              </Link>
 
-              <div className="flex items-center gap-2.5 rounded-[calc(var(--radius)-6px)] border border-border/70 bg-card/75 px-2.5 py-1.5">
-                <Avatar className="h-8 w-8">
+                <Button asChild variant="ghost" className="h-9 w-9 rounded-2xl p-0 sm:h-10 sm:w-auto sm:px-4">
+                  <Link href="/files" title="Files">
+                    <FileText className="h-4 w-4 sm:mr-2" />
+                    <span className="sr-only sm:not-sr-only">Files</span>
+                  </Link>
+                </Button>
+
+              <div className="absolute right-4 top-2 flex items-center gap-2.5 xl:static xl:rounded-[calc(var(--radius)-6px)] xl:border xl:border-border/70 xl:bg-card/75 xl:px-2.5 xl:py-1.5">
+                <Avatar className="hidden h-8 w-8 xl:flex">
                   <AvatarImage src={user?.photoURL || ""} alt={user?.name || ""} />
                   <AvatarFallback>{user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
                 </Avatar>
-                <div className="min-w-0 max-w-[138px]">
+                <div className="hidden min-w-0 max-w-[138px] xl:block">
                   <div className="truncate text-xs font-medium text-foreground">{user?.name || "Workspace user"}</div>
                   <div className="truncate text-[11px] text-muted-foreground">{user?.email || "Signed in"}</div>
                 </div>
@@ -211,7 +217,7 @@ export default function ChatPage() {
                   <div className="text-sm font-semibold text-foreground">Conversation history</div>
                   <div className="text-xs text-muted-foreground">Switch threads or start a fresh session.</div>
                 </div>
-                <Button variant="ghost" size="icon" className="rounded-2xl" onClick={() => setShowMobileSidebar(false)}>
+                <Button variant="ghost" size="icon" aria-label="Close conversation history" className="rounded-2xl" onClick={() => setShowMobileSidebar(false)}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
@@ -228,26 +234,10 @@ export default function ChatPage() {
           </div>
         ) : null}
 
-        <main className="min-w-0 flex-1 overflow-hidden rounded-[calc(var(--radius)+4px)] border border-border/70 surface-panel">
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-hidden rounded-[calc(var(--radius)+4px)] border border-border/70 surface-panel">
           <ChatContainer sessionId={sessionId} />
         </main>
 
-        <aside className="hidden w-[216px] shrink-0 flex-col gap-2 xl:flex 2xl:w-[228px]">
-          <ConversationInsightsPanel compact className="overflow-hidden rounded-[calc(var(--radius)+4px)] border-border/70 surface-panel" />
-
-          <div className="rounded-[calc(var(--radius)+4px)] border border-border/70 bg-card/70 p-2.5">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Use files</div>
-            <div className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
-              Upload statements, screenshots, spreadsheets, or notes, then attach them in chat to give the AI real
-              context before it responds.
-            </div>
-            <Link href="/files" className="mt-4 inline-flex no-underline">
-              <Button className="rounded-2xl px-4">
-                Open files workspace
-              </Button>
-            </Link>
-          </div>
-        </aside>
       </div>
     </div>
   );

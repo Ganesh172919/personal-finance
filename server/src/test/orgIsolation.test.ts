@@ -124,14 +124,14 @@ describe("org isolation across key endpoints", () => {
     expect(Number(dashboardB.body.spending.current_month_total)).toBe(300);
 
     const exportA = await request(app)
-      .post("/api/v1/exports")
+      .post("/api/exports")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({ type: "transactions_csv", params: {} })
       .expect(201);
 
     const exportB = await request(app)
-      .post("/api/v1/exports")
+      .post("/api/exports")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgBId)
@@ -139,11 +139,11 @@ describe("org isolation across key endpoints", () => {
       .expect(201);
 
     const exportsA = await request(app)
-      .get("/api/v1/exports")
+      .get("/api/exports")
       .set("Cookie", [cookie, csrfCookie])
       .expect(200);
     const exportsB = await request(app)
-      .get("/api/v1/exports")
+      .get("/api/exports")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-Org-Id", orgBId)
       .expect(200);

@@ -19,6 +19,10 @@ Related docs:
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## 1) System Components (What Must Be Running)
 
 At minimum (local dev happy path):
@@ -747,3 +751,209 @@ AI Core:
 - Use concurrency limits to avoid stampedes.
 - Monitor circuit breaker and fallback rates.
 
+
+## Documentation mind map
+
+```text
+FinWise Operations Runbook (Mega)
+|
++-- Scope
+|   +-- Purpose: explain the subject covered by this file
+|   +-- Source: docs/MEGA_OPERATIONS_RUNBOOK.md
+|   +-- Inputs: prerequisites, linked references, and implementation facts
+|   +-- Audience: readers who need to understand, use, or maintain this area
+|
++-- Main path
+|   +-- Establish constraints and entry points
+|   +-- Trace components, decisions, and dependencies
+|   +-- Check outputs, risks, and verification evidence
+|
++-- Maintenance
+    +-- Recheck links and examples after changes
+    +-- Record assumptions, limits, and known drift
+    +-- Keep this map aligned with documented behavior
+```
+
+## Documentation ASCII flow
+
+```text
+[Open FinWise Operations Runbook (Mega)]
+        |
+        v
+[Define the scope and required inputs]
+        |
+        v
+[Follow the documented sequence and decision points]
+        |
+        +--> [Missing context or exception?] --yes--> [Read linked reference]
+        |                                               |
+        +---------------------------no-----------------+
+                                                        v
+[Check outputs, risks, and verification evidence]
+        |
+        v
+[Record the change and refresh this document]
+``````mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#dc2626', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#b91c1c', 'lineColor': '#ef4444', 'secondaryColor': '#f59e0b', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((🚨 FinWise Production Operations))
+    🩺 Health & Readiness Probes
+      Node Gateway: GET /api/health (200 OK)
+      AI Core Engine: GET /health (200 OK)
+      Database Ping: adminCommand({ ping: 1 })
+      Redis Ping: PING -> PONG
+    🔄 Resilience & Failover
+      Sliding Window Circuit Breaker (30s timeout)
+      DLQ Poison Pill Isolation & Replay
+      KeyPool Provider Fallback (Gemini -> Groq -> Local)
+      BullMQ Exponential Backoff (3 attempts)
+    📊 Telemetry & Observability
+      Prometheus /metrics (Scrape interval: 15s)
+      OpenTelemetry Tracing (X-Request-Id correlation)
+      Pino JSON Structured Logs (stdout ingestion)
+    🚀 Deployment & Zero-Downtime
+      Blue/Green Cutover (Nginx reverse proxy)
+      Docker Multi-Stage Build (Node 24, Python 3.11)
+      Automated Database Backup (mongodump cron)
+```
+
+## System Architecture & Component ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🚨 PRODUCTION INCIDENT / FAILURE EVENT DETECTED                        │
+│    Symptom: High 500 error rate OR Worker Job Repeated Failure         │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STAGE 1: AUTOMATED CIRCUIT BREAKER TRIPPING                         │
+│    ├─► Failure count exceeds threshold (5 consecutive errors in 30s)   │
+│    ├─► Circuit state trips from CLOSED ──► OPEN                        │
+│    └─► Traffic safely diverted to deterministic fallback engine 🟢     │
+└──────────────────┬─────────────────────────────────┬───────────────────┘
+                   │                                 │
+                   ▼                                 ▼
+┌──────────────────────────────────────┐  ┌──────────────────────────────┐
+│ 📦 DEAD-LETTER QUEUE (DLQ) QUARANTINE│  │ 📈 PROMETHEUS TELEMETRY      │
+│  ├── Failed payload isolated in DLQ  │  │  ├── Alert: FinWiseHighErrors│
+│  ├── Poison pills prevented loop     │  │  ├── PagerDuty triggered     │
+│  └── Admin inspected via CLI script  │  │  └── Pino logs correlationId │
+└──────────────────┬───────────────────┘  └──────────────────────────────┘
+                   │
+                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔧 STAGE 2: OPERATOR RECOVERY & REPLAY                                 │
+│    $ node dist/jobs/dlqReplayWorker.js --queue=newsletter --dry-run    │
+│    $ node dist/jobs/dlqReplayWorker.js --queue=newsletter --execute    │
+│    └─► Re-injects healed jobs into active worker pipeline 🟢           │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## Dead-Letter Queue (DLQ) Quarantine & Safe Replay Script (`server/src/jobs/dlqReplayWorker.ts`)
+
+```typescript
+import { Queue } from "bullmq";
+import { getEnv } from "../config/env";
+import { logger } from "../utils/logger";
+
+const connection = { host: "localhost", port: 6379 };
+
+export async function replayDeadLetterQueue(queueName: string, execute: boolean = false): Promise<void> {
+  const primaryQueue = new Queue(queueName, { connection });
+  const dlq = new Queue(`${queueName}-dlq`, { connection });
+
+  const failedJobs = await dlq.getJobs(["failed", "completed"]);
+  logger.info({ count: failedJobs.length, queueName }, "Found dead-letter jobs");
+
+  for (const job of failedJobs) {
+    logger.info({
+      jobId: job.id,
+      name: job.name,
+      failedReason: job.failedReason,
+      attemptsMade: job.attemptsMade,
+    }, execute ? "Replaying job into primary queue" : "[DRY-RUN] Candidate job for replay");
+
+    if (execute) {
+      // Re-inject into primary processing queue
+      await primaryQueue.add(job.name, job.data, {
+        attempts: 3,
+        backoff: { type: "exponential", delay: 2000 },
+      });
+      // Remove from DLQ quarantine once re-injected
+      await job.remove();
+    }
+  }
+
+  await primaryQueue.close();
+  await dlq.close();
+}
+```
+
+---
+
+## 11. MongoDB GridFS Storage & Maintenance Runbook
+
+GridFS is utilized by FinWise to store compiled PDF reports (`rendered_reports`) and raw bank statement uploads (`statement_files`) without exceeding MongoDB's 16MB BSON document limit.
+
+### 11.1 Inspecting GridFS Collections
+
+GridFS maintains two collections per bucket:
+1. `rendered_reports.files`: Metadata, filename, contentType, uploadDate, and md5.
+2. `rendered_reports.chunks`: Binary chunks (default 255 KB per chunk).
+
+```bash
+# 1. Inspect total rendered report count
+mongosh personal-finance --eval "db['rendered_reports.files'].countDocuments()"
+
+# 2. Inspect total chunks size
+mongosh personal-finance --eval "db['rendered_reports.chunks'].stats().totalSize / (1024 * 1024)" # in MB
+
+# 3. Detect orphaned chunks (chunks where files_id does not exist in .files)
+mongosh personal-finance --eval "
+  const fileIds = db['rendered_reports.files'].distinct('_id');
+  const orphanedCount = db['rendered_reports.chunks'].countDocuments({ files_id: { \$nin: fileIds } });
+  print('Orphaned chunks found: ' + orphanedCount);
+"
+```
+
+### 11.2 Orphaned Chunk Cleanup Script (`server/src/scripts/cleanGridFS.ts`)
+
+```typescript
+// server/src/scripts/cleanGridFS.ts
+import mongoose from "mongoose";
+import { getEnv } from "../config/env";
+import { logger } from "../config/logger";
+
+export async function cleanupOrphanedGridFSChunks(): Promise<void> {
+  const env = getEnv();
+  await mongoose.connect(env.DATABASE_URL);
+  const db = mongoose.connection.db!;
+
+  const fileIds = await db.collection("rendered_reports.files").distinct("_id");
+  const result = await db.collection("rendered_reports.chunks").deleteMany({
+    files_id: { $nin: fileIds }
+  });
+
+  logger.info({ deletedCount: result.deletedCount }, "[GridFS Cleanup] Purged orphaned chunks successfully");
+  await mongoose.disconnect();
+}
+```
+
+---
+
+## 12. Automated Compound Index Startup Verification Runbook
+
+FinWise executes automated index verification on application boot via `transactionIndexes.ts`:
+
+| Index Name | Collection | Key Fields | Purpose |
+| :--- | :--- | :--- | :--- |
+| `orgId_1_date_-1` | `transactions` | `{ orgId: 1, date: -1 }` | Fast pagination and recent transaction lookups |
+| `orgId_1_cat_1_date_-1` | `transactions` | `{ orgId: 1, category: 1, date: -1 }` | Category spending aggregations |
+| `orgId_1_status_1` | `transactions` | `{ orgId: 1, status: 1 }` | Review queue filtering |
+| `orgId_1_amount_1` | `transactions` | `{ orgId: 1, amount: 1 }` | Amount range queries |
+
+```bash
+# Verify index health directly via mongosh
+mongosh personal-finance --eval "db.transactions.getIndexes()"
+```

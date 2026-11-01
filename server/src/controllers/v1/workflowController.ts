@@ -2,20 +2,22 @@
  * @fileoverview Workflow Controller (v1)
  *
  * Automation workflows: define triggers and actions that run automatically
- * or on-demand. Supports listing, creating, and manually running workflows.
+ * or on-demand. Supports listing, creating, running, and inbound webhooks.
  *
  * Routes served:
  *   GET    /api/v1/workflows              - listOrgWorkflows
  *   GET    /api/v1/workflows/templates    - listOrgWorkflowTemplates
  *   POST   /api/v1/workflows              - createOrgWorkflow (admin)
  *   POST   /api/v1/workflows/:id/run      - runOrgWorkflow (admin)
+ *   POST   /api/v1/workflows/webhook/:token - handleWorkflowWebhook (public external token auth)
  *
  * Key patterns:
  *   - List and templates readable by any org member; create/run require admin
  *   - Workflows have a trigger definition and an array of action steps
+ *   - Actions support conditional branching rules (field, operator, value)
  *   - runOrgWorkflow enqueues a workflow run (may execute async)
  *   - Idempotency key supported on workflow runs to prevent duplicate executions
- *   - Templates are pre-built workflow definitions available for quick setup
+ *   - Inbound webhooks authenticate via unique secret token in the URL path
  *
  * @module controllers/v1/workflowController
  */
@@ -25,7 +27,12 @@ import mongoose from "mongoose";
 
 import type { IUserDocument } from "../../models/userModel";
 import { HttpError } from "../../middleware/httpError";
-import { createWorkflow, enqueueWorkflowRun, listWorkflows } from "../../services/workflows";
+import {
+  createWorkflow,
+  enqueueWorkflowRun,
+  listWorkflows,
+  triggerWebhookWorkflow,
+} from "../../services/workflows";
 import { listWorkflowTemplatesForOrg } from "../../services/workflowTemplates";
 
 const roleRank: Record<"member" | "admin" | "owner", number> = {
@@ -112,9 +119,10 @@ export const runOrgWorkflow = async (req: Request, res: Response) => {
   }
   const workflowId = new mongoose.Types.ObjectId(workflowIdRaw);
 
-  const body = req.body as { idempotency_key?: string };
+  const body = req.body as { idempotency_key?: string; payload?: Record<string, unknown> };
   // Idempotency key prevents duplicate workflow runs from retry/network issues
   const idempotencyKey = body?.idempotency_key ? String(body.idempotency_key) : undefined;
+  const triggerContext = body?.payload && typeof body.payload === "object" ? body.payload : undefined;
 
   const result = await enqueueWorkflowRun({
     orgId,
@@ -122,9 +130,40 @@ export const runOrgWorkflow = async (req: Request, res: Response) => {
     triggeredByUserId: user._id,
     requestId: req.requestId,
     idempotencyKey,
+    triggerContext,
   });
 
   return res.json({
+    queued: result.queued,
+    run: {
+      id: String((result.run as any)._id),
+      status: (result.run as any).status,
+      started_at: (result.run as any).startedAt,
+      finished_at: (result.run as any).finishedAt,
+      result: (result.run as any).result,
+      error: (result.run as any).error,
+    },
+    request_id: req.requestId,
+  });
+};
+
+export const handleWorkflowWebhook = async (req: Request, res: Response) => {
+  const token = String(req.params.token || "").trim();
+  if (!token) {
+    throw new HttpError(400, "INVALID_TOKEN", "Webhook token required");
+  }
+
+  const payload = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
+  const result = await triggerWebhookWorkflow({
+    token,
+    payload,
+    requestId: req.requestId,
+  });
+
+  return res.status(200).json({
+    success: true,
+    workflow_id: result.workflow_id,
+    workflow_name: result.workflow_name,
     queued: result.queued,
     run: {
       id: String((result.run as any)._id),

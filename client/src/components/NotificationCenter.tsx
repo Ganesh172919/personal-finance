@@ -79,12 +79,12 @@ function getNotificationIcon(notification: NotificationItem) {
   const meta = notification.metadata as Record<string, unknown> | undefined;
   const type = (meta?.type as string) || "";
 
-  if (type === "ai" || title.includes("ai") || title.includes("insight")) return Brain;
-  if (type === "budget" || title.includes("budget") || title.includes("spending")) return TrendingUp;
-  if (type === "alert" || title.includes("alert") || title.includes("warning")) return AlertTriangle;
-  if (type === "billing" || title.includes("billing") || title.includes("payment")) return CreditCard;
-  if (type === "workflow" || title.includes("workflow")) return Workflow;
-  return Info;
+  if (type === "ai" || title.includes("ai") || title.includes("insight")) return <Brain className="w-4 h-4" />;
+  if (type === "budget" || title.includes("budget") || title.includes("spending")) return <TrendingUp className="w-4 h-4" />;
+  if (type === "alert" || title.includes("alert") || title.includes("warning")) return <AlertTriangle className="w-4 h-4" />;
+  if (type === "billing" || title.includes("billing") || title.includes("payment")) return <CreditCard className="w-4 h-4" />;
+  if (type === "workflow" || title.includes("workflow")) return <Workflow className="w-4 h-4" />;
+  return <Info className="w-4 h-4" />;
 }
 
 function getNotificationAccent(notification: NotificationItem): string {
@@ -300,7 +300,7 @@ function NotificationRow({
   onMarkRead: (id: string) => void;
   index: number;
 }) {
-  const Icon = getNotificationIcon(notification);
+  const icon = getNotificationIcon(notification);
   const accent = getNotificationAccent(notification);
   const isUnread = notification.status === "unread";
 
@@ -324,7 +324,7 @@ function NotificationRow({
       <div className="flex gap-3">
         {/* Icon */}
         <div className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${accent}`}>
-          <Icon className="w-4 h-4" />
+          {icon}
         </div>
 
         {/* Content */}

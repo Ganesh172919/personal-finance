@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import CategoryRuleModel, { ICategoryRule } from "../models/categoryRuleModel";
+import { fireAndForget } from "./deadLetterQueue";
 
 /**
  * Applies org/user category rules to a transaction description.
@@ -46,8 +47,12 @@ export async function matchCategoryRule(
     }
 
     if (matched) {
-      // Bump appliedCount (fire and forget)
-      void CategoryRuleModel.updateOne({ _id: rule._id }, { $inc: { appliedCount: 1 } }).catch(() => {});
+      // Bump appliedCount (fire and forget to DLQ)
+      fireAndForget(
+        CategoryRuleModel.updateOne({ _id: rule._id }, { $inc: { appliedCount: 1 } }),
+        "increment category rule appliedCount",
+        { ruleId: String(rule._id), orgId: String(orgId) }
+      );
 
       return {
         targetCategory: rule.targetCategory,

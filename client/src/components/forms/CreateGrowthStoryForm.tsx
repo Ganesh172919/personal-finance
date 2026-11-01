@@ -27,7 +27,7 @@
  *    from number-type input fields.
  */
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -51,7 +51,7 @@ export function CreateGrowthStoryForm({ open, onOpenChange }: CreateGrowthStoryF
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { register, handleSubmit, formState: { errors }, setValue, reset, watch } = useForm<Partial<IGrowthStory>>({
+  const { register, handleSubmit, formState: { errors }, setValue, reset, control } = useForm<Partial<IGrowthStory>>({
     defaultValues: {
       category: 'wealth-building',
       difficulty: 'beginner',
@@ -68,10 +68,10 @@ export function CreateGrowthStoryForm({ open, onOpenChange }: CreateGrowthStoryF
     }
   });
 
-  const selectedCategory = watch("category");
-  const selectedDifficulty = watch("difficulty");
-  const tagsString = watch("tags")?.join(", ") || "";
-  const strategiesString = watch("strategies")?.join(", ") || "";
+  const selectedCategory = useWatch({ control, name: "category" });
+  const selectedDifficulty = useWatch({ control, name: "difficulty" });
+  const tagsString = useWatch({ control, name: "tags" })?.join(", ") || "";
+  const strategiesString = useWatch({ control, name: "strategies" })?.join(", ") || "";
 
   const mutation = useMutation({
     mutationFn: createGrowthStory,

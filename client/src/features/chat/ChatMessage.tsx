@@ -19,6 +19,67 @@
  * - "Simulate" — preview the effect without applying
  * - "Approve" — execute the action on the server
  *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * ChatMessage Component
+ * ├── 1. Message Bubble Taxonomy
+ * │   ├── User Message: Right-aligned, primary accent bubble, user avatar
+ * │   └── Assistant Message: Left-aligned, bot icon, full markdown prose
+ * ├── 2. Markdown Rendering Engine (ReactMarkdown + remarkGfm)
+ * │   ├── Tables, code blocks, checklists, emphasized math
+ * │   └── Sanitized links and bullet lists
+ * ├── 3. RAG Grounding Evidence & Citations
+ * │   ├── File attachment chips
+ * │   └── Evidence footnotes and knowledge chunk citations
+ * ├── 4. Interactive AI Tool Calls (ToolCallCard)
+ * │   ├── Simulate Button: Previews transaction/goal effect without state changes
+ * │   └── Approve Button: Directly commits action to database
+ * ├── 5. Structured Action Plan Card
+ * │   └── "Create tasks from plan" bulk action button
+ * └── 6. Message Controls & Feedback
+ *     ├── Copy message text to clipboard
+ *     ├── Thumbs up / down feedback submission (submitAgentOutputFeedback)
+ *     └── Agent workflow trace collapsible inspector
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +---------------------------------------------------------------+
+ *   |                   ChatMessage Component Mounts                |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *                      [Is message from User or AI?]
+ *                               /          \
+ *                             USER          ASSISTANT
+ *                             /              \
+ *                            v                v
+ *     +----------------------------+   +----------------------------+
+ *     | Right-aligned chat bubble  |   | Left-aligned AI bubble     |
+ *     | with avatar & attachments  |   | ReactMarkdown formatting   |
+ *     +----------------------------+   +--------------+-------------+
+ *                                                     |
+ *                                                     v
+ *                                      +----------------------------+
+ *                                      | Grounding Evidence Badges  |
+ *                                      | - Source file citations    |
+ *                                      +--------------+-------------+
+ *                                                     |
+ *                                                     v
+ *                                      +----------------------------+
+ *                                      | Interactive Tool Cards     |
+ *                                      | [Simulate]    [Approve]    |
+ *                                      +--------------+-------------+
+ *                                                     |
+ *                                                     v
+ *                                      +----------------------------+
+ *                                      | Action Plan & Feedback Row |
+ *                                      | [Add Tasks] [👍] [👎] [📋] |
+ *                                      +----------------------------+
+ * ```
+ *
  * @module features/chat/ChatMessage
  */
 
@@ -27,11 +88,12 @@ import { User, Wand2, Copy, CheckCircle, ListTodo, Paperclip, ThumbsDown, Thumbs
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { IChatMessage } from "@/types/chat.types";
+import type { IChatAttachment, IChatMessage } from "@/types/chat.types";
 import { Avatar, AvatarFallback } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
 import { AgentWorkflowVisualizer } from "@/components/AgentWorkflowVisualizer";
+import { SourceEvidenceList } from "@/components/SourceEvidenceList";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
@@ -48,13 +110,19 @@ import { useToast } from "@/hooks/useToast";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import type { ToolCall } from "@/types/ai.types";
 import { buildApiUrl } from "@/lib/apiBase";
+import { splitAnswerAndPlan } from "@/lib/chatResponse";
+import { ChatDocumentCard } from "./ChatDocumentCard";
 
 interface ChatMessageProps {
   message: IChatMessage;
+  onUseDocument?: (file: IChatAttachment) => void;
+  isSending?: boolean;
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, onUseDocument, isSending }: ChatMessageProps) {
+  const chatLocation = `/chat/${message.sessionId}`;
   const isUser = message.role === "user";
+  const responseParts = splitAnswerAndPlan(message.content);
   const [copied, setCopied] = useState(false);
   const [feedbackRating, setFeedbackRating] = useState<"up" | "down" | null>(null);
   const [tasksAdded, setTasksAdded] = useState(false);
@@ -286,13 +354,13 @@ export function ChatMessage({ message }: ChatMessageProps) {
   // Custom markdown components for AI responses
   const markdownComponents = {
     h1: ({ children }: any) => (
-      <h1 className="text-xl font-bold text-foreground mb-3 mt-4">{children}</h1>
+      <h3 className="text-xl font-bold text-foreground mb-3 mt-4">{children}</h3>
     ),
     h2: ({ children }: any) => (
-      <h2 className="text-lg font-semibold text-foreground mb-2 mt-3">{children}</h2>
+      <h3 className="text-lg font-semibold text-foreground mb-2 mt-3">{children}</h3>
     ),
     h3: ({ children }: any) => (
-      <h3 className="text-base font-semibold text-foreground mb-2 mt-3">{children}</h3>
+      <h4 className="text-base font-semibold text-foreground mb-2 mt-3">{children}</h4>
     ),
     p: ({ children }: any) => (
       <p className="text-sm text-foreground leading-relaxed mb-3">{children}</p>
@@ -346,7 +414,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className={`group flex gap-4 p-4 ${isUser ? "justify-end" : "justify-start"}`}
+      className={`group flex gap-2 p-3 sm:gap-4 sm:p-4 ${isUser ? "justify-end" : "justify-start"}`}
     >
       {!isUser && (
         <Avatar className="w-8 h-8 flex-shrink-0">
@@ -357,13 +425,21 @@ export function ChatMessage({ message }: ChatMessageProps) {
       )}
 
       <div
-        className={`flex flex-col max-w-[80%] ${isUser ? "items-end" : "items-start"}`}
+        className={`flex min-w-0 flex-col ${isUser ? "max-w-[85%] items-end" : "flex-1 items-start"}`}
       >
+        {!isUser && message.metadata?.evidence?.length ? (
+          <details className="mb-3 w-full rounded-lg border border-border bg-background/60">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+              Sources ({message.metadata.evidence.length})
+            </summary>
+            <SourceEvidenceList items={message.metadata.evidence} returnTo={chatLocation} />
+          </details>
+        ) : null}
         <div
-          className={`rounded-2xl px-4 py-3 ${
+          className={`min-w-0 max-w-full break-words rounded-2xl px-4 py-3 ${
             isUser
               ? "bg-primary text-primary-foreground rounded-br-md"
-              : "bg-accent/50 text-foreground rounded-bl-md"
+              : "w-full bg-accent/50 text-foreground rounded-bl-md"
           }`}
         >
           {isUser ? (
@@ -374,11 +450,23 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 remarkPlugins={[remarkGfm]}
                 components={markdownComponents}
               >
-                {message.content}
+                {responseParts.answer}
               </ReactMarkdown>
+              {responseParts.plan ? (
+                <details className="mt-3 rounded-lg border border-border p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                    View financial plan
+                  </summary>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                    {responseParts.plan}
+                  </ReactMarkdown>
+                </details>
+              ) : null}
             </div>
           )}
         </div>
+
+        {!isUser && message.metadata?.generatedDocuments?.map(document => <ChatDocumentCard key={document.fileId} document={document} returnTo={chatLocation} onUseDocument={onUseDocument} disabled={isSending} />)}
 
         {message.metadata?.attachments?.length ? (
           <div className="mt-2 flex flex-wrap gap-2">
@@ -396,7 +484,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </div>
         ) : null}
 
-        {!isUser && message.metadata?.plan?.key_metrics && (
+        {!isUser && message.metadata?.plan?.key_metrics && Object.values(message.metadata.plan.key_metrics).some(value => typeof value === "number" && Number.isFinite(value)) && (
           <div className="mt-2 w-full grid grid-cols-2 md:grid-cols-5 gap-2">
             <div className="rounded-md border border-border bg-background/60 p-2">
               <p className="text-[11px] text-muted-foreground">Net cash flow</p>
@@ -449,13 +537,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
           <div className="mt-2 w-full space-y-2">
             {message.metadata?.confidence ? (
               <div className="rounded-md border border-border bg-background/60 p-3">
-                <div className="text-xs font-semibold text-foreground">Grounding confidence</div>
+                <div className="text-xs font-semibold text-foreground">Context coverage</div>
                 <div className="mt-1 text-sm text-muted-foreground">
-                  {message.metadata.confidence.label || "unknown"} confidence
+                  {message.metadata.confidence.label || "unknown"} coverage
                   {typeof message.metadata.confidence.score === "number"
                     ? ` • score ${message.metadata.confidence.score.toFixed(2)}`
                     : ""}
                 </div>
+                <p className="mt-1 text-xs text-muted-foreground">Based on the records and document passages available for this answer.</p>
                 {message.metadata.confidence.notes?.length ? (
                   <ul className="mt-2 list-disc list-inside space-y-1 text-xs text-muted-foreground">
                     {message.metadata.confidence.notes.slice(0, 3).map((note, idx) => (
@@ -463,20 +552,6 @@ export function ChatMessage({ message }: ChatMessageProps) {
                     ))}
                   </ul>
                 ) : null}
-              </div>
-            ) : null}
-
-            {message.metadata?.evidence?.length ? (
-              <div className="rounded-md border border-border bg-background/60 p-3">
-                <div className="text-xs font-semibold text-foreground">Evidence used</div>
-                <div className="mt-2 space-y-2">
-                  {message.metadata.evidence.slice(0, 4).map((item, idx) => (
-                    <div key={item.id || `${item.label}-${idx}`} className="rounded-md border border-border/70 bg-background p-2">
-                      <div className="text-sm font-medium text-foreground">{item.label || item.type || "Evidence"}</div>
-                      {item.snippet ? <div className="mt-1 text-xs text-muted-foreground">{item.snippet}</div> : null}
-                    </div>
-                  ))}
-                </div>
               </div>
             ) : null}
 
@@ -680,7 +755,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </div>
         ) : null}
 
-        <div className="flex items-center gap-2 mt-1 px-2">
+        <div className="mt-1 flex max-w-full flex-wrap items-center gap-2 px-2">
           <span className="text-xs text-muted-foreground">
             {formatTime(message.createdAt)}
           </span>
@@ -690,7 +765,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
               variant="ghost"
               size="sm"
               onClick={handleCopy}
-              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:opacity-100"
+              aria-label={copied ? "Response copied" : "Copy response"}
+              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-100"
             >
               {copied ? (
                 <CheckCircle className="w-3 h-3 text-green-500" />
@@ -700,7 +776,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </Button>
           )}
 
-          {!isUser && message.metadata?.plan && (
+          {!isUser && message.metadata?.plan && Object.values(message.metadata.plan.actions || {}).some(bucket => Array.isArray(bucket) && bucket.length > 0) && (
             <Button
               variant="ghost"
               size="sm"
@@ -740,7 +816,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           )}
           
           {!isUser && message.metadata?.agentsInvolved && message.metadata.agentsInvolved.length > 0 && (
-            <span className="text-xs text-muted-foreground">
+            <span className="break-all text-xs text-muted-foreground">
               via {message.metadata.agentsInvolved.join(", ")}
             </span>
           )}

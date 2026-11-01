@@ -33,6 +33,67 @@
  * - The 15-second force exit timeout prevents zombie processes in containerized deployments
  * - The `shuttingDown` flag prevents double-shutdown race conditions
  *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * Server Composition Root (server.ts)
+ * ├── 1. Pre-Flight Telemetry
+ * │   └── OpenTelemetry SDK initialization (telemetry.ts)
+ * ├── 2. Security & Identity
+ * │   └── configurePassport (JWT strategy, Google OAuth)
+ * ├── 3. Database Persistence
+ * │   ├── MongoDB connection (connectDB)
+ * │   └── Redis client initialization (ioredis)
+ * ├── 4. Background Workers & Schedulers
+ * │   ├── startPluginManager()
+ * │   ├── startDomainEventFanout() (SSE real-time pipeline)
+ * │   ├── startWorkflowScheduler() (cron workflow engine)
+ * │   └── startNewsletterScheduler() (daily newsletter delivery engine)
+ * ├── 5. Application Factory & Port Binding
+ * │   ├── createApp() (Express middleware chain & route mounting)
+ * │   └── server.listen(PORT) with keepAliveTimeout tuning
+ * └── 6. Graceful Shutdown & Cleanup
+ *     ├── Intercept SIGINT / SIGTERM / unhandledRejection
+ *     ├── Stop accepting new connections (server.close)
+ *     ├── Stop background schedulers & timers
+ *     ├── Close Redis & MongoDB connections
+ *     └── 15-second safety force-exit watchdog
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +---------------------------------------------------------------+
+ *   |                     Node.js Process Starts                    |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |                   Step 1: connectDB()                         |
+ *   |  - Establish MongoDB Mongoose connection                      |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |              Step 2: Start Background Schedulers              |
+ *   |  - startWorkflowScheduler()                                   |
+ *   |  - startNewsletterScheduler()                                 |
+ *   |  - startDomainEventFanout()                                   |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |              Step 3: createApp() & server.listen()            |
+ *   |  - Mount Express routes, CORS, CSRF, and security middleware  |
+ *   |  - Bind HTTP listener on PORT (e.g. 3000)                     |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |              Serving Requests / Graceful Shutdown Hook        |
+ *   +---------------------------------------------------------------+
+ * ```
+ *
  * @module server
  */
 
@@ -46,8 +107,10 @@ import { processPendingDomainEvents } from "./services/domainEventTriggers"; // 
 import { startPluginManager } from "./modules/plugins/pluginManager";        // Plugin lifecycle manager
 import { startDomainEventFanout } from "./modules/realtime/domainEventFanout"; // Realtime event fanout (SSE)
 import { startWorkflowScheduler } from "./services/workflowScheduler";        // Background workflow cron
+import { startNewsletterScheduler } from "./services/newsletterScheduler";    // Daily newsletter delivery
 import { closeRedis } from "./config/redis";                    // Redis connection cleanup
 import { initTelemetry, shutdownTelemetry } from "./config/telemetry"; // OpenTelemetry tracing
+import { ensureTransactionExternalIdIndex } from "./services/transactionIndexes";
 
 // ── Module-Level State ────────────────────────────────────────────────
 // These variables hold references to running services so they can be cleaned up during shutdown.
@@ -63,6 +126,7 @@ let domainEventPoller: NodeJS.Timeout | null = null;
 let pluginManagerStop: (() => void) | null = null;
 let domainEventFanoutStop: (() => void) | null = null;
 let workflowSchedulerStop: (() => void) | null = null;
+let newsletterSchedulerStop: (() => void) | null = null;
 
 /**
  * Performs a graceful shutdown of all server resources.
@@ -130,6 +194,10 @@ const shutdown = async (reason: string, exitCode = 0) => {
       workflowSchedulerStop();
       workflowSchedulerStop = null;
     }
+    if (newsletterSchedulerStop) {
+      newsletterSchedulerStop();
+      newsletterSchedulerStop = null;
+    }
 
     // Step 4: Close database connections
     await closeDB();    // MongoDB via Mongoose
@@ -174,6 +242,7 @@ async function start() {
 
   // Connect to MongoDB (falls back to in-memory for dev/test if MONGO_URI is missing)
   await connectDB();
+  await ensureTransactionExternalIdIndex();
 
   // Start background services and store their stop functions for graceful shutdown
   pluginManagerStop = startPluginManager().stop;           // Plugin lifecycle management
@@ -183,6 +252,11 @@ async function start() {
   // ASYNC_JOBS_ENABLED=true means a dedicated BullMQ worker handles scheduled workflows
   if (env.NODE_ENV !== "test" && !env.ASYNC_JOBS_ENABLED) {
     workflowSchedulerStop = startWorkflowScheduler({ label: "server" }).stop;
+  }
+
+  // Start the newsletter scheduler for daily personalized newsletters
+  if (env.NODE_ENV !== "test") {
+    newsletterSchedulerStop = startNewsletterScheduler().stop;
   }
 
   // Create the Express application (all middleware, routes, error handlers)

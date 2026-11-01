@@ -19,12 +19,12 @@ import type { ReferralRedeemRequest, ReferralRedeemResponse, ReferralsMeResponse
 
 /** Fetch the current user's referral code and stats. */
 export async function getMyReferral() {
-  return apiClient("/v1/referrals/me") as Promise<ReferralsMeResponse>;
+  return apiClient("/referrals/me") as Promise<ReferralsMeResponse>;
 }
 
 /** Redeem a referral code to claim referral benefits. */
 export async function redeemReferral(body: ReferralRedeemRequest) {
-  return apiClient("/v1/referrals/redeem", {
+  return apiClient("/referrals/redeem", {
     method: "POST",
     body: JSON.stringify(body),
   }) as Promise<ReferralRedeemResponse>;

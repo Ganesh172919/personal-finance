@@ -29,6 +29,7 @@ import { enforceFeatureLimit, recordFeatureUsage } from "../../services/entitlem
 import { ensureProfileWithMigration, bumpTransactionMetadata, setProfileMutationSource } from "../../services/profileService";
 import { publishDomainEvent } from "../../services/domainEvents";
 import { importTransactionsCsv } from "../../services/transactionsCsvImport";
+import { fireAndForget } from "../../services/deadLetterQueue";
 
 const roleRank: Record<"member" | "admin" | "owner", number> = {
   member: 1,
@@ -132,42 +133,50 @@ export const importTransactionsCsvEndpoint = async (req: Request, res: Response)
     await profile.save();
 
     if (result.inserted > 0) {
-      await publishDomainEvent({
+      fireAndForget(
+        publishDomainEvent({
+          orgId,
+          userId: user._id,
+          eventType: "TransactionImported",
+          aggregateType: "csv_import",
+          aggregateId: result.import_id || `csv_import:${Date.now()}`,
+          actionLinkId: source.action_link_id,
+          requestId: req.requestId,
+          payload: {
+            source,
+            import_id: result.import_id,
+            file_name: result.file_name,
+            parsed_rows: result.parsed_rows,
+            valid_rows: result.valid_rows,
+            inserted: result.inserted,
+            duplicates: result.duplicates,
+            account_id: accountId ? accountId.toString() : null,
+          },
+        }),
+        "publish TransactionImported domain event",
+        { orgId: String(orgId), importId: result.import_id }
+      );
+    }
+
+    fireAndForget(
+      recordFeatureUsage({
         orgId,
         userId: user._id,
-        eventType: "TransactionImported",
-        aggregateType: "csv_import",
-        aggregateId: result.import_id || `csv_import:${Date.now()}`,
-        actionLinkId: source.action_link_id,
+        feature: "connector_sync_records",
+        units: result.inserted,
         requestId: req.requestId,
-        payload: {
-          source,
-          import_id: result.import_id,
+        idempotencyKey: `csv_import:${result.import_id || req.requestId || ""}`.slice(0, 128),
+        context: {
+          endpoint: "integrations/transactions_csv/import",
           file_name: result.file_name,
           parsed_rows: result.parsed_rows,
           valid_rows: result.valid_rows,
-          inserted: result.inserted,
           duplicates: result.duplicates,
-          account_id: accountId ? accountId.toString() : null,
         },
-      }).catch(() => null);
-    }
-
-    await recordFeatureUsage({
-      orgId,
-      userId: user._id,
-      feature: "connector_sync_records",
-      units: result.inserted,
-      requestId: req.requestId,
-      idempotencyKey: `csv_import:${result.import_id || req.requestId || ""}`.slice(0, 128),
-      context: {
-        endpoint: "integrations/transactions_csv/import",
-        file_name: result.file_name,
-        parsed_rows: result.parsed_rows,
-        valid_rows: result.valid_rows,
-        duplicates: result.duplicates,
-      },
-    }).catch(() => null);
+      }),
+      "record feature usage for csv import",
+      { orgId: String(orgId), importId: result.import_id, inserted: result.inserted }
+    );
   }
 
   if (accountId && rememberMapping) {

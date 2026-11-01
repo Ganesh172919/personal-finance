@@ -24,20 +24,28 @@
  * @module utils/sendEmail
  */
 
-import nodemailer from "nodemailer"; // Email sending library
+import nodemailer, { type Transporter } from "nodemailer"; // Email sending library
 import { getEnv } from "../config/env"; // Environment configuration
 import { logger } from "../config/logger"; // Application logger
+
+export interface EmailAttachment {
+  filename: string;
+  content?: string | Buffer;
+  path?: string;
+  contentType?: string;
+}
 
 /**
  * Email Options Interface
  *
  * Defines the structure of email options.
  */
-interface EmailOptions {
+export interface EmailOptions {
   to: string; // Recipient email address
   subject: string; // Email subject
   text: string; // Plain text body
   html?: string; // HTML body (optional)
+  attachments?: EmailAttachment[]; // Attachments (optional)
 }
 
 /**
@@ -52,7 +60,7 @@ export type EmailSendResult = { mode: "smtp" | "console" };
  *
  * Cached Nodemailer transporter instance for reuse.
  */
-let cachedTransporter: nodemailer.Transporter | null = null;
+let cachedTransporter: Transporter | null = null;
 let cachedTransportSignature = "";
 
 /**
@@ -70,7 +78,7 @@ let cachedTransportSignature = "";
 const getOrCreateTransporter = async (
   config: Record<string, unknown>,
   signature: string
-): Promise<nodemailer.Transporter> => {
+): Promise<Transporter> => {
   // Return cached transporter if configuration hasn't changed
   if (cachedTransporter && cachedTransportSignature === signature) {
     return cachedTransporter;
@@ -198,6 +206,7 @@ export const sendEmail = async (options: EmailOptions): Promise<EmailSendResult>
       subject: options.subject,
       text: options.text,
       html: options.html,
+      attachments: options.attachments,
     };
 
     // Send email

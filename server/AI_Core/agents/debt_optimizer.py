@@ -14,6 +14,91 @@ Key responsibilities
 - Simulate month-by-month payoff for both snowball and avalanche methods.
 - Evaluate consolidation options (personal loan, balance transfer card).
 - Recommend the optimal strategy with rationale.
+- Produce deterministic markdown reports and payoff timelines.
+
+MINDMAP FLOW
+------------
+::
+
+    DebtOptimizerAgent
+    ├── 1. Ingestion of Debt Portfolio & Profile
+    │   ├── Debt Account Normalization (balance, APR, min_payment)
+    │   ├── Monthly Income & Cashflow Available for Repayment
+    │   └── Currency Setting Resolution (INR / USD / EUR)
+    ├── 2. Portfolio-Level Metrics Engine
+    │   ├── Total Debt Balance Summation
+    │   ├── Weighted Average APR Calculation
+    │   ├── Aggregate Minimum Monthly Payment
+    │   └── Debt-to-Income (DTI) Ratio Evaluation
+    ├── 3. Payoff Strategy Simulations
+    │   ├── Avalanche Simulation (_simulate_avalanche)
+    │   │   ├── Sort Debts Descending by APR
+    │   │   ├── Direct Extra Cashflow to Highest APR Debt
+    │   │   └── Quantify Total Interest Paid & Months to Debt-Free
+    │   └── Snowball Simulation (_simulate_snowball)
+    │       ├── Sort Debts Ascending by Outstanding Balance
+    │       ├── Direct Extra Cashflow to Smallest Balance Debt
+    │       └── Quantify Behavioral Milestones & Interest Delta
+    ├── 4. Consolidation & Refinance Assessment
+    │   ├── Evaluate Eligibility for Personal Loan or Balance Transfer
+    │   └── Quantify Potential Interest Savings from Refinancing
+    └── 5. Deterministic Synthesis & Action Plan
+        ├── Select Best Strategy (Psychological vs Mathematical Fit)
+        ├── Action Plan Schedule Generation (Month-by-month steps)
+        └── Output Dictionary Packaging for Aggregator / Master Agent
+
+ASCII FLOW
+----------
+::
+
+    +---------------------------------------------------------------+
+    |             Input: List of Debts + User Profile               |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                  Validate & Normalize Debts                   |
+    |  - If debts empty -> Return clean zero-debt congratulation    |
+    |  - Extract: balance, interest_rate, minimum_payment           |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |               Calculate Aggregate Portfolio Stats             |
+    |  - Total Balance, Weighted APR, Total Minimums, DTI Ratio     |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                   Dual Strategy Simulations                   |
+    +-------------------------------+-------------------------------+
+            |                                               |
+            v                                               v
+    [Simulate Avalanche]                            [Simulate Snowball]
+    - Priority: Highest APR                         - Priority: Smallest Balance
+    - Calculate: Total Interest,                    - Calculate: Total Interest,
+      Debt-free Date                                  Debt-free Date
+            |                                               |
+            +-----------------------+-----------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |               Evaluate Debt Consolidation Options             |
+    |  - Compare current weighted APR against typical loan rates    |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                  Strategy Recommendation                      |
+    |  - If >3 debts & risk is conservative -> Recommend Snowball   |
+    |  - Else -> Recommend Avalanche for interest savings           |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    | Assemble Output: { metrics, avalanche_plan, snowball_plan,    |
+    |   recommended_strategy, consolidation, detailed_report }      |
+    +---------------------------------------------------------------+
 
 Design decisions
 ----------------
@@ -28,7 +113,9 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
+from config import settings
 from utils import format_currency
+from utils.agent_helpers import get_currency_code
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +309,7 @@ class DebtOptimizerAgent:
             "recommended_method": optimal,
             "interest_savings": round(savings, 2),
             "time_savings_months": abs(snowball_time - avalanche_time),
-            "rationale": self._get_strategy_rationale(optimal, savings),
+            "rationale": self._get_strategy_rationale(optimal, savings, get_currency_code(user_profile)),
         }
 
     def _analyze_consolidation_options(self, debts: List[Dict[str, Any]], _user_profile: Dict[str, Any]) -> Dict[str, Any]:
@@ -270,7 +357,8 @@ class DebtOptimizerAgent:
         savings = user_profile.get("savings", 0)
 
         savings_goal = savings * 0.1
-        return max(100, min(income * 0.15, (income - expenses) * 0.5, savings_goal))
+        min_extra_payment = getattr(settings, "MIN_EXTRA_DEBT_PAYMENT", 100)
+        return max(min_extra_payment, min(income * 0.15, (income - expenses) * 0.5, savings_goal))
 
     def _calculate_completion_date(self, months: int) -> str:
         return (datetime.now() + timedelta(days=months * 30)).strftime("%B %Y")
@@ -280,10 +368,10 @@ class DebtOptimizerAgent:
         new_interest = sum(debt.get("balance", 0) for debt in debts) * new_rate / 100
         return max(0, current_interest - new_interest)
 
-    def _get_strategy_rationale(self, method: str, savings: float) -> str:
+    def _get_strategy_rationale(self, method: str, savings: float, currency_code: str = "INR") -> str:
         rationales = {
-            "snowball": f"Psychological momentum from quick wins outweighs {format_currency(savings)} in potential savings.",
-            "avalanche": f"Mathematically optimal strategy saving approximately {format_currency(savings)} in interest.",
+            "snowball": f"Psychological momentum from quick wins outweighs {format_currency(savings, currency_code)} in potential savings.",
+            "avalanche": f"Mathematically optimal strategy saving approximately {format_currency(savings, currency_code)} in interest.",
         }
         return rationales.get(method, "Balanced approach considering both math and motivation.")
 
@@ -305,6 +393,7 @@ class DebtOptimizerAgent:
         """Generate deterministic debt recommendations without specialist LLM calls."""
 
         monthly_income = user_profile.get("annual_income", 0) / 12
+        currency_code = get_currency_code(user_profile)
         method = strategy.get("recommended_method", "avalanche")
         interest_savings = strategy.get("interest_savings", 0)
         consolidation_options = consolidation.get("options", [])
@@ -313,13 +402,13 @@ class DebtOptimizerAgent:
         sorted_debts = sorted(debts, key=lambda item: item.get("interest_rate", 0), reverse=True)
         for debt in sorted_debts:
             debt_lines.append(
-                f"- {debt.get('name', 'Debt')}: {format_currency(debt.get('balance', 0))} at {debt.get('interest_rate', 0)}% "
-                f"(minimum {format_currency(debt.get('minimum_payment', 0))})"
+                f"- {debt.get('name', 'Debt')}: {format_currency(debt.get('balance', 0), currency_code)} at {debt.get('interest_rate', 0)}% "
+                f"(minimum {format_currency(debt.get('minimum_payment', 0), currency_code)})"
             )
 
         consolidation_lines = [
             f"- {option.get('type', 'Option')}: est. rate {option.get('estimated_rate', 0)}%, "
-            f"potential savings {format_currency(option.get('potential_savings', 0))}"
+            f"potential savings {format_currency(option.get('potential_savings', 0), currency_code)}"
             for option in consolidation_options[:3]
         ] or ["- No consolidation option is clearly beneficial right now."]
 
@@ -329,11 +418,11 @@ class DebtOptimizerAgent:
             [
                 "Debt Optimization Plan (Deterministic)",
                 "",
-                f"Total debt: {format_currency(analysis.get('total_debt', 0))}",
+                f"Total debt: {format_currency(analysis.get('total_debt', 0), currency_code)}",
                 f"Debt-to-income ratio: {analysis.get('debt_to_income_ratio', 0)}%",
                 f"Weighted rate: {analysis.get('weighted_interest_rate', 0)}%",
                 f"Recommended method: {method.upper()}",
-                f"Estimated interest savings vs alternative: {format_currency(interest_savings)}",
+                f"Estimated interest savings vs alternative: {format_currency(interest_savings, currency_code)}",
                 "",
                 "Debt inventory:",
                 *debt_lines,
@@ -345,7 +434,7 @@ class DebtOptimizerAgent:
                 "4) Recalculate plan every month and after income changes.",
                 "",
                 "Cashflow and risk controls:",
-                f"- Monthly income baseline: {format_currency(monthly_income)}",
+                f"- Monthly income baseline: {format_currency(monthly_income, currency_code)}",
                 "- Keep a basic emergency buffer while accelerating repayment.",
                 "- Avoid new high-interest debt while payoff plan is active.",
                 "",

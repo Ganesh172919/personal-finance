@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @fileoverview SpendingAnalysis — dashboard card showing total monthly spending,
  * month-over-month change, and a breakdown of top expense categories with progress bars.
  *
@@ -19,6 +19,7 @@
  *  - Framer Motion stagger animation (0.1 s per category + 1 s progress bar fill).
  */
 import { Card } from "@/components/ui/Card";
+import { SpendingAnalysisSkeleton } from "@/components/ui/CardSkeleton";
 import {
   Select,
   SelectContent,
@@ -27,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/Select";
 import { Utensils, Car, Film, ShoppingBag } from "lucide-react";
+import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { getTransactionsSummary, TransactionsSummaryResponse } from "@/lib/apiClient";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
@@ -77,7 +79,7 @@ export function SpendingAnalysis() {
   const fromYmd = toYmd(fromDate);
   const toYmdValue = toYmd(toDate);
 
-  const { data } = useQuery<TransactionsSummaryResponse>({
+  const { data, isLoading } = useQuery<TransactionsSummaryResponse>({
     queryKey: ["/api/transactions/summary", fromYmd, toYmdValue],
     queryFn: () =>
       getTransactionsSummary({
@@ -87,6 +89,10 @@ export function SpendingAnalysis() {
         topCategories: 6,
       }),
   });
+
+  if (isLoading) {
+    return <SpendingAnalysisSkeleton />;
+  }
 
   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);

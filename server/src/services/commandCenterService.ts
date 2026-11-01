@@ -5,6 +5,77 @@
  * payload. This is the primary daily-use data feed that powers the Financial
  * Command Center dashboard.
  *
+ * ============================================================================
+ * MINDMAP FLOW: COMMAND CENTER COCKPIT DATA AGGREGATION & TRIAGE
+ * ============================================================================
+ * - Command Center Daily Cockpit
+ *     ├── 1. Concurrent Parallel Ingestion (Promise.all)
+ *     │   ├── Liquid Accounts: Checking, savings, cash, wallet balances
+ *     │   ├── User Financial Profile: Active goals & structured debts
+ *     │   ├── 30-Day Expense History: Average daily burn rate derivation
+ *     │   ├── Month-to-Date Spend: Current cycle outflow total
+ *     │   ├── Budget Envelopes: Planned vs actual category spending
+ *     │   ├── Recurring Rules: Confirmed bills scheduled in next 7 days
+ *     │   ├── Calendar Reminders: Approaching financial milestones
+ *     │   ├── Task Queue: Open, due soon, and overdue action items
+ *     │   └── Recurring Candidates: Unapproved risky subscription detections
+ *     ├── 2. Core Financial Metric Derivation
+ *     │   ├── Cash Runway: Liquid balance / avg daily burn -> Days remaining
+ *     │   ├── Budget Burn Velocity: (Day of month / Days in month) vs (Spent / Planned)
+ *     │   ├── Month-End Spending Projection: Projected total vs Planned envelope
+ *     │   └── Debt Service Pressure: Min payments due vs liquid cash availability
+ *     ├── 3. Tri-Tier Signal Prioritization Engine
+ *     │   ├── ACT_NOW: Runway < 14 days, budget blown (>110%), overdue tasks/bills
+ *     │   ├── REVIEW_THIS_WEEK: Tasks due in 3 days, pace 95-105%, recurring candidates
+ *     │   └── SAFE_TO_IGNORE: Fully funded goals, surplus buffer, healthy runway
+ *     └── 4. Unified Client Payload Synthesis
+ *         └── JSON envelope with time-of-day greeting (morning/afternoon/evening)
+ *
+ * ============================================================================
+ * ASCII FLOW: DATA AGGREGATION & SIGNAL TRIAGING LIFECYCLE
+ * ============================================================================
+ *                        [ Client Dashboard Request ]
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  |   Promise.all Concurrent Queries     |
+ *                  +------------------+-------------------+
+ *                                     |
+ *      +------------+-----------+----+----+-----------+------------+
+ *      |            |           |         |           |            |
+ *      v            v           v         v           v            v
+ *  [Accounts] [Transactions] [Budgets] [Rules]   [Reminders]    [Tasks]
+ *  Liquid $    30d Daily Burn Planned   Bills 7d  Events 7d     Overdue/
+ *              MTD Outflows   vs Spent                          Due Soon
+ *      |            |           |         |           |            |
+ *      +------------+-----------+----+----+-----------+------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  |     Financial Metric Calculations    |
+ *                  | * Runway Days = Liquid / DailySpend  |
+ *                  | * Month Burn % = Spent / Planned     |
+ *                  | * Projected Total = (Spent/Day)*Days |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  |    Signal Priority Classification    |
+ *                  +------------------+-------------------+
+ *                          /          |          \
+ *                         /           |           \
+ *                        v            v            v
+ *                 [ ACT_NOW ]  [ REVIEW_WEEK ]  [ SAFE_TO_IGNORE ]
+ *                 Overdue debt  Pacing 95-105%   Goals on track
+ *                 Runway <14d   Pending tasks    Runway >90 days
+ *                        \            |            /
+ *                         \           |           /
+ *                          v          v          v
+ *                  +--------------------------------------+
+ *                  |  buildCommandCenterPayload() Output  |
+ *                  |  Delivered to FinanceOS Cockpit UI   |
+ *                  +--------------------------------------+
+ *
  * DATA SOURCES:
  * - Accounts: Liquid balance (cash runway calculation)
  * - Transactions: Current-month spending velocity and daily burn rate
@@ -50,17 +121,43 @@ export interface CommandCenterSignal {
   action_href?: string;
 }
 
+/** Multi-account consolidated netting breakdown */
+export interface ConsolidatedNetting {
+  liquid_assets: number;
+  investment_assets: number;
+  total_assets: number;
+  credit_liabilities: number;
+  profile_debts: number;
+  total_liabilities: number;
+  net_liquid_cash: number;
+  net_worth: number;
+  netting_status: "surplus" | "balanced" | "deficit";
+  net_runway_days: number | null;
+  account_breakdown: Array<{
+    id: string;
+    name: string;
+    type: string;
+    balance: number;
+    currency: string;
+  }>;
+}
+
 /** The complete command center payload */
 export interface CommandCenterPayload {
   generated_at: string;
   time_of_day: "morning" | "afternoon" | "evening";
 
   cash_runway: {
+    balance_available: boolean;
     liquid_balance: number;
+    net_liquid_balance?: number;
     avg_daily_expense: number;
     days_remaining: number | null;
+    net_days_remaining?: number | null;
     currency: string;
   };
+
+  consolidated_netting: ConsolidatedNetting;
 
   budget_burn: {
     period_key: string;
@@ -147,6 +244,7 @@ export const buildCommandCenterPayload = async (params: {
   // Parallel data fetching
   const [
     accounts,
+    accountTxAgg,
     profile,
     recentSpendAgg,
     currentMonthSpendAgg,
@@ -156,15 +254,30 @@ export const buildCommandCenterPayload = async (params: {
     taskCounts,
     recurringCandidates,
   ] = await Promise.all([
-    // Liquid accounts for cash runway
+    // All active accounts across all types for consolidated netting & runway
     AccountModel.find({
       orgId: params.orgId,
-      userId: params.userId,
-      type: { $in: ["checking", "savings", "cash", "wallet"] },
+      status: { $ne: "closed" },
     })
-      .select({ balance: 1, currency: 1 })
+      .select({ _id: 1, name: 1, type: 1, currency: 1, openingBalance: 1, balance: 1 })
       .lean()
       .catch(() => []),
+
+    // Account transaction totals to derive current balances
+    TransactionModel.aggregate([
+      {
+        $match: {
+          orgId: params.orgId,
+          accountId: { $exists: true, $ne: null },
+        },
+      },
+      {
+        $group: {
+          _id: "$accountId",
+          total: { $sum: "$amount" },
+        },
+      },
+    ]).catch(() => []),
 
     // User financial profile (goals, debts)
     ensureProfile({ orgId: params.orgId, userId: params.userId }),
@@ -295,16 +408,97 @@ export const buildCommandCenterPayload = async (params: {
     }).catch(() => ({ org_id: params.orgId.toString(), days_back: 180, candidates: [] })),
   ]);
 
-  // ── Cash Runway ───────────────────────────────────────
-  const liquidBalance = (accounts as any[]).reduce(
-    (sum, acc) => sum + Math.max(0, Number(acc?.balance || 0)),
+  // ── Multi-Account Consolidated Netting & Balances ────
+  const txTotalByAccount = new Map<string, number>(
+    (accountTxAgg as any[]).map((row: any) => [
+      String(row?._id),
+      Number(row?.total || 0),
+    ])
+  );
+
+  let liquidAssets = 0;
+  let investmentAssets = 0;
+  let creditLiabilities = 0;
+
+  const accountBreakdown: Array<{
+    id: string;
+    name: string;
+    type: string;
+    balance: number;
+    currency: string;
+  }> = [];
+
+  const liquidTypes = new Set(["checking", "savings", "cash", "wallet"]);
+
+  for (const acc of (accounts as any[])) {
+    const accountId = String(acc._id || "");
+    const txTotal = txTotalByAccount.get(accountId) || 0;
+    const rawBalance =
+      acc.balance !== undefined
+        ? Number(acc.balance)
+        : Number(acc.openingBalance || 0) + txTotal;
+
+    const roundedBalance = Math.round(rawBalance * 100) / 100;
+    const accType = String(acc.type || "checking").toLowerCase();
+
+    accountBreakdown.push({
+      id: accountId,
+      name: String(acc.name || "Account"),
+      type: accType,
+      balance: roundedBalance,
+      currency: String(acc.currency || "USD"),
+    });
+
+    if (liquidTypes.has(accType)) {
+      liquidAssets += Math.max(0, roundedBalance);
+    } else if (accType === "brokerage" || accType === "investment") {
+      investmentAssets += Math.max(0, roundedBalance);
+    } else if (accType === "credit") {
+      creditLiabilities += Math.abs(roundedBalance);
+    }
+  }
+
+  // ── Debt Pressure & Profile Debts ─────────────────────
+  const debts = Array.isArray(profile.debts) ? (profile.debts as IDebt[]) : [];
+  const totalMinimumDue = debts.reduce(
+    (sum, d) => sum + Number(d.minimum_payment || 0),
     0
   );
+  const totalDebtBalance = debts.reduce(
+    (sum, d) => sum + Number(d.balance || 0),
+    0
+  );
+  const profileDebts = totalDebtBalance;
+
+  const totalAssets = liquidAssets + investmentAssets;
+  const totalLiabilities = creditLiabilities + profileDebts;
+  const netLiquidCash = liquidAssets - creditLiabilities;
+  const netWorth = totalAssets - totalLiabilities;
+
+  const nettingStatus: "surplus" | "balanced" | "deficit" =
+    netLiquidCash > 0 ? "surplus" : netLiquidCash === 0 ? "balanced" : "deficit";
+
   const recentSpend = (recentSpendAgg as any[])?.[0];
   const totalExpense30d = Number(recentSpend?.total_expense || 0);
   const avgDailyExpense = totalExpense30d > 0 ? totalExpense30d / 30 : 0;
   const daysRemaining =
-    avgDailyExpense > 0 ? Math.round(liquidBalance / avgDailyExpense) : null;
+    accounts.length > 0 && avgDailyExpense > 0
+      ? Math.round(liquidAssets / avgDailyExpense)
+      : null;
+
+  const netRunwayDays =
+    accounts.length > 0 && avgDailyExpense > 0
+      ? netLiquidCash > 0
+        ? Math.round(netLiquidCash / avgDailyExpense)
+        : 0
+      : null;
+
+  const debtPressure: PriorityLevel =
+    totalMinimumDue > liquidAssets * 0.5
+      ? "act_now"
+      : totalMinimumDue > liquidAssets * 0.25
+        ? "review_this_week"
+        : "safe_to_ignore";
 
   // ── Budget Burn ───────────────────────────────────────
   const totalPlanned = budgetEnvelopes?.totals?.planned || 0;
@@ -346,23 +540,6 @@ export const buildCommandCenterPayload = async (params: {
       cadence: c.cadence,
       confidence: c.confidence,
     }));
-
-  // ── Debt Pressure ─────────────────────────────────────
-  const debts = Array.isArray(profile.debts) ? (profile.debts as IDebt[]) : [];
-  const totalMinimumDue = debts.reduce(
-    (sum, d) => sum + Number(d.minimum_payment || 0),
-    0
-  );
-  const totalDebtBalance = debts.reduce(
-    (sum, d) => sum + Number(d.balance || 0),
-    0
-  );
-  const debtPressure: PriorityLevel =
-    totalMinimumDue > liquidBalance * 0.5
-      ? "act_now"
-      : totalMinimumDue > liquidBalance * 0.25
-        ? "review_this_week"
-        : "safe_to_ignore";
 
   // ── Tasks ─────────────────────────────────────────────
   const taskData = (taskCounts as any[])?.[0] || {
@@ -431,12 +608,51 @@ export const buildCommandCenterPayload = async (params: {
     });
   }
 
+  // Multi-Account Consolidated Netting Deficit
+  if (creditLiabilities > 0 && netLiquidCash < 0) {
+    signals.push({
+      id: "credit_deficit_netting",
+      title: "Credit card debt exceeds liquid cash reserve",
+      detail: `Credit obligations ($${Math.round(creditLiabilities).toLocaleString()}) exceed liquid assets ($${Math.round(liquidAssets).toLocaleString()}) by $${Math.round(Math.abs(netLiquidCash)).toLocaleString()}.`,
+      priority: "act_now",
+      metric: Math.round(Math.abs(netLiquidCash)),
+      action_href: "/finance?tab=accounts",
+    });
+  } else if (creditLiabilities > 0 && liquidAssets > 0 && creditLiabilities > 0.5 * liquidAssets) {
+    signals.push({
+      id: "high_credit_utilization_netting",
+      title: "Credit obligations absorb >50% of cash reserve",
+      detail: `Credit card balances ($${Math.round(creditLiabilities).toLocaleString()}) absorb ${Math.round((creditLiabilities / liquidAssets) * 100)}% of your liquid cash reserve.`,
+      priority: "review_this_week",
+      metric: Math.round(creditLiabilities),
+      action_href: "/finance?tab=accounts",
+    });
+  }
+
+  // Net Runway Alert if net buffer is dangerously tight (< 14 days) while gross runway looked ok
+  if (
+    netRunwayDays !== null &&
+    netRunwayDays < 14 &&
+    daysRemaining !== null &&
+    daysRemaining >= 14 &&
+    creditLiabilities > 0
+  ) {
+    signals.push({
+      id: "net_runway_risk",
+      title: `Net cash runway is only ~${netRunwayDays} days`,
+      detail: `After netting credit card obligations, your net runway drops from ${daysRemaining} to ${netRunwayDays} days.`,
+      priority: "act_now",
+      metric: netRunwayDays,
+      action_href: "/finance?tab=accounts",
+    });
+  }
+
   // Debt pressure
-  if (debtPressure === "act_now") {
+  if (accounts.length > 0 && debtPressure === "act_now") {
     signals.push({
       id: "debt_pressure",
       title: "Debt payments exceed half your liquid balance",
-      detail: `Minimum payments total ${totalMinimumDue.toFixed(0)} against ${liquidBalance.toFixed(0)} available.`,
+      detail: `Minimum payments total ${totalMinimumDue.toFixed(0)} against ${liquidAssets.toFixed(0)} available.`,
       priority: "act_now",
       metric: totalMinimumDue,
       action_href: "/goals-debts",
@@ -504,10 +720,26 @@ export const buildCommandCenterPayload = async (params: {
     generated_at: now.toISOString(),
     time_of_day: getTimeOfDay(hour),
     cash_runway: {
-      liquid_balance: Math.round(liquidBalance * 100) / 100,
+      balance_available: accounts.length > 0,
+      liquid_balance: Math.round(liquidAssets * 100) / 100,
+      net_liquid_balance: Math.round(netLiquidCash * 100) / 100,
       avg_daily_expense: Math.round(avgDailyExpense * 100) / 100,
       days_remaining: daysRemaining,
+      net_days_remaining: netRunwayDays,
       currency: budgetEnvelopes?.currency || "USD",
+    },
+    consolidated_netting: {
+      liquid_assets: Math.round(liquidAssets * 100) / 100,
+      investment_assets: Math.round(investmentAssets * 100) / 100,
+      total_assets: Math.round(totalAssets * 100) / 100,
+      credit_liabilities: Math.round(creditLiabilities * 100) / 100,
+      profile_debts: Math.round(profileDebts * 100) / 100,
+      total_liabilities: Math.round(totalLiabilities * 100) / 100,
+      net_liquid_cash: Math.round(netLiquidCash * 100) / 100,
+      net_worth: Math.round(netWorth * 100) / 100,
+      netting_status: nettingStatus,
+      net_runway_days: netRunwayDays,
+      account_breakdown: accountBreakdown,
     },
     budget_burn: {
       period_key: currentPeriod,

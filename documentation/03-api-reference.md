@@ -1,8 +1,53 @@
 # FinWise API Reference
 
 > **Version:** v1 (canonical) / legacy (deprecated)
-> **Base URL:** `https://api.finwise.app` (production) / `http://localhost:3001` (development)
+> **Base URL:** `https://api.finwise.app` (production) / `http://localhost:3000` (development)
 > **Last Updated:** 2026-03-31
+
+> [!TIP]
+> **Adding New Endpoints?**  
+> See the [**Master Developer Handbook: Building on This Project**](../docs/BUILDING_ON_THIS_PROJECT.md) for complete Zod request validation, Express 5 controller, and React Query hook blueprints.
+
+## Latest API Addendum
+
+The latest backend release introduced or elevated the importance of several API contracts. Read this addendum before relying only on the older endpoint listings below.
+
+### Newly important endpoint areas
+
+- AI runtime and inspection:
+  - `GET /api/v1/ai-core/status`
+  - `GET /api/v1/ai-core/ai/status`
+  - `GET /api/v1/ai-core/ai/models`
+  - `GET /api/v1/ai-core/ai/sessions`
+  - `GET /api/v1/ai-core/ai/sessions/:sessionId`
+  - `POST /api/v1/ai-core/ai/sessions/:sessionId/resume`
+- Dashboard operational summaries:
+  - `GET /api/v1/command-center`
+  - `GET /api/v1/budget-health`
+- Transaction review actions:
+  - `POST /api/v1/transactions/:id/approve`
+  - `POST /api/v1/transactions/bulk-approve`
+  - `POST /api/v1/transactions/:id/always-categorize`
+
+### AI response metadata now seen in practice
+
+Recent AI responses may now include:
+
+- `session_id`
+- `session_status`
+- `workflow_phase`
+- `active_provider`
+- `active_model`
+- `active_key_id`
+- `fallback_path`
+- `recovered_failures`
+- `recovered_from_checkpoint`
+
+### Guidance for current development
+
+- Treat `/api/v1/*` as the canonical target for new frontend and integration work.
+- Preserve review metadata when building transaction experiences.
+- Do not assume AI responses are plain text only; many consumers now depend on runtime metadata.
 
 ---
 
@@ -50,6 +95,10 @@
    - [3.37 Content (`/api/v1/blogs/*`, `/api/v1/growth-stories/*`)](#337-content-apiv1blogs-apiv1growth-stories)
    - [3.38 Public Shares (`/api/v1/public/*`)](#338-public-shares-apiv1public)
    - [3.39 Internal Tools (`/api/internal/tools/*`)](#339-internal-tools-apiinternaltools)
+   - [3.40 Newsletter (`/api/v1/newsletter/*`)](#340-newsletter-apiv1newsletter)
+   - [3.41 Health Score (`/api/v1/finance/health-score/*`)](#341-health-score-apiv1financehealth-score)
+   - [3.42 PDF Generation & Downloads (`/api/v1/files/*`)](#342-pdf-generation--downloads-apiv1files)
+   - [3.43 RAG Retrieval & Knowledge Chunks (`/api/v1/retrieval/*`)](#343-rag-retrieval--knowledge-chunks-apiv1retrieval)
 4. [Response Format](#4-response-format)
 5. [Error Codes](#5-error-codes)
 6. [Authentication Requirements](#6-authentication-requirements)
@@ -65,7 +114,7 @@
 | Environment | URL |
 |---|---|
 | Production | `https://api.finwise.app` |
-| Development | `http://localhost:3001` |
+| Development | `http://localhost:3000` |
 
 ### Authentication
 
@@ -1824,6 +1873,240 @@ data: {"type": "notification", "data": {"id": "notif_xyz", "message": "New trans
 
 These endpoints are for internal AI Core service communication only and require a dedicated bearer token.
 
+### 3.40 Newsletter (`/api/v1/newsletter/*`)
+
+The newsletter service provides personalized weekly and monthly financial digests, content preferences, and immediate test sends.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/newsletter/preferences` | JWT | Get authenticated user's newsletter preferences |
+| `PUT` | `/newsletter/preferences` | JWT | Update newsletter preferences (cadence, topics, email destination) |
+| `POST` | `/newsletter/preview` | JWT | Generate and preview newsletter digest without dispatching |
+| `POST` | `/newsletter/send-now` | JWT | Immediately generate and email newsletter digest |
+| `GET` | `/newsletter/unsubscribe/:token` | None | One-click unsubscribe from newsletter emails |
+| `GET` | `/newsletter/history` | JWT | View past newsletter dispatches and delivery statuses |
+
+#### Request Example: Update Newsletter Preferences
+
+```http
+PUT /api/v1/newsletter/preferences HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer <jwt-token>
+
+{
+  "enabled": true,
+  "cadence": "weekly",
+  "preferredDay": "sunday",
+  "includeTips": true,
+  "includeSpendingSummary": true,
+  "includeBudgetAlerts": true,
+  "includeUpcomingBills": true,
+  "includeHealthScore": true
+}
+```
+
+### 3.41 Health Score (`/api/v1/finance/health-score/*`)
+
+Provides real-time scoring, historical trends, and visual chart data for the composite Financial Health Score (0–100).
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/finance/health-score/trend` | JWT + Org | Get health score trend, delta, and direction |
+| `GET` | `/finance/health-score/chart` | JWT + Org | Get monthly historical data points for Recharts |
+| `POST` | `/finance/health-score` | JWT + Org | Record a new snapshot health score |
+
+#### Response Example: Health Score Trend
+
+```json
+{
+  "success": true,
+  "data": {
+    "currentScore": 84,
+    "previousScore": 79,
+    "direction": "improving",
+    "delta": 5,
+    "metrics": {
+      "savingsRate": 24.5,
+      "debtToIncome": 12.0,
+      "runwayMonths": 6.2,
+      "budgetAdherence": 92.0
+    },
+    "categoryBreakdown": {
+      "savings": 28,
+      "debt": 25,
+      "runway": 18,
+      "adherence": 13
+    },
+    "history": [
+      { "period": "2026-01", "score": 75 },
+      { "period": "2026-02", "score": 79 },
+      { "period": "2026-03", "score": 84 }
+    ]
+  }
+}
+```
+
+### 3.42 PDF Generation & Downloads (`/api/v1/files/*`)
+
+Compiles structured text documents, financial summaries, or workspace files into branded PDF documents using PDFKit and GridFS.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/files/render-prompt` | JWT + Org | Render a prompt text body into a structured PDF |
+| `POST` | `/files/:workspaceFileId/render-pdf` | JWT + Org | Render an uploaded workspace text file into a PDF |
+| `GET` | `/files/rendered/:fileId/download` | JWT + Org | Stream rendered PDF directly from GridFS |
+
+### 3.43 RAG Retrieval & Knowledge Chunks (`/api/v1/retrieval/*`)
+
+Endpoints supporting RAG Phase 2 bounded window retrieval and knowledge chunk administration.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/retrieval/query` | JWT + Org | Perform lexical BM25 query against tenant knowledge chunks |
+| `GET` | `/retrieval/chunks/:workspaceFileId` | JWT + Org | List indexed chunks for a given workspace document |
+| `POST` | `/retrieval/backfill` | JWT (Admin) | Trigger background chunking of un-indexed files |
+
+### 3.44 Dead Letter Queue (`/api/v1/dlq/*`)
+
+Administration and recovery endpoints for quarantined BullMQ background jobs. Backed by Redis `bull:finwise-dlq` (500 job cap) with payload scrubbing to eliminate sensitive tokens or PII.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/dlq/stats` | JWT (Admin) | Retrieve queue capacity, total quarantined count, and queue status |
+| `GET` | `/dlq/jobs` | JWT (Admin) | List paginated quarantined jobs with scrubbed payloads and error stack traces |
+| `POST` | `/dlq/replay/:id` | JWT (Admin) | Replay a failed job by id back to its original BullMQ processing queue |
+| `DELETE` | `/dlq/purge` | JWT (Admin) | Purge all quarantined jobs from the DLQ Redis store |
+
+#### Example: Inspecting DLQ Health & Statistics
+
+```bash
+curl -X GET "http://localhost:3000/api/v1/dlq/stats" \
+  -H "Authorization: Bearer <ADMIN_JWT_TOKEN>" \
+  -H "X-Org-Id: org_ent_9901"
+```
+
+Response (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "queue": "bull:finwise-dlq",
+    "quarantinedCount": 2,
+    "maxCapacity": 500,
+    "status": "HEALTHY",
+    "oldestJobTimestamp": "2026-03-31T18:14:22.109Z",
+    "newestJobTimestamp": "2026-03-31T19:02:11.442Z"
+  }
+}
+```
+
+#### Example: Replaying a Quarantined Job
+
+```bash
+curl -X POST "http://localhost:3000/api/v1/dlq/replay/dlq_job_9f8a2" \
+  -H "Authorization: Bearer <ADMIN_JWT_TOKEN>" \
+  -H "X-Org-Id: org_ent_9901"
+```
+
+Response (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "jobId": "dlq_job_9f8a2",
+    "originalQueue": "newsletter-queue",
+    "requeuedAt": "2026-03-31T20:15:00.000Z",
+    "status": "requeued"
+  }
+}
+```
+
+### 3.45 Financial Calendar Reminders & `.ics` Sync (`/api/v1/calendar-reminders/*`)
+
+Endpoints for synchronizing recurring bills, debt payment deadlines, and budget reviews with external calendar applications (Google Calendar, Apple Calendar, Outlook) via standard RFC 5545 `.ics` feeds.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/calendar-reminders` | JWT + Org | List scheduled bill reminders, paydays, and tax deadlines |
+| `POST` | `/calendar-reminders` | JWT + Org | Create a new calendar reminder event |
+| `GET` | `/calendar-reminders/export.ics` | JWT / Token | Stream an RFC 5545 formatted `.ics` iCalendar feed for external subscription |
+
+#### Example: Generating iCalendar `.ics` Export
+
+```bash
+curl -X GET "http://localhost:3000/api/v1/calendar-reminders/export.ics" \
+  -H "Authorization: Bearer <USER_JWT_TOKEN>" \
+  -H "X-Org-Id: org_ent_9901"
+```
+
+Response (`200 OK` with `Content-Type: text/calendar; charset=utf-8`):
+```text
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//FinWise//Financial Calendar Sync 2026//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:FinWise Financial Obligations
+X-WR-TIMEZONE:UTC
+BEGIN:VEVENT
+UID:bill_rent_2026_04@finwise.app
+DTSTAMP:20260331T120000Z
+DTSTART:20260401T090000Z
+DTEND:20260401T093000Z
+SUMMARY:Apartment Rent Payment ($2,400.00)
+DESCRIPTION:Category: Housing | Payee: Prime Properties LLC | Status: Pending
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR
+```
+
+### 3.46 Conversation Insights Cache (`/api/v1/chat/sessions/:id/insights`)
+
+High-performance, in-process coalesced insights summaries for chat sessions. Computes extracted financial action items, sentiment vitals, and conversation summaries with bounded concurrency to prevent thundering-herd LLM evaluation spikes.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/chat/sessions/:id/insights` | JWT + Org | Retrieve cached action items and conversation financial vitals |
+| `POST` | `/chat/sessions/:id/insights/refresh` | JWT + Org | Bypass coalescing cache and force real-time re-summarization |
+
+#### Example: Querying Session Conversation Insights
+
+```bash
+curl -X GET "http://localhost:3000/api/v1/chat/sessions/sess_99182/insights" \
+  -H "Authorization: Bearer <USER_JWT_TOKEN>" \
+  -H "X-Org-Id: org_ent_9901"
+```
+
+Response (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "sessionId": "sess_99182",
+    "summary": "User requested rebalancing analysis for excess emergency cash and Q2 ETF dollar-cost averaging plan.",
+    "actionItems": [
+      {
+        "description": "Transfer $3,500 surplus cash into High-Yield Savings Account",
+        "priority": "HIGH",
+        "status": "PENDING"
+      },
+      {
+        "description": "Rebalance US Total Market ETF from 64% back to target 50%",
+        "priority": "MEDIUM",
+        "status": "IN_PROGRESS"
+      }
+    ],
+    "financialVitals": {
+      "sentiment": "OPTIMISTIC",
+      "riskScore": 42,
+      "detectedIntent": "PORTFOLIO_REBALANCE"
+    },
+    "cached": true,
+    "cacheExpiresAt": "2026-03-31T20:45:00.000Z"
+  }
+}
+```
+
 ---
 
 ## 4. Response Format
@@ -2177,7 +2460,7 @@ Endpoints that accept file uploads use `multipart/form-data`:
 
 | Variable | Description | Default |
 |---|---|---|
-| `PORT` | Server port | `3001` |
+| `PORT` | Server port | `3000` |
 | `NODE_ENV` | Environment | `development` |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | — |
 | `RATE_LIMIT_WINDOW_MS` | Rate limit window | `60000` (1 min) |
@@ -2190,3 +2473,134 @@ Endpoints that accept file uploads use `multipart/form-data`:
 | `TASKS_ENABLED` | Enable task routes | `true` |
 | `METRICS_TOKEN` | Bearer token for `/api/metrics` | — |
 | `AI_CORE_TOOLS_TOKEN` | Bearer token for internal tools | — |
+
+## API Routing & Surface Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#7c3aed', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#6d28d9', 'lineColor': '#06b6d4', 'secondaryColor': '#f59e0b', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((📡 FinWise API Surface))
+    🔐 Authentication & Identity
+      POST /api/auth/register
+      POST /api/auth/login
+      POST /api/auth/refresh
+      POST /api/auth/2fa/verify
+      GET /api/auth/me
+    💼 Financial Core (/api/v1)
+      Transactions & Review
+        GET /transactions & pagination
+        POST /transactions (manual & CSV import)
+        POST /transactions/review-queue
+      Budgets & Health
+        GET /budgets & thresholds
+        GET /budgets/health-score
+        POST /budgets/rebalance
+      Investments & Goals
+        GET /investments/portfolio
+        POST /goals & progress tracking
+    🧠 AI & Intelligent Workflows
+      POST /api/ai/process (LangGraph Dispatch)
+      GET /api/ai/process/stream (SSE Tokens)
+      POST /api/v1/retrieval/query (RAG Knowledge)
+      POST /api/v1/workflows/execute
+    🏢 Multi-Tenancy & Platform
+      Organizations & Members (/api/v1/orgs)
+      API Key Management (/api/v1/api-keys)
+      Audit Trail Logs (/api/v1/audit)
+      Newsletter & Reporting (/api/v1/newsletter)
+```
+
+## API Request Dispatch & Validation ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 INCOMING HTTP REQUEST (Client / External Integration)               │
+│    POST /api/v1/transactions/import (Bearer JWT or X-API-Key)          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STAGE 1: GLOBAL GATEWAY GUARDS                                     │
+│    ├─► Helmet (Security headers)                                       │
+│    ├─► CORS Origin Validator                                           │
+│    └─► Sliding Window Rate Limiter (200 req/min per IP/Key)            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔑 STAGE 2: AUTHENTICATION & MULTI-TENANT ISOLATION                    │
+│    ├─► authAny: Verify JWT Token OR lookup SHA-256 hashed API Key      │
+│    ├─► Resolve req.user and req.user.orgId                             │
+│    └─► Apply OrgScopePlugin: strict tenant boundary filtering          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📋 STAGE 3: SCHEMA VALIDATION & CONTROLLER EXECUTION                   │
+│    ├─► Zod Validation Schema (Validate payload types & constraints)    │
+│    │   ├── Valid? ──► Continue to Controller                           │
+│    │   └── Invalid? ──► Return 400 Bad Request with field errors       │
+│    └─► Domain Service Execution (Database / Queue / AI Core)           │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STAGE 4: RESPONSE SERIALIZATION & AUDIT DISPATCH                    │
+│    ├─► Omit sensitive internal fields (_id transform, password hashes) │
+│    ├─► Dispatch background AuditLog event (User, Action, Resource)     │
+│    └─► HTTP 200/201 JSON Payload delivered to client                  │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+## Production Implementation Blueprints
+
+### 1. Canonical API Response Envelope (`server/src/utils/apiResponse.ts`)
+
+```typescript
+// Standardized REST response wrapper ensuring consistent API contracts
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  meta?: {
+    page?: number;
+    limit?: number;
+    total?: number;
+    requestId?: string;
+  };
+}
+
+export function sendSuccess<T>(res: Response, data: T, statusCode = 200, meta?: ApiResponse["meta"]) {
+  return res.status(statusCode).json({ success: true, data, meta });
+}
+
+export function sendError(res: Response, error: string, statusCode = 400) {
+  return res.status(statusCode).json({ success: false, error });
+}
+```
+
+### 2. Runtime Zod Validation Middleware (`server/src/middleware/validate.ts`)
+
+```typescript
+// Validates incoming HTTP body, query, and params against Zod schemas
+export function validate(schema: AnyZodObject) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      req.body = await schema.parseAsync(req.body);
+      next();
+    } catch (err: any) {
+      if (err instanceof ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: "Validation failed",
+          details: err.errors.map((e) => ({ path: e.path.join("."), message: e.message }))
+        });
+      }
+      next(err);
+    }
+  };
+}
+```

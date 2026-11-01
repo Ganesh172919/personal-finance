@@ -250,6 +250,12 @@ export type CsvImportDuplicateGroup = {
   reason: string;
 };
 
+export type CsvImportRowError = {
+  row: number;
+  field?: string;
+  message: string;
+};
+
 export type CsvImportResult = {
   ok: true;
   import_id: string;
@@ -257,6 +263,7 @@ export type CsvImportResult = {
   parsed_rows: number;
   valid_rows: number;
   invalid_rows?: number;
+  row_errors?: CsvImportRowError[];
   inserted: number;
   duplicates: number;
   merchants_touched: number;
@@ -445,6 +452,26 @@ export const importTransactionsCsv = async (params: {
   const validRows = validPreparedRows.length;
   const invalidRows = preparedRows.length - validRows;
 
+  // Extract structured row-level errors for actionable client feedback
+  const rowErrors: CsvImportRowError[] = [];
+  for (const row of preparedRows) {
+    if (row.issues && row.issues.length > 0) {
+      for (const issue of row.issues) {
+        let field: string | undefined = undefined;
+        if (issue.toLowerCase().includes("amount")) {
+          field = params.mapping.amount || "amount";
+        } else if (issue.toLowerCase().includes("date")) {
+          field = params.mapping.date || "date";
+        }
+        rowErrors.push({
+          row: row.row_index,
+          field,
+          message: issue,
+        });
+      }
+    }
+  }
+
   if (validRows === 0) {
     return {
       ok: true,
@@ -453,6 +480,7 @@ export const importTransactionsCsv = async (params: {
       parsed_rows: parsedRows,
       valid_rows: 0,
       invalid_rows: invalidRows,
+      row_errors: rowErrors,
       inserted: 0,
       duplicates: 0,
       merchants_touched: 0,
@@ -733,6 +761,7 @@ export const importTransactionsCsv = async (params: {
       parsed_rows: parsedRows,
       valid_rows: validRows,
       invalid_rows: invalidRows,
+      row_errors: rowErrors,
       inserted: 0,
       duplicates: duplicateGroups.reduce((sum, group) => sum + Math.max(1, group.row_indexes.length - 1), 0),
       merchants_touched: merchantsTouched,
@@ -764,6 +793,7 @@ export const importTransactionsCsv = async (params: {
       parsed_rows: parsedRows,
       valid_rows: validRows,
       invalid_rows: invalidRows,
+      row_errors: rowErrors,
       inserted: 0,
       duplicates: validRows,
       merchants_touched: merchantsTouched,
@@ -820,6 +850,7 @@ export const importTransactionsCsv = async (params: {
     parsed_rows: parsedRows,
     valid_rows: validRows,
     invalid_rows: invalidRows,
+    row_errors: rowErrors,
     inserted,
     duplicates: Math.max(0, validRows - inserted),
     merchants_touched: merchantsTouched,

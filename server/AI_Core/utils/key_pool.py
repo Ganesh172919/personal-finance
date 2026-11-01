@@ -1,4 +1,4 @@
-"""
+r"""
 key_pool.py - Multi-Key API Key Pool with Health Tracking and Circuit Breaking
 ==============================================================================
 
@@ -34,6 +34,79 @@ Key features
 5. **Circuit breaker** -- after N consecutive failures (default 5), the key's
    circuit is "opened" and it is excluded for a recovery period (default 5
    min).  After recovery, one "half-open" test request is allowed.
+
+MINDMAP FLOW
+------------
+::
+
+    KeyPool Self-Healing Architecture
+    ├── 1. Key Discovery & Ingestion
+    │   ├── Single Env Key (e.g. OPENROUTER_API_KEY)
+    │   ├── Numbered Env Keys (OPENROUTER_API_KEY_1, _2, ...)
+    │   └── Comma-delimited list (OPENROUTER_API_KEYS=k1,k2,k3)
+    ├── 2. Key Selection Strategies
+    │   ├── round_robin: Deterministic modulo cycle
+    │   ├── least_used: Prefers lowest total request count
+    │   └── health_weighted: Scores by success_rate * (1 / avg_latency)
+    ├── 3. Health Tracking Metrics
+    │   ├── Request count, successes, consecutive errors
+    │   ├── Error classification: 429 (Rate Limit), 403 (Auth), 5xx (Server)
+    │   └── Exponential backoff multiplier
+    ├── 4. Cooldown & Circuit Breaker Engine
+    │   ├── 429 Rate Limit Cooldown: 60s
+    │   ├── 403 Auth Error Cooldown: 3600s
+    │   ├── Circuit State Machine: CLOSED -> OPEN -> HALF-OPEN
+    │   └── Consecutive Failures Threshold: 5 trips circuit
+    └── 5. Thread-Safe Global Registry
+        ├── _pools dictionary protected by Lock()
+        └── get_key_pool(provider) factory method
+
+ASCII FLOW
+----------
+::
+
+    +---------------------------------------------------------------+
+    |                  Request for LLM Provider Key                 |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |              pool.get_healthy_key(strategy)                   |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |            Filter Keys: Exclude in Cooldown or OPEN           |
+    +-------------------------------+-------------------------------+
+                                    |
+                     [Are Any Healthy Keys Available?]
+                               /          \
+                             YES           NO
+                             /              \
+                            v                v
+     +-------------------------------+   +-----------------------------+
+     | Pick Key via Strategy         |   | Fallback to Earliest        |
+     | (Round-robin / Health Score)  |   | Expiring Cooldown Key       |
+     +---------------+---------------+   +--------------+--------------+
+                     \                                 /
+                      \                               /
+                       v                             v
+     +---------------------------------------------------------------+
+     |              Return KeyEntry for API Call                     |
+     +-------------------------------+-------------------------------+
+                                     |
+                                     v
+                        [Execute API Request with Key]
+                                /          \
+                            SUCCESS       FAILURE (HTTP 429, 403, 5xx)
+                              /              \
+                             v                v
+     +-------------------------------+   +-----------------------------+
+     | pool.record_success(key_id):  |   | pool.record_failure(key_id):|
+     | - Increment successes         |   | - Increment error counts    |
+     | - Reset consecutive errors    |   | - Apply Cooldown (60s/1hr)  |
+     | - Transition to CLOSED        |   | - If >=5 errs -> Trip OPEN  |
+     +-------------------------------+   +-----------------------------+
 
 Usage
 -----

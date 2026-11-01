@@ -1,9 +1,78 @@
-"""
+r"""
 rate_limiter.py - Token Bucket Rate Limiter and Retry Handler
 ==============================================================
 
 Provides outbound request throttling for LLM API calls using a **token
 bucket** algorithm with two time windows (per-minute and per-day).
+
+================================================================================
+MINDMAP FLOW: DUAL-WINDOW TOKEN BUCKET & RETRY CONTROLLER
+================================================================================
+- Rate Limiter & Resilience Architecture
+    ├── 1. Dual-Window Token Buckets
+    │   ├── Minute Bucket: Refilled continuously based on RPM (requests per min) + burst
+    │   └── Day Bucket: Refilled across 24h / daily quota (requests per day)
+    ├── 2. Concurrency & State Management
+    │   ├── Mutual Exclusion Lock (threading.Lock)
+    │   └── Request History Sliding Window (deque maxlen=1500)
+    ├── 3. Adaptive Throttling & Wait Logic
+    │   ├── Daily Exhaustion -> Immediate RateLimitError (no wait possible)
+    │   └── Minute Exhaustion -> Proactive Sleep (wait_time = missing_tokens / rate)
+    ├── 4. Intelligent Error Triaging & Retry Policy
+    │   ├── Transient Errors (502, 503, ConnectTimeout, ReadTimeout)
+    │   │   └── Exponential Backoff with Random Jitter
+    │   └── Quota / Terminal Errors (429 Too Many Requests, 403 Auth, 404 Missing)
+    │       └── Fail Fast! Do NOT retry locally; trigger upstream provider/key failover
+    └── 5. Decorator Wrapper
+        └── @with_rate_limit_and_retry transparent interception
+
+================================================================================
+ASCII FLOW: TOKEN BUCKET DEDUCTION & CALL LIFECYCLE
+================================================================================
+                         [ Outbound LLM API Request ]
+                                      |
+                                      v
+                        +----------------------------+
+                        |   Acquire Rate Limiter Lock|
+                        +--------------+-------------+
+                                      |
+                                      v
+                        +----------------------------+
+                        |      _refill_tokens()      |
+                        | Minute tokens += dt * RPM  |
+                        | Day tokens += dt * RPD     |
+                        +--------------+-------------+
+                                      |
+                         Is Day Bucket >= 1.0?
+                                /       \
+                            No /         \ Yes
+                              v           v
+           +--------------------+  Is Minute Bucket >= 1.0?
+           | Raise              |        /           \
+           | RateLimitError(day)|    No /             \ Yes
+           +--------------------+      v               v
+                               +---------------+  +------------------+
+                               | Sleep for     |  | Deduct 1.0 token |
+                               | required dt   |  | from both buckets|
+                               +-------+-------+  +--------+---------+
+                                       |                   |
+                                       +--------->---------+
+                                                           |
+                                                           v
+                                            +------------------------------+
+                                            |   Execute LLM API Call       |
+                                            +--------------+---------------+
+                                                           |
+                                             Did Request Succeed or Fail?
+                                                    /            \
+                                           Success /              \ Failure
+                                                  v                v
+                                          [ Return Result ]   Is Transient Error?
+                                                             (Timeout, 502, 503)
+                                                                 /         \
+                                                            Yes /           \ No (429, 403, 404)
+                                                               v             v
+                                                     [ Backoff + Retry ] [ Raise / Failover ]
 
 Key components
 --------------
@@ -59,9 +128,9 @@ class TokenBucketRateLimiter:
 
     def __init__(
         self,
-        requests_per_minute: int = 10,
-        requests_per_day: int = 1000,
-        burst_allowance: int = 2
+        requests_per_minute: int = 15,
+        requests_per_day: int = 1500,
+        burst_allowance: int = 3
     ):
         self.rpm = requests_per_minute
         self.rpd = requests_per_day
@@ -245,9 +314,10 @@ class RetryHandler:
 
 
 # Global instances
+# Matched to Gemini free tier limits (15 RPM / 1500 RPD) with small headroom
 _rate_limiter = TokenBucketRateLimiter(
-    requests_per_minute=10,  # Conservative: Gemini free tier is 15 RPM
-    requests_per_day=1200,   # Conservative: Gemini free tier is 1500 RPD
+    requests_per_minute=15,
+    requests_per_day=1500,
     burst_allowance=3
 )
 
@@ -320,8 +390,8 @@ def reset_rate_limiter():
     """Reset the rate limiter (useful for testing or after quota reset)."""
     global _rate_limiter
     _rate_limiter = TokenBucketRateLimiter(
-        requests_per_minute=10,
-        requests_per_day=1200,
+        requests_per_minute=15,
+        requests_per_day=1500,
         burst_allowance=3
     )
     logger.info("Rate limiter reset")

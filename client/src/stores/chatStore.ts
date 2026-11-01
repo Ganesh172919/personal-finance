@@ -23,6 +23,64 @@
  * The chat UI shows a visual workflow progress indicator as the AI processes
  * the request. Phases: routing → processing → complete/error
  *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * ChatStore (Zustand)
+ * ├── 1. Session Management
+ * │   ├── sessions: IChatSession[]
+ * │   ├── currentSessionId: string | null (Persisted to localStorage)
+ * │   ├── loadSessions() / createSession() / selectSession()
+ * │   └── renameSession() / deleteSession()
+ * ├── 2. Message History & Optimistic Updates
+ * │   ├── messages: IChatMessage[]
+ * │   ├── sendMessage(content, fileAttachments):
+ * │   │   ├── Stage 1: Add temp user message immediately
+ * │   │   ├── Stage 2: Trigger AI streaming / REST request
+ * │   │   ├── Stage 3: Replace temp ID with server ID & append AI message
+ * │   │   └── Stage 4: Rollback & show toast on failure
+ * ├── 3. AI Workflow Phase State
+ * │   ├── currentWorkflowPhase: WorkflowPhase (idle | routing | processing | complete | error)
+ * │   ├── activeAgents: string[] (List of specialists currently executing)
+ * │   └── activeActionType & priority tracking
+ * └── 4. Error Logging & Resilience
+ *     ├── reportClientError integration
+ *     └── Error boundary toast notifications
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +---------------------------------------------------------------+
+ *   |                   User Submits Chat Message                   |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |               Step 1: Optimistic UI Injection                 |
+ *   |  - Add temporary user message to messages list                |
+ *   |  - Set currentWorkflowPhase = "routing"                       |
+ *   |  - Set isSending = true                                       |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |               Step 2: API Request (chatApi.sendMessage)       |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                         [Server Response Status]
+ *                                /          \
+ *                              SUCCESS       ERROR
+ *                              /              \
+ *                             v                v
+ *   +-------------------------------+   +-----------------------------+
+ *   | - Replace temp message with   |   | - Remove temp user message  |
+ *   |   official server message     |   | - currentWorkflowPhase="err"|
+ *   | - Append AI response message  |   | - Trigger Toast & Log Error |
+ *   | - currentWorkflowPhase="done" |   +-----------------------------+
+ *   +-------------------------------+
+ * ```
+ *
  * @module stores/chatStore
  */
 
@@ -32,6 +90,7 @@ import type { IChatSession, IChatMessage } from "@/types/chat.types";
 import type { WorkflowPhase } from "@/features/chat/TypingIndicator";
 import * as chatApi from "@/services/chatApi";        // Chat API client
 import { reportClientError } from "@/lib/runtimeLogger"; // Error reporting
+import { toast } from "@/hooks/useToast"; // Toast notifications
 
 /**
  * Chat store state and actions interface.
@@ -48,7 +107,11 @@ import { reportClientError } from "@/lib/runtimeLogger"; // Error reporting
  * - Message sending with optimistic updates
  * - Workflow phase management
  */
+let dataRevision = 0;
+
 interface ChatState {
+  dataScope: string | null;
+  bindDataScope: (scope: string | null) => void;
   // Sessions state
   sessions: IChatSession[];
   currentSessionId: string | null;
@@ -59,6 +122,7 @@ interface ChatState {
   // Loading states
   isLoadingSessions: boolean;
   isLoadingMessages: boolean;
+  messageLoadError: string | null;
   isSending: boolean;
 
   // Workflow progress tracking (visual indicator in chat UI)
@@ -72,7 +136,7 @@ interface ChatState {
   selectSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
-  sendMessage: (content: string, options?: { narrative?: boolean; fileIds?: string[] }) => Promise<void>;
+  sendMessage: (content: string, options?: { narrative?: boolean; fileIds?: string[] }) => Promise<boolean>;
   clearCurrentSession: () => void;
   setWorkflowPhase: (phase: WorkflowPhase | null, agent?: string) => void;
   clearWorkflowProgress: () => void;
@@ -93,11 +157,20 @@ export const useChatStore = create<ChatState>()(
   persist(
     (set, get) => ({
       // ── Initial State ──────────────────────────────────────────────
+      dataScope: null,
+      bindDataScope: (scope) => {
+        if (get().dataScope === scope) return;
+        dataRevision += 1;
+        set({ dataScope: scope, sessions: [], currentSessionId: null, messages: [],
+          isLoadingSessions: false, isLoadingMessages: false, messageLoadError: null,
+          isSending: false, currentPhase: null, currentAgent: null, phaseHistory: [] });
+      },
       sessions: [],
       currentSessionId: null,
       messages: [],
       isLoadingSessions: false,
       isLoadingMessages: false,
+      messageLoadError: null,
       isSending: false,
       currentPhase: null,
       currentAgent: null,
@@ -110,14 +183,18 @@ export const useChatStore = create<ChatState>()(
        * Called on chat page mount.
        */
       loadSessions: async () => {
+        const revision = dataRevision;
         set({ isLoadingSessions: true });
         try {
           const response = await chatApi.fetchSessions();
+          if (revision !== dataRevision) return;
           set({ sessions: response.sessions });
         } catch (error) {
+          if (revision !== dataRevision) return;
           reportClientError("Failed to load sessions", error);
+          toast({ title: "Failed to load chat sessions", variant: "destructive" });
         } finally {
-          set({ isLoadingSessions: false });
+          if (revision === dataRevision) set({ isLoadingSessions: false });
         }
       },
 
@@ -126,36 +203,45 @@ export const useChatStore = create<ChatState>()(
        * Prepends the new session to the sessions list.
        */
       createSession: async () => {
+        const revision = dataRevision;
         try {
           const newSession = await chatApi.createSession();
+          if (revision !== dataRevision) return null;
           set((state) => ({
             sessions: [newSession, ...state.sessions],  // Prepend to list
             currentSessionId: newSession.id,             // Auto-select
-            messages: []                                 // Clear messages
+            messages: [],                                // Clear messages
+            messageLoadError: null,
           }));
           return newSession;
         } catch (error) {
+          if (revision !== dataRevision) return null;
           reportClientError("Failed to create session", error);
+          toast({ title: "Failed to create chat session", variant: "destructive" });
           return null;
         }
       },
 
       /**
        * Selects a session and loads its messages.
-       * Skips if the session is already selected.
+       * Rehydrates persisted selections whose messages have not loaded yet.
        */
       selectSession: async (sessionId: string) => {
-        // Skip if already selected
-        if (get().currentSessionId === sessionId) return;
+        const revision = dataRevision;
+        const state = get();
+        if (state.currentSessionId === sessionId && (state.isLoadingMessages || state.messages.length > 0)) return;
 
-        set({ isLoadingMessages: true, currentSessionId: sessionId, messages: [] });
+        set({ isLoadingMessages: true, messageLoadError: null, currentSessionId: sessionId, messages: [] });
         try {
           const response = await chatApi.fetchMessages(sessionId);
-          set({ messages: response.messages });
+          // A slower previous selection must not replace the active thread.
+          if (revision === dataRevision && get().currentSessionId === sessionId) set({ messages: response.messages });
         } catch (error) {
+          if (revision !== dataRevision) return;
           reportClientError("Failed to load messages", error);
+          if (get().currentSessionId === sessionId) set({ messageLoadError: "This conversation could not be loaded. Try again or open another chat." });
         } finally {
-          set({ isLoadingMessages: false });
+          if (revision === dataRevision && get().currentSessionId === sessionId) set({ isLoadingMessages: false });
         }
       },
 
@@ -163,8 +249,10 @@ export const useChatStore = create<ChatState>()(
        * Deletes a session and clears it if it was the current session.
        */
       deleteSession: async (sessionId: string) => {
+        const revision = dataRevision;
         try {
           await chatApi.deleteSession(sessionId);
+          if (revision !== dataRevision) return;
           set((state) => {
             const newSessions = state.sessions.filter(s => s.id !== sessionId);
             const wasCurrentSession = state.currentSessionId === sessionId;
@@ -172,11 +260,14 @@ export const useChatStore = create<ChatState>()(
               sessions: newSessions,
               // Clear current session if it was the deleted one
               currentSessionId: wasCurrentSession ? null : state.currentSessionId,
-              messages: wasCurrentSession ? [] : state.messages
+              messages: wasCurrentSession ? [] : state.messages,
+              messageLoadError: wasCurrentSession ? null : state.messageLoadError,
             };
           });
         } catch (error) {
+          if (revision !== dataRevision) return;
           reportClientError("Failed to delete session", error);
+          toast({ title: "Failed to delete session", variant: "destructive" });
         }
       },
 
@@ -184,15 +275,19 @@ export const useChatStore = create<ChatState>()(
        * Renames a session title.
        */
       renameSession: async (sessionId: string, title: string) => {
+        const revision = dataRevision;
         try {
           const updatedSession = await chatApi.renameSession(sessionId, title);
+          if (revision !== dataRevision) return;
           set((state) => ({
             sessions: state.sessions.map(s =>
               s.id === sessionId ? { ...s, title: updatedSession.title } : s
             )
           }));
         } catch (error) {
+          if (revision !== dataRevision) return;
           reportClientError("Failed to rename session", error);
+          toast({ title: "Failed to rename session", variant: "destructive" });
         }
       },
 
@@ -214,16 +309,20 @@ export const useChatStore = create<ChatState>()(
        * @param options.fileIds - Attached file IDs
        */
       sendMessage: async (content: string, options?: { narrative?: boolean; fileIds?: string[] }) => {
+        const revision = dataRevision;
+        if (get().isSending) return false;
+        set({ isSending: true });
         const { currentSessionId } = get();
 
         // Auto-create session if none selected
         if (!currentSessionId) {
           const newSession = await get().createSession();
-          if (!newSession) return;
+          if (revision !== dataRevision) return false;
+          if (!newSession) { set({ isSending: false }); return false; }
         }
 
         const sessionId = get().currentSessionId;
-        if (!sessionId) return;
+        if (!sessionId) { set({ isSending: false }); return false; }
 
         // Set initial workflow phase
         set({
@@ -249,40 +348,45 @@ export const useChatStore = create<ChatState>()(
         try {
           // Send message to server
           const response = await chatApi.sendMessage(sessionId, content, options);
+          if (revision !== dataRevision) return false;
 
           // Replace temp message with real messages from server
           set((state) => ({
-            messages: [
+            messages: state.currentSessionId === sessionId ? [
               ...state.messages.filter(m => m.id !== tempUserMessage.id), // Remove temp
               response.userMessage,        // Real user message
               response.assistantMessage    // AI response
-            ],
+            ] : state.messages,
             // Update session metadata in the sidebar
             sessions: state.sessions.map(s =>
               s.id === sessionId
                 ? {
                     ...s,
                     // Auto-generate title from first message
-                    title: response.userMessage.content.substring(0, 50) +
-                           (response.userMessage.content.length > 50 ? "..." : ""),
+                    title: s.messageCount === 0 ? response.userMessage.content.substring(0, 50) +
+                           (response.userMessage.content.length > 50 ? "..." : "") : s.title,
                     lastMessageAt: response.assistantMessage.createdAt,
                     messageCount: s.messageCount + 2
                   }
                 : s
             ),
-            currentPhase: "complete",
-            phaseHistory: [...state.phaseHistory, { phase: "complete", timestamp: Date.now() }]
+            currentPhase: state.currentSessionId === sessionId ? "complete" : state.currentPhase,
+            phaseHistory: state.currentSessionId === sessionId ? [...state.phaseHistory, { phase: "complete", timestamp: Date.now() }] : state.phaseHistory
           }));
+          return true;
         } catch (error) {
+          if (revision !== dataRevision) return false;
           reportClientError("Failed to send message", error);
+          toast({ title: "Failed to send message. Please try again.", variant: "destructive" });
           // Remove optimistic message on error
-          set((state) => ({
+          if (get().currentSessionId === sessionId) set((state) => ({
             messages: state.messages.filter(m => m.id !== tempUserMessage.id),
             currentPhase: "error",
             phaseHistory: [...state.phaseHistory, { phase: "error", timestamp: Date.now() }]
           }));
+          return false;
         } finally {
-          set({ isSending: false });
+          if (revision === dataRevision) set({ isSending: false });
         }
       },
 
@@ -290,7 +394,7 @@ export const useChatStore = create<ChatState>()(
 
       /** Clears the current session state (used when navigating away) */
       clearCurrentSession: () => {
-        set({ currentSessionId: null, messages: [], currentPhase: null, currentAgent: null, phaseHistory: [] });
+        set({ currentSessionId: null, messages: [], messageLoadError: null, currentPhase: null, currentAgent: null, phaseHistory: [] });
       },
 
       /**
@@ -322,7 +426,8 @@ export const useChatStore = create<ChatState>()(
       name: "finwise-chat-storage",  // localStorage key
       partialize: (state) => ({
         // Only persist currentSessionId (not messages — they're fetched fresh)
-        currentSessionId: state.currentSessionId
+        currentSessionId: state.currentSessionId,
+        dataScope: state.dataScope,
       })
     }
   )

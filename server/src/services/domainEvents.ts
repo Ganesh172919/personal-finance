@@ -8,6 +8,63 @@
  * a domain event is published. Other parts of the system can then react to
  * these events independently.
  *
+ * ============================================================================
+ * MINDMAP FLOW: DOMAIN EVENT LIFECYCLE & ASYNCHRONOUS FAN-OUT
+ * ============================================================================
+ * - Domain Event System
+ *     ├── 1. Domain Event Contract (PublishDomainEventInput)
+ *     │   ├── Multi-tenant Context: orgId, userId
+ *     │   ├── DDD Aggregate: aggregateType (e.g., "Transaction"), aggregateId
+ *     │   ├── Event Classification: eventType (e.g., "TransactionCreated")
+ *     │   └── Tracing Context: requestId, actionLinkId, payload
+ *     ├── 2. Outbox Persistence (DomainEventModel)
+ *     │   ├── Durable record saved to MongoDB
+ *     │   └── Transaction Session Support: Binds to client session if inside transaction
+ *     ├── 3. Transaction Isolation Guard
+ *     │   └── If in MongoDB transaction -> Defer bus broadcast & handlers until commit
+ *     ├── 4. Real-Time Event Bus (getEventBus)
+ *     │   ├── In-memory Pub/Sub notification
+ *     │   └── Fan-out to Server-Sent Events (/api/events/stream) for live UI cache busting
+ *     └── 5. Asynchronous Side Effect Pipeline
+ *         └── processDomainEventById: Background execution for alerts, aggregates, and AI analysis
+ *
+ * ============================================================================
+ * ASCII FLOW: EVENT PUBLICATION & ASYNCHRONOUS DISPATCH LIFECYCLE
+ * ============================================================================
+ *               [ Business Mutation: Transaction / Goal / Budget ]
+ *                                       |
+ *                                       v
+ *                     +-----------------------------------+
+ *                     |   publishDomainEvent(eventData)   |
+ *                     +-----------------+-----------------+
+ *                                       |
+ *                                       v
+ *                     +-----------------------------------+
+ *                     | Create new DomainEventModel Doc   |
+ *                     | Save to MongoDB (with session)    |
+ *                     +-----------------+-----------------+
+ *                                       |
+ *                               Is inside a transaction?
+ *                                     /          \
+ *                              Yes   /            \ No
+ *                                   v              v
+ *                         [ Defer Dispatch ]  +--------------------------+
+ *                         [ Wait for Commit]  | In-memory Event Bus      |
+ *                                             | getEventBus().publish()  |
+ *                                             +-------------+------------+
+ *                                                           |
+ *                                                           v
+ *                                             +--------------------------+
+ *                                             | SSE Channel Broadcast    |
+ *                                             | (Push to Browser UI)     |
+ *                                             +-------------+------------+
+ *                                                           |
+ *                                                           v
+ *                                             +--------------------------+
+ *                                             | processDomainEventById() |
+ *                                             | (Async triggers & tasks) |
+ *                                             +--------------------------+
+ *
  * ARCHITECTURE:
  * This is the PUBLISHER side of the event system. The consumer side lives in
  * domainEventTriggers.ts, which processes events for side effects like:

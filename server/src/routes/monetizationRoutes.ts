@@ -16,13 +16,14 @@ import { Router } from "express";
 import passport from "passport";
 
 import { validate } from "../middleware/validate";
+import { asyncRoute } from "../utils/asyncRoute";
 import { getMyEntitlements, getPlans, ingestUsageEvent } from "../controllers/monetizationController";
 import { usageEventBodySchema } from "../schemas/monetizationSchemas";
 
 const router = Router();
 
-router.get("/plans", passport.authenticate("jwt", { session: false }), getPlans);
-router.get("/entitlements/me", passport.authenticate("jwt", { session: false }), getMyEntitlements);
-router.post("/usage-events", validate({ body: usageEventBodySchema }), ingestUsageEvent);
+router.get("/plans", passport.authenticate("jwt", { session: false }), asyncRoute(getPlans));
+router.get("/entitlements/me", passport.authenticate("jwt", { session: false }), asyncRoute(getMyEntitlements));
+router.post("/usage-events", validate({ body: usageEventBodySchema }), asyncRoute(ingestUsageEvent));
 
 export default router;

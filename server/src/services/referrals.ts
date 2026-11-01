@@ -8,6 +8,7 @@ import { HttpError } from "../middleware/httpError";
 import UserModel from "../models/userModel";
 import { getPeriodKeysForNextMonths, grantCredits } from "./credits";
 import { logger } from "../config/logger";
+import { fireAndForget } from "./deadLetterQueue";
 
 const REFERRAL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const REFERRAL_CODE_LENGTH = 10;
@@ -226,7 +227,11 @@ export const applyPendingReferralForUser = async (params: {
     const status = Number(error?.statusCode || 0);
 
     if (status === 404 || code === "INVALID_REFERRAL_CODE" || code === "REFERRAL_CODE_NOT_FOUND" || code === "REFERRAL_SELF") {
-      await UserModel.updateOne({ _id: params.userId }, { $unset: { pendingReferralCode: 1 } }).catch(() => null);
+      fireAndForget(
+        UserModel.updateOne({ _id: params.userId }, { $unset: { pendingReferralCode: 1 } }),
+        "clear invalid pendingReferralCode",
+        { userId: params.userId.toString(), code }
+      );
     }
 
     logger.warn(

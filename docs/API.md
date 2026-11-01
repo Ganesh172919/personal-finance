@@ -6,6 +6,10 @@
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## Base URL
 
 ```
@@ -14,6 +18,79 @@ Production:  https://<your-domain>/api
 ```
 
 All versioned endpoints are prefixed with `/api/v1`.
+
+---
+
+## API Surface Topology Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#1e293b', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#3b82f6', 'lineColor': '#60a5fa', 'secondaryColor': '#0f172a', 'tertiaryColor': '#1e1e2e'}}}%%
+mindmap
+  root((FinWise Canonical API Surface))
+    Core Authentication & Org
+      POST /api/v1/auth/register
+      POST /api/v1/auth/login
+      GET /api/v1/auth/me
+      GET /api/v1/orgs/current
+    Financial Data & Cockpit
+      GET /api/v1/finance/accounts
+      GET /api/v1/finance/transactions
+      GET /api/v1/command-center
+      GET /api/v1/budget-health
+      POST /api/v1/transactions/bulk-approve
+    AI Runtime & Proxies
+      POST /process-command
+      POST /api/ai/process/stream
+      GET /api/ai-core/status
+      GET /api/ai-core/ai/models
+      POST /api/ai-core/ai/sessions/:sessionId/resume
+    Knowledge & Document Pipeline
+      POST /api/v1/files/upload
+      POST /api/v1/files/generate-pdf
+      GET /api/v1/files/:fileId/chunks
+    Autonomous Automations
+      GET /api/v1/workflows
+      POST /api/v1/workflows/:id/execute
+      GET /api/v1/newsletter/preference
+```
+
+---
+
+## API Gateway Request Pipeline ASCII Flow
+
+```text
+  Client Request (Browser / External Tool)
+        │
+        ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 1. Edge Guards: Helmet CSP • CORS • Rate Limiter (200 req)  │
+  └─────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 2. Authentication: authAny (JWT Bearer OR Peppered API Key) │
+  └─────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 3. Tenant Boundary: orgContext Middleware ({ orgId })       │
+  └─────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 4. Validation: Zod v4 Schemas with Strict Error Mapping     │
+  └─────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 5. Execution: Business Service OR AI Core Proxy (/process)  │
+  └─────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 6. Response: Standardized ApiResponse envelope { success }  │
+  └─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -790,6 +867,184 @@ Prometheus metrics (requires `METRICS_TOKEN` in Authorization header).
 
 ---
 
+## Newsletter & Health Score
+
+### `GET /api/v1/newsletter/preferences`
+
+🔒 Retrieve authenticated user's newsletter delivery schedule and section toggles.
+
+### `PUT /api/v1/newsletter/preferences`
+
+🔒 Update newsletter preferences (delivery cadence, preferred day, included sections).
+
+### `POST /api/v1/newsletter/preview`
+
+🔒 Generate a sample digest preview without sending an email.
+
+### `POST /api/v1/newsletter/send-now`
+
+🔒 Immediately compile and dispatch the financial newsletter to user's registered email.
+
+### `GET /api/v1/newsletter/unsubscribe/:token`
+
+One-click unsubscribe link embedded in email footers.
+
+### `GET /api/v1/newsletter/history`
+
+🔒 View past newsletter generation runs and delivery timestamps.
+
+### `GET /api/v1/finance/health-score/trend`
+
+🔒 Retrieve composite Financial Health Score (0–100), trend direction (`improving`/`stable`/`declining`), delta, and metric breakdowns.
+
+### `GET /api/v1/finance/health-score/chart`
+
+🔒 Retrieve historical monthly data points for health score trend visualizations.
+
+### `POST /api/v1/finance/health-score`
+
+🔒 Record a new snapshot health score.
+
+### `POST /api/v1/files/:workspaceFileId/render-pdf`
+
+🔒 **Render Workspace Document into PDF**: Compiles an uploaded workspace text file into a styled PDF document using PDFKit, streaming directly into MongoDB GridFS.
+
+**Headers:**
+- `Authorization: Bearer <jwt>`
+- `X-Org-Id: <orgId>`
+
+**Parameters:**
+- `workspaceFileId` (path, string, required): MongoDB ObjectId of the workspace file.
+
+**Response `201 Created`:**
+```json
+{
+  "success": true,
+  "data": {
+    "fileId": "6631ad02e9b8b548f029bc41",
+    "filename": "quarterly_budget_audit_2026.pdf",
+    "byteLength": 142850,
+    "downloadUrl": "/api/v1/files/rendered/6631ad02e9b8b548f029bc41/download"
+  }
+}
+```
+
+---
+
+### `POST /api/v1/files/render-prompt`
+
+🔒 **Render Direct Text into PDF**: Renders arbitrary prompt or markdown text into a formal PDF report.
+
+**Headers:**
+- `Authorization: Bearer <jwt>`
+- `X-Org-Id: <orgId>`
+
+**Request Body:**
+```json
+{
+  "title": "Monthly Cash Flow Statement",
+  "content": "# Executive Summary\n\nMonthly surplus reached $1,450.00.\n\n## Envelopes\n- Groceries: $600\n- Rent: $1,800",
+  "filenameStem": "monthly_statement_october"
+}
+```
+
+**Response `201 Created`:**
+```json
+{
+  "success": true,
+  "data": {
+    "fileId": "6631ad02e9b8b548f029bc42",
+    "filename": "monthly_statement_october_1730412000.pdf",
+    "byteLength": 89420,
+    "downloadUrl": "/api/v1/files/rendered/6631ad02e9b8b548f029bc42/download"
+  }
+}
+```
+
+---
+
+### `GET /api/v1/files/rendered/:fileId/download`
+
+🔒 **Stream PDF Statement**: Streams a rendered PDF directly from MongoDB GridFS chunks with proper `Content-Type: application/pdf` and `Content-Disposition: attachment` headers.
+
+**Headers:**
+- `Authorization: Bearer <jwt>`
+- `X-Org-Id: <orgId>`
+
+**Response:** Binary PDF stream (`application/pdf`).
+
+---
+
+### `GET /api/v1/files/:fileId/chunks`
+
+🔒 **Retrieve Bounded Knowledge Chunks**: Fetches all 1,800-character RAG knowledge chunks and verified page offsets associated with an uploaded document.
+
+**Headers:**
+- `Authorization: Bearer <jwt>`
+- `X-Org-Id: <orgId>`
+
+**Response `200 OK`:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "6631ad02e9b8b548f029bc50",
+      "chunkIndex": 0,
+      "pageNumber": 1,
+      "tokenCountEstimate": 420,
+      "text": "FINANCIAL SERVICES AGREEMENT\nThis Agreement is entered into...",
+      "sourceKind": "document"
+    }
+  ]
+}
+```
+
+---
+
+### `GET /api/v1/dlq/stats`
+
+🔒 **Dead Letter Queue Diagnostics**: Returns operational metrics on poisoned background jobs quarantined in Redis.
+
+**Headers:**
+- `Authorization: Bearer <jwt>` (Admin only)
+- `X-Org-Id: <orgId>`
+
+**Response `200 OK`:**
+```json
+{
+  "success": true,
+  "data": {
+    "totalQuarantined": 2,
+    "byOperation": {
+      "newsletter:send": 1,
+      "csv_import:batch": 1
+    }
+  }
+}
+```
+
+---
+
+### `POST /api/v1/dlq/replay/:id`
+
+🔒 **Replay Dead Letter Job**: Re-enqueues a quarantined failed job back into active BullMQ processing after underlying service resolution.
+
+**Headers:**
+- `Authorization: Bearer <jwt>` (Admin only)
+- `X-Org-Id: <orgId>`
+
+**Response `200 OK`:**
+```json
+{
+  "success": true,
+  "message": "Job re-enqueued to active processing queue",
+  "jobId": "dlq_job_9f8a2"
+}
+```
+
+---
+
 ## Error Response Format
 
 All errors follow a consistent flat shape:
@@ -816,3 +1071,154 @@ All errors follow a consistent flat shape:
 ---
 
 _See also_: [ARCHITECTURE.md](./ARCHITECTURE.md) · [DATABASE.md](./DATABASE.md) · [SETUP.md](./SETUP.md) · [MIDDLEWARE.md](./MIDDLEWARE.md) · [SERVICES.md](./SERVICES.md)
+
+## API Surface & Route Architecture Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#8b5cf6', 'secondaryColor': '#06b6d4', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((📡 REST API Architecture (/api/v1)))
+    🔐 Authentication & Identity
+      POST /api/auth/register
+      POST /api/auth/login
+      POST /api/auth/refresh
+      POST /api/auth/2fa/verify
+      GET /api/auth/me
+    💳 Financial Management
+      Transactions (/transactions)
+        GET /transactions (filtered, paginated)
+        POST /transactions (manual & CSV import)
+        POST /transactions/review-queue (rules & batch)
+      Budgets (/budgets)
+        GET /budgets (category limits & spend)
+        GET /budgets/health-score (composite vitals)
+      Investments & Debts (/investments, /debts)
+    🧠 AI & Intelligent Workflows
+      POST /ai/process (LangGraph multi-agent)
+      GET /ai/process/stream (SSE token stream)
+      POST /ai/command-center (quick actions)
+      POST /retrieval/query (RAG chunk matching)
+    🏢 Tenancy & Platform Operations
+      Organizations & Invites (/orgs, /invites)
+      Hashed API Keys (/api-keys)
+      Audit Trail Logs (/audit)
+      PDF Reports & Newsletters (/pdf, /newsletter)
+```
+
+## API Gateway Request Pipeline & Verification ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 INCOMING INGRESS REQUEST (HTTP 1.1 / TLS 1.3)                       │
+│    POST /api/v1/transactions/review-queue/batch-approve                │
+│    Headers: Authorization: Bearer <jwt> • X-Org-Id: "org_prod_01"      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STAGE 1: GLOBAL GUARDS & OBSERVABILITY                              │
+│    ├─► Assign UUIDv4 Correlation ID (X-Request-Id)                     │
+│    ├─► Helmet (Strict-Transport-Security, CSP, X-Frame-Options)        │
+│    ├─► CORS Origin Whitelist Check                                     │
+│    └─► Sliding Window Rate Limiter (200 req/min per caller)            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ (Allowed)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔑 STAGE 2: CREDENTIAL & TENANT SCOPE EXTRACTION (authAny)             │
+│    ├─► Header: Bearer <JWT> ──► Verify token, extract userId & orgId   │
+│    ├─► Header: X-API-Key ──► SHA-256 peppered hash lookup in DB        │
+│    ├─► Ensure caller belongs to target organization                    │
+│    └─► OrgScopePlugin: Injects strict orgId filter into Mongoose       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ (Authenticated)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📋 STAGE 3: PAYLOAD VALIDATION & CONTROLLER EXECUTION                  │
+│    ├─► Zod Schema Parser (strip extra attributes, validate types)      │
+│    │   ├── Validation Error? ──► Return 400 Bad Request envelope 🔴    │
+│    │   └── Payload Valid? ──► Execute Domain Controller 🟢             │
+│    └─► Domain Service (Mongo Replica Set / Redis Cache / AI Core)      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟣 STAGE 4: RESPONSE SERIALIZATION & EVENT DISPATCH                    │
+│    ├─► Omit sensitive fields (_id mapping, password hashes)            │
+│    ├─► Asynchronously record AuditLog event                            │
+│    └─► Send 200 OK / 201 Created JSON response envelope 🟢             │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Production TypeScript Client & Axios Interceptor Implementation
+
+```typescript
+import axios, { AxiosInstance, InternalAxiosRequestConfig } from "axios";
+
+export interface FinWiseClientConfig {
+  baseURL: string;
+  token?: string;
+  orgId?: string;
+}
+
+/**
+ * Creates a pre-configured Axios client instance with automatic JWT injection,
+ * multi-tenant X-Org-Id headers, and CSRF double-submit token propagation.
+ */
+export function createFinWiseClient(config: FinWiseClientConfig): AxiosInstance {
+  const client = axios.create({
+    baseURL: config.baseURL,
+    timeout: 30000,
+    headers: {
+      "Content-Type": "application/json",
+      ...(config.orgId ? { "X-Org-Id": config.orgId } : {}),
+    },
+  });
+
+  client.interceptors.request.use((reqConfig: InternalAxiosRequestConfig) => {
+    // Inject Authorization header if Bearer token is provided
+    if (config.token) {
+      reqConfig.headers.set("Authorization", `Bearer ${config.token}`);
+    }
+
+    // In browser runtime, extract XSRF-TOKEN cookie for double-submit CSRF verification
+    if (typeof document !== "undefined") {
+      const match = document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/);
+      if (match && match[1]) {
+        reqConfig.headers.set("x-csrf-token", decodeURIComponent(match[1]));
+      }
+    }
+
+    return reqConfig;
+  });
+
+  // Response interceptor for automatic refresh token handling
+  client.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      const originalRequest = error.config;
+      if (error.response?.status === 401 && !originalRequest._retry) {
+        originalRequest._retry = true;
+        try {
+          const { data } = await axios.post(`${config.baseURL}/api/v1/auth/refresh`, {}, { withCredentials: true });
+          if (data.token) {
+            config.token = data.token;
+            originalRequest.headers.Authorization = `Bearer ${data.token}`;
+            return client(originalRequest);
+          }
+        } catch (refreshErr) {
+          // Token refresh failed; redirect to login
+          if (typeof window !== "undefined") {
+            window.location.href = "/login";
+          }
+        }
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  return client;
+}
+```

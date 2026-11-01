@@ -12,6 +12,7 @@ This document is a cookbook for making changes in this repo without getting lost
 It focuses on repeatable workflows, file locations, and “gotchas”.
 
 Related docs:
+- `docs/BUILDING_ON_THIS_PROJECT.md` (master extension manual)
 - `docs/SETUP.md` (local setup)
 - `docs/FRONTEND.md` (client architecture)
 - `docs/API.md` (API conventions)
@@ -657,3 +658,378 @@ Steps:
 - Tool calls safe-by-default.
 - Streaming works behind proxy.
 
+
+## Documentation mind map
+
+```text
+FinWise Developer Recipes (Mega)
+|
++-- Scope
+|   +-- Purpose: explain the subject covered by this file
+|   +-- Source: docs/MEGA_DEVELOPER_RECIPES.md
+|   +-- Inputs: prerequisites, linked references, and implementation facts
+|   +-- Audience: readers who need to understand, use, or maintain this area
+|
++-- Main path
+|   +-- Establish constraints and entry points
+|   +-- Trace components, decisions, and dependencies
+|   +-- Check outputs, risks, and verification evidence
+|
++-- Maintenance
+    +-- Recheck links and examples after changes
+    +-- Record assumptions, limits, and known drift
+    +-- Keep this map aligned with documented behavior
+```
+
+## Documentation ASCII flow
+
+```text
+[Open FinWise Developer Recipes (Mega)]
+        |
+        v
+[Define the scope and required inputs]
+        |
+        v
+[Follow the documented sequence and decision points]
+        |
+        +--> [Missing context or exception?] --yes--> [Read linked reference]
+        |                                               |
+        +---------------------------no-----------------+
+                                                        v
+[Check outputs, risks, and verification evidence]
+        |
+        v
+[Record the change and refresh this document]
+``````mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#d97706', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#b45309', 'lineColor': '#06b6d4', 'secondaryColor': '#6366f1', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((🍳 Developer Feature Recipes))
+    📝 1. Contract & Zod Validation
+      Define shared TypeScript interfaces
+      Write strict Zod schema parsing
+      Generate runtime DTO validation
+    🗄️ 2. Model & Index Engineering
+      Create Mongoose Document schema
+      Apply OrgScopePlugin tenant boundary
+      Declare compound query indexes
+    ⚙️ 3. Domain Service & Logic
+      Enforce Number Safety invariant
+      Execute multi-document ACID transactions
+      Emit domain events to EventBus
+    🌐 4. Express Route & Controller
+      Register in v1Routes router table
+      Apply authAny and orgContext middleware
+      Wire CSRF token verification
+    🖥️ 5. React Frontend & Stores
+      Create Zustand slice with optimistic updates
+      Build accessible Tailwind cockpit widgets
+      Consume SSE streams via useAIStream
+```
+
+## System Architecture & Component ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🚀 STEP 1: DEFINE CONTRACT & ZOD SCHEMA (packages/contracts/src/)      │
+│    Export InputDTO, ResponseDTO, and Zod validator schemas             │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🗄️ STEP 2: CREATE MONGOOSE MODEL & SCHEMA (server/src/models/)        │
+│    Apply orgScopePlugin and declare compound index { orgId: 1, date: -1}│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ ⚙️ STEP 3: IMPLEMENT DOMAIN SERVICE (server/src/services/)             │
+│    Implement business invariants, database queries, and audit logging  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🌐 STEP 4: MOUNT ROUTE & CONTROLLER (server/src/routes/v1Routes.ts)    │
+│    Pipeline: [authAny, orgContext, validate(schema)] ──► controller    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🖥️ STEP 5: CONSUME IN CLIENT (client/src/stores/ & components/)       │
+│    Wire Zustand store action, render UI widget, handle error states 🟢 │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## Complete Feature Recipe: Scoped Budget Rebalance (`server/src/services/budgetRebalanceService.ts`)
+
+```typescript
+import { Budget } from "../models/Budget";
+import { AuditLog } from "../models/AuditLog";
+import { logger } from "../utils/logger";
+
+interface RebalanceInput {
+  orgId: string;
+  userId: string;
+  sourceCategoryId: string;
+  targetCategoryId: string;
+  amount: number;
+}
+
+export async function executeBudgetRebalance(input: RebalanceInput): Promise<{ success: boolean; netShift: number }> {
+  const { orgId, userId, sourceCategoryId, targetCategoryId, amount } = input;
+
+  if (amount <= 0) {
+    throw new Error("INVALID_AMOUNT: Rebalance amount must be strictly greater than zero");
+  }
+
+  // Execute within an ACID session to guarantee Number Safety: sum(Delta B_i) = 0
+  const session = await Budget.startSession();
+  session.startTransaction();
+
+  try {
+    const sourceBudget = await Budget.findOne({ orgId, categoryId: sourceCategoryId }).session(session);
+    const targetBudget = await Budget.findOne({ orgId, categoryId: targetCategoryId }).session(session);
+
+    if (!sourceBudget || !targetBudget) {
+      throw new Error("NOT_FOUND: One or both budget envelopes could not be located");
+    }
+
+    if (sourceBudget.allocatedAmount < amount) {
+      throw new Error("INSUFFICIENT_FUNDS: Source envelope cannot cover rebalance amount");
+    }
+
+    // Apply exact shift preserving zero-sum invariant
+    sourceBudget.allocatedAmount -= amount;
+    targetBudget.allocatedAmount += amount;
+
+    await sourceBudget.save({ session });
+    await targetBudget.save({ session });
+
+    // Append audit log record
+    await AuditLog.create([{
+      orgId,
+      actorId: userId,
+      action: "BUDGET_REBALANCED",
+      metadata: { sourceCategoryId, targetCategoryId, amount }
+    }], { session });
+
+    await session.commitTransaction();
+    logger.info({ orgId, amount }, "Budget successfully rebalanced across categories");
+    return { success: true, netShift: amount };
+  } catch (err) {
+    await session.abortTransaction();
+    logger.error({ err, orgId }, "Failed to execute budget rebalance transaction");
+    throw err;
+  } finally {
+    session.endSession();
+  }
+}
+```
+
+
+---
+
+## 10) Recipes for the Latest Platform Features (Command Center, Budget Health, SubAgent DAG)
+
+### 10.1 Recipe: Adding a Custom Urgent Signal to the Financial Command Center
+
+The Financial Command Center aggregates 9 distinct data sources into the "Today in FinWise" daily cockpit. To introduce a new proactive urgency signal (e.g. `tax_deadline_warning`):
+
+#### 1. In `server/src/services/commandCenterService.ts`:
+```typescript
+import { PrioritySignal } from '../types/commandCenter.types';
+
+export async function evaluateTaxDeadlineSignals(orgId: string): Promise<PrioritySignal[]> {
+  const upcomingTaxDates = await getUpcomingTaxDeadlines(orgId);
+  const signals: PrioritySignal[] = [];
+
+  for (const item of upcomingTaxDates) {
+    const daysRemaining = Math.ceil((item.dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    if (daysRemaining <= 14) {
+      signals.push({
+        id: `tax-deadline-${item.id}`,
+        severity: daysRemaining <= 3 ? 'act_now' : 'review_this_week',
+        title: `Tax Filing Due in ${daysRemaining} Days`,
+        description: `Estimated quarterly liability: $${item.estimatedAmount.toLocaleString()}`,
+        actionUrl: '/taxes/filing',
+        actionLabel: 'Review Tax Packet'
+      });
+    }
+  }
+  return signals;
+}
+```
+
+#### 2. Register Signal in Main Aggregation Pipeline:
+Inside `getCommandCenterSummary(orgId: string)`:
+```typescript
+const [runway, burnRate, bills, taxSignals] = await Promise.all([
+  computeCashRunway(orgId),
+  computeDailyBurn(orgId),
+  getUpcomingBills7Days(orgId),
+  evaluateTaxDeadlineSignals(orgId)
+]);
+
+prioritySignals.push(...taxSignals);
+```
+
+---
+
+### 10.2 Recipe: Adding a Parallel Specialist Agent to the SubAgent DAG
+
+The AI Core uses Kahn's topological sort in `server/AI_Core/agents/sub_agent_manager.py` to level execution into concurrent batches:
+
+```python
+# 1. Define specialist agent node in server/AI_Core/agents/investment_rebalancer.py
+from pydantic import BaseModel, Field
+from typing import Dict, Any, List
+
+class RebalanceAction(BaseModel):
+    asset_class: str
+    target_pct: float
+    current_pct: float
+    recommended_trade_usd: float = Field(ge=0.0)
+
+async def investment_rebalancer_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Specialist node analyzing portfolio drift against target allocation."""
+    portfolio = state.get("portfolio", {})
+    # Deterministic portfolio drift calculation
+    actions = compute_portfolio_rebalance(portfolio)
+    return {"rebalance_plan": [a.model_dump() for a in actions]}
+
+# 2. Register agent in server/AI_Core/agents/sub_agent_manager.py
+from agents.investment_rebalancer import investment_rebalancer_node
+
+AGENT_REGISTRY["investment_rebalancer"] = investment_rebalancer_node
+
+# When task_decomposer outputs dependencies:
+# {
+#   "budget_agent": [],
+#   "investment_rebalancer": [], # No dependencies -> Runs concurrently with budget_agent
+#   "aggregator": ["budget_agent", "investment_rebalancer"] # Runs after both complete
+# }
+```
+
+---
+
+### 10.3 Recipe: Adding a GridFS Streaming PDF Report with PDFKit
+
+Compiles a branded PDF document and writes directly into MongoDB GridFS with zero V8 memory spikes:
+
+```typescript
+// server/src/controllers/pdfReportController.ts
+import PDFDocument from "pdfkit";
+import { GridFSBucket } from "mongodb";
+import mongoose from "mongoose";
+import { Request, Response } from "express";
+
+export async function generateFinancialSOPPdf(req: Request, res: Response) {
+  const { title, sections } = req.body;
+  const db = mongoose.connection.db!;
+  const bucket = new GridFSBucket(db, { bucketName: "rendered_reports" });
+
+  const doc = new PDFDocument({ margin: 50, size: "A4" });
+  const filename = `${title.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}.pdf`;
+
+  const uploadStream = bucket.openUploadStream(filename, {
+    metadata: { orgId: req.orgId, userId: req.user?._id, createdAt: new Date() }
+  });
+
+  doc.pipe(uploadStream);
+
+  // Render header
+  doc.fontSize(22).fillColor("#1e293b").text(title, { align: "left" });
+  doc.moveDown(0.5);
+  doc.fontSize(10).fillColor("#64748b").text(`Generated on ${new Date().toISOString()} | FinWise SOP Engine`);
+  doc.moveDown(1.5);
+
+  // Render sections
+  for (const sec of sections) {
+    doc.fontSize(14).fillColor("#0284c7").text(sec.heading);
+    doc.moveDown(0.5);
+    doc.fontSize(10).fillColor("#334155").text(sec.body, { lineGap: 4 });
+    doc.moveDown(1.0);
+  }
+
+  doc.end();
+
+  uploadStream.on("finish", () => {
+    res.status(201).json({
+      success: true,
+      data: {
+        fileId: uploadStream.id.toString(),
+        filename,
+        downloadUrl: `/api/v1/files/rendered/${uploadStream.id}/download`
+      }
+    });
+  });
+
+  uploadStream.on("error", (err) => {
+    res.status(500).json({ success: false, error: err.message });
+  });
+}
+```
+
+---
+
+### 10.4 Recipe: Adding a BullMQ Dead Letter Queue Recoverable Job
+
+Safely handles poisoned background tasks by logging and routing unrecoverable failures into `bull:finwise-dlq`:
+
+```typescript
+// server/src/worker/processors/recoverableProcessor.ts
+import { Job } from "bullmq";
+import { deadLetterQueue, scrubPayloadForDLQ } from "../../services/deadLetterQueue";
+import { logger } from "../../config/logger";
+
+export async function processWithDLQRecovery<T>(job: Job<T>, handler: (data: T) => Promise<void>) {
+  try {
+    await handler(job.data);
+  } catch (err: any) {
+    logger.warn({ jobId: job.id, attempts: job.attemptsMade }, "[Worker] Job failed attempt");
+
+    // If max attempts reached, quarantine to DLQ
+    if (job.attemptsMade >= (job.opts.attempts || 3)) {
+      logger.error({ jobId: job.id, error: err.message }, "[Worker] Quarantining job to DLQ");
+      
+      await deadLetterQueue.add("quarantined-failure", {
+        originalQueue: job.queueName,
+        jobId: job.id,
+        failedAt: new Date(),
+        error: { message: err.message, stack: err.stack },
+        payload: scrubPayloadForDLQ(job.data)
+      });
+    }
+
+    throw err; // Re-throw to let BullMQ manage standard retry lifecycle
+  }
+}
+```
+
+---
+
+### 10.5 Recipe: In-Process Promise Coalescing for Heavy Operations
+
+Prevents redundant simultaneous operations on identical resources (e.g. LLM session insights):
+
+```typescript
+// server/src/utils/promiseCoalescer.ts
+const pendingPromises = new Map<string, Promise<any>>();
+
+export async function coalesce<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = pendingPromises.get(key);
+  if (existing) {
+    return existing as Promise<T>;
+  }
+
+  const promise = (async () => {
+    try {
+      return await fn();
+    } finally {
+      pendingPromises.delete(key);
+    }
+  })();
+
+  pendingPromises.set(key, promise);
+  return promise;
+}
+```

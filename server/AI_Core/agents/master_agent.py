@@ -1,4 +1,4 @@
-"""
+r"""
 master_agent.py - Master Financial Strategist Agent
 ====================================================
 
@@ -14,6 +14,122 @@ financial advisory system.  It has two primary responsibilities:
    master combines them into a single, coherent financial plan.  It optionally
    asks the LLM to polish the deterministic plan into friendlier prose, but
    only if the LLM does not introduce new numbers (a safety guard).
+
+MINDMAP FLOW
+------------
+::
+
+    MasterFinancialStrategistAgent
+    ├── 1. Intent Recognition & Deterministic Routing
+    │   ├── Input Text Sanitization & Context Concatenation
+    │   ├── Educational Query Classifier (_is_educational_query)
+    │   │   ├── Pure educational patterns (what is, how does, explain)
+    │   │   ├── Personal finance query exclusion (has amounts, debts, my budget)
+    │   │   └── Direct route to FINANCIAL_EDUCATION
+    │   ├── Domain Keyword Scoring (domain_scores)
+    │   │   ├── Income & Expense Analysis
+    │   │   ├── Budget Planning
+    │   │   ├── Investment Advisory
+    │   │   └── Debt Optimization
+    │   ├── Multi-Domain Co-occurrence Rule
+    │   │   ├── 2+ domains -> COMPREHENSIVE
+    │   │   ├── Broad planning triggers (strategy, full picture) -> COMPREHENSIVE
+    │   │   └── Single domain -> Specialist Agent
+    │   └── Zero Profile Fallback -> FINANCIAL_EDUCATION
+    ├── 2. Plan Synthesis Engine (synthesize_plan)
+    │   ├── Normalized Input Extraction (income, budget, invest, debt)
+    │   ├── Deterministic Plan Construction (tools.build_plan)
+    │   ├── Currency & Formatting Normalization (render_plan_markdown)
+    │   ├── Safety Check & Number Invariant Preservation
+    │   └── Fallback Markdown Assurance
+    ├── 3. LLM Narrative Refinement
+    │   ├── Master Prompt Definition (Zero numeric drift)
+    │   ├── Polish Execution via llm.invoke()
+    │   └── Verification: Compare numbers before and after polish
+    └── 4. Tool & Action Recommendation Engine
+        ├── Automated Tool Suggestion Generation (_build_tool_calls)
+        │   ├── Emergency Fund Target Automation
+        │   ├── Debt Payoff Strategy Trigger
+        │   └── High-Expense Budget Limit Alert
+        ├── Action Type Classification
+        └── Strategic Priority Calculation
+
+ASCII FLOW
+----------
+::
+
+    +------------------------------------------------------------------+
+    |                     Incoming User Request                        |
+    |  (user_input, user_profile, conversation_history, session_sum)   |
+    +--------------------------------+---------------------------------+
+                                     |
+                                     v
+    +------------------------------------------------------------------+
+    |                  determine_analysis_type()                       |
+    +--------------------------------+---------------------------------+
+                                     |
+                  [Is query purely educational?]
+                            /             \
+                          YES              NO
+                          /                 \
+                         v                   v
+              +----------------------+  +-----------------------------+
+              | FINANCIAL_EDUCATION  |  | Domain Keyword Evaluation   |
+              +----------------------+  +--------------+--------------+
+                                                       |
+                                      [How many domains matched?]
+                                             /         |         \
+                                        0 DOMAINS   1 DOMAIN   >=2 DOMAINS
+                                           /           |             \
+                                          v            v              v
+                           +---------------+  +------------+  +---------------+
+                           | No Profile?   |  | Specific   |  | COMPREHENSIVE |
+                           | -> EDUCATION  |  | Specialist |  +---------------+
+                           | Has Profile?  |  | Route      |
+                           | -> COMPREHENS |  +------------+
+                           +---------------+
+                                     |
+                                     v
+    +------------------------------------------------------------------+
+    |                   Specialist Execution Graph                     |
+    |        (Income, Budget, Investment, Debt, or Education)          |
+    +--------------------------------+---------------------------------+
+                                     |
+                                     v
+    +------------------------------------------------------------------+
+    |                      synthesize_plan()                           |
+    +--------------------------------+---------------------------------+
+                                     |
+                                     v
+    +------------------------------------------------------------------+
+    | 1. tools.build_plan()           -> Deterministic Plan Structure  |
+    | 2. tools.render_plan_markdown() -> Deterministic Plan Text       |
+    | 3. _build_tool_calls()          -> Actionable Automation Signals |
+    +--------------------------------+---------------------------------+
+                                     |
+                     [Is LLM Narrative Polish Enabled?]
+                               /              \
+                             YES               NO
+                             /                  \
+                            v                    v
+              +----------------------------+   (Use Deterministic Text)
+              | Query LLM for Narrative    |             |
+              +--------------+-------------+             |
+                             |                           |
+             [Did LLM alter numbers/hallucinate?]        |
+                            /        \                   |
+                          YES         NO                 |
+                          /            \                 |
+                         v              v                |
+              (Reject: Use Det.)   (Accept LLM Text)     |
+                         \              /                |
+                          \            /                 |
+                           v          v                  |
+    +----------------------------------------------------+-------------+
+    | Return Complete Plan Response:                                   |
+    |   { response, agent, actionType, priority, insights, plan,       |
+    |     tool_calls, llm_route, fallback_used }                       |
+    +------------------------------------------------------------------+
 
 Design philosophy
 -----------------
@@ -40,10 +156,12 @@ from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from config import settings
 from graph.state import AnalysisType
 from tools import PlanInputs, build_plan, render_plan_markdown
 from utils import create_llm
+from utils.agent_helpers import get_currency_code
+from utils.agent_routing import domain_scores, routing_text
+from utils.metric_answers import direct_metric_answer
 
 logger = logging.getLogger(__name__)
 
@@ -116,16 +234,7 @@ class MasterFinancialStrategistAgent:
         # For ambiguous follow-ups like "what about investing?", the previous
         # user message and session summary provide crucial context.  We append
         # them to the query text for keyword matching without making an LLM call.
-        context_parts: List[str] = []
-        if session_summary:
-            context_parts.append(str(session_summary))
-        if conversation_history:
-            for msg in reversed(conversation_history):
-                if str(msg.get("role", "")).lower() == "user" and msg.get("content"):
-                    context_parts.append(str(msg.get("content")))
-                    break
-
-        text_with_context = f"{text} {' '.join(context_parts)}".strip().lower() if context_parts else text
+        text_with_context = routing_text(user_input, conversation_history, session_summary)
 
         # --- Educational intent detection ---
         # These patterns catch general knowledge questions like "what is a
@@ -185,27 +294,14 @@ class MasterFinancialStrategistAgent:
         # context) is scanned for each keyword and the matching type gets +1.
         # This simple bag-of-words approach works well for financial queries
         # because domain vocabulary is fairly specific.
-        domain_keywords = {
-            AnalysisType.INCOME_EXPENSE: [
-                "expense", "spend", "spending", "income", "cash flow", "cashflow", "transaction",
-            ],
-            AnalysisType.BUDGET_PLANNING: [
-                "budget", "save", "savings", "allocation", "monthly plan", "cut costs",
-            ],
-            AnalysisType.INVESTMENT_ADVICE: [
-                "invest", "portfolio", "stock", "etf", "mutual fund", "retirement", "sip",
-            ],
-            AnalysisType.DEBT_OPTIMIZATION: [
-                "debt", "loan", "credit card", "interest", "repay", "repayment", "emi",
-            ],
+        domain_types = {
+            AnalysisType.INCOME_EXPENSE: "income_expense_analyzer",
+            AnalysisType.BUDGET_PLANNING: "budget_planner",
+            AnalysisType.INVESTMENT_ADVICE: "investment_advisor",
+            AnalysisType.DEBT_OPTIMIZATION: "debt_optimizer",
         }
-
-        scores = {analysis_type: 0 for analysis_type in domain_keywords.keys()}
-
-        for analysis_type, keywords in domain_keywords.items():
-            for keyword in keywords:
-                if keyword in text_with_context:
-                    scores[analysis_type] += 1
+        matched = domain_scores(text_with_context)
+        scores = {analysis_type: matched[agent] for analysis_type, agent in domain_types.items()}
 
         # --- Broad-plan / comprehensive intent detection ---
         # Phrases like "analyze my finances" or "give me a roadmap" signal
@@ -220,7 +316,7 @@ class MasterFinancialStrategistAgent:
 
         # Compute final flags
         looks_educational = any(re.search(pattern, text_with_context) for pattern in education_patterns)
-        personal_or_action_seeking = _is_personal_or_action_seeking(text)
+        personal_or_action_seeking = _is_personal_or_action_seeking(text_with_context)
         has_amounts_or_timelines = _has_amounts_or_timelines(text)
 
         non_zero_domains = [domain for domain, score in scores.items() if score > 0]
@@ -236,12 +332,16 @@ class MasterFinancialStrategistAgent:
         if looks_educational and len(non_zero_domains) == 0:
             return AnalysisType.FINANCIAL_EDUCATION
 
-        # Rule 3: Broad / comprehensive request
+        # Rule 3: Broad / comprehensive request -- check for decomposition
         if personal_or_comprehensive:
+            if self._should_decompose(text_with_context, scores, user_profile, non_zero_domains):
+                return AnalysisType.DECOMPOSE
             return AnalysisType.COMPREHENSIVE
 
-        # Rule 4: Multiple domains matched -> comprehensive
+        # Rule 4: Multiple domains matched -> check for decomposition
         if len(non_zero_domains) >= 2:
+            if self._should_decompose(text_with_context, scores, user_profile, non_zero_domains):
+                return AnalysisType.DECOMPOSE
             return AnalysisType.COMPREHENSIVE
 
         # Rule 5: Exactly one domain matched -> that specialist
@@ -254,6 +354,55 @@ class MasterFinancialStrategistAgent:
 
         # Rule 7: Fallback to best-scoring domain or comprehensive
         return best_domain if scores.get(best_domain, 0) > 0 else AnalysisType.COMPREHENSIVE
+
+    def _should_decompose(
+        self,
+        text: str,
+        scores: Dict[AnalysisType, int],
+        user_profile: Optional[Dict[str, Any]],
+        non_zero_domains: List[AnalysisType],
+    ) -> bool:
+        """Determine whether a request is complex enough for sub-agent decomposition.
+
+        Returns True when:
+        - 3+ domain categories score above threshold, OR
+        - Query contains "comprehensive plan" language AND 2+ domains, OR
+        - User profile has active goals AND debts AND investments AND 2+ domains.
+
+        This method is called from ``determine_analysis_type()`` when the
+        request already looks comprehensive.  It gates whether the sub-agent
+        architecture (task_decomposer -> sub_agent_pool -> aggregator) is
+        used instead of the simpler comprehensive_analysis node.
+        """
+        # Signal 1: 3+ domain categories scored above 0.
+        if len(non_zero_domains) >= 3:
+            return True
+
+        # Signal 2: "comprehensive plan" language with at least 2 domains.
+        plan_language = [
+            "comprehensive plan",
+            "full financial plan",
+            "complete strategy",
+            "financial roadmap",
+            "overall plan",
+            "holistic plan",
+        ]
+        has_plan_language = any(phrase in text for phrase in plan_language)
+        if has_plan_language and len(non_zero_domains) >= 2:
+            return True
+
+        # Signal 3: Complex profile -- goals AND debts AND investments.
+        if user_profile and len(non_zero_domains) >= 2:
+            has_goals = bool(user_profile.get("financial_goals"))
+            has_debts = bool(user_profile.get("debts"))
+            has_investments = bool(
+                user_profile.get("savings", 0) > 0
+                or user_profile.get("time_horizon", 0) > 0
+            )
+            if has_goals and has_debts and has_investments:
+                return True
+
+        return False
 
     def synthesize_plan(
         self,
@@ -310,10 +459,7 @@ class MasterFinancialStrategistAgent:
         plan = build_plan(inputs)
 
         # Step 3: Render as deterministic markdown (currency-aware).
-        currency_code = "USD"
-        candidate_currency = str((user_profile or {}).get("currency") or "").strip().upper()
-        if len(candidate_currency) == 3 and candidate_currency.isalpha():
-            currency_code = candidate_currency
+        currency_code = get_currency_code(user_profile)
         deterministic_markdown = render_plan_markdown(plan, currency_code=currency_code)
 
         # Check if narrative mode is enabled (can be disabled by the caller
@@ -378,12 +524,18 @@ PLAN (do not change numbers):
                 final_markdown = candidate
                 fallback_used = False
 
+        # Keep calculator answers explicit even when narrative polishing omits
+        # a requested fact. The underlying structured plan remains unchanged.
+        answer = direct_metric_answer((context or {}).get("user_input", ""), user_profile)
+        if answer:
+            final_markdown = f"{answer}\n\n{final_markdown}"
+
         return {
             "response": final_markdown,
             "agent": "master",
             "actionType": self._determine_action_type(valid_analyses),
             "priority": self._determine_priority(valid_analyses),
-            "insights": self._extract_key_insights(valid_analyses),
+            "insights": self._extract_key_insights(valid_analyses, user_profile),
             "fallback_used": fallback_used,
             "plan": plan.model_dump(),
             "tool_calls": self._build_tool_calls(plan.model_dump(), user_profile),
@@ -579,128 +731,33 @@ PLAN (do not change numbers):
     def _numbers_are_subset(self, candidate: str, reference: str) -> bool:
         """Check that every number in *candidate* already exists in *reference*.
 
-        Used by the number safety guard: the LLM is allowed to omit numbers
-        but not to introduce new ones.
+        Delegates to the shared ``agent_helpers.numbers_are_subset()``.
         """
-        reference_nums = self._extract_numbers(reference)
-        candidate_nums = self._extract_numbers(candidate)
-        return candidate_nums.issubset(reference_nums)
-
-    def _extract_numbers(self, text: str) -> set[str]:
-        """Extract and normalise all numeric tokens from a string.
-
-        Captures integers, decimals, comma-separated thousands, and optional
-        currency/percentage suffixes.  Normalises by stripping the rupee sign
-        and commas so that "₹1,00,000" and "100000" compare as equal.
-        """
-        tokens = re.findall(r"₹?\d[\d,]*(?:\.\d+)?%?", text)
-        normalized = set()
-        for token in tokens:
-            normalized.add(token.replace("₹", "").replace(",", ""))
-        return normalized
+        from utils.agent_helpers import numbers_are_subset
+        return numbers_are_subset(candidate, reference)
 
     def _determine_action_type(self, analyses: Dict[str, Any]) -> str:
-        """Map the set of completed analyses to a single action type string.
-
-        The action type tells the frontend which primary CTA to show.
-        Priority order: debt > investment > budget > income > review.
-        """
-        if "debt_optimization" in analyses:
-            return "manage_debt"
-        if "investment_advice" in analyses:
-            return "invest"
-        if "budget_plan" in analyses:
-            return "review_budget"
-        if "income_analysis" in analyses:
-            return "optimize_spending"
-        return "review"
+        """Map the set of completed analyses to a single action type string."""
+        from utils.agent_helpers import determine_action_type
+        return determine_action_type(analyses)
 
     def _determine_priority(self, analyses: Dict[str, Any]) -> str:
-        """Determine the urgency level of the financial plan.
+        """Determine the urgency level of the financial plan."""
+        from utils.agent_helpers import determine_priority
+        return determine_priority(analyses)
 
-        - **high**   -- debt-to-income > 40% or savings rate is negative
-        - **medium** -- savings rate below 10%
-        - **low**    -- everything else
-        """
-        if "debt_optimization" in analyses:
-            debt_ratio = analyses["debt_optimization"].get("current_debt_situation", {}).get("debt_to_income_ratio", 0)
-            if debt_ratio > 40:
-                return "high"
-
-        if "income_analysis" in analyses:
-            savings_rate = analyses["income_analysis"].get("summary_metrics", {}).get("savings_rate", 0)
-            if savings_rate < 0:
-                return "high"
-            if savings_rate < 10:
-                return "medium"
-
-        return "low"
-
-    def _extract_key_insights(self, analyses: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Extract one headline insight per completed analysis.
-
-        Each insight is a small dict with ``agent``, ``title``,
-        ``description``, and ``actionType``.  The frontend uses these to
-        render summary cards above the full plan.
-        """
-        insights = []
-
-        for analysis_type, analysis_data in analyses.items():
-            if not analysis_data or analysis_data.get("error"):
-                continue
-
-            try:
-                insight = None
-
-                if analysis_type == "income_analysis":
-                    summary_metrics = analysis_data.get("summary_metrics", {})
-                    net_flow = summary_metrics.get("net_cash_flow", 0) if isinstance(summary_metrics, dict) else 0
-                    insight = {
-                        "agent": "income_expense_analyzer",
-                        "title": "Cash Flow Analysis",
-                        "description": f"Monthly net cash flow: INR {net_flow:,.2f}",
-                        "actionType": "optimize_spending" if net_flow < 0 else "increase_savings",
-                    }
-
-                elif analysis_type == "budget_plan":
-                    savings_rate = analysis_data.get("savings_rate", 0)
-                    insight = {
-                        "agent": "budget_planner",
-                        "title": "Budget Optimization",
-                        "description": f"Current savings rate: {float(savings_rate):.1f}%",
-                        "actionType": "review_budget",
-                    }
-
-                elif analysis_type == "investment_advice":
-                    risk_profile = str(analysis_data.get("risk_profile", "moderate"))
-                    insight = {
-                        "agent": "investment_advisor",
-                        "title": "Investment Strategy",
-                        "description": f"Recommended {risk_profile} portfolio",
-                        "actionType": "invest",
-                    }
-
-                elif analysis_type == "debt_optimization":
-                    strategy = analysis_data.get("recommended_strategy", {}).get("recommended_method", "snowball")
-                    insight = {
-                        "agent": "debt_optimizer",
-                        "title": "Debt Management",
-                        "description": f"Use {strategy} method for optimized repayment",
-                        "actionType": "manage_debt",
-                    }
-
-                if insight:
-                    insights.append(insight)
-
-            except Exception as exc:
-                logger.warning("Error extracting insight from %s: %s", analysis_type, exc)
-
-        return insights
+    def _extract_key_insights(
+        self, analyses: Dict[str, Any], user_profile: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """Extract one headline insight per completed analysis."""
+        from utils.agent_helpers import extract_key_insights, get_currency_code
+        currency_code = get_currency_code(user_profile)
+        return extract_key_insights(analyses, currency_code=currency_code)
 
     def _prepare_synthesis_data(self, user_profile: Dict[str, Any], analyses: Dict[str, Any]) -> Dict[str, str]:
         return {
             "user_profile": self._format_user_profile_for_synthesis(user_profile),
-            "analyses_summary": self._format_analyses_summary(analyses),
+            "analyses_summary": self._format_analyses_summary(analyses, get_currency_code(user_profile)),
             "key_metrics": self._extract_key_metrics(analyses, user_profile),
         }
 
@@ -715,46 +772,47 @@ PLAN (do not change numbers):
         income = float(user_profile.get("annual_income", 0))
         expenses = float(user_profile.get("monthly_expenses", 0)) * 12
         savings = float(user_profile.get("savings", 0))
+        currency_code = get_currency_code(user_profile)
 
-        lines.append(f"Annual Income: INR {income:,.2f}")
-        lines.append(f"Annual Expenses: INR {expenses:,.2f}")
-        lines.append(f"Current Savings: INR {savings:,.2f}")
+        lines.append(f"Annual Income: {currency_code} {income:,.2f}")
+        lines.append(f"Annual Expenses: {currency_code} {expenses:,.2f}")
+        lines.append(f"Current Savings: {currency_code} {savings:,.2f}")
 
         debts = user_profile.get("debts", [])
         if debts:
             total_debt = sum(float(debt.get("balance", 0)) for debt in debts)
-            lines.append(f"Total Debt: INR {total_debt:,.2f}")
+            lines.append(f"Total Debt: {currency_code} {total_debt:,.2f}")
 
         goals = user_profile.get("financial_goals", [])
         if goals:
             lines.append("Financial Goals:")
             for goal in goals:
                 lines.append(
-                    f"- {goal.get('name', 'Goal')}: INR {float(goal.get('target', 0)):,.2f} "
+                    f"- {goal.get('name', 'Goal')}: {currency_code} {float(goal.get('target', 0)):,.2f} "
                     f"in {int(goal.get('timeline_months', 0))} months"
                 )
 
         return "\n".join(lines)
 
-    def _format_analyses_summary(self, analyses: Dict[str, Any]) -> str:
+    def _format_analyses_summary(self, analyses: Dict[str, Any], currency_code: str = "INR") -> str:
         summary_parts = []
 
         for analysis_type, analysis_data in analyses.items():
             if analysis_data and not analysis_data.get("error"):
-                key_insight = self._extract_key_insight(analysis_type, analysis_data)
+                key_insight = self._extract_key_insight(analysis_type, analysis_data, currency_code)
                 if key_insight:
                     summary_parts.append(f"- {analysis_type.replace('_', ' ').title()}: {key_insight}")
 
         return "\n".join(summary_parts) if summary_parts else "No detailed analyses available"
 
-    def _extract_key_insight(self, analysis_type: str, analysis_data: Dict[str, Any]) -> str:
+    def _extract_key_insight(self, analysis_type: str, analysis_data: Dict[str, Any], currency_code: str = "INR") -> str:
         if analysis_type == "income_analysis":
             net_cash_flow = analysis_data.get("summary_metrics", {}).get("net_cash_flow", 0)
-            return f"Net cash flow: INR {float(net_cash_flow):,.2f} monthly"
+            return f"Net cash flow: {currency_code} {float(net_cash_flow):,.2f} monthly"
 
         if analysis_type == "budget_plan":
             savings_target = analysis_data.get("savings_plan", {}).get("total_monthly_savings", 0)
-            return f"Recommended monthly goal savings: INR {float(savings_target):,.2f}"
+            return f"Recommended monthly goal savings: {currency_code} {float(savings_target):,.2f}"
 
         if analysis_type == "investment_advice":
             risk_profile = analysis_data.get("risk_profile", "moderate")
@@ -768,23 +826,24 @@ PLAN (do not change numbers):
 
     def _extract_key_metrics(self, analyses: Dict[str, Any], user_profile: Dict[str, Any]) -> str:
         metrics: List[str] = []
+        currency_code = get_currency_code(user_profile)
 
         if "income_analysis" in analyses:
             income_data = analyses["income_analysis"]
             net_cash_flow = income_data.get("summary_metrics", {}).get("net_cash_flow", 0)
             savings_rate = income_data.get("summary_metrics", {}).get("savings_rate", 0)
-            metrics.append(f"Monthly Net Cash Flow: INR {float(net_cash_flow):,.2f}")
+            metrics.append(f"Monthly Net Cash Flow: {currency_code} {float(net_cash_flow):,.2f}")
             metrics.append(f"Savings Rate: {float(savings_rate):.1f}%")
 
         if "budget_plan" in analyses:
             budget_data = analyses["budget_plan"]
             monthly_goal_savings = budget_data.get("savings_plan", {}).get("total_monthly_savings", 0)
-            metrics.append(f"Monthly Goal Savings Need: INR {float(monthly_goal_savings):,.2f}")
+            metrics.append(f"Monthly Goal Savings Need: {currency_code} {float(monthly_goal_savings):,.2f}")
 
         if user_profile and "debt_optimization" in analyses:
             debt_data = analyses["debt_optimization"]
             total_debt = debt_data.get("current_debt_situation", {}).get("total_debt", 0)
-            metrics.append(f"Total Debt: INR {float(total_debt):,.2f}")
+            metrics.append(f"Total Debt: {currency_code} {float(total_debt):,.2f}")
 
         return "\n".join(metrics) if metrics else "Key metrics unavailable"
 
@@ -794,16 +853,16 @@ PLAN (do not change numbers):
         footer = f"\n\nSources: {sources}" if sources else ""
         return header + raw_plan + footer
 
-    def _create_fallback_plan(self, analyses: Dict[str, Any]) -> str:
+    def _create_fallback_plan(self, analyses: Dict[str, Any], currency_code: str = "INR") -> str:
         plan_parts = ["AI narrative is temporarily unavailable. Use this deterministic plan:"]
 
         if "income_analysis" in analyses:
             net_flow = analyses["income_analysis"].get("summary_metrics", {}).get("net_cash_flow", 0)
-            plan_parts.append(f"- Monthly net cash flow: INR {float(net_flow):,.2f}")
+            plan_parts.append(f"- Monthly net cash flow: {currency_code} {float(net_flow):,.2f}")
 
         if "budget_plan" in analyses:
             monthly_goal_savings = analyses["budget_plan"].get("savings_plan", {}).get("total_monthly_savings", 0)
-            plan_parts.append(f"- Target monthly goal savings: INR {float(monthly_goal_savings):,.2f}")
+            plan_parts.append(f"- Target monthly goal savings: {currency_code} {float(monthly_goal_savings):,.2f}")
 
         if "debt_optimization" in analyses:
             method = analyses["debt_optimization"].get("recommended_strategy", {}).get("recommended_method", "avalanche")

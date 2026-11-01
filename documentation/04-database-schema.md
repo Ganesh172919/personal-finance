@@ -25,6 +25,10 @@
 
 ---
 
+> [!TIP]
+> **Extending the Data Model?**  
+> For complete instructions on defining new Mongoose models with the required `orgScopePlugin` multi-tenant gates and compound index strategies, see the [**Master Developer Handbook: Building on This Project**](../docs/BUILDING_ON_THIS_PROJECT.md).
+
 ## 1. Database Overview
 
 ### Primary Datastore: MongoDB
@@ -51,11 +55,11 @@ The FinWise platform uses MongoDB as its primary operational datastore, accessed
 | Domain | Collections | Count |
 |--------|-------------|-------|
 | User & Organization | User, Organization, OrgMember, OrgInvite | 4 |
-| Finance | Transaction, Account, BudgetAllocation, Merchant, RecurringRule, MonthClose, CategoryRule, FinancialProfile | 8 |
-| AI & Chat | ChatSession, ChatMessage, AgentOutput, AiResponseCache, MemoryRecord | 5 |
+| Finance | Transaction, Account, BudgetAllocation, Merchant, RecurringRule, MonthClose, CategoryRule, FinancialProfile, HealthScore, NewsletterPreference | 10 |
+| AI & Chat | ChatSession, ChatMessage, AgentOutput, AiResponseCache, MemoryRecord, WorkspaceKnowledgeChunk | 6 |
 | Feature | Workflow, WorkflowRun, Task, Receipt, JournalEntry, ExportJob, WorkspaceFile, Comment, ShareLink, Notification, CalendarReminder, GrowthStory, BlogPost | 13 |
 | Platform | Subscription, BillingAccount, Entitlement, UsageLedger, UsageEvent, ApiKey, FeatureFlag, IntegrationConnection, IntegrationSyncRun, PluginInstall, MarketplacePlugin, ReferralCode, ReferralRedemption, AuditEvent, AuditLog, AutopilotRun, ToolExecution, DomainEvent, CreditGrant | 19 |
-| **Total** | | **49** |
+| **Total** | | **52** |
 
 ---
 
@@ -481,6 +485,54 @@ User financial profile for AI-driven advice and onboarding.
 
 ---
 
+#### HealthScore
+
+Persists financial health score calculations over time for trend detection and dashboard visualization.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `userId` | String | Yes | — | User identifier (indexed) |
+| `orgId` | String | Yes | — | Organization identifier (indexed) |
+| `score` | Number | Yes | — | Composite health score (0–100) |
+| `breakdown` | Object | Yes | — | Four pillar sub-scores |
+| `breakdown.savingsRate` | Number | No | `0` | Savings velocity score (0–25) |
+| `breakdown.debtManagement` | Number | No | `0` | Debt-to-income score (0–25) |
+| `breakdown.budgetAdherence` | Number | No | `0` | Budget envelope adherence score (0–25) |
+| `breakdown.emergencyFund` | Number | No | `0` | Emergency runway liquidity score (0–25) |
+| `period` | String | Yes | — | Time period in `YYYY-MM` format |
+| `trend` | String | No | `"stable"` | Direction: `"improving"`, `"stable"`, `"declining"` |
+| `computedAt` | Date | No | `Date.now` | Computation timestamp |
+
+**Indexes:** `{ userId: 1, orgId: 1, period: -1 }`, `userId`, `orgId`
+
+---
+
+#### NewsletterPreference
+
+Stores per-user newsletter delivery settings, delivery schedule, and section content toggles within an organization.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `userId` | ObjectId (User) | Yes | — | Subscribed user reference |
+| `orgId` | ObjectId (Organization) | Yes | — | Tenant organization reference |
+| `isSubscribed` | Boolean | No | `true` | Master toggle for email delivery |
+| `deliveryTime` | String | No | `"08:00"` | Daily send time in `HH:mm` format |
+| `timezone` | String | No | `"UTC"` | IANA timezone (e.g. `"Asia/Kolkata"`) |
+| `contentPreferences` | Object | Yes | — | Granular section toggles |
+| `contentPreferences.spendingSummary` | Boolean | No | `true` | 7-day spending summary section |
+| `contentPreferences.budgetAlerts` | Boolean | No | `true` | Budget threshold warnings |
+| `contentPreferences.upcomingBills` | Boolean | No | `true` | Upcoming bill reminders (7-day horizon) |
+| `contentPreferences.financialTips` | Boolean | No | `true` | Educational tips and advice |
+| `contentPreferences.portfolioNews` | Boolean | No | `false` | Investment portfolio updates |
+| `contentPreferences.weeklyHealthScore`| Boolean | No | `true` | Financial Health Score snapshot |
+| `contentPreferences.actionableRecommendations` | Boolean | No | `true` | AI-generated action items |
+| `lastSentAt` | Date | No | — | Timestamp of most recent dispatch |
+| `unsubscribeToken` | String | Yes | UUID | Unique token for 1-click unsubscribe links |
+
+**Indexes:** `{ orgId: 1, userId: 1 }` (unique), `userId`, `orgId`, `unsubscribeToken` (unique)
+
+---
+
 ### AI & Chat Domain
 
 #### ChatSession
@@ -598,6 +650,28 @@ AI-learned facts about users persisted across sessions. Replaces SQLite-based me
 | `source` | String | Yes | `"ai_conversation"` | Memory source, max 100 chars |
 
 **Indexes:** `{ orgId, userId, key }` (unique), `{ orgId, userId, updatedAt }`, text index on `{ key, value }`
+
+---
+
+#### WorkspaceKnowledgeChunk
+
+Persists bounded text windows derived from workspace documents for RAG Phase 2 lexical and semantic retrieval.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `orgId` | ObjectId (Organization) | Yes | — | Owning organization (multi-tenant boundary) |
+| `userId` | ObjectId (User) | Yes | — | Document owner (user isolation) |
+| `workspaceFileId` | ObjectId (WorkspaceFile) | Yes | — | Source workspace file reference |
+| `fileId` | ObjectId (GridFS) | Yes | — | Underlying GridFS binary file ID |
+| `chunkIndex` | Number | Yes | — | Sequential zero-based chunk index |
+| `text` | String | Yes | — | Bounded text window (~1800 chars / ~500 tokens) |
+| `tokenCountEstimate` | Number | Yes | — | Estimated token count |
+| `sectionTitle` | String | No | — | Extracted heading or section title |
+| `pageNumber` | Number | No | — | Physical page number if extracted from source |
+| `sourceKind` | String | Yes | — | Document kind: `"document"`, `"csv"`, `"receipt"` |
+| `metadata` | Mixed | No | `{}` | Additional structured extraction metadata |
+
+**Indexes:** `{ orgId: 1, userId: 1, workspaceFileId: 1, chunkIndex: 1 }` (unique), `{ orgId: 1, userId: 1, updatedAt: -1 }`
 
 ---
 
@@ -1584,4 +1658,131 @@ Cross-tenant operations are intentionally limited:
 
 ---
 
+## Database Architecture & Entity Relationships Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#047857', 'lineColor': '#3b82f6', 'secondaryColor': '#f59e0b', 'tertiaryColor': '#8b5cf6'}}}%%
+mindmap
+  root((🗄️ FinWise MongoDB Schema))
+    🏢 Tenancy & Identity
+      User (Global Credential & Profile)
+      Organization (Tenant Workspace)
+      OrgMember (Role: owner, admin, member)
+      OrgInvite (Tokenized Onboarding)
+      APIKey (Hashed Secret & Scopes)
+    💰 Financial Core
+      Transaction (Amount, Category, Date, OrgId)
+      Budget (Category, Limit, Period, Alerts)
+      FinancialGoal (Target, Current, Deadline)
+      Debt (Principal, Interest, Schedule)
+      InvestmentHoldings (Asset, Quantity, Value)
+    🧠 AI & Knowledge Retrieval
+      ChatSession (History, Tokens, Context)
+      WorkspaceKnowledgeChunk (Text, Embedding, Source)
+      WorkspaceFile (Metadata, OCR, Status)
+      HealthScore (Vitals, Metrics, Timestamp)
+    🛡️ Governance & Observability
+      AuditLog (Actor, IP, Mutation, Diff)
+      UsageEvent (Metering & Quotas)
+      Entitlement (Plan Tier Limits)
+      NewsletterPreference (Cadence, Topics)
+```
+
+## Multi-Tenant Query Isolation & Indexing ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 INCOMING QUERY / MUTATION CONTEXT                                   │
+│    Authenticated Session: { userId: "usr_123", orgId: "org_456" }      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ MONGOOSE MIDDLEWARE & ORGSCOPE PLUGIN ENFORCEMENT                   │
+│    ├─► Intercept find(), findOne(), updateMany(), countDocuments()     │
+│    ├─► Automatically inject { orgId: "org_456" } filter predicate     │
+│    └─► Development Guard: Log warning if query lacks orgId             │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ ⚡ COMPOUND INDEX OPTIMIZATION (B-TREE PREFIX MATCHING)                │
+│    ├─► Transactions:   { orgId: 1, date: -1, category: 1 }            │
+│    ├─► Budgets:        { orgId: 1, period: 1 }                         │
+│    ├─► KnowledgeChunks:{ orgId: 1, fileId: 1 }                         │
+│    └─► AuditLogs:      { orgId: 1, timestamp: -1 }                     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔒 STRICT DATA ISOLATION GUARANTEE                                     │
+│    ├─► Tenant boundary cannot be crossed by query tampering           │
+│    ├─► Zero-leakage serialization (strip internal fields before return)│
+│    └─► Mutation committed with transaction replica set durability      │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
 *End of Database Schema Documentation*
+
+
+---
+
+## Production Implementation Blueprints
+
+### 1. Multi-Tenant Query Scoping Invariant (`server/src/utils/orgScopePlugin.ts`)
+
+```typescript
+// Enforce strict tenant isolation across all Mongoose operations
+export function orgScopePlugin(schema: Schema) {
+  schema.add({ orgId: { type: String, required: true, index: true } });
+  
+  const queryMethods = ["find", "findOne", "findOneAndUpdate", "countDocuments", "deleteOne", "deleteMany"] as const;
+  queryMethods.forEach((method) => {
+    schema.pre(method, function (this: Query<unknown, any>) {
+      if (this.getOptions().bypassOrgScope) return;
+      if (!this.getFilter().orgId) {
+        throw new Error(`[Security Violation] Query on ${schema.get("collection")} missing required orgId`);
+      }
+    });
+  });
+}
+```
+
+### 2. High-Performance Compound Indexed Schema (`server/src/models/transactionModel.ts`)
+
+```typescript
+// Multi-tenant Transaction schema with compound prefix B-Tree indexing
+const TransactionSchema = new Schema<ITransaction>({
+  orgId: { type: String, required: true, index: true },
+  userId: { type: String, required: true, index: true },
+  accountId: { type: Schema.Types.ObjectId, ref: "Account", required: true },
+  amount: { type: Number, required: true },
+  currency: { type: String, default: "USD" },
+  date: { type: Date, required: true, index: true },
+  category: { type: String, required: true, index: true },
+  merchant: { type: String, trim: true },
+  confidence: { type: Number, default: 1.0 },
+  needsReview: { type: Boolean, default: false, index: true }
+}, { timestamps: true });
+
+TransactionSchema.plugin(orgScopePlugin);
+TransactionSchema.index({ orgId: 1, date: -1, category: 1, amount: 1 });
+```
+
+### 3. RAG Phase 2 Knowledge Chunk Schema (`server/src/models/workspaceKnowledgeChunkModel.ts`)
+
+```typescript
+// Bounded window knowledge chunk collection with unique compound idempotency index
+const WorkspaceKnowledgeChunkSchema = new Schema<IWorkspaceKnowledgeChunk>({
+  orgId: { type: String, required: true, index: true },
+  userId: { type: String, required: true, index: true },
+  fileId: { type: Schema.Types.ObjectId, ref: "WorkspaceFile", required: true },
+  chunkIndex: { type: Number, required: true },
+  chunkText: { type: String, required: true },
+  pageNumber: { type: Number, required: true },
+  contentHash: { type: String, required: true }
+}, { timestamps: true });
+
+WorkspaceKnowledgeChunkSchema.plugin(orgScopePlugin);
+WorkspaceKnowledgeChunkSchema.index({ orgId: 1, fileId: 1, chunkIndex: 1 }, { unique: true });
+```

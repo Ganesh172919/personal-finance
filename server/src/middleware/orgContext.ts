@@ -5,6 +5,75 @@
  * It supports multi-tenancy by allowing users to belong to multiple organizations
  * and switch between them using the X-Org-Id header.
  *
+ * ============================================================================
+ * MINDMAP FLOW: MULTI-TENANT ORG RESOLUTION & ROLE PRIVILEGE GATING
+ * ============================================================================
+ * - Multi-Tenancy Organization Context Engine
+ *     ├── 1. Authentication Check
+ *     │   ├── Evaluates req.user presence
+ *     │   └── Skips execution for unauthenticated / public routes (calls next())
+ *     ├── 2. Tenant Identifier Ingestion
+ *     │   ├── Explicit Header: x-org-id header parsed and sanitized
+ *     │   └── Implicit Fallback: resolveDefaultOrgForUser(userId)
+ *     ├── 3. Membership & Access Control
+ *     │   ├── Organization existence validation (valid ObjectId format)
+ *     │   ├── Active membership check across organization members
+ *     │   └── Role resolution (owner, admin, member)
+ *     ├── 4. Request Context Attachment
+ *     │   └── req.org: { orgId, memberId, role, isDefault, defaultOrgId }
+ *     └── 5. Error Triaging & Auto-Migration
+ *         ├── 400 INVALID_ORG_ID on malformed hexadecimal identifiers
+ *         ├── 403 ORG_ACCESS_DENIED on unauthorized tenant access attempts
+ *         └── Background legacy org data backfill when ORG_LEGACY_BACKFILL_ENABLED
+ *
+ * ============================================================================
+ * ASCII FLOW: MULTI-TENANT CONTEXT RESOLUTION LIFECYCLE
+ * ============================================================================
+ *                     [ Inbound Authenticated Request ]
+ *                                     |
+ *                                     v
+ *                     +-------------------------------+
+ *                     | Does req.user exist?          |
+ *                     +---------------+---------------+
+ *                                /          \
+ *                         No    /            \ Yes
+ *                              v              v
+ *                    [ Skip Context ]  +-------------------------------+
+ *                    [ Call next()  ]  | Inspect x-org-id HTTP Header  |
+ *                                      +---------------+---------------+
+ *                                                      |
+ *                                      Is x-org-id header provided?
+ *                                            /                  \
+ *                                     Yes   /                    \ No
+ *                                          v                      v
+ *                     +-------------------------+  +-------------------------+
+ *                     | resolveOrgForRequest()  |  | resolveDefaultOrgForUser|
+ *                     | Check membership table  |  | Primary user account org|
+ *                     +------------+------------+  +------------+------------+
+ *                                  |                            |
+ *                         Is user a member?                     |
+ *                               /      \                        |
+ *                        Yes   /        \ No                    |
+ *                             v          v                      |
+ *              +--------------------+  +--------------------+   |
+ *              | Valid active org   |  | Throw 403          |   |
+ *              | context obtained   |  | ORG_ACCESS_DENIED  |   |
+ *              +----------+---------+  +--------------------+   |
+ *                         |                                     |
+ *                         +------------------<------------------+
+ *                                            |
+ *                                            v
+ *                             +-------------------------------+
+ *                             | Attach req.org Context:       |
+ *                             | { orgId, memberId, role }     |
+ *                             +--------------+----------------+
+ *                                            |
+ *                                            v
+ *                             +-------------------------------+
+ *                             | Optional: Legacy Backfill     |
+ *                             | Proceed to Route Handler      |
+ *                             +-------------------------------+
+ *
  * KEY FEATURES:
  * - Resolves default organization for authenticated users
  * - Supports organization switching via X-Org-Id header

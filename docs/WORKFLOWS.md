@@ -251,7 +251,7 @@ Content-Type: application/json
 
 1. `startWorkflowScheduler()` runs every 15s
 2. `backfillCronWorkflowScheduleFields()` fills missing `nextRunAt`
-3. `tickCronWorkflows()` queries due workflows (enabled=true, nextRunAt≤now)
+3. `tickCronWorkflows()` queries due workflows (enabled=true, nextRunAtâ‰¤now)
 4. For each due workflow:
    - Computes next run time
    - Calls `enqueueWorkflowRun()` with idempotency key
@@ -381,3 +381,145 @@ See [EXAMPLES.md](./EXAMPLES.md) for practical code examples including:
 - Creating a custom workflow
 - Implementing a new action type
 - Creating workflow templates in plugins
+
+## Workflow Orchestration Architecture Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#8b5cf6', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#7c3aed', 'lineColor': '#06b6d4', 'secondaryColor': '#10b981', 'tertiaryColor': '#f59e0b'}}}%%
+mindmap
+  root((🔄 FinWise Workflow Engine))
+    ⚡ Triggers
+      Event-Driven (transaction.created, budget.threshold)
+      Scheduled Cron (daily digest, weekly rebalance)
+      Webhook & API Ingress (/api/v1/workflows/:id/run)
+      Manual User Action (Command Center)
+    📋 Execution Graph
+      DAG Step Dependencies
+      Condition Evaluators (JSONSchema filter)
+      Context Hydration & Variable Injection
+    🎯 Actions & Side-Effects
+      Financial Rules (Auto-Categorize, Rebalance)
+      AI Analysis (Generate Copilot Recommendation)
+      Notification Delivery (Email, In-App, Push)
+      Export Generation (PDF Statement, CSV)
+    🛡️ Reliability & Tracking
+      WorkflowRun Execution History
+      Idempotency Key Verification
+      Dead Letter Queue (DLQ) with Exponential Retry
+      Metering via UsageLedgerModel
+```
+
+## Workflow Execution Pipeline & State Transition ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 WORKFLOW TRIGGER INITIATION                                         │
+│    Trigger: Event (transaction.created) OR Scheduled Cron (0 8 * * 1)  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STAGE 1: QUOTA & TENANT VALIDATION                                  │
+│    ├─► Verify tenant has remaining workflow execution quota            │
+│    ├─► Load Workflow definition filtered by orgId                      │
+│    └─► Check if Workflow is active (enabled: true)                     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📝 STAGE 2: WORKFLOW RUN RECORD CREATION                               │
+│    ├─► Insert WorkflowRun { workflowId, orgId, status: "pending" }     │
+│    ├─► Compile Step DAG into sequential execution steps                │
+│    └─► Enqueue job into BullMQ workflow worker queue                   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ ⚙️ STAGE 3: WORKER STEP EXECUTION & CONDITION EVALUATION               │
+│    ├─► Step 1: Evaluate condition (e.g., amount > 500)                 │
+│    │   ├── False? ──► Skip to next step ⏩                             │
+│    │   └── True? ──► Execute Action: AI Categorize & Flag Risk         │
+│    ├─► Step 2: Invoke Notification Service (Email alert to owner)      │
+│    └── Failure? ──► Retry with backoff; escalate to DLQ if max retries │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟣 STAGE 4: RUN COMPLETION & TELEMETRY                                 │
+│    ├─► Update WorkflowRun status: "completed" with output artifacts    │
+│    ├─► Increment usage ledger event counter                            │
+│    └─► Emit realtime domain event for UI progress bar update 🟢        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
+## Production Implementation Blueprints
+
+### 1. Workflow Execution Engine (`server/src/services/workflows.ts`)
+
+```typescript
+// Core workflow step execution with condition evaluation and action dispatch
+export async function executeWorkflow(workflowId: string, orgId: string, triggerContext: Record<string, unknown>) {
+  const workflow = await WorkflowModel.findOne({ _id: workflowId, orgId, enabled: true });
+  if (!workflow) throw new Error("Workflow not found or disabled");
+
+  const run = await WorkflowRunModel.create({
+    workflowId: workflow._id,
+    orgId,
+    status: "running",
+    startedAt: new Date(),
+    idempotencyKey: `${workflowId}-${Date.now()}`
+  });
+
+  try {
+    for (const action of workflow.actions) {
+      if (action.type === "ai_evaluate") {
+        await invokeAiCoreProcess({ prompt: action.prompt, orgId });
+      } else if (action.type === "notification") {
+        await sendEmail({ to: action.recipient, subject: action.subject, body: action.body });
+      }
+    }
+    run.status = "succeeded";
+    run.finishedAt = new Date();
+    await run.save();
+  } catch (err: any) {
+    run.status = "failed";
+    run.error = err.message;
+    run.finishedAt = new Date();
+    await run.save();
+    throw err;
+  }
+}
+```
+
+### 2. Timezone-Aware Scheduled Cron Scheduler (`server/src/services/workflowScheduler.ts`)
+
+```typescript
+// Cron polling loop evaluating active scheduled workflows every 60 seconds
+export async function pollScheduledWorkflows() {
+  const now = new Date();
+  const dueWorkflows = await WorkflowModel.find({
+    enabled: true,
+    "trigger.type": "cron",
+    nextRunAt: { $lte: now }
+  });
+
+  for (const workflow of dueWorkflows) {
+    await workflowQueue.add("run-workflow", {
+      workflowId: workflow._id.toString(),
+      orgId: workflow.orgId
+    }, { attempts: 3, backoff: { type: "exponential", delay: 5000 } });
+
+    // Compute next execution timestamp
+    workflow.lastRunAt = now;
+    workflow.nextRunAt = computeNextCronDate(workflow.trigger.cronExpression, workflow.scheduleTimezone);
+    await workflow.save();
+  }
+}
+```

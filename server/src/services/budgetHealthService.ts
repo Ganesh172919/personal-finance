@@ -5,6 +5,81 @@
  * budget burn-rate alerts. This powers the "Adaptive Budget Coach"
  * experience on the dashboard.
  *
+ * ============================================================================
+ * MINDMAP FLOW: BUDGET HEALTH COACH & BURN RATE ANALYTICS
+ * ============================================================================
+ * - Budget Health & Velocity Coach
+ *     ├── 1. Four-Pillar Composite Health Score (0 - 100)
+ *     │   ├── Budget Adherence (40 pts): Closeness of actual spend to envelope limits
+ *     │   ├── Review Cleanliness (20 pts): Proportion of flagged txns categorized
+ *     │   ├── Goal Progress (20 pts): Weighted milestone completion across active goals
+ *     │   └── Debt Management (20 pts): Debt service coverage against liquid capital
+ *     ├── 2. Category Burn Rate Alerts
+ *     │   ├── Velocity Delta: burn_rate_pct - month_elapsed_pct
+ *     │   ├── Threshold Critical: > 20% ahead of calendar pace
+ *     │   ├── Threshold Warning: > 10% ahead of calendar pace
+ *     │   └── Projection Engine: (spent / day_of_month) * days_in_month
+ *     ├── 3. Rolling Spending Pace & Trend Detection
+ *     │   ├── Current Week Daily Average
+ *     │   ├── Prior Week Daily Average
+ *     │   ├── Monthly Baseline Daily Average
+ *     │   └── Trend Classification: "improving" | "stable" | "worsening"
+ *     └── 4. Predictive Month-End Forecast
+ *         └── "If you continue at this pace..." actionable delta projection
+ *
+ * ============================================================================
+ * ASCII FLOW: HEALTH SCORING & PROJECTION LIFECYCLE
+ * ============================================================================
+ *               [ Trigger: Dashboard Load or Scheduled Job ]
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  |  buildBudgetHealthPayload(org, user) |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                 +-------------------+-------------------+
+ *                 | Parallel Data Aggregation (Promise)   |
+ *                 +-------------------+-------------------+
+ *                 | 1. Profile (Goals & Debts)            |
+ *                 | 2. Budget Envelopes (Limits vs Spend) |
+ *                 | 3. Flagged vs Reviewed Transactions   |
+ *                 | 4. Rolling 7-day & 14-day Outflows    |
+ *                 +-------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  |    4-Pillar Scoring Engine (0-100)   |
+ *                  | Adherence(40) + Review(20)           |
+ *                  | + Goals(20) + Debt(20)               |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Category Burn Rate Pace Loop         |
+ *                  | For each category envelope:          |
+ *                  |   Delta = BurnRate% - MonthElapsed%  |
+ *                  +------------------+-------------------+
+ *                               /            \
+ *                      Delta > 20%?        Delta > 10%?
+ *                            /                  \
+ *                           v                    v
+ *                   [ CRITICAL ALERT ]    [ WARNING ALERT ]
+ *                   Message: $X over      Message: $Y over
+ *                           \                    /
+ *                            +--------+---------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Pace Comparison & Trend Evaluation   |
+ *                  | Week-over-Week Spend Comparison      |
+ *                  | Result: "improving"|"stable"|"worse" |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Return BudgetHealthPayload Envelope  |
+ *                  +--------------------------------------+
+ *
  * HEALTH SCORE COMPONENTS (0–100):
  * - Budget adherence (40 points): How close spending is to planned envelopes
  * - Review queue cleanliness (20 points): Proportion of flagged transactions resolved
@@ -40,12 +115,56 @@ export interface BurnRateAlert {
   message: string;
 }
 
+/** Predictive spending limits and dynamic envelope allowances */
+export interface PredictiveSpendingLimit {
+  category: string;
+  planned: number;
+  spent: number;
+  remaining: number;
+  days_remaining: number;
+  current_daily_spend: number;
+  safe_daily_spend: number;
+  projected_eom: number;
+  overshoot_risk: boolean;
+  overshoot_amount: number;
+  recommended_cap: number;
+  daily_reduction_required: number;
+  status: "safe" | "caution" | "critical";
+}
+
+export interface PredictiveLimitsSummary {
+  days_remaining: number;
+  total_safe_daily_spend: number;
+  categories_at_risk: number;
+  total_daily_reduction_required: number;
+}
+
+/** Actionable proactive savings recommendation generated by financial rules */
+export interface ProactiveSavingsRecommendation {
+  id: string;
+  title: string;
+  category: string;
+  impact_monthly_savings: number;
+  score_impact_pts: number;
+  difficulty: "easy" | "moderate" | "strategic";
+  reasoning: string;
+  action_type: "create_task" | "adjust_budget" | "boost_goal";
+  suggested_task_title: string;
+}
+
+export interface SavingsPotentialSummary {
+  total_monthly_savings: number;
+  potential_score_improvement: number;
+  recommended_actions_count: number;
+}
+
 /** The weekly health report payload */
 export interface BudgetHealthPayload {
   generated_at: string;
   period_key: string;
 
   health_score: {
+    data_available: boolean;
     total: number;
     budget_adherence: number;
     review_cleanliness: number;
@@ -54,6 +173,10 @@ export interface BudgetHealthPayload {
   };
 
   burn_rate_alerts: BurnRateAlert[];
+  predictive_spending_limits: PredictiveSpendingLimit[];
+  predictive_limits_summary: PredictiveLimitsSummary;
+  proactive_savings_recommendations: ProactiveSavingsRecommendation[];
+  savings_potential_summary: SavingsPotentialSummary;
 
   pace_comparison: {
     current_week_avg_daily: number;
@@ -282,6 +405,85 @@ export const buildBudgetHealthPayload = async (params: {
     a.severity === "critical" && b.severity !== "critical" ? -1 : 1
   );
 
+  // ── Predictive Spending Limits & Dynamic Caps ───────────
+  const daysRemaining = Math.max(0, totalDays - dayOfMonth);
+  const predictiveSpendingLimits: PredictiveSpendingLimit[] = [];
+
+  for (const env of envelopes as any[]) {
+    if (env.unbudgeted || env.planned <= 0) continue;
+
+    const planned = Number(env.planned || 0);
+    const spent = Math.max(0, Number(env.spent || 0));
+    const remaining = planned - spent;
+    const burnRatePct = planned > 0 ? (spent / planned) * 100 : 0;
+
+    const currentDailySpend = dayOfMonth > 0 ? spent / dayOfMonth : 0;
+    const projectedEom = dayOfMonth > 0 ? currentDailySpend * totalDays : spent;
+    const overshootRisk = projectedEom > planned || spent > planned;
+    const overshootAmount = Math.max(0, projectedEom - planned);
+
+    const safeDailySpend =
+      remaining > 0
+        ? daysRemaining > 0
+          ? remaining / daysRemaining
+          : remaining
+        : 0;
+
+    const dailyReductionRequired =
+      overshootRisk && daysRemaining > 0
+        ? Math.max(0, (projectedEom - planned) / daysRemaining)
+        : 0;
+
+    const recommendedCap = Math.max(0, remaining);
+
+    let status: "safe" | "caution" | "critical" = "safe";
+    if (spent >= planned || burnRatePct > monthElapsedPct + 25) {
+      status = "critical";
+    } else if (overshootRisk || burnRatePct > monthElapsedPct + 10) {
+      status = "caution";
+    }
+
+    predictiveSpendingLimits.push({
+      category: env.category,
+      planned: Math.round(planned * 100) / 100,
+      spent: Math.round(spent * 100) / 100,
+      remaining: Math.round(remaining * 100) / 100,
+      days_remaining: daysRemaining,
+      current_daily_spend: Math.round(currentDailySpend * 100) / 100,
+      safe_daily_spend: Math.round(safeDailySpend * 100) / 100,
+      projected_eom: Math.round(projectedEom * 100) / 100,
+      overshoot_risk: overshootRisk,
+      overshoot_amount: Math.round(overshootAmount * 100) / 100,
+      recommended_cap: Math.round(recommendedCap * 100) / 100,
+      daily_reduction_required: Math.round(dailyReductionRequired * 100) / 100,
+      status,
+    });
+  }
+
+  const statusPriority: Record<string, number> = { critical: 0, caution: 1, safe: 2 };
+  predictiveSpendingLimits.sort(
+    (a, b) => (statusPriority[a.status] ?? 3) - (statusPriority[b.status] ?? 3)
+  );
+
+  const totalSafeDailySpend = predictiveSpendingLimits.reduce(
+    (acc, item) => acc + item.safe_daily_spend,
+    0
+  );
+  const categoriesAtRisk = predictiveSpendingLimits.filter(
+    (item) => item.overshoot_risk || item.status === "critical"
+  ).length;
+  const totalDailyReduction = predictiveSpendingLimits.reduce(
+    (acc, item) => acc + item.daily_reduction_required,
+    0
+  );
+
+  const predictiveLimitsSummary: PredictiveLimitsSummary = {
+    days_remaining: daysRemaining,
+    total_safe_daily_spend: Math.round(totalSafeDailySpend * 100) / 100,
+    categories_at_risk: categoriesAtRisk,
+    total_daily_reduction_required: Math.round(totalDailyReduction * 100) / 100,
+  };
+
   // ── Pace Comparison ───────────────────────────────────
   const currentWeekTotal = Number(
     (currentWeekSpend as any[])?.[0]?.total || 0
@@ -314,10 +516,111 @@ export const buildBudgetHealthPayload = async (params: {
     ifYouContinue = `At this pace, you'll spend ~${projectedMonthEndSpend.toFixed(0)} this month. Set up a budget to get proactive alerts.`;
   }
 
+  // ── Proactive Savings Recommendations ──────────────────
+  const proactiveRecommendations: ProactiveSavingsRecommendation[] = [];
+
+  // 1. Critical & At-Risk Overspending Categories
+  for (const limit of predictiveSpendingLimits) {
+    if (limit.overshoot_risk || limit.status === "critical") {
+      const savings = limit.overshoot_amount > 0 ? limit.overshoot_amount : Math.round(limit.daily_reduction_required * Math.max(1, daysRemaining));
+      if (savings > 0) {
+        const scoreBump = Math.min(10, Math.max(2, Math.round((savings / Math.max(1, totalPlanned)) * 30)));
+        proactiveRecommendations.push({
+          id: `cap-${limit.category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+          title: `Cap ${limit.category} spending to $${limit.safe_daily_spend}/day`,
+          category: limit.category,
+          impact_monthly_savings: Math.round(savings * 100) / 100,
+          score_impact_pts: scoreBump,
+          difficulty: savings > 100 ? "moderate" : "easy",
+          reasoning: `Spending in ${limit.category} is running at $${limit.current_daily_spend}/day ($${limit.spent} spent of $${limit.planned} planned). Capping to $${limit.safe_daily_spend}/day for remaining ${daysRemaining} days prevents $${savings} budget overshoot.`,
+          action_type: "create_task",
+          suggested_task_title: `Enforce $${limit.safe_daily_spend}/day spending limit on ${limit.category} for remainder of month`,
+        });
+      }
+    }
+  }
+
+  // 2. High Discretionary Spend Categories (>25% of total budget or spend)
+  const discretionaryKeywords = /dining|food|entertainment|shopping|leisure|personal|hobbies/i;
+  for (const limit of predictiveSpendingLimits) {
+    if (discretionaryKeywords.test(limit.category) && limit.spent > 50 && !proactiveRecommendations.some(r => r.category === limit.category)) {
+      const trimAmount = Math.round(limit.spent * 0.15);
+      if (trimAmount >= 15) {
+        proactiveRecommendations.push({
+          id: `trim-${limit.category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+          title: `15% discretionary micro-trim on ${limit.category}`,
+          category: limit.category,
+          impact_monthly_savings: trimAmount,
+          score_impact_pts: 3,
+          difficulty: "easy",
+          reasoning: `A modest 15% reduction on ${limit.category} unlocks $${trimAmount}/mo in monthly surplus without impacting essential obligations.`,
+          action_type: "create_task",
+          suggested_task_title: `Audit ${limit.category} non-essential purchases to save $${trimAmount}/mo`,
+        });
+      }
+    }
+  }
+
+  // 3. High-Interest Debt Acceleration
+  if (debts.length > 0) {
+    const highInterestDebts = [...debts].sort((a, b) => (b.interest_rate || 0) - (a.interest_rate || 0));
+    const targetDebt = highInterestDebts[0];
+    const apr = targetDebt.interest_rate || 18;
+    if (targetDebt.balance > 0 && apr >= 10) {
+      const interestSavingsQuarter = Math.round(targetDebt.balance * (apr / 100) / 4);
+      proactiveRecommendations.push({
+        id: `debt-${targetDebt.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        title: `Accelerate payoff on ${targetDebt.name}`,
+        category: "Debt Paydown",
+        impact_monthly_savings: Math.min(150, Math.max(30, interestSavingsQuarter)),
+        score_impact_pts: 5,
+        difficulty: "strategic",
+        reasoning: `Carrying a balance on ${targetDebt.name} at ${apr}% APR costs ~$${Math.round(targetDebt.balance * (apr / 100) / 12)}/mo in interest. Applying $50/mo extra principal saves ~$${interestSavingsQuarter} in quarterly compounding interest.`,
+        action_type: "create_task",
+        suggested_task_title: `Set up $50/mo extra principal payoff on ${targetDebt.name}`,
+      });
+    }
+  }
+
+  // 4. Surplus Allocation to Financial Goals
+  if (goals.length > 0 && projectionDelta < 0) {
+    const activeGoals = goals.filter((g) => (g.current || 0) < (g.target || 0));
+    if (activeGoals.length > 0) {
+      const primaryGoal = activeGoals[0];
+      const surplus = Math.abs(projectionDelta);
+      const recommendedContribution = Math.min(250, Math.max(25, Math.round(surplus * 0.4)));
+      proactiveRecommendations.push({
+        id: `goal-${primaryGoal.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        title: `Direct projected surplus into ${primaryGoal.name}`,
+        category: "Goal Milestone",
+        impact_monthly_savings: recommendedContribution,
+        score_impact_pts: 4,
+        difficulty: "easy",
+        reasoning: `You are currently trending $${Math.round(surplus)} under budget. Channeling $${recommendedContribution} into ${primaryGoal.name} boosts your Goal Pillar score and shortens milestone completion.`,
+        action_type: "boost_goal",
+        suggested_task_title: `Transfer $${recommendedContribution} monthly surplus to ${primaryGoal.name}`,
+      });
+    }
+  }
+
+  // Sort recommendations by monthly savings impact descending (limit to top 4)
+  proactiveRecommendations.sort((a, b) => b.impact_monthly_savings - a.impact_monthly_savings);
+  const topRecommendations = proactiveRecommendations.slice(0, 4);
+
+  const totalPotentialSavings = topRecommendations.reduce((acc, r) => acc + r.impact_monthly_savings, 0);
+  const totalScorePotential = topRecommendations.reduce((acc, r) => acc + r.score_impact_pts, 0);
+
+  const savingsPotentialSummary: SavingsPotentialSummary = {
+    total_monthly_savings: Math.round(totalPotentialSavings * 100) / 100,
+    potential_score_improvement: Math.min(25, totalScorePotential),
+    recommended_actions_count: topRecommendations.length,
+  };
+
   return {
     generated_at: now.toISOString(),
     period_key: currentPeriod,
     health_score: {
+      data_available: totalTxCount > 0 || totalPlanned > 0 || goals.length > 0 || debts.length > 0,
       total: clamp(totalScore, 0, 100),
       budget_adherence: budgetAdherenceScore,
       review_cleanliness: reviewCleanlinessScore,
@@ -325,6 +628,10 @@ export const buildBudgetHealthPayload = async (params: {
       debt_management: debtManagementScore,
     },
     burn_rate_alerts: burnRateAlerts,
+    predictive_spending_limits: predictiveSpendingLimits,
+    predictive_limits_summary: predictiveLimitsSummary,
+    proactive_savings_recommendations: topRecommendations,
+    savings_potential_summary: savingsPotentialSummary,
     pace_comparison: {
       current_week_avg_daily:
         Math.round(currentWeekAvgDaily * 100) / 100,

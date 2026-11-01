@@ -2,16 +2,18 @@
  * @fileoverview Central v1 API route aggregator. This file defines the bulk of the v1 REST API
  * by mounting many domain-specific route handlers onto a single Express Router.
  *
- * Endpoint groups (all mounted under /api/v1):
+ * Sub-route modules (mounted via router.use):
+ *   analyticsRoutes      - /analytics/* detail endpoints
+ *   automationRoutes     - /workflows, /autopilot, /automation/events, /category-rules
+ *   securityRoutes       - /auth/2fa/*, /security/audit-log, /orgs/audit-log, /api-keys
+ *   collaborationRoutes  - /comments, /activity-feed, /shares, /org-invites
+ *
+ * Endpoint groups remaining here (all mounted under /api/v1):
  *   Calendar Reminders   - GET/POST/PATCH/DELETE /calendar-reminders
  *   Global Search        - GET /search
- *   Category Rules       - GET/POST/PATCH/DELETE /category-rules (auto-categorization)
  *   Organizations        - GET /orgs/me, POST /orgs, POST /orgs/:orgId/members, PATCH /orgs/:orgId/settings
- *   Org Invites          - POST /org-invites/accept
- *   API Keys             - GET/POST /api-keys, POST /api-keys/:id/revoke
  *   Usage Ledger         - GET /usage/ledger
  *   Billing              - POST /billing/checkout, GET /billing/portal, POST /billing/webhook (Stripe)
- *   Workflows            - GET /workflows/templates, GET/POST /workflows, POST /workflows/:id/run
  *   Finance Accounts     - GET/POST /finance/accounts, PATCH /finance/accounts/:id
  *   Finance Merchants    - GET/POST /finance/merchants
  *   Budget Allocations   - GET/PUT /finance/budgets/:periodKey/allocations, GET .../envelopes
@@ -21,22 +23,15 @@
  *   Audit Events         - GET /audit/events
  *   Tools                - POST /tools/simulate, POST /tools/execute
  *   AI                   - POST /ai/command, POST /ai/stream, POST /ai/scenario
- *   Autopilot            - POST /autopilot/plan, simulate, approve, execute; GET /autopilot/runs/:id
  *   Events (SSE)         - GET /events/stream
  *   Notifications        - GET /notifications, POST /notifications/:id/read
  *   Marketplace          - GET /marketplace/catalog, POST /marketplace/install
  *   Plugins              - GET /plugins, POST /plugins/:id/update, POST /plugins/:id/uninstall
  *   Integrations         - GET /integrations, connect/disconnect/sync/history per :id
  *   CSV Import           - POST /integrations/transactions_csv/import
- *   Automation Events    - GET /automation/events, POST /automation/events/emit
  *   Feature Flags        - GET/PUT/DELETE /feature-flags/:key
- *   Analytics            - GET /analytics/overview, spending-heatmap, category-trends, income-expense, etc.
- *   Activity Feed        - GET /activity-feed
- *   Comments             - GET/POST/PATCH/DELETE /comments
- *   Shares               - POST /shares/financial-story
+ *   Analytics Overview   - GET /analytics/overview
  *   Referrals            - GET /referrals/me, POST /referrals/redeem
- *   Two-Factor Auth      - POST /auth/2fa/setup, verify, disable; GET /auth/2fa/status
- *   Security Audit Logs  - GET /security/audit-log, GET /orgs/audit-log
  *   Connector Health     - GET /integrations/health-summary
  *   Plugin Manifest      - POST /plugins/validate-manifest
  *
@@ -46,16 +41,6 @@
  *   - Zod validation on params, query, and body per endpoint
  *   - CSV file upload (csvUpload) on CSV import endpoint
  *   - Stripe webhook endpoint is unauthenticated (signature verified in controller)
- *
- * Controllers: orgController, apiKeyController, usageController, billingController,
- *   workflowController, exportController, inviteController, auditController, toolController,
- *   featureFlagController, marketplaceController, aiController, integrationController,
- *   automationEventController, analyticsController, shareController, referralController,
- *   notificationController, autopilotController, eventsController, financeAccountsController,
- *   financeMerchantsController, financeBudgetsController, financeRecurringController,
- *   financeIntelligenceController, transactionsCsvImportController, searchController,
- *   categoryRuleController, calendarReminderController, analyticsDetailController,
- *   activityFeedController, commentController, twoFactorController
  */
 import { Router } from "express";
 import passport from "passport";
@@ -70,22 +55,22 @@ import {
   orgIdParamSchema,
   updateOrgSettingsBodySchema,
 } from "../schemas/v1/orgSchemas";
-import { createApiKeyBodySchema } from "../schemas/v1/apiKeySchemas";
 import { usageLedgerQuerySchema } from "../schemas/v1/usageSchemas";
 import {
   billingCheckoutBodySchema,
   billingPortalQuerySchema,
+  purchaseCreditsBodySchema,
+  simulateDunningFailureBodySchema,
+  listInvoicesQuerySchema,
 } from "../schemas/v1/billingSchemas";
-import {
-  createWorkflowBodySchema,
-  runWorkflowBodySchema,
-  workflowIdParamSchema,
-} from "../schemas/v1/workflowSchemas";
 import {
   createExportBodySchema,
   listExportsQuerySchema,
 } from "../schemas/v1/exportSchemas";
-import { acceptOrgInviteBodySchema } from "../schemas/v1/inviteSchemas";
+import {
+  createScheduledExportBodySchema,
+  updateScheduledExportBodySchema,
+} from "../schemas/v1/scheduledExportSchemas";
 import { listAuditEventsQuerySchema } from "../schemas/v1/auditSchemas";
 import {
   toolsExecuteBodySchema,
@@ -109,16 +94,14 @@ import {
   integrationIdParamSchema,
   integrationSyncBodySchema,
 } from "../schemas/v1/integrationSchemas";
-import { emitAutomationEventBodySchema } from "../schemas/v1/automationEventSchemas";
 import { analyticsOverviewQuerySchema } from "../schemas/v1/analyticsSchemas";
-import { createFinancialStoryShareBodySchema } from "../schemas/v1/shareSchemas";
+import {
+  listCalendarRemindersQuerySchema,
+  createCalendarReminderBodySchema,
+  calendarReminderIdParamSchema,
+} from "../schemas/v1/calendarReminderSchemas";
 import { redeemReferralBodySchema } from "../schemas/v1/referralSchemas";
 import { listNotificationsQuerySchema } from "../schemas/v1/notificationSchemas";
-import {
-  autopilotApproveBodySchema,
-  autopilotPlanBodySchema,
-  autopilotRunIdBodySchema,
-} from "../schemas/v1/autopilotSchemas";
 import { transactionsCsvImportBodySchema } from "../schemas/v1/csvImportSchemas";
 import {
   forecastQuerySchema,
@@ -134,30 +117,31 @@ import {
   addOrgMember,
   updateOrgSettings,
 } from "../controllers/v1/orgController";
-import {
-  createApiKeyForOrg,
-  listApiKeys,
-  revokeApiKey,
-} from "../controllers/v1/apiKeyController";
 import { getUsageLedger } from "../controllers/v1/usageController";
 import {
   createBillingPortal,
   createCheckoutSession,
+  downloadInvoicePdf,
+  listInvoices,
+  purchaseCreditPack,
   stripeWebhook,
+  getDunningStatus,
+  retryDunningPayment,
+  simulateDunningPaymentFailure,
 } from "../controllers/v1/billingController";
-import {
-  createOrgWorkflow,
-  listOrgWorkflows,
-  listOrgWorkflowTemplates,
-  runOrgWorkflow,
-} from "../controllers/v1/workflowController";
 import {
   createExport,
   downloadExport,
   getExportById,
   listExports,
 } from "../controllers/v1/exportController";
-import { acceptInvite } from "../controllers/v1/inviteController";
+import {
+  createScheduledExport,
+  deleteScheduledExport,
+  listScheduledExports,
+  triggerScheduledExportNow,
+  updateScheduledExport,
+} from "../controllers/v1/scheduledExportController";
 import { listAuditEvents } from "../controllers/v1/auditController";
 import { executeTool, simulateTool } from "../controllers/v1/toolController";
 import {
@@ -187,17 +171,13 @@ import {
 import {
   connectIntegration,
   disconnectIntegration,
+  getConnectorHealthSummaryEndpoint,
   getIntegrationHealth,
   getIntegrationHistory,
   listIntegrations,
   syncIntegration,
 } from "../controllers/v1/integrationController";
-import {
-  emitAutomationEvent,
-  listAutomationEvents,
-} from "../controllers/v1/automationEventController";
 import { getAnalyticsOverview } from "../controllers/v1/analyticsController";
-import { createFinancialStoryShare } from "../controllers/v1/shareController";
 import {
   getMyReferral,
   redeemReferral,
@@ -206,16 +186,10 @@ import {
   listNotifications,
   markNotificationRead,
 } from "../controllers/v1/notificationController";
-import {
-  approveAutopilotRun,
-  createAutopilotPlan,
-  executeAutopilotRun,
-  getAutopilotRun,
-  simulateAutopilotRun,
-} from "../controllers/v1/autopilotController";
 import { streamEvents } from "../controllers/v1/eventsController";
 import {
   budgetAllocationUpsertBodySchema,
+  budgetAllocationIdParamSchema,
   createAccountBodySchema,
   createRecurringRuleBodySchema,
   listBudgetAllocationsQuerySchema,
@@ -236,6 +210,7 @@ import {
   upsertMerchant,
 } from "../controllers/v1/financeMerchantsController";
 import {
+  deleteBudgetAllocation,
   listBudgetAllocations,
   upsertBudgetAllocation,
 } from "../controllers/v1/financeBudgetsController";
@@ -254,44 +229,50 @@ import { csvUpload } from "../middleware/uploads";
 import { search } from "../controllers/v1/searchController";
 import { globalSearchQuerySchema } from "../schemas/v1/searchSchemas";
 import {
-  listRules,
-  createRule,
-  updateRule,
-  deleteRule,
-} from "../controllers/v1/categoryRuleController";
-import {
-  createCategoryRuleBodySchema,
-  updateCategoryRuleBodySchema,
-  categoryRuleIdParamSchema,
-} from "../schemas/v1/categoryRuleSchemas";
-import {
   listReminders,
   createReminder,
   toggleReminder,
   deleteReminder,
 } from "../controllers/v1/calendarReminderController";
+import { validatePluginManifest } from "../modules/plugins/permissionMiddleware";
+
+// ─── Sub-route modules ───────────────────────────────────
+import analyticsRoutes from "./v1/analyticsRoutes";
+import automationRoutes from "./v1/automationRoutes";
+import securityRoutes from "./v1/securityRoutes";
+import collaborationRoutes from "./v1/collaborationRoutes";
 
 const router = Router();
+
+// Mount sub-routes
+router.use("/", analyticsRoutes);
+router.use("/", automationRoutes);
+router.use("/", securityRoutes);
+router.use("/", collaborationRoutes);
 
 // ─── Calendar Reminders ──────────────────────────────────
 router.get(
   "/calendar-reminders",
   passport.authenticate("jwt", { session: false }),
+  validate({ query: listCalendarRemindersQuerySchema }),
   asyncRoute(listReminders),
 );
 router.post(
   "/calendar-reminders",
   passport.authenticate("jwt", { session: false }),
+  validate({ body: createCalendarReminderBodySchema }),
   asyncRoute(createReminder),
 );
 router.patch(
   "/calendar-reminders/:id/toggle",
   passport.authenticate("jwt", { session: false }),
+  validate({ params: calendarReminderIdParamSchema }),
   asyncRoute(toggleReminder),
 );
 router.delete(
   "/calendar-reminders/:id",
   passport.authenticate("jwt", { session: false }),
+  validate({ params: calendarReminderIdParamSchema }),
   asyncRoute(deleteReminder),
 );
 
@@ -301,34 +282,6 @@ router.get(
   passport.authenticate("jwt", { session: false }),
   validate({ query: globalSearchQuerySchema }),
   asyncRoute(search),
-);
-
-// ─── Category Rules (auto-categorization) ───────────────
-router.get(
-  "/category-rules",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(listRules),
-);
-router.post(
-  "/category-rules",
-  passport.authenticate("jwt", { session: false }),
-  validate({ body: createCategoryRuleBodySchema }),
-  asyncRoute(createRule),
-);
-router.patch(
-  "/category-rules/:id",
-  passport.authenticate("jwt", { session: false }),
-  validate({
-    params: categoryRuleIdParamSchema,
-    body: updateCategoryRuleBodySchema,
-  }),
-  asyncRoute(updateRule),
-);
-router.delete(
-  "/category-rules/:id",
-  passport.authenticate("jwt", { session: false }),
-  validate({ params: categoryRuleIdParamSchema }),
-  asyncRoute(deleteRule),
 );
 
 router.get(
@@ -355,31 +308,6 @@ router.patch(
   asyncRoute(updateOrgSettings),
 );
 
-router.post(
-  "/org-invites/accept",
-  passport.authenticate("jwt", { session: false }),
-  validate({ body: acceptOrgInviteBodySchema }),
-  asyncRoute(acceptInvite),
-);
-
-router.get(
-  "/api-keys",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(listApiKeys),
-);
-router.post(
-  "/api-keys",
-  passport.authenticate("jwt", { session: false }),
-  validate({ body: createApiKeyBodySchema }),
-  asyncRoute(createApiKeyForOrg),
-);
-router.post(
-  "/api-keys/:id/revoke",
-  passport.authenticate("jwt", { session: false }),
-  validate({ params: objectIdSchema }),
-  asyncRoute(revokeApiKey),
-);
-
 router.get(
   "/usage/ledger",
   authAny,
@@ -400,29 +328,39 @@ router.get(
   validate({ query: billingPortalQuerySchema }),
   asyncRoute(createBillingPortal),
 );
+router.post(
+  "/billing/credits",
+  passport.authenticate("jwt", { session: false }),
+  validate({ body: purchaseCreditsBodySchema }),
+  asyncRoute(purchaseCreditPack),
+);
 router.post("/billing/webhook", asyncRoute(stripeWebhook));
-
 router.get(
-  "/workflows/templates",
+  "/billing/invoices",
   passport.authenticate("jwt", { session: false }),
-  asyncRoute(listOrgWorkflowTemplates),
+  validate({ query: listInvoicesQuerySchema }),
+  asyncRoute(listInvoices),
 );
 router.get(
-  "/workflows",
+  "/billing/invoices/:id/pdf",
   passport.authenticate("jwt", { session: false }),
-  asyncRoute(listOrgWorkflows),
+  asyncRoute(downloadInvoicePdf),
+);
+router.get(
+  "/billing/dunning",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(getDunningStatus),
 );
 router.post(
-  "/workflows",
+  "/billing/dunning/retry",
   passport.authenticate("jwt", { session: false }),
-  validate({ body: createWorkflowBodySchema }),
-  asyncRoute(createOrgWorkflow),
+  asyncRoute(retryDunningPayment),
 );
 router.post(
-  "/workflows/:id/run",
+  "/billing/dunning/simulate-failure",
   passport.authenticate("jwt", { session: false }),
-  validate({ params: workflowIdParamSchema, body: runWorkflowBodySchema }),
-  asyncRoute(runOrgWorkflow),
+  validate({ body: simulateDunningFailureBodySchema }),
+  asyncRoute(simulateDunningPaymentFailure),
 );
 
 router.get(
@@ -473,6 +411,14 @@ router.put(
     body: budgetAllocationUpsertBodySchema,
   }),
   asyncRoute(upsertBudgetAllocation),
+);
+router.delete(
+  "/finance/budgets/:periodKey/allocations/:id",
+  passport.authenticate("jwt", { session: false }),
+  validate({
+    params: budgetAllocationIdParamSchema,
+  }),
+  asyncRoute(deleteBudgetAllocation),
 );
 router.get(
   "/finance/budgets/:periodKey/envelopes",
@@ -527,6 +473,35 @@ router.post(
   asyncRoute(createExport),
 );
 router.get(
+  "/exports/schedules",
+  passport.authenticate("jwt", { session: false }),
+  asyncRoute(listScheduledExports),
+);
+router.post(
+  "/exports/schedules",
+  passport.authenticate("jwt", { session: false }),
+  validate({ body: createScheduledExportBodySchema }),
+  asyncRoute(createScheduledExport),
+);
+router.patch(
+  "/exports/schedules/:id",
+  passport.authenticate("jwt", { session: false }),
+  validate({ params: objectIdSchema, body: updateScheduledExportBodySchema }),
+  asyncRoute(updateScheduledExport),
+);
+router.delete(
+  "/exports/schedules/:id",
+  passport.authenticate("jwt", { session: false }),
+  validate({ params: objectIdSchema }),
+  asyncRoute(deleteScheduledExport),
+);
+router.post(
+  "/exports/schedules/:id/run",
+  passport.authenticate("jwt", { session: false }),
+  validate({ params: objectIdSchema }),
+  asyncRoute(triggerScheduledExportNow),
+);
+router.get(
   "/exports/:id",
   passport.authenticate("jwt", { session: false }),
   validate({ params: objectIdSchema }),
@@ -579,41 +554,6 @@ router.post(
   passport.authenticate("jwt", { session: false }),
   validate({ body: whatIfScenarioBodySchema }),
   asyncRoute(processWhatIfScenario),
-);
-
-router.post(
-  "/autopilot/plan",
-  passport.authenticate("jwt", { session: false }),
-  validate({ body: autopilotPlanBodySchema }),
-  asyncRoute(createAutopilotPlan),
-);
-
-router.post(
-  "/autopilot/simulate",
-  passport.authenticate("jwt", { session: false }),
-  validate({ body: autopilotRunIdBodySchema }),
-  asyncRoute(simulateAutopilotRun),
-);
-
-router.post(
-  "/autopilot/approve",
-  passport.authenticate("jwt", { session: false }),
-  validate({ body: autopilotApproveBodySchema }),
-  asyncRoute(approveAutopilotRun),
-);
-
-router.post(
-  "/autopilot/execute",
-  passport.authenticate("jwt", { session: false }),
-  validate({ body: autopilotRunIdBodySchema }),
-  asyncRoute(executeAutopilotRun),
-);
-
-router.get(
-  "/autopilot/runs/:id",
-  passport.authenticate("jwt", { session: false }),
-  validate({ params: objectIdSchema }),
-  asyncRoute(getAutopilotRun),
 );
 
 router.get(
@@ -726,18 +666,6 @@ router.post(
 );
 
 router.get(
-  "/automation/events",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(listAutomationEvents),
-);
-router.post(
-  "/automation/events/emit",
-  passport.authenticate("jwt", { session: false }),
-  validate({ body: emitAutomationEventBodySchema }),
-  asyncRoute(emitAutomationEvent),
-);
-
-router.get(
   "/feature-flags",
   passport.authenticate("jwt", { session: false }),
   validate({ query: listFeatureFlagsQuerySchema }),
@@ -766,86 +694,6 @@ router.get(
   asyncRoute(getAnalyticsOverview),
 );
 
-// ─── Analytics Detail Endpoints ──────────────────────────
-import {
-  getSpendingHeatmap,
-  getCategoryTrends,
-  getIncomeExpenseSummary,
-  getAccountBalances,
-  getTopMerchants,
-} from "../controllers/v1/analyticsDetailController";
-
-router.get(
-  "/analytics/spending-heatmap",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(getSpendingHeatmap),
-);
-router.get(
-  "/analytics/category-trends",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(getCategoryTrends),
-);
-router.get(
-  "/analytics/income-expense",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(getIncomeExpenseSummary),
-);
-router.get(
-  "/analytics/account-balances",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(getAccountBalances),
-);
-router.get(
-  "/analytics/top-merchants",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(getTopMerchants),
-);
-
-// ─── Activity Feed ───────────────────────────────────────
-import { getActivityFeed } from "../controllers/v1/activityFeedController";
-
-router.get(
-  "/activity-feed",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(getActivityFeed),
-);
-
-// ─── Comments ────────────────────────────────────────────
-import {
-  listComments,
-  createComment,
-  updateComment,
-  deleteComment,
-} from "../controllers/v1/commentController";
-
-router.get(
-  "/comments",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(listComments),
-);
-router.post(
-  "/comments",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(createComment),
-);
-router.patch(
-  "/comments/:id",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(updateComment),
-);
-router.delete(
-  "/comments/:id",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(deleteComment),
-);
-
-router.post(
-  "/shares/financial-story",
-  passport.authenticate("jwt", { session: false }),
-  validate({ body: createFinancialStoryShareBodySchema }),
-  asyncRoute(createFinancialStoryShare),
-);
-
 router.get(
   "/referrals/me",
   passport.authenticate("jwt", { session: false }),
@@ -858,115 +706,14 @@ router.post(
   asyncRoute(redeemReferral),
 );
 
-// ─── Two-Factor Authentication ────────────────────────────
-import {
-  setup2FA,
-  verify2FA,
-  disable2FA,
-  get2FAStatus,
-} from "../controllers/v1/twoFactorController";
-
-router.post(
-  "/auth/2fa/setup",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(setup2FA),
-);
-router.post(
-  "/auth/2fa/verify",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(verify2FA),
-);
-router.post(
-  "/auth/2fa/disable",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(disable2FA),
-);
-router.get(
-  "/auth/2fa/status",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(get2FAStatus),
-);
-
-// ─── Security Audit Logs ─────────────────────────────────
-import { getUserAuditLog, getOrgAuditLog } from "../services/auditService";
-
-router.get(
-  "/security/audit-log",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(async (req: any, res: any) => {
-    const userId = req.user?._id;
-    if (!userId)
-      return res
-        .status(401)
-        .json({
-          message: "Unauthorized",
-          code: "UNAUTHORIZED",
-          request_id: req.requestId,
-        });
-
-    const limit = Math.min(parseInt(req.query?.limit || "50", 10) || 50, 200);
-    const actions = req.query?.actions
-      ? String(req.query.actions).split(",")
-      : undefined;
-    const logs = await getUserAuditLog(userId, {
-      limit,
-      actions: actions as any,
-    });
-
-    res.json({ audit_log: logs, request_id: req.requestId });
-  }),
-);
-
-router.get(
-  "/orgs/audit-log",
-  passport.authenticate("jwt", { session: false }),
-  asyncRoute(async (req: any, res: any) => {
-    const orgId = req.org?.orgId;
-    if (!orgId)
-      return res
-        .status(400)
-        .json({
-          message: "Organization context required",
-          code: "MISSING_ORG_CONTEXT",
-          request_id: req.requestId,
-        });
-
-    const limit = Math.min(parseInt(req.query?.limit || "100", 10) || 100, 500);
-    const severity = req.query?.severity;
-    const logs = await getOrgAuditLog(orgId, { limit, severity });
-
-    res.json({ audit_log: logs, request_id: req.requestId });
-  }),
-);
-
 // ─── Connector Health ────────────────────────────────────
-import { getConnectorHealthSummary } from "../services/connectorHealth";
-import mongoose from "mongoose";
-
 router.get(
   "/integrations/health-summary",
   passport.authenticate("jwt", { session: false }),
-  asyncRoute(async (req: any, res: any) => {
-    const orgId = req.org?.orgId;
-    if (!orgId)
-      return res
-        .status(400)
-        .json({
-          message: "Organization context required",
-          code: "MISSING_ORG_CONTEXT",
-          request_id: req.requestId,
-        });
-
-    const summary = await getConnectorHealthSummary(
-      new mongoose.Types.ObjectId(String(orgId)),
-    );
-    res.json({ connectors: summary, request_id: req.requestId });
-  }),
+  asyncRoute(getConnectorHealthSummaryEndpoint),
 );
 
 // ─── Plugin Manifest Validation ──────────────────────────
-import { validatePluginManifest } from "../modules/plugins/permissionMiddleware";
-
 router.post(
   "/plugins/validate-manifest",
   passport.authenticate("jwt", { session: false }),

@@ -145,8 +145,15 @@ export const appRoutes: AppRouteDefinition[] = [
 export const redirectRoutes: RedirectRouteDefinition[] = [
   { path: "/app", redirectTo: "/dashboard" },
   { path: "/home", redirectTo: "/dashboard" },
+  { path: "/goals", redirectTo: "/goals-debts" },
+  { path: "/debts", redirectTo: "/goals-debts" },
   { path: "/organization", redirectTo: "/org" },
   { path: "/documentation", redirectTo: "/docs" },
   { path: "/insights", redirectTo: "/all-insights" },
   { path: "/stories", redirectTo: "/growth-stories" },
+  { path: "/budgets", redirectTo: "/finance?tab=budgets" },
+  { path: "/budget", redirectTo: "/finance?tab=budgets" },
+  { path: "/accounts", redirectTo: "/finance?tab=accounts" },
+  { path: "/recurring", redirectTo: "/finance?tab=recurring" },
+  { path: "/merchants", redirectTo: "/finance?tab=merchants" },
 ];

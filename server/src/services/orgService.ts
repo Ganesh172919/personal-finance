@@ -5,6 +5,7 @@ import OrganizationModel from "../models/organizationModel";
 import OrgMemberModel, { type OrgRole } from "../models/orgMemberModel";
 import UserModel from "../models/userModel";
 import { applyPendingReferralForUser } from "./referrals";
+import { fireAndForget } from "./deadLetterQueue";
 
 const normalizeSlug = (value: string) =>
   value
@@ -49,7 +50,13 @@ export const ensurePersonalOrgForUser = async (userId: mongoose.Types.ObjectId) 
       isDefault: true,
     });
 
-    await applyPendingReferralForUser({ userId, orgId: org._id }).catch(() => null);
+    await applyPendingReferralForUser({ userId, orgId: org._id }).catch((referralErr) => {
+      fireAndForget(
+        Promise.reject(referralErr),
+        "apply pending referral for new org",
+        { userId: String(userId), orgId: String(org._id) }
+      );
+    });
 
     return member.toObject();
   } catch (error: any) {

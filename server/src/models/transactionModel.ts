@@ -23,6 +23,69 @@
  * 3. Reviewed (flags, attention scoring)
  * 4. Reconciled (cleared, reconciled)
  *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * TransactionModel Architecture
+ * ├── 1. Tenant & Identity Binding
+ * │   ├── orgId: ObjectId (Ref: Organization) -> orgScopePlugin
+ * │   ├── userId: ObjectId (Ref: User)
+ * │   └── accountId?: ObjectId (Ref: Account)
+ * ├── 2. Core Transaction Data
+ * │   ├── type: "income" | "expense" | "investment"
+ * │   ├── amount: number & currency: string (3-letter ISO code)
+ * │   ├── date: Date
+ * │   ├── category: string
+ * │   └── merchantName?: string & description?: string
+ * ├── 3. Provenance & Audit Trail (source)
+ * │   ├── source.kind: "manual" | "csv_import" | "receipt_ocr" | "ai" | "rule"
+ * │   ├── importId?: ObjectId (Linked batch import)
+ * │   └── confidenceScore?: number (AI categorization confidence)
+ * ├── 4. Review & Reconciliation State
+ * │   ├── needsReview: boolean
+ * │   ├── reviewFlags: string[] (uncategorized, duplicate, etc.)
+ * │   ├── reconciliationStatus: "unreconciled" | "cleared" | "reconciled"
+ * │   └── isSplit: boolean & splits array (sub-allocations)
+ * └── 5. Database Indexes
+ *     ├── Compound: { orgId: 1, date: -1 }
+ *     ├── Compound: { orgId: 1, category: 1 }
+ *     ├── Compound: { orgId: 1, needsReview: 1 }
+ *     └── Text Index: { description: "text", category: "text", merchantName: "text" }
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +---------------------------------------------------------------+
+ *   |               Transaction Ingestion Event                     |
+ *   |       (Manual Form, CSV Import, Receipt OCR, or AI)           |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |                 Auto-Categorization & Scoring                 |
+ *   |  - Match category rules & compute confidenceScore (0.0 - 1.0) |
+ *   |  - If score < 0.7 or duplicate suspected -> needsReview = true|
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |         Persist into MongoDB (TransactionModel)               |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *                      [Is needsReview == true?]
+ *                               /      \
+ *                             YES       NO
+ *                             /          \
+ *                            v            v
+ *              +-------------------+   +--------------------+
+ *              | Enqueued in       |   | Direct Financial   |
+ *              | Transaction       |   | Dashboard Totals   |
+ *              | Review Queue      |   | & Analytics        |
+ *              +-------------------+   +--------------------+
+ * ```
+ *
  * @module models/transactionModel
  */
 
@@ -261,7 +324,7 @@ transactionSchema.plugin(orgScopePlugin);
  * - orgId + userId + type + date: For transaction type filtering
  * - orgId + userId + category + date: For category filtering
  * - orgId + userId + source.origin + date: For source filtering
- * - orgId + externalId: For unique external ID lookup (sparse)
+ * - orgId + externalId: Unique only for records with an external ID
  * - legacyId: For legacy system migration (sparse)
  * - orgId + date + amount: For budget envelope aggregation
  * - description + category: Full-text search with weights
@@ -272,7 +335,11 @@ transactionSchema.index({ orgId: 1, userId: 1, merchantId: 1, date: -1 });
 transactionSchema.index({ orgId: 1, userId: 1, type: 1, date: -1 });
 transactionSchema.index({ orgId: 1, userId: 1, category: 1, date: -1 });
 transactionSchema.index({ orgId: 1, userId: 1, "source.origin": 1, date: -1 });
-transactionSchema.index({ orgId: 1, externalId: 1 }, { unique: true, sparse: true });
+transactionSchema.index({ orgId: 1, externalId: 1 }, {
+  name: "org_external_id_unique",
+  unique: true,
+  partialFilterExpression: { externalId: { $type: "string" } },
+});
 transactionSchema.index({ legacyId: 1 }, { unique: true, sparse: true });
 transactionSchema.index({ orgId: 1, date: -1, amount: 1 }); // budget envelope aggregation
 

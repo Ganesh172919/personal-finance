@@ -22,10 +22,68 @@
  * Each phase update is pushed to the aiStore (Zustand), which drives the
  * AgentWorkflowVisualizer component to render live trace animations.
  *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * useAIStream Custom Hook
+ * ├── 1. Hook State Containers
+ * │   ├── chunks: AIResponseChunk[] (Accumulated stream events)
+ * │   ├── isStreaming: boolean (Active stream indicator)
+ * │   ├── result: Record<string, unknown> | null (Final synthesized payload)
+ * │   ├── error: string | null (Failure state)
+ * │   └── abortControllerRef: useRef<AbortController | null> (Cancellation handle)
+ * ├── 2. Streaming Control API
+ * │   ├── stream(prompt, context): Initiates fetch SSE pipeline
+ * │   └── abort(): Aborts active fetch stream and resets loading states
+ * ├── 3. Event Processing & Phase Dispatch
+ * │   ├── phase === "routing" -> Signal master agent routing start
+ * │   ├── phase === "trace" -> Append entry & notify aiStore for visualizer
+ * │   ├── phase === "complete" -> Store final result & complete execution
+ * │   └── phase === "error" -> Capture error string & mark failed
+ * └── 4. Cleanup & Unmount Resilience
+ *     └── Abort active request on component unmount
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +---------------------------------------------------------------+
+ *   |               User Sends Prompt / Chat Query                  |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |                  stream(prompt, context)                      |
+ *   |  - Set isStreaming = true, clear previous chunks              |
+ *   |  - Spawn AbortController                                      |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |          Fetch SSE Stream: POST /api/agents/process/stream    |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *            +----------------------+----------------------+
+ *            |                      |                      |
+ *            v (Chunk 1)            v (Chunk 2..N)         v (Final Chunk)
+ *     { phase: "routing" }   { phase: "trace" }     { phase: "complete" }
+ *            |                      |                      |
+ *            v                      v                      v
+ *     Show "Routing..."     Update aiStore         Set final result &
+ *     in UI visualizer      Live agent steps       render markdown plan
+ *            |                      |                      |
+ *            +----------------------+----------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   | Set isStreaming = false, Stream Finished                      |
+ *   +---------------------------------------------------------------+
+ * ```
+ *
  * @module hooks/useAIStream
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useAIStore, type WorkflowTraceEntry } from "@/stores/aiStore";
 import { createAiStreamRequest } from "@/services/aiStream";
 
@@ -62,6 +120,10 @@ export function useAIStream() {
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  }, []);
 
   // Access the AI store for workflow visualization
   const aiStore = useAIStore();
@@ -81,6 +143,11 @@ export function useAIStream() {
    */
   const stream = useCallback(
     async (payload: Record<string, unknown>) => {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const isCurrent = () => abortRef.current === controller && !controller.signal.aborted;
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
       // Reset state
       setIsStreaming(true);
       setChunks([]);
@@ -89,19 +156,17 @@ export function useAIStream() {
       aiStore.reset();
       aiStore.setPhase("routing");
 
-      // Create abort controller for cancellation
-      abortRef.current = new AbortController();
-
       try {
         // Send streaming request to AI endpoint
-        const response = await createAiStreamRequest(payload, abortRef.current.signal);
+        const response = await createAiStreamRequest(payload, controller.signal);
+        if (!isCurrent()) return;
 
         if (!response.ok) {
           throw new Error(`Stream request failed: ${response.status}`);
         }
 
         // Get a ReadableStream reader for the response body
-        const reader = response.body?.getReader();
+        reader = response.body?.getReader();
         if (!reader) throw new Error("No response body");
 
         const decoder = new TextDecoder();
@@ -110,6 +175,7 @@ export function useAIStream() {
         // Read the stream
         while (true) {
           const { done, value } = await reader.read();
+          if (!isCurrent()) return;
           if (done) break;
 
           // Decode bytes and split into lines
@@ -153,14 +219,19 @@ export function useAIStream() {
           }
         }
       } catch (err: unknown) {
+        if (!isCurrent()) return;
         // Ignore abort errors (user cancelled)
         if (err instanceof Error && err.name === "AbortError") return;
         const message = err instanceof Error ? err.message : "AI stream failed";
         aiStore.setError(message);
         setError(message);
       } finally {
-        setIsStreaming(false);
-        abortRef.current = null;
+        reader?.releaseLock();
+        controller.abort();
+        if (abortRef.current === controller) {
+          setIsStreaming(false);
+          abortRef.current = null;
+        }
       }
     },
     [aiStore],
@@ -172,6 +243,7 @@ export function useAIStream() {
    */
   const abort = useCallback(() => {
     abortRef.current?.abort();
+    abortRef.current = null;
     setIsStreaming(false);
     aiStore.reset();
   }, [aiStore]);

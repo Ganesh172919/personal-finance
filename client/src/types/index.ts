@@ -58,6 +58,10 @@ export interface ITransaction {
   description: string;
   date: Date | string; 
   type: 'income' | 'expense' | 'investment';
+  splits?: Array<{
+    category: string;
+    amount: number;
+  }>;
   source?: IMutationSource;
   review?: {
     needs_attention: boolean;
@@ -114,6 +118,14 @@ export interface IWorkflowTraceEntry {
   endedAt: string;
   status: string;
   error?: string;
+  phase?: string;
+  latencyMs?: number;
+  llmCalls?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  tokenCount?: number;
+  fallbackUsed?: boolean;
+  cacheHit?: boolean;
 }
 
 export interface IAgentOutput {

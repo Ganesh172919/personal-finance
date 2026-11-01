@@ -31,7 +31,7 @@ def test_plan_builder_action_items_have_kind_and_due_days():
         assert bucket.id
 
 
-def test_plan_builder_normalizes_ratio_metrics_to_percent():
+def test_plan_builder_preserves_specialist_percentage_points():
     plan = build_plan(
         PlanInputs(
             user_profile={
@@ -47,12 +47,13 @@ def test_plan_builder_normalizes_ratio_metrics_to_percent():
                 "transactions": [],
             },
             income_analysis={"summary_metrics": {"savings_rate": 0.25}},
-            debt_optimization={"current_debt_situation": {"debt_to_income_ratio": 0.4, "total_debt": 20000}},
+            debt_optimization={"current_debt_situation": {"debt_to_income_ratio": 0.8, "total_debt": 1200}},
         )
     )
 
-    assert plan.key_metrics.savings_rate == 25.0
-    assert plan.key_metrics.debt_to_income == 40.0
+    # Specialists already return percentage points, including values below 1%.
+    assert plan.key_metrics.savings_rate == 0.25
+    assert plan.key_metrics.debt_to_income == 0.8
 
 
 def test_plan_markdown_uses_currency_code():

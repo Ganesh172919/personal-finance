@@ -43,6 +43,7 @@ export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
     >
       <button
         type="button"
+        aria-label="Use light theme"
         onClick={() => setTheme("light")}
         className={cn(
           "inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-colors",
@@ -56,6 +57,7 @@ export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
 
       <button
         type="button"
+        aria-label="Use dark theme"
         onClick={() => setTheme("dark")}
         className={cn(
           "inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition-colors",
@@ -64,7 +66,7 @@ export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
         aria-pressed={theme === "dark"}
       >
         <Moon className="h-3.5 w-3.5" />
-        {!compact ? <span>Black</span> : null}
+        {!compact ? <span>Dark</span> : null}
       </button>
     </div>
   );

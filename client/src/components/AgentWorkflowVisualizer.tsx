@@ -2,6 +2,68 @@
  * @fileoverview AgentWorkflowVisualizer — displays the multi-agent AI workflow trace
  * that produced a given financial analysis response.
  *
+ * ============================================================================
+ * MINDMAP FLOW: AGENT WORKFLOW VISUALIZER & TRACE RENDERING
+ * ============================================================================
+ * - Agent Workflow Visualizer Component
+ *     ├── 1. Trace Data Ingestion & Fallback Resolution
+ *     │   ├── workflowTrace: Array of IWorkflowTraceEntry (agent, startedAt, endedAt, status, error)
+ *     │   └── Fallback Synthesizer: Maps string array `agentsInvolved` to synthetic traces if empty
+ *     ├── 2. Specialist Visuals Registry (AGENT_VISUALS)
+ *     │   ├── master_agent -> Master Strategist (Crown, Emerald)
+ *     │   ├── comprehensive_analysis -> Orchestrator (BrainCircuit, Sky)
+ *     │   ├── income_expense_analyzer -> Analyzer (Calculator, Indigo)
+ *     │   ├── budget_planner -> Budget Planner (Calculator, Blue)
+ *     │   ├── investment_advisor -> Advisor (TrendingUp, Amber)
+ *     │   ├── debt_optimizer -> Debt Optimizer (PiggyBank, Red)
+ *     │   └── financial_educator -> Educator (GraduationCap, Green)
+ *     ├── 3. Animation & Timing Mechanics
+ *     │   ├── Framer Motion Stagger: 0.04s sequential reveal per row
+ *     │   └── Duration Calculation: EndedAt - StartedAt formatted in milliseconds
+ *     └── 4. Header Badges & System Transparency
+ *         ├── Total LLM API calls counter
+ *         └── Fallback Path Activated badge (circuit breaker / offline indicator)
+ *
+ * ============================================================================
+ * ASCII FLOW: TRACE PROP NORMALIZATION & STEP RENDERING PIPELINE
+ * ============================================================================
+ *        [ Backend AI Response with workflowTrace / agentsInvolved ]
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Is workflowTrace populated (> 0 items)?|
+ *                 +--------------------+-------------------+
+ *                                /          \
+ *                         Yes   /            \ No
+ *                              v              v
+ *                    [ Use Real Trace ]   +---------------------------+
+ *                             |           | buildFallbackTrace()      |
+ *                             |           | from agentsInvolved array |
+ *                             |           +-------------+-------------+
+ *                             |                         |
+ *                             +------------<------------+
+ *                                          |
+ *                                          v
+ *                         +---------------------------------+
+ *                         | Normalize Agent Keys to Lowercase|
+ *                         | Lookup AGENT_VISUALS metadata   |
+ *                         | (Icon, Hex Color, Display Label)|
+ *                         +----------------+----------------+
+ *                                          |
+ *                                          v
+ *                         +---------------------------------+
+ *                         | Render Framer Motion Container  |
+ *                         | Header: Call Count & Fallback   |
+ *                         +----------------+----------------+
+ *                                          |
+ *                                          v
+ *      +-------------------------------------------------------------------+
+ *      |  Staggered Rows (0.04s delay per agent step):                     |
+ *      |  [Icon] Master Strategist  ...... [Status: Completed] [ 142ms ]   |
+ *      |  [Icon] Budget Planner     ...... [Status: Completed] [ 380ms ]   |
+ *      |  [Icon] Debt Optimizer     ...... [Status: Completed] [ 210ms ]   |
+ *      +-------------------------------------------------------------------+
+ *
  * WHAT IT DOES
  *  - Receives a `workflowTrace` array (or a fallback built from `agentsInvolved`)
  *    and renders each agent step as an animated row with status, duration, and error info.
@@ -93,10 +155,10 @@ export function AgentWorkflowVisualizer({
   }
 
   return (
-    <div className="rounded-md border border-border bg-card/60 p-3" data-testid="workflow-visualizer">
-      <div className="mb-3 flex items-center justify-between">
+    <div className="min-w-0 max-w-full rounded-md border border-border bg-card/60 p-3" data-testid="workflow-visualizer">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Agent Workflow Trace</h3>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span>LLM calls: {llmCallCount}</span>
           <span>{fallbackUsed ? "Fallback used" : "Primary path"}</span>
         </div>
@@ -120,23 +182,23 @@ export function AgentWorkflowVisualizer({
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, delay: index * 0.04 }}
-              className="flex items-center justify-between rounded-md bg-accent/35 px-3 py-2"
+              className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md bg-accent/35 px-3 py-2"
               data-testid={`trace-${agentKey}-${index}`}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
                 <div
-                  className="flex h-6 w-6 items-center justify-center rounded-full"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
                   style={{ backgroundColor: config.color }}
                 >
                   <Icon className="h-3.5 w-3.5 text-white" />
                 </div>
-                <div>
-                  <p className="text-xs font-medium text-foreground">{config.label}</p>
+                <div className="min-w-0">
+                  <p className="break-words text-xs font-medium text-foreground">{config.label}</p>
                   <p className="text-[11px] text-muted-foreground">status: {status}</p>
                 </div>
               </div>
 
-              <div className="text-right text-[11px] text-muted-foreground">
+              <div className="min-w-0 max-w-full text-right text-[11px] text-muted-foreground">
                 <p>{formatDuration(entry)}</p>
                 {entry.error ? <p className="max-w-[220px] truncate text-destructive">{entry.error}</p> : null}
               </div>

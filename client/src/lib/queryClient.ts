@@ -20,6 +20,7 @@
 
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { ApiError, apiClient } from "./api";
+import { toast } from "@/hooks/useToast";
 
 /** Controls behavior when a query receives a 401 Unauthorized response */
 type UnauthorizedBehavior = "returnNull" | "throw";
@@ -39,7 +40,7 @@ export const getQueryFn = <T>(options: {
   async ({ queryKey }) => {
     const { on401: unauthorizedBehavior } = options;
     // Join query key segments to form the API URL
-    // Example: ["/api/v1", "transactions"] → "/api/v1/transactions"
+    // Example: ["/api", "transactions"] → "/api/transactions"
     const url = queryKey.join("/");
 
     try {
@@ -69,7 +70,7 @@ export const getQueryFn = <T>(options: {
  * - 30s staleTime: Reduces unnecessary refetches for data that doesn't change often
  * - Smart retry: 4xx errors are client errors (don't retry), 5xx are server errors (retry)
  */
-export const queryClient = new QueryClient({
+export const createQueryClient = () => new QueryClient({
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }), // Default: throw on 401
@@ -103,9 +104,24 @@ export const queryClient = new QueryClient({
 
         return true;
       },
+      // Global error handler for mutations — show toast on failure
+      onError: (error) => {
+        if (error instanceof ApiError) {
+          // Don't toast for 401s (handled by auth flow) or 402s (feature limit dialog)
+          if (error.status === 401 || error.status === 402) return;
+          toast({
+            title: error.message || "Something went wrong",
+            variant: "destructive",
+          });
+        }
+      },
     },
   },
 });
+
+// Kept for consumers outside the application provider. Authenticated screens
+// receive a separate instance from ScopedDataProvider.
+export const queryClient = createQueryClient();
 
 /**
  * ══════════════════════════════════════════════════════════════════════

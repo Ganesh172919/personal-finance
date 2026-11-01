@@ -37,6 +37,9 @@ import UserModel, { IUserDocument } from "../models/userModel"; // User model
 import { sendEmail } from "../utils/sendEmail"; // Email sending utility
 import { getEnv } from "../config/env"; // Environment configuration
 import { HttpError } from "../middleware/httpError"; // Custom HTTP error class
+import { accountLockout, lockoutKey } from "../services/accountLockout"; // Brute-force protection
+import { auditFromRequest } from "../services/auditService"; // Audit logging
+import { logger } from "../config/logger"; // Application logger
 
 /**
  * Builds cookie options for JWT token.
@@ -123,6 +126,8 @@ export const register = async (req: Request, res: Response) => {
     referralCode?: string;
   };
 
+  logger.info(`[Auth] Registration attempt for email=${email}`);
+
   // Check if user already exists
   const userExists = await UserModel.findOne({ email }).select("_id").lean();
   if (userExists) {
@@ -178,6 +183,8 @@ export const register = async (req: Request, res: Response) => {
  */
 export const verifyEmail = async (req: Request, res: Response) => {
   const { email, otp } = req.body as { email: string; otp: string };
+
+  logger.info(`[Auth] Email verification attempt for email=${email}`);
 
   // Find user with matching email and valid OTP
   const user = await UserModel.findOne({
@@ -283,9 +290,9 @@ export const login = async (req: Request, res: Response) => {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   const normalizedPassword = String(password || "");
 
+  logger.info(`[Auth] Login attempt for email=${normalizedEmail} from IP=${req.ip}`);
+
   // Brute-force protection: check lockout before doing any DB work
-  const { accountLockout, lockoutKey } = require("../services/accountLockout");
-  const { auditFromRequest } = require("../services/auditService");
   const key = lockoutKey(normalizedEmail, req.ip);
   const lockStatus = accountLockout.isLocked(key);
 
@@ -364,11 +371,16 @@ export const login = async (req: Request, res: Response) => {
  */
 export const getGoogleCallback = (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
-  // Generate JWT token
+
+  logger.info(`[Auth] Google OAuth callback success for user=${user._id} email=${user.email}`);
+
+  // Generate JWT token and set as HTTP-only cookie
   generateAndSetToken(res, user._id.toString());
-  // Redirect to chat page
+
+  // Redirect to dashboard after successful Google authentication
   const clientUrl = getEnv().CLIENT_URL.replace(/\/$/, "");
-  res.redirect(`${clientUrl}/chat`);
+  logger.info(`[Auth] Redirecting Google auth user to ${clientUrl}/dashboard`);
+  res.redirect(`${clientUrl}/dashboard`);
 };
 
 /**
@@ -456,8 +468,8 @@ export const changePassword = async (req: Request, res: Response) => {
     throw new HttpError(400, "WEAK_PASSWORD", "New password must be at least 8 characters.");
   }
 
-  // Hash and save new password (12 salt rounds)
-  user.password = await bcrypt.hash(newPassword, 12);
+  // Set raw password — the User model pre("save") hook will hash it
+  user.password = newPassword;
   await user.save();
 
   res.json({
@@ -477,6 +489,9 @@ export const changePassword = async (req: Request, res: Response) => {
  */
 export const logout = (req: Request, res: Response) => {
   const env = getEnv();
+
+  logger.info(`[Auth] Logout request from IP=${req.ip}`);
+
   // Clear JWT cookie
   res.clearCookie("jwt", {
     httpOnly: true,

@@ -2,6 +2,34 @@
 
 FinWise is a full-stack personal finance platform built as a monorepo with three primary tiers: a React SPA client, a Node.js/Express API server, and a Python-based AI Core. This document describes the system architecture, module responsibilities, data flows, and design patterns used throughout the codebase.
 
+## Latest Architecture Update
+
+The current release added several important architectural behaviors that future contributors should understand before modifying the system:
+
+- The AI subsystem is now more stateful and operationally visible, with provider failover, key-pool routing, session checkpoints, workflow recovery, and expanded status endpoints.
+- The dashboard gained two backend-backed operational summaries: Command Center and Budget Health.
+- Transaction handling now includes a review workflow with heuristic flags, approval endpoints, and category-rule creation shortcuts.
+- The route registry now matters more as the split between canonical `/api/v1/*` routes and legacy `/api/*` compatibility becomes increasingly important.
+- Server lifecycle management is more explicit around startup order, background services, telemetry, and graceful shutdown.
+
+### Files most affected by the recent change set
+
+- `server/src/services/aiCoreClient.ts`
+- `server/src/services/aiRequestBuilder.ts`
+- `server/src/services/commandCenterService.ts`
+- `server/src/services/budgetHealthService.ts`
+- `server/src/services/transactionReview.ts`
+- `server/src/routes/routeRegistry.ts`
+- `server/src/routes/financialDataRoutes.ts`
+- `server/AI_Core/graph/workflow.py`
+- `server/AI_Core/utils/llm_wrapper.py`
+
+Keep those modules in mind while reading the broader architecture reference below.
+
+> [!TIP]
+> **Extending the Platform Architecture?**  
+> For complete step-by-step implementation blueprints on adding new full-stack features, models, endpoints, and LangGraph agents, see the [**Master Developer Handbook: Building on This Project**](../docs/BUILDING_ON_THIS_PROJECT.md).
+
 ---
 
 ## 1. High-Level Architecture
@@ -15,25 +43,25 @@ FinWise is a full-stack personal finance platform built as a monorepo with three
 │  │   CLIENT     │         │    SERVER    │         │   AI CORE     │   │
 │  │  (React/Vite)│ ──────▶ │ (Express/TS) │ ──────▶ │  (Python/LG)  │   │
 │  │              │  HTTP   │              │  HTTP   │               │   │
-│  │  34 routes   │  SSE    │  14 root     │  JSON   │  6 agents     │   │
-│  │  Zustand     │ ◀────── │  30 v1       │ ◀────── │  LangGraph    │   │
-│  │  React Query │         │  controllers │         │  Tools/Memory │   │
-│  │  Wouter      │         │  49 models   │         │  Vision       │   │
-│  │  PWA         │         │  49 services │         │               │   │
+│  │  35 routes   │  SSE    │  16 root     │  JSON   │  10 agents    │   │
+│  │  Zustand     │ ◀────── │  32 v1       │ ◀────── │  SubAgent DAG │   │
+│  │  React Query │         │  controllers │         │  Pydantic V2  │   │
+│  │  Wouter      │         │  52 models   │         │  Evals/LoRA   │   │
+│  │  PWA         │         │  60 services │         │  Vision OCR   │   │
 │  └──────────────┘         └──────┬───────┘         └───────────────┘   │
 │                                  │                                      │
 │                           ┌──────▼───────┐                              │
 │                           │   MongoDB    │                              │
-│                           │  (49 schemas)│                              │
+│                           │  (52 schemas)│                              │
 │                           └──────────────┘                              │
 │                                                                         │
 │  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  Background Worker (separate process)                            │   │
-│  │  ┌────────────┐  ┌──────────────┐  ┌──────────────┐             │   │
-│  │  │ Workflow   │  │ Integration  │  │ Export       │             │   │
-│  │  │ Runs       │  │ Sync Runs    │  │ Jobs         │             │   │
-│  │  └────────────┘  └──────────────┘  └──────────────┘             │   │
-│  │  p-queue + MongoDB polling                                       │   │
+│  │  Background Worker (separate process / BullMQ + Redis)           │   │
+│  │  ┌────────────┐  ┌──────────────┐  ┌──────────────┐ ┌──────────┐ │   │
+│  │  │ Workflow   │  │ Integration  │  │ Export & PDF │ │ Dead     │ │   │
+│  │  │ Runs       │  │ Sync Runs    │  │ Jobs         │ │ Letter Q │ │   │
+│  │  └────────────┘  └──────────────┘  └──────────────┘ └──────────┘ │   │
+│  │  BullMQ + Redis with DLQ Quarantining & p-queue fallback         │   │
 │  └──────────────────────────────────────────────────────────────────┘   │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -119,34 +147,41 @@ personal-finance/
 │   └── package.json
 │
 ├── server/                          # Node.js/Express API server
-│   ├── AI_Core/                     # Python AI service (sub-process)
-│   │   ├── agents/                  # 6 specialized financial agents
+│   ├── AI_Core/                     # Python AI service (FastAPI Port 8001)
+│   │   ├── agents/                  # 10 specialized financial agents
 │   │   │   ├── master_agent.py      # Orchestrator / router agent
+│   │   │   ├── task_decomposer.py   # Complexity scoring (0.0-1.0) & DAG planner
+│   │   │   ├── sub_agent_manager.py # Kahn's topological executor with thread pool
+│   │   │   ├── aggregator.py        # Plan normalization & number safety invariant
+│   │   │   ├── newsletter_agent.py  # Weekly digest synthesis engine
 │   │   │   ├── income_expense_analyzer.py
 │   │   │   ├── budget_planner.py
 │   │   │   ├── investment_advisor.py
 │   │   │   ├── debt_optimizer.py
 │   │   │   └── financial_educator.py
+│   │   ├── contracts/               # Pydantic V2 output contracts (agent_outputs.py)
+│   │   ├── evals/                   # Evaluation harness (runner, determinism, latency)
+│   │   ├── lora/                    # LoRA fine-tuning training scripts and datasets
 │   │   ├── graph/                   # LangGraph workflow definition
 │   │   │   ├── state.py             # AgentState, AnalysisType, UserProfile
 │   │   │   └── workflow.py          # StateGraph with conditional routing
-│   │   ├── tools/                   # AI tool implementations
+│   │   ├── tools/                   # Deterministic AI tool implementations
 │   │   │   ├── financial_calculators.py
 │   │   │   ├── data_processors.py
 │   │   │   └── plan_builder.py
 │   │   ├── memory/                  # Conversation memory management
 │   │   │   ├── extract.py           # Memory extraction from conversations
-│   │   │   └── store.py             # Memory persistence
+│   │   │   └── store.py             # SQLite FTS5 persistence
 │   │   ├── vision/                  # Receipt/document vision processing
-│   │   │   ├── engine.py            # Vision processing engine
+│   │   │   ├── engine.py            # Vision processing engine (PaddleOCR)
 │   │   │   ├── receipt_parser.py    # Receipt OCR parsing
 │   │   │   ├── handwriting_parser.py
 │   │   │   ├── preprocess.py        # Image preprocessing
 │   │   │   └── errors.py            # Vision-specific errors
+│   │   ├── utils/                   # Telemetry, KeyPool, and failover utilities
 │   │   ├── config/                  # Python service configuration
-│   │   ├── contracts/               # Shared API contracts
-│   │   ├── tests/                   # Python test suite
-│   │   ├── api_service.py           # HTTP API wrapper for Node server
+│   │   ├── tests/                   # Python unit and integration test suite
+│   │   ├── api_service.py           # FastAPI HTTP entry point (Uvicorn)
 │   │   ├── main.py                  # CLI entry point
 │   │   └── requirements.txt
 │   ├── src/
@@ -161,8 +196,10 @@ personal-finance/
 │   │   │   ├── bankStubConnector.ts # Stub bank data connector
 │   │   │   ├── registry.ts          # Connector registry
 │   │   │   └── types.ts             # Connector type definitions
-│   │   ├── controllers/             # Request handlers (14 root + 32 v1)
+│   │   ├── controllers/             # Request handlers (16 root + 32 v1)
 │   │   │   ├── v1/                  # Canonical v1 controllers (32 files)
+│   │   │   ├── newsletterController.ts # Newsletter preferences, preview, send
+│   │   │   ├── pdfController.ts     # Text-to-PDF rendering and GridFS streaming
 │   │   │   ├── aiController.ts
 │   │   │   ├── authController.ts
 │   │   │   ├── chatController.ts
@@ -176,7 +213,19 @@ personal-finance/
 │   │   │   ├── securityHeaders.ts   # Additional security headers
 │   │   │   ├── uploads.ts           # Multer file upload handling
 │   │   │   └── ...
-│   │   ├── models/                  # Mongoose models (49 files)
+│   │   ├── models/                  # Mongoose models (52 files)
+│   │   │   ├── HealthScore.ts       # Composite financial vitals model
+│   │   │   ├── newsletterPreferenceModel.ts # Newsletter settings & history
+│   │   │   ├── workspaceKnowledgeChunkModel.ts # RAG Phase 2 document chunks
+│   │   │   └── ...                  # Other 49 domain models
+│   │   ├── services/                # Business logic services (60 files)
+│   │   │   ├── retrievalService.ts  # RAG Phase 2 bounded chunker & BM25
+│   │   │   ├── newsletterService.ts # Digest generation and dispatch
+│   │   │   ├── newsletterScheduler.ts # BullMQ recurring newsletter jobs
+│   │   │   ├── healthScoreService.ts# Composite 0-100 vitals calculator
+│   │   │   ├── deadLetterQueue.ts   # BullMQ poison-pill quarantine
+│   │   │   ├── pdfRequestServer.ts  # PDFKit document compilation
+│   │   │   └── ...                  # Other 54 domain services
 │   │   ├── modules/                 # Pluggable subsystems
 │   │   │   ├── plugins/             # Plugin system with sandboxing
 │   │   │   │   ├── pluginManager.ts
@@ -856,3 +905,133 @@ Transactions Page
 | Background job types | 3 |
 | Plugin system files | 5 |
 | Realtime modules | 2 |
+
+## System Architecture Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0284c7', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0369a1', 'lineColor': '#8b5cf6', 'secondaryColor': '#ec4899', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((🏛️ FinWise Architecture))
+    📱 Presentation Layer
+      Vite + React 18 + TypeScript
+      Zustand State Stores
+        Auth & Session
+        Chat & AI State
+        Command Center & Notifications
+      Tailwind CSS + Radix UI
+      SSE Realtime Streaming
+    🛡️ API Gateway (Node.js/Express)
+      Security & Isolation
+        JWT / Refresh / API Key Auth
+        Multi-Tenant orgScopePlugin
+        CSRF & Helmet & CORS Protection
+        Rate Limiting (Sliding Window)
+      Domain Controllers (/api/v1)
+        Finance & Transactions
+        Budgets & Health Score
+        Analytics & Forecasting
+        Newsletter & PDF Generation
+      Background Tasks
+        BullMQ + Redis 7
+        Dead Letter Queue (DLQ)
+    🧠 AI Core (Python/FastAPI)
+      LangGraph Orchestration
+        Master Agent (Coordinator)
+        Budget Planner
+        Debt Optimizer
+        Investment Advisor
+        Newsletter Agent
+      Resilience & Providers
+        Key Pool & Failover
+        Groq / Gemini / OpenAI / Ollama
+        Tool Dispatch & Financial Math
+    🗄️ Persistence & Infrastructure
+      MongoDB 7.0 (Multi-Tenant Org Isolation)
+      Redis 7.0 (Session, Caching, BullMQ)
+      Prometheus Metrics & Structured Logging
+```
+
+## End-to-End Request Lifecycle ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 PRESENTATION LAYER: React 18 SPA (Port 5173 / Client Browser)        │
+│    User Action: FinanceOS / Command Bar / AI Chat / Transaction Review │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ 🟣 HTTPS / JSON / Server-Sent Events
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔷 API GATEWAY: Express.js Pipeline (/api/v1 - Port 3000)              │
+│    ├─► 🛡️ Security: Helmet • CORS • RateLimit • CSRF Validation        │
+│    ├─► 🔑 Auth: authAny (Bearer JWT Token / X-API-Key)                 │
+│    ├─► 🏢 Multi-Tenancy: OrgScopePlugin (Injects tenant orgId context) │
+│    └─► 📋 Validation: Zod Schemas (Fail-fast with 400 Bad Request)     │
+└──────────────┬────────────────────────────┬────────────────────────────┘
+               │ 🟡 MongoDB Operations      │ 🔴 AI Requests (/process)
+               ▼                            ▼
+┌──────────────────────────────┐  ┌──────────────────────────────────────┐
+│ 🗄️ PERSISTENCE: MongoDB 7.0  │  │ 🧠 AI ENGINE: Python FastAPI (8001)  │
+│  ├─ Tenant Collections       │  │  ├─► LangGraph Master Agent          │
+│  ├─ Compound Org Indexes     │  │  ├─► Specialist Sub-Agents           │
+│  └─ Immutable Audit Log      │  │  ├─► Provider Key Pool & Fallback    │
+└──────────────┬───────────────┘  │  └─► Financial Calculators & Plan    │
+               │                  └──────────────────┬───────────────────┘
+               │                                     │
+               ▼                                     ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟠 ASYNC WORKERS & CACHE: Redis 7.0 + BullMQ Queues                    │
+│    ├─► Session Token Blacklist & Fast Response Caching                 │
+│    ├─► Newsletter & PDF Export Generation Workers                      │
+│    └─► Realtime SSE Event Bus Distribution                             │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Production Implementation Blueprints
+
+### 1. Multi-Tenant Mongoose Plugin (`server/src/utils/orgScopePlugin.ts`)
+
+```typescript
+// Enforce tenant boundary across all database operations
+export function orgScopePlugin(schema: Schema) {
+  schema.add({ orgId: { type: String, required: true, index: true } });
+  
+  const queryMethods = ["find", "findOne", "findOneAndUpdate", "countDocuments", "deleteOne", "deleteMany"] as const;
+  queryMethods.forEach((method) => {
+    schema.pre(method, function (this: Query<unknown, any>) {
+      if (this.getOptions().bypassOrgScope) return;
+      if (!this.getFilter().orgId) {
+        throw new Error(`[Security Violation] Query on ${schema.get("collection")} missing required orgId`);
+      }
+    });
+  });
+}
+```
+
+### 2. Kahn's Topological Subtask Scheduler (`server/AI_Core/agents/sub_agent_manager.py`)
+
+```python
+# Group independent subtasks into parallel execution levels
+levels = self._topological_sort(subtasks)
+for level_idx, level_subtasks in enumerate(levels):
+    with ThreadPoolExecutor(max_workers=min(4, len(level_subtasks))) as executor:
+        futures = {
+            executor.submit(copy_context().run, self._run_single_subtask, t, profile, query, results): t["id"]
+            for t in level_subtasks
+        }
+        for f in futures:
+            results[futures[f]] = f.result()
+```
+
+### 3. Number Safety Invariant Guard (`server/AI_Core/agents/aggregator.py`)
+
+```python
+# Enforce zero hallucinated digits before returning AI plans
+def _numbers_are_subset(self, candidate: str, reference: str) -> bool:
+    pattern = r"\b\d+(?:\.\d+)?\b"
+    cand_numbers = set(re.findall(pattern, candidate))
+    ref_numbers = set(re.findall(pattern, reference))
+    return cand_numbers.issubset(ref_numbers)
+```
+

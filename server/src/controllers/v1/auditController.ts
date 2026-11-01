@@ -21,6 +21,7 @@ import mongoose from "mongoose";
 
 import AuditEventModel from "../../models/auditEventModel";
 import { HttpError } from "../../middleware/httpError";
+import { getUserAuditLog, getOrgAuditLog } from "../../services/auditService";
 
 const requireOrgContext = (req: Request) => {
   const org = (req as any).org;
@@ -71,5 +72,52 @@ export const listAuditEvents = async (req: Request, res: Response) => {
     })),
     request_id: req.requestId,
   });
+};
+
+/**
+ * GET /api/v1/security/audit-log
+ * Returns the authenticated user's security audit log.
+ */
+export const getUserSecurityAuditLog = async (req: Request, res: Response) => {
+  const userId = (req as any).user?._id;
+  if (!userId) {
+    return res.status(401).json({
+      message: "Unauthorized",
+      code: "UNAUTHORIZED",
+      request_id: req.requestId,
+    });
+  }
+
+  const limit = Math.min(parseInt((req.query as any)?.limit || "50", 10) || 50, 200);
+  const actions = (req.query as any)?.actions
+    ? String((req.query as any).actions).split(",")
+    : undefined;
+  const logs = await getUserAuditLog(userId, {
+    limit,
+    actions: actions as any,
+  });
+
+  return res.json({ audit_log: logs, request_id: req.requestId });
+};
+
+/**
+ * GET /api/v1/orgs/audit-log
+ * Returns the organization's audit log (admin only).
+ */
+export const getOrgSecurityAuditLog = async (req: Request, res: Response) => {
+  const orgId = (req as any).org?.orgId;
+  if (!orgId) {
+    return res.status(400).json({
+      message: "Organization context required",
+      code: "MISSING_ORG_CONTEXT",
+      request_id: req.requestId,
+    });
+  }
+
+  const limit = Math.min(parseInt((req.query as any)?.limit || "100", 10) || 100, 500);
+  const severity = (req.query as any)?.severity;
+  const logs = await getOrgAuditLog(orgId, { limit, severity });
+
+  return res.json({ audit_log: logs, request_id: req.requestId });
 };
 

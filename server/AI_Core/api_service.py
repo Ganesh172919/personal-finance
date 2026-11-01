@@ -1,4 +1,4 @@
-"""
+r"""
 api_service.py - FinWise AI Core HTTP Service Entry Point
 =========================================================
 
@@ -35,6 +35,91 @@ Architecture overview
    - ``/api/agents/budget``           -- standalone budget agent
    - ``/api/agents/investment``       -- standalone investment agent
    - ``/api/agents/debt``             -- standalone debt agent
+   - ``/api/ai/newsletter``           -- personalized financial newsletter agent
+
+MINDMAP FLOW
+------------
+::
+
+    FastAPI AI Core Gateway (api_service.py)
+    ├── 1. Lifespan & Middleware Engine
+    │   ├── Lifespan Handler: Singleton FinancialWorkflow & MemoryStore Init
+    │   ├── Request ID Assignment Middleware (UUID tracking)
+    │   ├── CORS Middleware (Cross-origin permissions)
+    │   └── Prometheus & RequestMetrics Telemetry Interceptor
+    ├── 2. Core Agent Pipelines (/api/agents)
+    │   ├── POST /process: Multi-agent financial execution pipeline
+    │   │   ├── Ingest User Profile, Query, and RAG finance_context
+    │   │   ├── Enrich with MemoryStore facts
+    │   │   ├── Run LangGraph StateGraph (Routing -> Decomposition -> Execution -> Synthesis)
+    │   │   ├── Extract New Memories & Store Asynchronously
+    │   │   └── Serialize & Return AgentResponse Contract
+    │   ├── POST /process/stream: SSE Real-Time Event Stream
+    │   │   ├── Step-by-step token and agent trace streaming
+    │   │   └── Yields: {step, status, token, final_output}
+    │   └── POST /what-if-scenario: Deterministic Monte-Carlo / What-if Simulator
+    ├── 3. Standalone Agent Endpoints
+    │   ├── POST /budget: Direct BudgetPlannerAgent Execution
+    │   ├── POST /investment: Direct InvestmentAdvisorAgent Execution
+    │   ├── POST /debt: Direct DebtOptimizerAgent Execution
+    │   └── POST /newsletter: NewsletterAgent Section Generation
+    ├── 4. Vision & OCR Services (/api/vision)
+    │   ├── POST /receipt: PaddleOCR + Regex Expense & Merchant Parser
+    │   └── POST /handwriting: Vision OCR for Journal Notes & Checks
+    └── 5. Observability & Session Management
+        ├── GET /health & /metrics (Prometheus scrape)
+        ├── GET /api/ai/status: Key Pool, Circuit Breaker & Provider Health
+        └── /api/ai/sessions: Resume, Replay, and Invalidate Checkpoints
+
+ASCII FLOW
+----------
+::
+
+    +-------------------------------------------------------------------+
+    |                 Node.js Server / Client Request                   |
+    +---------------------------------+---------------------------------+
+                                      |
+                                      v
+    +-------------------------------------------------------------------+
+    |                   FastAPI Middleware Pipeline                     |
+    |  - Generate request_id                                            |
+    |  - Track latency & Prometheus metrics                             |
+    |  - Enforce CORS rules                                             |
+    +---------------------------------+---------------------------------+
+                                      |
+                                      v
+                      [Select Target Endpoint Route]
+                 /            /            \             \
+                /            /              \             \
+               v            v                v             v
+       [/api/agents/     [/api/vision/*]  [/api/ai/     [/health & /metrics]
+         process]              |          newsletter]          |
+              |                |                 |             v
+              v                v                 v        +------------+
+        +-----------+    +-----------+     +-----------+  | Return Sys |
+        | Workflow  |    | PaddleOCR |     | Newsletter|  | Status /   |
+        | LangGraph |    | Engine    |     | Agent     |  | Metrics    |
+        +-----+-----+    +-----+-----+     +-----+-----+  +------------+
+              |                |                 |
+              v                v                 v
+        +-----------+    +-----------+     +-----------+
+        | Memory    |    | Extract   |     | Build     |
+        | Enrich &  |    | Amounts   |     | Sections  |
+        | Extract   |    | & Items   |     | & Tips    |
+        +-----+-----+    +-----+-----+     +-----+-----+
+              |                |                 |
+              \                |                /
+               \               |               /
+                v              v              v
+        +------------------------------------------------+
+        |        _simplify_for_json() Normalization      |
+        | (Convert NumPy/Pandas/Pydantic to JSON-safe)   |
+        +----------------------+-------------------------+
+                               |
+                               v
+        +------------------------------------------------+
+        |        HTTP 200 JSON / SSE Stream Response     |
+        +------------------------------------------------+
 
 4. **Memory** -- An optional ``MemoryStore`` (SQLite-backed) enriches each
    request with user-specific memories (preferences, facts) and persists newly
@@ -72,7 +157,7 @@ import pandas as pd  # Used by _simplify_for_json to handle Series/DataFrame obj
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
 
@@ -83,13 +168,14 @@ from graph.workflow import create_financial_workflow
 from tools import PlanInputs, build_plan, render_plan_markdown
 from utils import (
     begin_request_metrics,
-    get_llm_call_count,
     get_last_route_snapshot,
+    get_llm_call_count,
     get_llm_usage,
     get_rate_limiter_status,
     reset_rate_limiter,
     setup_logging,
 )
+from utils.agent_helpers import get_currency_code
 from utils.finwise_server import FinWiseServerHttpError, simulate_tool_call
 from utils.prometheus_metrics import FALLBACK_TOTAL, LLM_CALLS_TOTAL, REQUEST_DURATION_MS
 from vision.engine import get_vision_dependency_status, ocr_image_to_lines
@@ -403,6 +489,96 @@ app.add_middleware(
 )
 
 
+# --- Internal auth middleware ---
+# Protects API endpoints from direct access.  The Node.js backend must send
+# ``X-Internal-Token`` matching ``AI_CORE_INTERNAL_TOKEN``.  Health and
+# metrics endpoints are excluded so external probes still work.
+_INTERNAL_TOKEN = (os.getenv("AI_CORE_INTERNAL_TOKEN") or "").strip()
+_PUBLIC_PATHS = {"/health", "/healthz", "/metrics", "/docs", "/openapi.json"}
+
+
+@app.middleware("http")
+async def verify_internal_token(request: Request, call_next):
+    """Reject requests to protected endpoints without a valid internal token.
+
+    If ``AI_CORE_INTERNAL_TOKEN`` is not configured, the middleware is a no-op
+    (allows all traffic) so that local development still works.
+    """
+    if _INTERNAL_TOKEN and request.url.path not in _PUBLIC_PATHS:
+        token = (request.headers.get("x-internal-token") or "").strip()
+        if token != _INTERNAL_TOKEN:
+            logger.warning(
+                "auth_failure",
+                extra={
+                    "event": "auth_failure",
+                    "method": request.method,
+                    "path": request.url.path,
+                    "reason": "invalid_internal_token",
+                },
+            )
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Unauthorized: missing or invalid internal token"},
+            )
+    return await call_next(request)
+
+
+# --- Per-user rate limiting ---
+# Limits each user to 30 requests per minute on AI endpoints.
+# The Node.js backend passes X-User-Id for authenticated requests.
+_user_rate_limits: Dict[str, list] = {}
+_USER_RPM = 30
+_USER_WINDOW = 60  # seconds
+
+
+def _check_user_rate_limit(user_id: str) -> bool:
+    """Return True if the user is within rate limits, False if throttled."""
+    import time
+    now = time.time()
+    cutoff = now - _USER_WINDOW
+
+    # Clean old entries
+    timestamps = _user_rate_limits.get(user_id, [])
+    timestamps = [t for t in timestamps if t > cutoff]
+
+    if len(timestamps) >= _USER_RPM:
+        _user_rate_limits[user_id] = timestamps
+        return False
+
+    timestamps.append(now)
+    _user_rate_limits[user_id] = timestamps
+    return True
+
+
+@app.middleware("http")
+async def per_user_rate_limit(request: Request, call_next):
+    """Per-user rate limiting on AI processing endpoints.
+
+    Uses X-User-Id header from the Node.js backend.  Health, metrics,
+    and non-API paths are exempt.
+    """
+    path = request.url.path
+    if path in _PUBLIC_PATHS or not path.startswith("/api/"):
+        return await call_next(request)
+
+    user_id = (request.headers.get("x-user-id") or "").strip()
+    if user_id and not _check_user_rate_limit(user_id):
+        logger.warning(
+            "rate_limit_hit",
+            extra={
+                "event": "rate_limit_hit",
+                "method": request.method,
+                "path": request.url.path,
+                "user_id": user_id,
+            },
+        )
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded. Try again shortly."},
+        )
+    return await call_next(request)
+
+
 @app.get("/metrics")
 async def metrics(authorization: Optional[str] = Header(default=None)):
     """Prometheus scrape endpoint.
@@ -466,8 +642,11 @@ async def attach_request_id(request: Request, call_next):
 
     elapsed_ms = int((perf_counter() - started_at) * 1000)
     response.headers["X-Request-Id"] = request_id
+    response.headers["X-Workflow-Id"] = request_id  # Workflow ID for end-to-end traceability
     REQUEST_DURATION_MS.labels(request.method, request.url.path, str(response.status_code)).observe(elapsed_ms)
     LLM_CALLS_TOTAL.inc(get_llm_call_count())
+
+    llm_usage = get_llm_usage()
 
     logger.info(
         "request_completed",
@@ -477,6 +656,21 @@ async def attach_request_id(request: Request, call_next):
             "path": request.url.path,
             "status": response.status_code,
             "duration_ms": elapsed_ms,
+        },
+    )
+
+    logger.info(
+        "request_response_detail",
+        extra={
+            "event": "request_response_detail",
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "duration_ms": elapsed_ms,
+            "request_id": request_id,
+            "token_in": llm_usage.get("tokens_in", 0),
+            "token_out": llm_usage.get("tokens_out", 0),
+            "cost_usd": llm_usage.get("cost_usd", 0.0),
         },
     )
 
@@ -598,9 +792,18 @@ class ProcessOptions(BaseModel):
     ``narrative`` -- When True, the master agent asks the LLM to rewrite the
     deterministic plan into friendlier prose.  When False, the raw markdown
     plan is returned (cheaper and deterministic).
+
+    ``llm_decomposition`` -- Opt in to model-assisted specialist planning.
+    Default planning is deterministic and does not consume an LLM call.
     """
 
     narrative: bool = False
+    llm_decomposition: bool = False
+    include_evidence: bool = True
+    include_document_passages: bool = True
+    include_confidence: bool = True
+    include_actions: bool = True
+    task_type: Literal["finance", "conversation_insights"] = "finance"
 
 
 class ProcessRequest(BaseModel):
@@ -613,6 +816,7 @@ class ProcessRequest(BaseModel):
 
     user_input: str
     user_profile: Optional[UserProfileRequest] = None
+    finance_context: Optional[Dict[str, Any]] = None
     org_id: Optional[str] = None
     user_id: Optional[str] = None
     session_id: Optional[str] = None
@@ -633,6 +837,139 @@ class ScenarioAssumptions(BaseModel):
     months: int = Field(default=12, ge=1, le=120)
     expected_return_pct: Optional[float] = Field(default=None, ge=-100, le=100)
     inflation_pct: Optional[float] = Field(default=None, ge=-50, le=100)
+
+
+def _append_finance_context_to_summary(
+    session_summary: Optional[str],
+    finance_context: Optional[Dict[str, Any]],
+) -> Optional[str]:
+    """Append compact finance-context grounding to the session summary.
+
+    The workflow agents already consume ``session_summary`` and conversation
+    history, so the safest additive way to pass grounding into the existing
+    LangGraph flow is to summarize the retrieval and structured finance context
+    here instead of changing every downstream agent contract.
+    """
+    if not finance_context or not isinstance(finance_context, dict):
+        return session_summary
+
+    lines: List[str] = []
+
+    budgets = finance_context.get("budgets")
+    if isinstance(budgets, dict):
+        totals = budgets.get("totals")
+        if isinstance(totals, dict):
+            planned = totals.get("planned")
+            spent = totals.get("spent")
+            remaining = totals.get("remaining")
+            lines.append(
+                f"Budget snapshot: planned={planned}, spent={spent}, remaining={remaining}."
+            )
+
+    recurring = finance_context.get("recurring")
+    if isinstance(recurring, dict):
+        candidates = recurring.get("candidates")
+        if isinstance(candidates, list) and candidates:
+            lines.append(f"Recurring signals available: {len(candidates)} candidate(s).")
+
+    tasks = finance_context.get("tasks")
+    if isinstance(tasks, list) and tasks:
+        top_titles = [str(task.get("title", "")) for task in tasks[:3] if isinstance(task, dict)]
+        if top_titles:
+            lines.append("Active tasks: " + "; ".join([title for title in top_titles if title]) + ".")
+
+    reminders = finance_context.get("reminders")
+    if isinstance(reminders, list) and reminders:
+        top_reminders = [
+            f"{str(item.get('date', ''))} {str(item.get('title', ''))}".strip()
+            for item in reminders[:3]
+            if isinstance(item, dict)
+        ]
+        if top_reminders:
+            lines.append("Upcoming reminders: " + "; ".join([item for item in top_reminders if item]) + ".")
+
+    files = finance_context.get("files")
+    if isinstance(files, list) and files:
+        file_summaries = []
+        for item in files[:3]:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("original_name", "")).strip()
+            summary = str(item.get("summary", "")).strip()
+            if name and summary:
+                file_summaries.append(f"{name}: {summary[:180]}")
+            elif name:
+                file_summaries.append(name)
+        if file_summaries:
+            lines.append("Workspace files: " + " | ".join(file_summaries) + ".")
+
+    retrieval = finance_context.get("retrieval")
+    if isinstance(retrieval, dict):
+        query = str(retrieval.get("query", "")).strip()
+        top_chunks = retrieval.get("top_chunks")
+        if isinstance(top_chunks, list) and top_chunks:
+            chunk_lines = []
+            for chunk in top_chunks[:3]:
+                if not isinstance(chunk, dict):
+                    continue
+                label = str(chunk.get("section_title") or f"chunk {chunk.get('chunk_index', 0)}").strip()
+                snippet = str(chunk.get("snippet") or chunk.get("text") or "").strip().replace("\n", " ")
+                score = chunk.get("score")
+                if snippet:
+                    chunk_lines.append(f"{label} (score {score}): {snippet[:220]}")
+            if chunk_lines:
+                intro = f"Retrieved file passages for '{query}':" if query else "Retrieved file passages:"
+                lines.append(intro + " " + " | ".join(chunk_lines))
+
+    if not lines:
+        return session_summary
+
+    context_block = "Finance grounding:\n" + "\n".join(f"- {line}" for line in lines)
+    base = (session_summary or "").strip()
+    return (base + "\n\n" + context_block).strip() if base else context_block
+
+
+def _extract_request_evidence(finance_context: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not finance_context or not isinstance(finance_context, dict):
+        return []
+    evidence = finance_context.get("evidence")
+    if not isinstance(evidence, list):
+        return []
+    normalized: List[Dict[str, Any]] = []
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
+        normalized.append(
+            {
+                "id": str(item.get("id")) if item.get("id") is not None else None,
+                "type": str(item.get("type")) if item.get("type") is not None else None,
+                "label": str(item.get("label")) if item.get("label") is not None else None,
+                "snippet": str(item.get("snippet")) if item.get("snippet") is not None else None,
+                "entity_id": str(item.get("entity_id")) if item.get("entity_id") is not None else None,
+            }
+        )
+        page_number = item.get("page_number")
+        if isinstance(page_number, int) and not isinstance(page_number, bool) and 0 < page_number <= 9_007_199_254_740_991:
+            normalized[-1]["page_number"] = page_number
+    return normalized
+
+
+def _extract_request_confidence(finance_context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not finance_context or not isinstance(finance_context, dict):
+        return {}
+    confidence = finance_context.get("confidence")
+    if not isinstance(confidence, dict):
+        return {}
+    return _simplify_for_json(confidence)
+
+
+def _add_document_passages(response_text: str, request: ProcessRequest) -> str:
+    from utils.document_answers import document_passage_answer
+
+    if not request.options.include_evidence or not request.options.include_document_passages:
+        return response_text
+    passages = document_passage_answer(request.user_input, request.finance_context)
+    return f"{passages}\n\n{response_text}" if passages and passages != response_text else response_text
 
 
 class WhatIfScenarioRequest(BaseModel):
@@ -704,14 +1041,14 @@ async def get_ai_status(request: Request):
     - **Vision** -- whether OCR dependencies are installed
     - **Memory** -- whether the SQLite memory store is available
     """
+    from utils.key_pool import get_all_key_pools, get_key_pool
+    from utils.model_catalog import get_catalog_stats
+    from utils.model_health import get_model_health_tracker
     from utils.provider_registry import (
         _resolve_provider_name,
         get_provider_config,
         resolve_provider_chain,
     )
-    from utils.key_pool import get_all_key_pools, get_key_pool
-    from utils.model_catalog import get_catalog_stats
-    from utils.model_health import get_model_health_tracker
     from utils.session_manager import get_session_manager
 
     request_id = getattr(request.state, "request_id", str(uuid4()))
@@ -768,6 +1105,14 @@ async def get_ai_status(request: Request):
     model_health = get_model_health_tracker().get_stats()
     last_route = get_last_route_snapshot()
 
+    # 9. Agent telemetry (per-agent, per-model, per-workflow metrics)
+    telemetry = {}
+    try:
+        from utils.agent_telemetry import get_telemetry_summary
+        telemetry = get_telemetry_summary()
+    except Exception:
+        pass
+
     return {
         "status": "healthy",
         "service": "FinWise AI Core",
@@ -787,6 +1132,7 @@ async def get_ai_status(request: Request):
         "last_route": last_route,
         "vision": vision_status,
         "memory": memory_status,
+        "telemetry": telemetry,
     }
 
 
@@ -877,7 +1223,7 @@ async def resume_ai_session(session_id: str, request: Request):
     Resume a paused or in-progress session.
     Returns the session state and latest checkpoint for the client to continue.
     """
-    from utils.session_manager import get_session_manager, SessionStatus
+    from utils.session_manager import SessionStatus, get_session_manager
 
     request_id = getattr(request.state, "request_id", str(uuid4()))
 
@@ -955,10 +1301,10 @@ async def list_ai_models(
     - capability: Filter by capability (e.g., "reasoning", "code", "vision")
     """
     from utils.model_catalog import (
+        ModelCapability,
         get_all_models,
         get_models_by_provider,
         get_models_for_task,
-        ModelCapability,
     )
 
     request_id = getattr(request.state, "request_id", str(uuid4()))
@@ -1248,6 +1594,18 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                     session_summary = (base + "\n\n" + memory_block).strip() if base else memory_block
             except Exception:
                 pass
+        session_summary = _append_finance_context_to_summary(session_summary, request.finance_context)
+
+        response_evidence = (
+            _extract_request_evidence(request.finance_context)
+            if getattr(request.options, "include_evidence", True)
+            else []
+        )
+        response_confidence = (
+            _extract_request_confidence(request.finance_context)
+            if getattr(request.options, "include_confidence", True)
+            else {}
+        )
 
         # Process through workflow
         result = workflow.process_request(
@@ -1260,6 +1618,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             options=options,
             session_id=(request.session_id or "").strip() or None,
             resume_from_checkpoint=bool(request.resume_from_checkpoint),
+            finance_context=request.finance_context,
         )
 
         if _memory_store is not None and _extract_memories is not None and org_id and user_id:
@@ -1309,6 +1668,8 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             insights = []
             fallback_used = bool(result.get("fallback_used"))
             llm_route = result.get("llm_route") if isinstance(result.get("llm_route"), dict) else None
+
+        response_text = _add_document_passages(str(response_text), request)
 
         # Determine agents involved
         agents_involved = []
@@ -1374,11 +1735,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                 )
             )
 
-        currency_code = "USD"
-        if profile_data_for_workflow and isinstance(profile_data_for_workflow, dict):
-            candidate = str(profile_data_for_workflow.get("currency") or "").strip().upper()
-            if len(candidate) == 3 and candidate.isalpha():
-                currency_code = candidate
+        currency_code = get_currency_code(profile_data_for_workflow)
 
         if not str(response_text).strip():
             response_text = render_plan_markdown(plan, currency_code=currency_code)
@@ -1401,7 +1758,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                 except Exception:
                     continue
 
-        if not tool_call_models and profile_data_for_workflow and isinstance(profile_data_for_workflow, dict):
+        if analysis_type not in {"activity_review", "document_lookup", "conversation_summarizer"} and not tool_call_models and profile_data_for_workflow and isinstance(profile_data_for_workflow, dict):
             try:
                 tool_call_models = _build_default_tool_calls(plan, profile_data_for_workflow)
             except Exception:
@@ -1506,6 +1863,8 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             agents_involved=agents_involved,
             detailed_analysis=detailed_analysis,
             workflow_trace=trace_models,
+            evidence=response_evidence,
+            confidence=response_confidence,
             fallback_used=bool(fallback_used),
             llm_call_count=int(llm_call_count or 0),
             request_id=str(request_id),
@@ -1539,7 +1898,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
 
         return ProcessResponse(
             success=True,
-            final_output=fallback_text,
+            final_output=_add_document_passages(fallback_text, request),
             agent="master",
             actionType="review",
             priority="medium",
@@ -1548,6 +1907,8 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             agents_involved=["master"],
             detailed_analysis={"error": str(e)},
             workflow_trace=[],
+            evidence=_extract_request_evidence(request.finance_context),
+            confidence=_extract_request_confidence(request.finance_context),
             fallback_used=True,
             llm_call_count=int(get_llm_call_count() or 0),
             request_id=str(request_id),
@@ -1751,6 +2112,34 @@ async def optimize_debt(request: UserProfileRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class NewsletterRequest(BaseModel):
+    """Request body for the newsletter content generation endpoint."""
+
+    financial_context: Dict[str, Any]
+    content_preferences: Dict[str, bool] = {}
+
+
+@app.post("/api/agents/newsletter")
+async def generate_newsletter_content(request: NewsletterRequest):
+    """Newsletter content generation endpoint.
+
+    Runs the ``NewsletterAgent`` to produce newsletter sections from
+    financial context data. Returns structured content for email rendering.
+    """
+    try:
+        from agents.newsletter_agent import NewsletterAgent
+
+        agent = NewsletterAgent()
+        sections = agent.generate(
+            financial_context=request.financial_context,
+            content_preferences=request.content_preferences,
+        )
+        return {"success": True, **_simplify_for_json(sections)}
+    except Exception as e:
+        logger.error(f"Error generating newsletter content: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/agents/process/stream")
 async def process_financial_request_stream(request: ProcessRequest, http_request: Request):
     """SSE streaming variant of ``/api/agents/process``.
@@ -1772,6 +2161,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
     events.
     """
     import json as _json
+
     from starlette.responses import StreamingResponse
 
     request_id = getattr(http_request.state, "request_id", str(uuid4()))
@@ -1839,6 +2229,17 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                         session_summary = (base + "\n\n" + memory_block).strip() if base else memory_block
                 except Exception:
                     pass
+            session_summary = _append_finance_context_to_summary(session_summary, request.finance_context)
+            response_evidence = (
+                _extract_request_evidence(request.finance_context)
+                if getattr(request.options, "include_evidence", True)
+                else []
+            )
+            response_confidence = (
+                _extract_request_confidence(request.finance_context)
+                if getattr(request.options, "include_confidence", True)
+                else {}
+            )
 
             # 2️⃣ Yield a trace event for workflow start
             yield f"data: {_json.dumps({'phase': 'trace', 'entry': {'agent': 'master', 'startedAt': nowIso(), 'status': 'running'}})}\n\n"
@@ -1854,6 +2255,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                 options=options,
                 session_id=(request.session_id or "").strip() or None,
                 resume_from_checkpoint=bool(request.resume_from_checkpoint),
+                finance_context=request.finance_context,
             )
 
             # 3️⃣ Emit trace events for each agent that participated
@@ -1877,6 +2279,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                 v = str(value or "medium").lower().strip()
                 return v if v in {"low", "medium", "high"} else "medium"
 
+            plan_dict = None
             if isinstance(final_output, dict):
                 response_text = final_output.get("response", str(final_output))
                 agent = final_output.get("agent", "master")
@@ -1944,14 +2347,12 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                     )
                 )
 
-            currency_code = "USD"
-            if profile_data_for_workflow and isinstance(profile_data_for_workflow, dict):
-                candidate = str(profile_data_for_workflow.get("currency") or "").strip().upper()
-                if len(candidate) == 3 and candidate.isalpha():
-                    currency_code = candidate
+            currency_code = get_currency_code(profile_data_for_workflow)
 
             if not str(response_text).strip():
                 response_text = render_plan_markdown(plan, currency_code=currency_code)
+
+            response_text = _add_document_passages(str(response_text), request)
 
             # 4️⃣ Complete event with full result
             complete_payload = {
@@ -1967,6 +2368,8 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                         "analysis_type": str(analysis_type or "comprehensive"),
                         "agents_involved": agents_involved,
                         "workflow_trace": _simplify_for_json(workflow_trace),
+                        "evidence": response_evidence,
+                        "confidence": response_confidence,
                         "fallback_used": bool(fallback_used),
                         "llm_call_count": int(get_llm_call_count() or 0),
                         "request_id": str(request_id),

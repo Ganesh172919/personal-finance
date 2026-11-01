@@ -6,6 +6,7 @@
  * Provides a health summary for the integrations dashboard.
  */
 
+import crypto from "crypto";
 import mongoose from "mongoose";
 import IntegrationConnectionModel, {
   type IntegrationConnectionStatus,
@@ -120,7 +121,6 @@ export function verifyWebhookSignature(
   signature: string,
   secret: string,
 ): boolean {
-  const crypto = require("crypto");
   const computedSignature = crypto
     .createHmac("sha256", secret)
     .update(payload)

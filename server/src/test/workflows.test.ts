@@ -39,7 +39,7 @@ describe("v1 workflows API", () => {
 
   it("creates and runs a workflow (inline)", async () => {
     const created = await request(app)
-      .post("/api/v1/workflows")
+      .post("/api/workflows")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({
@@ -65,7 +65,7 @@ describe("v1 workflows API", () => {
     expect(workflowId).toMatch(/^[a-f\d]{24}$/i);
 
     const run = await request(app)
-      .post(`/api/v1/workflows/${workflowId}/run`)
+      .post(`/api/workflows/${workflowId}/run`)
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({ idempotency_key: "idem-12345678" })
@@ -106,7 +106,7 @@ describe("v1 workflows API", () => {
       .expect(201);
 
     const created = await request(app)
-      .post("/api/v1/workflows")
+      .post("/api/workflows")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({
@@ -131,7 +131,7 @@ describe("v1 workflows API", () => {
     const workflowId = created.body.workflow?.id as string;
 
     const run = await request(app)
-      .post(`/api/v1/workflows/${workflowId}/run`)
+      .post(`/api/workflows/${workflowId}/run`)
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({ idempotency_key: "idem-export-notify" })
@@ -144,7 +144,7 @@ describe("v1 workflows API", () => {
 
     const exportId = run.body.run.result.exports_created[0] as string;
     const download = await request(app)
-      .get(`/api/v1/exports/${exportId}/download`)
+      .get(`/api/exports/${exportId}/download`)
       .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 
@@ -152,4 +152,137 @@ describe("v1 workflows API", () => {
     expect(download.text).toContain("Utilities");
     expect(download.text).toContain("Internet bill");
   }, 20_000);
+
+  it("creates a webhook workflow and executes it via external webhook POST with payload interpolation and multi-step branch conditions", async () => {
+    // Create workflow with webhook trigger and multi-step conditional branch logic
+    const created = await request(app)
+      .post("/api/workflows")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({
+        name: "External Alert Webhook",
+        trigger: { type: "webhook" },
+        actions: [
+          // Action 1: Condition matches (amount >= 100) -> will execute with templated title
+          {
+            type: "create_task",
+            bucket: 7,
+            title: "Audit high spend: {{merchant}}",
+            why: "Investigate transaction of ${{amount}}",
+            steps: ["Check receipt for {{merchant}}", "Verify budget allowance"],
+            priority: "high",
+            expected_impact: "Avoids budget overflow.",
+            kind: "budget",
+            condition: {
+              field: "amount",
+              operator: "gte",
+              value: 100,
+            },
+          },
+          // Action 2: Condition does NOT match (amount >= 5000) -> should be skipped
+          {
+            type: "send_notification",
+            channel: "in_app",
+            subject: "Emergency Outlier: {{merchant}}",
+            message: "Extreme spend alert for ${{amount}}",
+            condition: {
+              field: "amount",
+              operator: "gte",
+              value: 5000,
+            },
+          },
+          // Action 3: Unconditional notification -> will execute
+          {
+            type: "send_notification",
+            channel: "in_app",
+            subject: "Spend Logged: {{merchant}}",
+            message: "Recorded ${{amount}} for category {{category}}",
+          },
+        ],
+      })
+      .expect(201);
+
+    const trigger = created.body.workflow?.trigger;
+    expect(trigger?.type).toBe("webhook");
+    expect(trigger?.webhook_token).toBeDefined();
+    expect(typeof trigger?.webhook_token).toBe("string");
+    expect(trigger?.webhook_token.length).toBeGreaterThanOrEqual(24);
+
+    const webhookToken = trigger.webhook_token;
+
+    // Trigger workflow via external HTTP POST (no session cookie or CSRF header required)
+    const webhookRes = await request(app)
+      .post(`/api/workflows/webhook/${webhookToken}`)
+      .send({
+        merchant: "Acme Cloud Services",
+        amount: 250,
+        category: "Software",
+        severity: "medium",
+      })
+      .expect(200);
+
+    expect(webhookRes.body.success).toBe(true);
+    expect(webhookRes.body.run?.status).toBe("succeeded");
+
+    const result = webhookRes.body.run?.result;
+    expect(result?.tasks_created?.length).toBe(1);
+    expect(result?.notifications_sent?.length).toBe(1); // Only action 3 executed, action 2 skipped
+    expect(result?.actions_skipped?.length).toBe(1); // Action 2 skipped
+    expect(result?.actions_skipped[0].index).toBe(1);
+    expect(result?.actions_skipped[0].reason).toContain("Condition not met");
+
+    // Verify task was created with interpolated title and steps
+    const tasksRes = await request(app)
+      .get("/api/tasks?status=open&limit=50")
+      .set("Cookie", [cookie, csrfCookie])
+      .expect(200);
+
+    const createdTask = tasksRes.body.tasks.find((t: any) => t.title.includes("Acme Cloud Services"));
+    expect(createdTask).toBeDefined();
+    expect(createdTask.title).toBe("Audit high spend: Acme Cloud Services");
+    expect(createdTask.why).toBe("Investigate transaction of $250");
+    expect(createdTask.steps[0]).toBe("Check receipt for Acme Cloud Services");
+  });
+
+  it("rejects webhook execution if workflow is disabled or token is invalid", async () => {
+    // 1. Invalid token -> 404
+    await request(app)
+      .post("/api/workflows/webhook/invalid_nonexistent_token_123456")
+      .send({ ping: true })
+      .expect(404);
+
+    // 2. Create disabled webhook workflow
+    const created = await request(app)
+      .post("/api/workflows")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({
+        name: "Disabled Webhook Workflow",
+        enabled: false,
+        trigger: { type: "webhook" },
+        actions: [
+          {
+            type: "create_task",
+            bucket: 30,
+            title: "Disabled task",
+            why: "Test",
+            steps: [],
+            priority: "low",
+            expected_impact: "None",
+            kind: "generic",
+          },
+        ],
+      })
+      .expect(201);
+
+    const token = created.body.workflow?.trigger?.webhook_token;
+
+    // Disabled workflow -> 400 WORKFLOW_DISABLED
+    const disabledRes = await request(app)
+      .post(`/api/workflows/webhook/${token}`)
+      .send({ data: "test" })
+      .expect(400);
+
+    expect(disabledRes.body.code).toBe("WORKFLOW_DISABLED");
+  });
 });

@@ -2,6 +2,33 @@
 
 > Production-grade deployment guide for the FinWise personal finance platform. Covers Docker, cloud platforms, reverse proxies, monitoring, scaling, and disaster recovery.
 
+> [!TIP]
+> **Extending and Deploying Services?**  
+> Consult the [**Master Developer Handbook: Building on This Project**](../docs/BUILDING_ON_THIS_PROJECT.md) for environment configuration, multi-stage Docker builds, and production verification.
+
+## Latest Deployment Update
+
+The current release changed a few operational assumptions enough that they should be called out before the broader deployment reference below.
+
+### Runtime and operations changes
+
+- The server now targets Node `>=24.14.1 <25` with npm `>=11`.
+- Startup ordering and graceful shutdown behavior in `server/src/server.ts` are more explicit and should be preserved in production environments.
+- AI reliability now depends on both Node-side transport controls and Python-side runtime health, not just the availability of one HTTP endpoint.
+- Dashboard summary endpoints and transaction review actions are now part of the user-critical operating path and should be included in deployment smoke checks.
+
+### Recommended production validation for this release
+
+Before promoting a build, verify:
+
+1. Node runtime matches the declared server engine
+2. MongoDB and Redis connectivity is healthy
+3. `/api/v1/ai-core/status` and `/api/v1/ai-core/ai/status` behave as expected
+4. dashboard summary, command center, and budget health endpoints return valid payloads
+5. transaction approval and categorization-assist endpoints work in a real org context
+
+---
+
 ---
 
 ## Table of Contents
@@ -898,9 +925,54 @@ DEPLOY
 
 ## 6. Docker Configuration
 
-### Development Docker Compose
+### Canonical Full-Stack Docker Compose (`compose.yaml`)
 
-`docker-compose.yml` at repository root:
+The repository root includes `compose.yaml`, the canonical multi-container definition uniting the React Nginx web client, Express 5 server, and FastAPI AI Core with health-checked dependency ordering:
+
+```yaml
+services:
+  web:
+    build: ./client
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  server:
+    build: ./server
+    env_file: ./server/.env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      PYTHON_API_URL: http://ai-core:8001
+      AI_CORE_INTERNAL_TOKEN: ${AI_CORE_INTERNAL_TOKEN:?Set a shared AI_CORE_INTERNAL_TOKEN in the root .env}
+      TRUST_PROXY: "1"
+    depends_on:
+      ai-core:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ai-core:
+    build: ./server/AI_Core
+    env_file: ./server/AI_Core/.env
+    environment:
+      AI_CORE_INTERNAL_TOKEN: ${AI_CORE_INTERNAL_TOKEN:?Set a shared AI_CORE_INTERNAL_TOKEN in the root .env}
+      LLM_PROVIDER: gemini
+      LLM_MODEL: gemini-2.5-flash
+      FINWISE_MEMORY_DB_PATH: /app/data/memory.sqlite3
+    volumes:
+      - ai-memory:/app/data
+    restart: unless-stopped
+
+volumes:
+  ai-memory:
+```
+
+### Development Database Services (`docker-compose.yml`)
+
+For local development where client and server run natively on the host:
 
 ```yaml
 services:
@@ -2829,4 +2901,130 @@ docker exec mongo1 mongosh --eval "rs.stepDown()"
 
 ---
 
+## Production Deployment & Infrastructure Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#10b981', 'secondaryColor': '#f59e0b', 'tertiaryColor': '#8b5cf6'}}}%%
+mindmap
+  root((🚀 FinWise Production Topology))
+    🐳 Containerization
+      Client (Vite Static Nginx Image)
+      Server (Node 24 Alpine Distroless)
+      AI Core (Python 3.11 Slim Fast-API)
+      Docker Compose & Kubernetes Manifests
+    🌐 Edge & Reverse Proxy
+      Cloudflare / AWS CloudFront CDN
+      Nginx / Caddy SSL Automation (ACME)
+      Load Balancing & Health Check Probes
+      DDoS & WAF Protection
+    💾 State & Persistence Cluster
+      MongoDB Atlas / Replica Set (3-node)
+      Redis Cloud / Sentinel (Caching & BullMQ)
+      S3-Compatible Object Store (PDFs & Receipts)
+    🔄 CI/CD & Delivery
+      GitHub Actions Pipeline
+        Linting & Vitest / Pytest
+        Docker Build & GHCR Push
+        Rolling Blue-Green Updates
+    📊 Telemetry & Incident Ops
+      Prometheus Metrics (/metrics)
+      Pino JSON Log Aggregation
+      Automated Database Backup Snapshots
+      Emergency Rollback Protocol
+```
+
+## Production Rolling Deployment & Zero-Downtime ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 1: GIT TAG RELEASE & CI/CD PIPELINE TRIGGER                    │
+│    git push origin v2.4.0 ──► GitHub Actions Workflow                  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧪 STEP 2: MULTI-STAGE TESTING & CONTAINER COMPILATION                 │
+│    ├─► Server Vitest & AI Core Pytest suites pass (100% green)         │
+│    ├─► Client Vite production tree-shaking & bundle compression        │
+│    └─► Build & push verified Docker images to GHCR registry            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔄 STEP 3: BLUE-GREEN CONTAINER PROMOTION                              │
+│    ├─► Spin up GREEN containers (Server: Node 24, AI Core: Py 3.11)    │
+│    ├─► Await Readiness Probes: GET http://green:3000/api/health (200 OK)   │
+│    ├─► Await AI Core Readiness: GET http://green:8001/health (200 OK)  │
+│    └─► Run idempotent DB migration / index ensure scripts              │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🌐 STEP 4: TRAFFIC SWITCH & EDGE REVERSE PROXY SWAP                    │
+│    ├─► Nginx / Cloudflare routes 100% incoming traffic to GREEN        │
+│    ├─► Drain active BLUE connections gracefully (30s grace period)     │
+│    └─► Terminate BLUE containers; zero dropped HTTP/SSE connections    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 5: POST-DEPLOYMENT SMOKE CHECKS & TELEMETRY                    │
+│    ├─► Verify Prometheus metrics flow & error rates < 0.01%            │
+│    └─► Automated rollback trigger ready if health checks fail          │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
 *Previous: [07 — Performance](./07-performance.md) | Next: [09 — Testing](./09-testing.md)*
+
+
+---
+
+## Production Implementation Blueprints
+
+### 1. Multi-Stage Distroless Dockerfile (`server/Dockerfile`)
+
+```dockerfile
+# Multi-stage production build ensuring lightweight, secure container artifacts
+FROM node:24-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:24-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm ci --only=production
+COPY --from=builder /app/dist ./dist
+USER node
+EXPOSE 3000
+CMD ["node", "dist/server.js"]
+```
+
+### 2. Nginx SSL & Reverse Proxy with SSE (`nginx.conf`)
+
+```nginx
+# Production Nginx reverse proxy with TLS 1.3 and zero-buffering SSE stream pass-through
+server {
+    listen 443 ssl http2;
+    server_name api.finwise.app;
+
+    ssl_certificate /etc/letsencrypt/live/api.finwise.app/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.finwise.app/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+
+        # Disable buffering for real-time SSE streaming
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 24h;
+    }
+}
+```

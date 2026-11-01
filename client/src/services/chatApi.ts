@@ -110,6 +110,8 @@ export interface ConversationInsightsResponse {
   fallback_used?: boolean;
   llm_call_count?: number;
   request_id?: string;
+  cache_hit?: boolean;
+  generated_at?: string;
   sessions_considered: number;
 }
 
@@ -118,6 +120,8 @@ export interface ConversationInsightsResponse {
  * Analyzes all user chat sessions to identify patterns and provide
  * holistic financial recommendations.
  */
-export async function fetchConversationInsights(): Promise<ConversationInsightsResponse> {
-  return apiClient<ConversationInsightsResponse>("/chat/insights/conversation");
+export async function fetchConversationInsights(options?: { refresh?: boolean; orgId?: string }): Promise<ConversationInsightsResponse> {
+  return apiClient<ConversationInsightsResponse>(`/chat/insights/conversation${options?.refresh ? "?refresh=1" : ""}`, {
+    ...(options?.orgId ? { headers: { "X-Org-Id": options.orgId } } : {}),
+  });
 }

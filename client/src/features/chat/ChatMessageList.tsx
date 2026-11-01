@@ -5,8 +5,8 @@
  * Shows a typing indicator when the AI is processing.
  *
  * AUTO-SCROLL:
- * Automatically scrolls to the bottom when new messages arrive.
- * Uses a sentinel div at the bottom and scrollIntoView for smooth scrolling.
+ * Keeps a newly completed answer's beginning visible. Pending sends follow
+ * the typing indicator without pulling the reader down on every phase update.
  *
  * LOADING STATES:
  * - isLoading: Initial message load (shows skeleton)
@@ -19,8 +19,7 @@ import { useEffect, useRef } from "react";
 import { AnimatePresence } from "framer-motion";
 import { ChatMessage } from "./ChatMessage";
 import { TypingIndicator, type WorkflowPhase } from "./TypingIndicator";
-import type { IChatMessage } from "@/types/chat.types";
-import { ScrollArea } from "@/components/ui/ScrollArea";
+import type { IChatAttachment, IChatMessage } from "@/types/chat.types";
 
 interface ChatMessageListProps {
   messages: IChatMessage[];
@@ -28,6 +27,8 @@ interface ChatMessageListProps {
   isSending: boolean;
   currentPhase?: WorkflowPhase | null;
   currentAgent?: string | null;
+  onUseDocument?: (file: IChatAttachment) => void;
+  documentActionsDisabled?: boolean;
 }
 
 export function ChatMessageList({
@@ -35,17 +36,25 @@ export function ChatMessageList({
   isLoading,
   isSending,
   currentPhase,
-  currentAgent
+  currentAgent,
+  onUseDocument,
+  documentActionsDisabled,
 }: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const latestMessageRef = useRef<HTMLDivElement>(null);
+  const latestMessage = messages[messages.length - 1];
 
-  // Auto-scroll to bottom when new messages arrive
+  // Long answers have sources and action cards below them; scrolling to their
+  // bottom hides the actual answer. Reveal its beginning on completion/reload.
   useEffect(() => {
-    if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: "smooth" });
+    if (isLoading) return;
+    if (!isSending && latestMessage?.role === "assistant") {
+      latestMessageRef.current?.scrollIntoView({ behavior: "instant", block: "start" });
+    } else {
+      bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
     }
-  }, [messages, isSending, currentPhase]);
+  }, [latestMessage?.id, latestMessage?.role, isSending, isLoading]);
 
   if (isLoading) {
     return (
@@ -67,13 +76,12 @@ export function ChatMessageList({
   }
 
   return (
-    <ScrollArea className="flex-1" ref={scrollRef}>
+    <div role="region" aria-label="Conversation messages" tabIndex={0} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary" ref={scrollRef}>
       <div className="py-3">
-        {messages.map((message) => (
-          <ChatMessage
-            key={message.id}
-            message={message}
-          />
+        {messages.map((message, index) => (
+          <div key={message.id} ref={index === messages.length - 1 ? latestMessageRef : undefined}>
+            <ChatMessage message={message} onUseDocument={onUseDocument} isSending={isSending || documentActionsDisabled} />
+          </div>
         ))}
         
         <AnimatePresence>
@@ -87,6 +95,6 @@ export function ChatMessageList({
         
         <div ref={bottomRef} />
       </div>
-    </ScrollArea>
+    </div>
   );
 }

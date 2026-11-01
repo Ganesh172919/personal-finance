@@ -24,6 +24,89 @@ Core capabilities
 7. **Secure error handling** -- API keys are redacted from error messages
    before logging.
 
+MINDMAP FLOW
+------------
+::
+
+    RateLimitedLLM Resilient Client
+    ├── 1. Provider & Model Configuration
+    │   ├── AGENT_TASK_CONFIG (per-agent provider & capability preferences)
+    │   ├── Provider Priority Chain (Gemini -> OpenRouter -> Groq -> OpenAI -> Local)
+    │   └── Model Candidates Selection via model_catalog
+    ├── 2. Key Management & Rotation
+    │   ├── Multi-Key KeyPool Instances per Provider
+    │   ├── Round-robin Key Selection
+    │   └── Rate-limit / Quota-exhausted Key Cooldowns
+    ├── 3. Health & Circuit Breaking
+    │   ├── ModelHealthTracker Health Scores (0.0 - 1.0)
+    │   ├── Circuit Breakers (Trip on consecutive 5xx / 429 errors)
+    │   └── Exponential Backoff & Cooldown Expiration Check
+    ├── 4. Execution & Failover Loop (invoke)
+    │   ├── In-Memory Client Cache (provider:model:key)
+    │   ├── Outbound Rate Limiting Verification
+    │   ├── LLM Inference Call with Timeout
+    │   ├── Token Usage & Latency Extraction
+    │   └── Failure Retry across Models, Keys, and Providers
+    └── 5. Deterministic Resilience (invoke_with_fallback)
+        ├── All Providers Exhausted -> Catch AIProviderError
+        ├── Return Pre-configured Domain Fallback Template
+        └── Tag fallback_used = True for Observability
+
+ASCII FLOW
+----------
+::
+
+    +---------------------------------------------------------------+
+    |              Agent Invokes llm.invoke(messages)               |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |             Iterate Providers in Fallback Chain               |
+    |         (e.g., Primary -> Secondary -> Tertiary)              |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |      Check Circuit Breaker & Health Score for Provider        |
+    +-------------------------------+-------------------------------+
+                                    |
+                         [Is Provider Healthy?]
+                                /          \
+                              YES           NO
+                              /              \
+                             v                v
+    +-------------------------------+   +-----------------------------+
+    | Select Active API Key from    |   | Advance to Next Provider    |
+    | KeyPool (least-recently used) |   +-----------------------------+
+    +---------------+---------------+
+                    |
+                    v
+    +---------------------------------------------------------------+
+    |       Attempt Inference: client.invoke(messages, timeout)     |
+    +-------------------------------+-------------------------------+
+                    |
+            [Call Succeeded?]
+                /        \
+              YES         NO (HTTP 429, 500, Timeout, Invalid Key)
+              /            \
+             v              v
+    +----------------+   +------------------------------------------+
+    | Record Metrics |   | Trip Circuit / Mark Key in Cooldown      |
+    | & Return Resp  |   | Redact Secret Keys from Error String     |
+    +----------------+   | Try Next Model or Next Provider in Chain |
+                         +--------------------+---------------------+
+                                              |
+                                  [All Providers Failed?]
+                                         /       \
+                                       YES        NO -> Loop to Next
+                                       /
+                                      v
+                         +------------------------------------------+
+                         | Return Deterministic Fallback Template   |
+                         | (Zero Service Outage to User)            |
+                         +------------------------------------------+
+
 Architecture
 ------------
 ``RateLimitedLLM`` is instantiated per agent (via ``create_llm()``).  Each
@@ -64,7 +147,6 @@ from utils.model_catalog import (
     ModelCapability,
     ModelEntry,
     get_best_model_for_task,
-    get_fallback_chain as catalog_get_fallback_chain,
     get_model_by_id,
     get_models_for_task,
 )
@@ -275,6 +357,11 @@ class RateLimitedLLM:
         if key_entry:
             return key_entry.key, key_entry.key_id
 
+        # Configured keys in cooldown must not be retried as an untracked
+        # single environment key, which would bypass the rotation policy.
+        if pool.get_all_keys():
+            return "", None
+
         single_key = os.getenv(provider_config.env_key, "").strip()
         return single_key, None
 
@@ -315,6 +402,8 @@ class RateLimitedLLM:
         for index, model_id in enumerate(preferred_models):
             normalized = _normalize_model_id(provider_name, model_id)
             entry = get_model_by_id(normalized) or self._fallback_model_entry(provider_name, normalized, 100 + index)
+            if entry.retired:
+                continue
             if normalized not in seen_model_ids:
                 ordered_entries.append(entry)
                 seen_model_ids.add(normalized)
@@ -401,8 +490,8 @@ class RateLimitedLLM:
 
     def _record_usage(self, model_id: str, response: Any) -> None:
         usage_metadata = getattr(response, "usage_metadata", None) or {}
-        prompt_tokens = int(usage_metadata.get("prompt_tokens", 0) or 0)
-        completion_tokens = int(usage_metadata.get("completion_tokens", 0) or 0)
+        prompt_tokens = int(usage_metadata.get("input_tokens", usage_metadata.get("prompt_tokens", 0)) or 0)
+        completion_tokens = int(usage_metadata.get("output_tokens", usage_metadata.get("completion_tokens", 0)) or 0)
         total_tokens = int(usage_metadata.get("total_tokens", prompt_tokens + completion_tokens) or 0)
 
         model_entry = get_model_by_id(model_id)
@@ -422,7 +511,8 @@ class RateLimitedLLM:
         )
 
     @with_rate_limit_and_retry
-    def invoke(self, messages: List[BaseMessage], fallback_response: Optional[str] = None) -> Any:
+    def invoke(self, messages: List[BaseMessage], fallback_response: Optional[str] = None,
+               *, max_attempts: Optional[int] = None) -> Any:
         """Send messages to the LLM with full failover logic.
 
         The failover strategy is a **three-level nested loop**:
@@ -441,6 +531,8 @@ class RateLimitedLLM:
 
         The ``@with_rate_limit_and_retry`` decorator adds token-bucket rate
         limiting and automatic retry with exponential backoff.
+        ``max_attempts`` opts into a per-call cap across keys, models, and
+        providers. Bounded invocations do not restart through outer retries.
 
         Returns
         -------
@@ -453,11 +545,14 @@ class RateLimitedLLM:
             If all providers/models/keys are exhausted.
         """
         del fallback_response  # unused; fallback is handled by invoke_with_fallback
+        if max_attempts is not None and (type(max_attempts) is not int or max_attempts < 1):
+            raise ValueError("max_attempts must be a positive integer")
 
         sanitized_messages = _sanitize_messages(messages)
         self._fallback_path = []
         self._recovered_failures = []
         last_error: Optional[AIProviderError] = None
+        attempts = 0  # Local to this invocation; never shared between requests.
 
         # --- Outer loop: providers ---
         for provider_index, provider_name in enumerate(self.provider_candidates):
@@ -491,6 +586,11 @@ class RateLimitedLLM:
                     if status in {ModelHealthStatus.COOLDOWN, ModelHealthStatus.CIRCUIT_OPEN} and model_index < len(model_candidates) - 1:
                         continue
 
+                    if max_attempts is not None and attempts >= max_attempts:
+                        # A terminal message prevents the outer transient-error
+                        # retry decorator from restarting the failover budget.
+                        raise AIProviderError("LLM attempt budget exhausted.")
+                    attempts += 1
                     start_time = time.perf_counter()
                     self._call_count += 1
                     record_llm_call()
@@ -515,6 +615,21 @@ class RateLimitedLLM:
                         self._record_usage(model_entry.model_id, response)
 
                         response_text = _sanitize_text(getattr(response, "content", ""))
+
+                        # Compute token usage for structured logging
+                        usage_metadata = getattr(response, "usage_metadata", None) or {}
+                        token_in = int(usage_metadata.get("input_tokens", usage_metadata.get("prompt_tokens", 0)) or 0)
+                        token_out = int(usage_metadata.get("output_tokens", usage_metadata.get("completion_tokens", 0)) or 0)
+
+                        # Compute cost for structured logging
+                        model_entry_info = get_model_by_id(model_entry.model_id)
+                        cost_usd = 0.0
+                        if model_entry_info:
+                            cost_usd = (
+                                (token_in / 1000.0) * float(model_entry_info.cost_input_per_1k)
+                                + (token_out / 1000.0) * float(model_entry_info.cost_output_per_1k)
+                            )
+
                         logger.info(
                             "LLM response OK: provider=%s model=%s key=%s length=%d latency_ms=%.0f",
                             provider_name,
@@ -523,6 +638,33 @@ class RateLimitedLLM:
                             len(response_text),
                             latency_ms,
                         )
+
+                        # Structured LLM call log
+                        logger.info(
+                            "llm_call_success",
+                            extra={
+                                "event": "llm_call",
+                                "provider": provider_name,
+                                "model": _raw_model_name(model_entry.model_id),
+                                "key_id": key_id or "default",
+                                "token_in": token_in,
+                                "token_out": token_out,
+                                "latency_ms": round(latency_ms, 2),
+                                "cost_usd": round(cost_usd, 6),
+                            },
+                        )
+
+                        # Record model-level telemetry
+                        try:
+                            from utils.agent_telemetry import record_model_usage
+                            record_model_usage(
+                                model_entry.model_id,
+                                input_tokens=token_in,
+                                output_tokens=token_out,
+                                cost_usd=cost_usd,
+                            )
+                        except Exception:
+                            pass
                         _LAST_ROUTE_SNAPSHOT.clear()
                         _LAST_ROUTE_SNAPSHOT.update(self.get_route_metadata())
                         return response
@@ -544,6 +686,41 @@ class RateLimitedLLM:
                         if key_id:
                             pool.record_failure(key_id, status_code)
 
+                        # Structured LLM call error log
+                        logger.warning(
+                            "llm_call_failed",
+                            extra={
+                                "event": "llm_call_error",
+                                "provider": provider_name,
+                                "model": _raw_model_name(model_entry.model_id),
+                                "key_id": key_id or "default",
+                                "status_code": status_code,
+                                "latency_ms": round(latency_ms, 2),
+                                "error": self._redact_message(str(exc))[:300],
+                            },
+                        )
+
+                        # Record model-level telemetry for error
+                        try:
+                            from utils.agent_telemetry import record_model_usage
+                            record_model_usage(model_entry.model_id, error=True)
+                        except Exception:
+                            pass
+
+                        # Log circuit breaker state change if model enters cooldown/open
+                        new_health_status = self._model_health.get_status(model_entry.model_id)
+                        if new_health_status in {ModelHealthStatus.COOLDOWN, ModelHealthStatus.CIRCUIT_OPEN}:
+                            logger.warning(
+                                "circuit_breaker_state_change",
+                                extra={
+                                    "event": "circuit_breaker",
+                                    "model": _raw_model_name(model_entry.model_id),
+                                    "provider": provider_name,
+                                    "new_state": new_health_status.value if hasattr(new_health_status, "value") else str(new_health_status),
+                                    "status_code": status_code,
+                                },
+                            )
+
                         if isinstance(provider_error, ModelNotFoundError) and model_index < len(model_candidates) - 1:
                             self._recovered_failures.append(
                                 {
@@ -559,6 +736,18 @@ class RateLimitedLLM:
                                 key_id or "default",
                                 _raw_model_name(model_entry.model_id),
                                 _raw_model_name(model_candidates[model_index + 1].model_id),
+                            )
+                            logger.warning(
+                                "fallback_event",
+                                extra={
+                                    "event": "fallback",
+                                    "type": "model_failover",
+                                    "provider": provider_name,
+                                    "key_id": key_id or "default",
+                                    "failed_model": _raw_model_name(model_entry.model_id),
+                                    "fallback_model": _raw_model_name(model_candidates[model_index + 1].model_id),
+                                    "reason": "model_not_found",
+                                },
                             )
                             continue
 
@@ -578,6 +767,17 @@ class RateLimitedLLM:
                                 key_id or "default",
                                 _raw_model_name(model_entry.model_id),
                             )
+                            logger.warning(
+                                "key_pool_rotation",
+                                extra={
+                                    "event": "key_pool_rotation",
+                                    "provider": provider_name,
+                                    "key_id": key_id or "default",
+                                    "model": _raw_model_name(model_entry.model_id),
+                                    "reason": "rate_limited",
+                                    "latency_ms": round(latency_ms, 2),
+                                },
+                            )
                             break
 
                         if isinstance(provider_error, AccessDeniedError):
@@ -594,6 +794,16 @@ class RateLimitedLLM:
                                 provider_name,
                                 key_id or "default",
                                 _raw_model_name(model_entry.model_id),
+                            )
+                            logger.warning(
+                                "key_pool_rotation",
+                                extra={
+                                    "event": "key_pool_rotation",
+                                    "provider": provider_name,
+                                    "key_id": key_id or "default",
+                                    "model": _raw_model_name(model_entry.model_id),
+                                    "reason": "access_denied",
+                                },
                             )
                             break
 
@@ -614,11 +824,24 @@ class RateLimitedLLM:
                                 next_provider,
                                 provider_error,
                             )
+                            logger.warning(
+                                "fallback_event",
+                                extra={
+                                    "event": "fallback",
+                                    "type": "provider_failover",
+                                    "from_provider": provider_name,
+                                    "to_provider": next_provider,
+                                    "failed_model": _raw_model_name(model_entry.model_id),
+                                    "reason": self._redact_message(str(provider_error))[:200],
+                                },
+                            )
                         break
 
                 if not isinstance(last_error, (QuotaExceededError, AccessDeniedError)):
                     break
 
+        if max_attempts is not None and last_error:
+            raise AIProviderError("Bounded LLM invocation ended without a response.")
         if last_error:
             logger.error(
                 "ALL %d LLM providers failed. Fallback path: %s. Last error: %s",
@@ -630,7 +853,8 @@ class RateLimitedLLM:
 
         raise AccessDeniedError("No configured LLM providers are available.", status_code=403)
 
-    def invoke_with_fallback(self, messages: List[BaseMessage], fallback_response: str) -> Tuple[Any, bool]:
+    def invoke_with_fallback(self, messages: List[BaseMessage], fallback_response: str,
+                             *, max_attempts: Optional[int] = None) -> Tuple[Any, bool]:
         """Invoke the LLM with a deterministic fallback if all attempts fail.
 
         This is the **preferred entry point** for agent code.  It wraps
@@ -658,6 +882,8 @@ class RateLimitedLLM:
             return self._create_fallback_response(fallback_response), True
 
         try:
+            if max_attempts is not None:
+                return self.invoke(messages, max_attempts=max_attempts), False
             return self.invoke(messages), False
         except (QuotaExceededError, AccessDeniedError, ModelNotFoundError, RateLimitError, AIProviderError) as exc:
             logger.warning("LLM fallback activated due to upstream error: %s", exc)
@@ -715,7 +941,7 @@ class RateLimitedLLM:
 AGENT_TASK_CONFIG: Dict[str, Dict[str, Any]] = {
     "master": {
         "provider": "gemini",
-        "model": "gemini/gemini-2.5-flash",
+        "model": "gemini/gemini-3.5-flash-lite",
         "capability": ModelCapability.ROUTING,
         "description": "Fast routing and orchestration",
     },
@@ -733,7 +959,7 @@ AGENT_TASK_CONFIG: Dict[str, Dict[str, Any]] = {
     },
     "planner": {
         "provider": "gemini",
-        "model": "gemini/gemini-2.5-flash",
+        "model": "gemini/gemini-3.5-flash-lite",
         "capability": ModelCapability.ANALYSIS,
         "description": "Budget and financial planning",
     },
@@ -751,7 +977,7 @@ AGENT_TASK_CONFIG: Dict[str, Dict[str, Any]] = {
     },
     "synthesis": {
         "provider": "gemini",
-        "model": "gemini/gemini-2.5-pro",
+        "model": "gemini/gemini-3.5-flash-lite",
         "capability": ModelCapability.REASONING,
         "description": "Final synthesis and recommendations",
     },
@@ -780,8 +1006,8 @@ def create_llm(
 
     The function resolves the provider, model, and capability from:
     1. Explicit arguments (highest priority)
-    2. ``AGENT_TASK_CONFIG`` (per-agent defaults)
-    3. ``settings`` (global fallbacks)
+    2. ``LLM_PROVIDER`` / ``LLM_MODEL`` environment overrides
+    3. ``AGENT_TASK_CONFIG`` (per-agent defaults)
     4. Model catalog (best model for the capability)
 
     Parameters
@@ -801,11 +1027,20 @@ def create_llm(
     config = settings.get_agent_config(agent_type)
     task_config = AGENT_TASK_CONFIG.get(agent_type, {})
 
-    provider_name = provider or task_config.get("provider") or _resolve_provider_name()
+    configured_provider = os.getenv("LLM_PROVIDER", "").strip().lower()
+    if configured_provider not in PROVIDER_CONFIGS:
+        configured_provider = None
+    provider_name = provider or configured_provider or task_config.get("provider") or _resolve_provider_name()
     capability = task_capability or task_config.get("capability")
-    model_id = task_config.get("model")
+    # A global model belongs to the configured provider. Do not send its name
+    # to a different provider selected explicitly by a caller.
+    configured_model = os.getenv("LLM_MODEL", "").strip()
+    provider_overridden = bool(provider or configured_provider)
+    model_id = configured_model if configured_model and (not provider or provider == (configured_provider or _resolve_provider_name())) else None
+    if not model_id and not provider_overridden:
+        model_id = task_config.get("model")
 
-    if capability and not model_id:
+    if capability and not model_id and not provider_overridden:
         best_model = get_best_model_for_task(capability)
         if best_model:
             model_id = best_model.model_id

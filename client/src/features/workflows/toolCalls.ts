@@ -1,4 +1,4 @@
-﻿import type { ToolCall } from "@/types/ai.types";
+import type { ToolCall } from "@/types/ai.types";
 import type { CreateWorkflowRequest, Workflow } from "@/lib/apiClient";
 
 import type { WorkflowAction } from "@/types/apiTypes";
@@ -42,10 +42,15 @@ export const toolCallForWorkflowRun = (workflow: Workflow): ToolCall => ({
 });
 
 export const workflowActionLabel = (action: WorkflowAction) => {
-  if (action.type === "create_task") return `Task: ${(action as any).title || "create_task"}`;
-  if (action.type === "send_notification") return `Notify: ${(action as any).subject || "send_notification"}`;
-  if (action.type === "export_report") return `Export: ${(action as any).export_type || "export_report"}`;
-  return "Action";
+  let label = "Action";
+  if (action.type === "create_task") label = `Task: ${(action as any).title || "create_task"}`;
+  else if (action.type === "send_notification") label = `Notify: ${(action as any).subject || "send_notification"}`;
+  else if (action.type === "export_report") label = `Export: ${(action as any).export_type || "export_report"}`;
+
+  if ((action as any).condition?.field) {
+    label += ` [if ${(action as any).condition.field} ${(action as any).condition.operator} ${(action as any).condition.value}]`;
+  }
+  return label;
 };
 
 

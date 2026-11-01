@@ -55,12 +55,12 @@ export async function listMarketplaceCatalog(params?: { q?: string; status?: "ac
     search.set("status", params.status);
   }
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
-  return apiClient(`/v1/marketplace/catalog${suffix}`) as Promise<MarketplaceCatalogResponse>;
+  return apiClient(`/marketplace/catalog${suffix}`) as Promise<MarketplaceCatalogResponse>;
 }
 
 /** Install a plugin from the marketplace. */
 export async function installMarketplacePlugin(body: MarketplaceInstallRequest) {
-  return apiClient("/v1/marketplace/install", {
+  return apiClient("/marketplace/install", {
     method: "POST",
     body: JSON.stringify(body),
   }) as Promise<MarketplaceInstallResponse>;
@@ -68,12 +68,12 @@ export async function installMarketplacePlugin(body: MarketplaceInstallRequest) 
 
 /** List all plugins currently installed in the organisation. */
 export async function listInstalledPlugins() {
-  return apiClient("/v1/plugins") as Promise<PluginsListResponse>;
+  return apiClient("/plugins") as Promise<PluginsListResponse>;
 }
 
 /** Update an installed plugin to a specific version. */
 export async function updateInstalledPluginVersion(pluginKey: string, version: string) {
-  return apiClient(`/v1/plugins/${encodeURIComponent(pluginKey)}/update`, {
+  return apiClient(`/plugins/${encodeURIComponent(pluginKey)}/update`, {
     method: "POST",
     body: JSON.stringify({ version }),
   }) as Promise<PluginOperationResponse>;
@@ -81,7 +81,7 @@ export async function updateInstalledPluginVersion(pluginKey: string, version: s
 
 /** Uninstall a plugin from the organisation. */
 export async function uninstallInstalledPlugin(pluginKey: string) {
-  return apiClient(`/v1/plugins/${encodeURIComponent(pluginKey)}/uninstall`, {
+  return apiClient(`/plugins/${encodeURIComponent(pluginKey)}/uninstall`, {
     method: "POST",
   }) as Promise<PluginOperationResponse>;
 }
@@ -90,12 +90,12 @@ export async function uninstallInstalledPlugin(pluginKey: string) {
 
 /** List all third-party integrations (connectors) for the organisation. */
 export async function listIntegrations() {
-  return apiClient("/v1/integrations") as Promise<IntegrationsListResponse>;
+  return apiClient("/integrations") as Promise<IntegrationsListResponse>;
 }
 
 /** Trigger a sync for a specific integration connector. */
 export async function syncIntegration(connectorKey: string, body: IntegrationSyncRequest = {}) {
-  return apiClient(`/v1/integrations/${encodeURIComponent(connectorKey)}/sync`, {
+  return apiClient(`/integrations/${encodeURIComponent(connectorKey)}/sync`, {
     method: "POST",
     body: JSON.stringify(body),
   }) as Promise<IntegrationSyncResponse>;
@@ -104,7 +104,7 @@ export async function syncIntegration(connectorKey: string, body: IntegrationSyn
 /** Fetch recent sync history for a specific integration connector. */
 export async function getIntegrationHistory(connectorKey: string, limit?: number) {
   const query = typeof limit === "number" ? `?limit=${encodeURIComponent(String(limit))}` : "";
-  return apiClient(`/v1/integrations/${encodeURIComponent(connectorKey)}/history${query}`) as Promise<IntegrationHistoryResponse>;
+  return apiClient(`/integrations/${encodeURIComponent(connectorKey)}/history${query}`) as Promise<IntegrationHistoryResponse>;
 }
 
 /** ─── CSV Import ───────────────────────────────────────────────── */
@@ -186,7 +186,7 @@ export async function importTransactionsCsv(params: {
   if (params.dry_run) form.append("dry_run", "true");
   if (params.remember_mapping !== undefined) form.append("remember_mapping", String(params.remember_mapping));
 
-  return apiClient("/v1/integrations/transactions_csv/import", {
+  return apiClient("/integrations/transactions_csv/import", {
     method: "POST",
     body: form,
   }) as Promise<TransactionsCsvImportResponse>;
@@ -196,12 +196,12 @@ export async function importTransactionsCsv(params: {
 
 /** List the catalog of available automation event types. */
 export async function listAutomationEvents() {
-  return apiClient("/v1/automation/events") as Promise<AutomationEventsCatalogResponse>;
+  return apiClient("/automation/events") as Promise<AutomationEventsCatalogResponse>;
 }
 
 /** Emit an automation event that may trigger workflows or other reactions. */
 export async function emitAutomationEvent(body: AutomationEventEmitRequest) {
-  return apiClient("/v1/automation/events/emit", {
+  return apiClient("/automation/events/emit", {
     method: "POST",
     body: JSON.stringify(body),
   }) as Promise<AutomationEventEmitResponse>;
@@ -219,12 +219,12 @@ export async function listFeatureFlags(params?: { keyPrefix?: string; enabled?: 
     search.set("enabled", String(params.enabled));
   }
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
-  return apiClient(`/v1/feature-flags${suffix}`) as Promise<FeatureFlagsListResponse>;
+  return apiClient(`/feature-flags${suffix}`) as Promise<FeatureFlagsListResponse>;
 }
 
 /** Create or update a feature flag by key (PUT = upsert). */
 export async function upsertFeatureFlag(key: string, body: FeatureFlagUpsertRequest) {
-  return apiClient(`/v1/feature-flags/${encodeURIComponent(key)}`, {
+  return apiClient(`/feature-flags/${encodeURIComponent(key)}`, {
     method: "PUT",
     body: JSON.stringify(body),
   }) as Promise<FeatureFlagUpsertResponse>;
@@ -232,7 +232,7 @@ export async function upsertFeatureFlag(key: string, body: FeatureFlagUpsertRequ
 
 /** Delete a feature flag by key. */
 export async function deleteFeatureFlag(key: string) {
-  return apiClient(`/v1/feature-flags/${encodeURIComponent(key)}`, {
+  return apiClient(`/feature-flags/${encodeURIComponent(key)}`, {
     method: "DELETE",
   }) as Promise<FeatureFlagDeleteResponse>;
 }
@@ -240,6 +240,6 @@ export async function deleteFeatureFlag(key: string) {
 /** Fetch a high-level analytics overview, optionally scoped to a period. */
 export async function getAnalyticsOverview(periodKey?: string) {
   const query = periodKey ? `?period_key=${encodeURIComponent(periodKey)}` : "";
-  return apiClient(`/v1/analytics/overview${query}`) as Promise<AnalyticsOverviewResponse>;
+  return apiClient(`/analytics/overview${query}`) as Promise<AnalyticsOverviewResponse>;
 }
 

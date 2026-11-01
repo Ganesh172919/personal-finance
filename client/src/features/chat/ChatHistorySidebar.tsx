@@ -34,6 +34,7 @@ import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { useChatStore } from "@/stores/chatStore";
 import type { IChatSession } from "@/types/chat.types";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
 interface ChatHistorySidebarProps {
   onSessionSelect?: (sessionId: string) => void;
@@ -51,6 +52,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
     renameSession,
   } = useChatStore();
   const [, navigate] = useLocation();
+  const { formatTime: formatOrgTime, formatDate } = useOrgFormatters();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -109,14 +111,14 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
 
     if (diffDays === 0) {
-      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return formatOrgTime(date);
     }
 
     if (diffDays < 7) {
-      return date.toLocaleDateString([], { weekday: "short" });
+      return formatDate(date, { weekday: "short" });
     }
 
-    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+    return formatDate(date, { month: "short", day: "numeric" });
   };
 
   return (
@@ -133,6 +135,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search conversations..."
+            aria-label="Search conversations"
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             className="pl-9"
@@ -168,6 +171,15 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                           ? "border border-primary/20 bg-primary/10 text-foreground"
                           : "text-foreground hover:bg-accent hover:text-accent-foreground"
                       }`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open conversation ${session.title}`}
+                      onKeyDown={(event) => {
+                        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                          event.preventDefault();
+                          handleSelectSession(session.id);
+                        }
+                      }}
                       onClick={() => handleSelectSession(session.id)}
                     >
                       <MessageSquare className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
@@ -175,6 +187,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                       {editingId === session.id ? (
                         <div className="flex flex-1 items-center gap-1" onClick={(event) => event.stopPropagation()}>
                           <Input
+                            aria-label="Conversation title"
                             value={editTitle}
                             onChange={(event) => setEditTitle(event.target.value)}
                             className="h-6 text-sm"
@@ -189,6 +202,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                             size="sm"
                             className="h-6 w-6 p-0"
                             onClick={() => void handleSaveRename(session.id)}
+                            aria-label="Save conversation title"
                           >
                             <Check className="h-3 w-3" />
                           </Button>
@@ -197,6 +211,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                             size="sm"
                             className="h-6 w-6 p-0"
                             onClick={handleCancelRename}
+                            aria-label="Cancel conversation rename"
                           >
                             <X className="h-3 w-3" />
                           </Button>
@@ -209,13 +224,13 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                               <Clock className="h-3 w-3" />
                               {formatTime(session.lastMessageAt)}
                               <span>&bull;</span>
-                              {Math.ceil(session.messageCount / 2)}{" "}
-                              {Math.ceil(session.messageCount / 2) === 1 ? "message" : "messages"}
+                              {session.messageCount}{" "}
+                              {session.messageCount === 1 ? "message" : "messages"}
                             </div>
                           </div>
 
                           <div
-                            className="flex items-center gap-1 opacity-0 group-hover:opacity-100"
+                            className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
                             onClick={(event) => event.stopPropagation()}
                           >
                             <Button
@@ -223,6 +238,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                               size="sm"
                               className="h-6 w-6 p-0"
                               onClick={() => handleStartRename(session)}
+                              aria-label="Rename conversation"
                             >
                               <Edit2 className="h-3 w-3" />
                             </Button>
@@ -231,6 +247,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                               size="sm"
                               className="h-6 w-6 p-0 text-destructive hover:text-destructive"
                               onClick={() => void handleDelete(session.id)}
+                              aria-label="Delete conversation"
                             >
                               <Trash2 className="h-3 w-3" />
                             </Button>

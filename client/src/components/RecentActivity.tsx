@@ -18,19 +18,28 @@
  *  - Framer Motion stagger (0.1 s per row) for a polished entry animation.
  *  - Purely presentational; transaction mutations are handled in the Transactions page.
  */
-import { getRecentTransactions } from "@/lib/apiClient";
-import { ArrowUpRight, ArrowDownLeft, RefreshCcw } from "lucide-react";
+import { getRecentTransactions, TransactionsResponse } from "@/lib/apiClient";
+import { ArrowUpRight, ArrowDownLeft, RefreshCcw, Plus } from "lucide-react";
 import { useLocation } from "wouter";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
+import { useQuery } from "@tanstack/react-query";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { RecentActivitySkeleton } from "@/components/ui/CardSkeleton";
+import { motion } from "framer-motion";
 
 export function RecentActivity() {
   const [, navigate] = useLocation();
   const { formatMoney, formatDate } = useOrgFormatters();
 
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["/api/transactions/recent"],
     queryFn: () => getRecentTransactions(5),
   });
+
+  if (isLoading) {
+    return <RecentActivitySkeleton />;
+  }
 
   const recentTransactions = data?.transactions || [];
 
@@ -49,11 +58,19 @@ export function RecentActivity() {
 
       <div className="flex-1 space-y-4">
         {recentTransactions.length === 0 ? (
-           <div className="text-center py-8 text-muted-foreground">
-             No recent transactions found.
-           </div>
+          <div className="text-center py-6 text-muted-foreground flex flex-col items-center gap-3">
+            <p>No recent transactions found.</p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="cursor-pointer"
+              onClick={() => navigate("/transactions")}
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" /> Add Transaction
+            </Button>
+          </div>
         ) : (
-          recentTransactions.map((t, i) => (
+          recentTransactions.map((t: TransactionsResponse["transactions"][number], i: number) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, x: -10 }}

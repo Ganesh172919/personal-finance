@@ -29,10 +29,16 @@ import "./index.css";                                            // Global CSS s
 import App from "./App.tsx";                                     // Root application component
 import { AppErrorBoundary } from "./components/AppErrorBoundary.tsx"; // Error boundary
 import { errorReporting } from "./services/errorReporting.ts";   // Global error reporting
+import { installNetworkLogger } from "./lib/devLogger.ts";       // Dev-only network request logger
+import { installChunkRecovery } from "./lib/chunkRecovery.ts";
 
 // Install global error listeners BEFORE React renders
 // This catches unhandled errors and promise rejections that React doesn't see
 errorReporting.install();
+installChunkRecovery();
+
+// Install dev-only network request logger (zero cost in production)
+installNetworkLogger();
 
 // Create React 18 concurrent root and render the application
 createRoot(document.getElementById("root")!).render(

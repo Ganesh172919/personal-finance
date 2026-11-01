@@ -18,7 +18,7 @@ export type AcceptOrgInviteResponse = SdkAcceptOrgInviteResponse;
 
 /** Accept an organisation invitation using a one-time token. */
 export async function acceptOrgInvite(token: string): Promise<AcceptOrgInviteResponse> {
-  return apiClient("/v1/org-invites/accept", {
+  return apiClient("/org-invites/accept", {
     method: "POST",
     body: JSON.stringify({ token }),
   });

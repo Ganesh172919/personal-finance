@@ -51,7 +51,10 @@ const formatError = (error: unknown, fallback: string) => {
 const ymdFromNow = (months: number) => {
   const d = new Date();
   d.setMonth(d.getMonth() + months);
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 };
 
 export default function Notes() {
@@ -275,7 +278,7 @@ export default function Notes() {
     return (
       <div className="flex-1 p-6 overflow-auto" data-testid="notes-page">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="max-w-3xl mx-auto">
-          <Card className="p-6">
+          <Card className="p-6" data-testid="journal-disabled-card">
             <h1 className="text-2xl font-bold text-foreground">Financial Journal</h1>
             <p className="text-sm text-muted-foreground mt-2">Financial Journal is disabled on this server.</p>
           </Card>
@@ -290,13 +293,13 @@ export default function Notes() {
         <div className="flex items-center justify-between gap-4 mb-2">
           <h1 className="text-3xl font-bold text-foreground">Financial Journal</h1>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => canvasRef.current?.undo()}>
+            <Button variant="outline" onClick={() => canvasRef.current?.undo()} data-testid="canvas-undo-btn">
               Undo
             </Button>
-            <Button variant="outline" onClick={() => canvasRef.current?.clear()}>
+            <Button variant="outline" onClick={() => canvasRef.current?.clear()} data-testid="canvas-clear-btn">
               Clear
             </Button>
-            <Button onClick={() => recognizeMutation.mutate()} disabled={recognizeMutation.isPending}>
+            <Button onClick={() => recognizeMutation.mutate()} disabled={recognizeMutation.isPending} data-testid="recognize-btn">
               Recognize
             </Button>
           </div>
@@ -327,6 +330,7 @@ export default function Notes() {
                   variant="outline"
                   onClick={() => insightsMutation.mutate(recognition.entry_id)}
                   disabled={insightsMutation.isPending}
+                  data-testid="generate-insights-btn"
                 >
                   Generate Insights
                 </Button>
@@ -334,22 +338,24 @@ export default function Notes() {
             </div>
 
             <div>
-              <label className="text-xs text-muted-foreground">Recognized text</label>
+              <label htmlFor="journal-recognized-text" className="text-xs text-muted-foreground">Recognized text</label>
               <textarea
+                id="journal-recognized-text"
+                data-testid="recognized-text-area"
                 value={String(recognition?.recognized_text || "")}
                 readOnly
                 className="mt-1 w-full min-h-28 rounded-md border border-border bg-background px-3 py-2 text-sm"
                 placeholder="Your recognized text will appear here…"
               />
               {recognition?.confidence?.overall !== undefined ? (
-                <div className="mt-1 text-xs text-muted-foreground">
+                <div className="mt-1 text-xs text-muted-foreground" data-testid="recognition-confidence">
                   Confidence: {Math.round(Number(recognition.confidence.overall) * 100)}%
                 </div>
               ) : null}
             </div>
 
             {Array.isArray(detected.amounts) && detected.amounts.length ? (
-              <div className="text-sm">
+              <div className="text-sm" data-testid="detected-values-box">
                 <div className="font-medium">Detected values</div>
                 <div className="mt-1 text-muted-foreground text-xs">
                   Amounts:{" "}
@@ -372,7 +378,7 @@ export default function Notes() {
             ) : null}
 
             {suggestedGoal.target > 0 ? (
-              <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+              <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3" data-testid="goal-suggestion-box">
                 <div className="text-sm">
                   <div className="font-medium">Goal suggestion</div>
                   <div className="text-xs text-muted-foreground">
@@ -391,6 +397,7 @@ export default function Notes() {
                     })
                   }
                   disabled={createGoalMutation.isPending}
+                  data-testid="create-goal-btn"
                 >
                   Create Goal
                 </Button>
@@ -398,21 +405,24 @@ export default function Notes() {
             ) : null}
 
             <div className="rounded-md border border-border p-3 space-y-2">
-              <div className="text-sm font-medium">Update monthly expenses</div>
+              <label htmlFor="journal-monthly-expenses" className="text-sm font-medium">Update monthly expenses</label>
               <div className="flex gap-2">
                 <input
+                  id="journal-monthly-expenses"
+                  data-testid="monthly-expenses-input"
                   value={monthlyExpenses}
                   onChange={(e) => setMonthlyExpenses(e.target.value)}
                   type="number"
                   min={0}
-                  step="1"
-                  className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  step="0.01"
+                  className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm"
                   placeholder="e.g. 35000"
                 />
                 <Button
                   variant="outline"
                   onClick={() => updateProfileMutation.mutate({ monthly_expenses: Number(monthlyExpenses) })}
                   disabled={updateProfileMutation.isPending || !(Number(monthlyExpenses) > 0)}
+                  data-testid="update-expenses-btn"
                 >
                   Update
                 </Button>
@@ -420,7 +430,7 @@ export default function Notes() {
             </div>
 
             {insights?.response ? (
-              <div className="rounded-md border border-border p-3">
+              <div className="rounded-md border border-border p-3" data-testid="ai-insights-box">
                 <div className="text-sm font-medium mb-1">AI insights</div>
                 <div className="text-sm whitespace-pre-wrap">{String(insights.response)}</div>
               </div>
@@ -432,22 +442,23 @@ export default function Notes() {
           <div className="flex items-center justify-between">
             <div className="text-sm font-medium">Recent entries</div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} data-testid="prev-page-btn">
                 Prev
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage((p) => p + 1)}>
+              <Button variant="outline" size="sm" onClick={() => setPage((p) => p + 1)} disabled={entriesQuery.isFetching || !entriesQuery.data || page >= Number(entriesQuery.data.pagination?.totalPages || 1)} data-testid="next-page-btn">
                 Next
               </Button>
             </div>
           </div>
 
           {entriesQuery.isLoading ? (
-            <div className="mt-3 text-sm text-muted-foreground">Loading entries…</div>
+            <div className="mt-3 text-sm text-muted-foreground" data-testid="journal-loading-state">Loading entries…</div>
           ) : (
             <div className="mt-3 space-y-2">
               {(entriesQuery.data?.entries || []).map((entry: any) => (
                 <div
                   key={entry.id}
+                  data-testid="journal-entry-item"
                   className="rounded-md border border-border p-3 cursor-pointer hover:bg-accent/30"
                   onClick={() => setSelectedEntryId(String(entry.id))}
                 >
@@ -458,7 +469,7 @@ export default function Notes() {
                 </div>
               ))}
               {!entriesQuery.data?.entries?.length ? (
-                <div className="text-sm text-muted-foreground">No journal entries yet.</div>
+                <div className="text-sm text-muted-foreground" data-testid="journal-empty-entries">No journal entries yet.</div>
               ) : null}
             </div>
           )}
@@ -466,7 +477,7 @@ export default function Notes() {
       </motion.div>
 
       <Sheet open={Boolean(selectedEntryId)} onOpenChange={(open) => !open && setSelectedEntryId(null)}>
-        <SheetContent side="right" className="sm:max-w-xl w-full">
+        <SheetContent side="right" className="sm:max-w-xl w-full" data-testid="journal-detail-sheet">
           <SheetHeader>
             <SheetTitle>Journal entry</SheetTitle>
             <SheetDescription>Edit text, review intent, and generate insights.</SheetDescription>
@@ -485,7 +496,7 @@ export default function Notes() {
               ) : null}
 
               {intentChips.length ? (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2" data-testid="sheet-intent-chips">
                   {intentChips.map((chip) => (
                     <span key={chip} className="rounded-full border border-border bg-muted/30 px-3 py-1 text-xs text-muted-foreground">
                       {chip}
@@ -497,6 +508,7 @@ export default function Notes() {
               <div>
                 <label className="text-sm font-medium">Recognized text</label>
                 <textarea
+                  data-testid="sheet-recognized-text"
                   value={editedText}
                   onChange={(e) => setEditedText(e.target.value)}
                   className="mt-1 w-full min-h-40 rounded-md border border-border bg-background px-3 py-2 text-sm"
@@ -505,6 +517,7 @@ export default function Notes() {
                 <div className="flex justify-end gap-2 mt-2">
                   <Button
                     variant="outline"
+                    data-testid="sheet-save-btn"
                     onClick={() =>
                       patchMutation.mutate({ entryId: String(selectedEntry.id), recognized_text: editedText })
                     }
@@ -513,6 +526,7 @@ export default function Notes() {
                     Save
                   </Button>
                   <Button
+                    data-testid="sheet-generate-insights-btn"
                     onClick={() => selectedInsightsMutation.mutate(String(selectedEntry.id))}
                     disabled={selectedInsightsMutation.isPending}
                   >
@@ -522,7 +536,7 @@ export default function Notes() {
               </div>
 
               {selectedInsights?.response ? (
-                <Card className="p-4 space-y-3">
+                <Card className="p-4 space-y-3" data-testid="sheet-ai-insights-box">
                   <div className="text-sm font-semibold text-foreground">AI insights</div>
                   <div className="text-sm whitespace-pre-wrap text-foreground">{String(selectedInsights.response)}</div>
 
@@ -530,6 +544,7 @@ export default function Notes() {
                     <div className="flex justify-end">
                       <Button
                         variant="secondary"
+                        data-testid="sheet-add-tasks-btn"
                         onClick={() =>
                           createTasksMutation.mutate({
                             plan: selectedInsights.plan,

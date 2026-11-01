@@ -3,16 +3,18 @@
  *
  * Resolves API endpoint URLs relative to the configured base URL.
  * Supports multiple deployment scenarios:
- * - Development: Vite proxy forwards /api to localhost:5000
+ * - Development: Vite proxy forwards /api to localhost:3000
  * - Production (same-origin): /api routes to the backend
- * - Production (cross-origin): full URL like https://api.example.com/api/v1
+ * - Production (cross-origin): full URL like https://api.example.com/api
  *
  * URL NORMALIZATION:
  * The `buildApiUrl` function normalizes various endpoint formats into
- * consistent /api/v1/* paths. This allows callers to use shorthand:
- * - "/v1/ai/process" → "/api/v1/ai/process"
- * - "/ai/process" → "/api/v1/ai/process"
- * - "/api/transactions" → "/api/v1/transactions"
+ * consistent /api/* paths. This allows callers to use shorthand:
+ * - "/ai/process"       → "/api/ai/process"
+ * - "/auth/login"       → "/api/auth/login"
+ * - "/api/transactions" → "/api/transactions"
+ *
+ * All API routes live under /api/* — there is no /api/v1 split.
  *
  * WHY TWO FUNCTIONS?
  * - `resolveApiUrl`: Low-level — maps a path against the base URL
@@ -33,7 +35,7 @@ export const API_BASE_URL =
  * Resolves a path against the configured API base URL.
  * Handles deduplication when the path already contains the base URL prefix.
  *
- * @param path - The API path (e.g., "/api/v1/transactions")
+ * @param path - The API path (e.g., "/api/transactions")
  * @returns Fully resolved URL
  */
 export const resolveApiUrl = (path: string) => {
@@ -45,15 +47,7 @@ export const resolveApiUrl = (path: string) => {
   }
 
   // Deduplicate: if path already starts with the base URL suffix, don't double it
-  if (normalized.startsWith("/api/v1") && API_BASE_URL.endsWith("/api/v1")) {
-    return `${API_BASE_URL}${normalized.slice("/api/v1".length)}`;
-  }
-
-  if (normalized.startsWith("/api") && API_BASE_URL.endsWith("/api")) {
-    return `${API_BASE_URL}${normalized.slice("/api".length)}`;
-  }
-
-  if (normalized.startsWith("/api")) {
+  if (/^\/api(?:\/|\?|#|$)/.test(normalized) && API_BASE_URL.endsWith("/api")) {
     return `${API_BASE_URL}${normalized.slice("/api".length)}`;
   }
 
@@ -62,35 +56,30 @@ export const resolveApiUrl = (path: string) => {
 
 /**
  * Builds a full API URL from a shorthand endpoint.
- * Normalizes various formats into /api/v1/* paths.
+ * Normalizes various formats into /api/* paths.
  *
- * @param endpoint - Shorthand endpoint (e.g., "/v1/ai/process", "/transactions")
+ * @param endpoint - Shorthand endpoint (e.g., "/ai/process", "/auth/login")
  * @returns Fully resolved API URL
+ *
+ * @example
+ * buildApiUrl("/auth/login")       → "/api/auth/login"
+ * buildApiUrl("/api/transactions") → "/api/transactions"
+ * buildApiUrl("analytics/heatmap") → "/api/analytics/heatmap"
  */
 export const buildApiUrl = (endpoint: string) => {
   const normalizedEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 
-  // Already has full /api/v1 prefix — pass through
-  if (normalizedEndpoint.startsWith("/api/v1")) {
+  // Already has /api prefix — pass through
+  if (/^\/api(?:\/|\?|#|$)/.test(normalizedEndpoint)) {
     return resolveApiUrl(normalizedEndpoint);
   }
 
-  // Has /v1/ prefix — add /api
+  // Has legacy /v1/ prefix — strip it and add /api
+  // (backward compatibility during migration)
   if (normalizedEndpoint.startsWith("/v1/")) {
-    return resolveApiUrl(`/api/v1${normalizedEndpoint.slice("/v1".length)}`);
+    return resolveApiUrl(`/api${normalizedEndpoint.slice("/v1".length)}`);
   }
 
-  // Has /api/ prefix — add /v1
-  if (normalizedEndpoint.startsWith("/api/")) {
-    return resolveApiUrl(`/api/v1${normalizedEndpoint.slice("/api".length)}`);
-  }
-
-  // Bare /api — map to /api/v1
-  if (normalizedEndpoint === "/api") {
-    return resolveApiUrl("/api/v1");
-  }
-
-  // Bare path (e.g., "/transactions") — prepend /api/v1
-  const path = `/api/v1${normalizedEndpoint}`;
-  return resolveApiUrl(path);
+  // Bare path (e.g., "/transactions") — prepend /api
+  return resolveApiUrl(`/api${normalizedEndpoint}`);
 };

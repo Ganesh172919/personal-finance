@@ -130,10 +130,48 @@ describe("receipts OCR API", () => {
     expect(confirmRes.body.receipt.status).toBe("confirmed");
     expect(confirmRes.body.receipt.transactionId).toBeTruthy();
 
+    const duplicateConfirm = await request(app)
+      .post(`/api/receipts/${parseRes.body.receipt_id}/confirm`)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({
+        vendor: "ACME STORE",
+        date: "2026-02-12",
+        total: 123.45,
+        category: "Groceries",
+      })
+      .expect(409);
+    expect(duplicateConfirm.body.code).toBe("ALREADY_CONFIRMED");
+
     await request(app)
       .get(`/api/media/${parseRes.body.file_id}`)
       .set("Cookie", [cookie])
       .expect(200);
+  });
+
+  it("rejects confirmation with non-positive total amount via schema validation", async () => {
+    const parseRes = await request(app)
+      .post("/api/receipts/parse")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .attach("file", Buffer.from("fakepng_amount"), { filename: "receipt_amt.png", contentType: "image/png" })
+      .expect(200);
+
+    const badZero = await request(app)
+      .post(`/api/receipts/${parseRes.body.receipt_id}/confirm`)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ vendor: "Test", date: "2026-02-12", category: "Groceries", total: 0 })
+      .expect(400);
+    expect(badZero.body.code).toBe("VALIDATION_ERROR");
+
+    const badNegative = await request(app)
+      .post(`/api/receipts/${parseRes.body.receipt_id}/confirm`)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ vendor: "Test", date: "2026-02-12", category: "Groceries", total: -50 })
+      .expect(400);
+    expect(badNegative.body.code).toBe("VALIDATION_ERROR");
   });
 
   it("defaults OCR currency hint to org currency when omitted", async () => {

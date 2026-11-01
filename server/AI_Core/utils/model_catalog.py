@@ -1,5 +1,83 @@
-"""
+r"""
 Structured model catalog backed by external JSON data.
+
+================================================================================
+MINDMAP FLOW: MODEL CATALOG & DYNAMIC ROUTING ENGINE
+================================================================================
+- Model Catalog Engine
+    ├── 1. Data Ingestion & Schema Definition
+    │   ├── model_catalog.json (Provider definitions, defaults, fallback rankings)
+    │   ├── ModelEntry Dataclass (Model ID, capabilities, tokens, tiers, costs)
+    │   └── Enums (ModelCapability, SpeedTier, CostTier, ReasoningStrength)
+    ├── 2. Dynamic Provider Auto-Discovery
+    │   ├── Environment Scanning (OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, etc.)
+    │   ├── Array Keys Check (OPENAI_API_KEYS, etc.)
+    │   └── Indexed Keys Check (KEY_1 ... KEY_20)
+    ├── 3. Health-Aware Multi-Criteria Sorting
+    │   ├── ModelHealthTracker Integration (Health score: -1000 cooldown, -500 open)
+    │   ├── Fallback Rank Ordering (Lowest integer = highest priority)
+    │   ├── Reasoning Tier Weighting (EXTREME > HIGH > MEDIUM > LOW)
+    │   ├── Speed Tier Weighting (FAST > MEDIUM > SLOW)
+    │   ├── Cost Tier Weighting (FREE > LOW > MEDIUM > HIGH > PREMIUM)
+    │   └── Context Window (Larger window favored as tiebreaker)
+    ├── 4. Task-Specific Model Resolution
+    │   ├── Capability Match (e.g., REASONING, ROUTING, ANALYSIS, SUMMARIZATION)
+    │   ├── Cost & Speed Constraints (max_cost_tier, min_speed_tier)
+    │   └── Provider Whitelisting (Optional provider filtering)
+    └── 5. Resilient Fallback Chain Synthesis
+        ├── Primary Model Selection
+        ├── Capability Fallback Expansion
+        └── Strict Capacity Capping (max_chain_length=5)
+
+================================================================================
+ASCII FLOW: MODEL RESOLUTION & FALLBACK CHAIN LIFECYCLE
+================================================================================
+               +--------------------------------------+
+               |    Startup: _load_catalog()          |
+               |  Reads data/model_catalog.json       |
+               +-------------------+------------------+
+                                   |
+                                   v
+               +--------------------------------------+
+               |      _auto_enable_models()           |
+               |  Scans ENV: Key, KeyS, Key_1..20     |
+               +-------------------+------------------+
+                                   |
+                                   v
+             [ MODEL_CATALOG Dictionary Populated ]
+                                   |
+    Task Request: get_models_for_task(capability, max_cost, min_speed)
+                                   |
+                                   v
+               +--------------------------------------+
+               |  Filter by Capability & Constraints  |
+               |  Matches: capability in entry.caps   |
+               |  Check: Cost <= max_cost             |
+               |  Check: Speed >= min_speed           |
+               +-------------------+------------------+
+                                   |
+                                   v
+               +--------------------------------------+
+               |        _sorting_tuple()              |
+               |  1. -Health Score (HealthTracker)    |
+               |  2. Fallback Rank (1..100)           |
+               |  3. Reasoning Strength (EXTREME..LOW)|
+               |  4. Speed Tier (FAST..SLOW)          |
+               |  5. Cost Tier (FREE..PREMIUM)        |
+               |  6. -Context Window                  |
+               +-------------------+------------------+
+                                   |
+                                   v
+         +--------------------------------------------------+
+         | Top Candidate / Ordered Candidates Returned      |
+         +-------------------------+------------------------+
+                                   |
+                 If Primary Fails during Ingestion:
+                                   v
+         +--------------------------------------------------+
+         |      get_fallback_chain(primary_model_id)        |
+         |  [Primary] -> [Healthy Alt 1] -> [Healthy Alt 2] |
+         +--------------------------------------------------+
 """
 
 from __future__ import annotations
@@ -67,6 +145,7 @@ class ModelEntry:
     supports_json_mode: bool = False
     fallback_rank: int = 100
     enabled: bool = True
+    retired: bool = False
     description: str = ""
     tags: List[str] = field(default_factory=list)
     cost_input_per_1k: float = 0.0
@@ -138,6 +217,7 @@ def _build_model_entry(provider: str, defaults: Dict[str, Any], model_data: Dict
         supports_streaming=bool(merged.get("supports_streaming", True)),
         supports_json_mode=bool(merged.get("supports_json_mode", False)),
         fallback_rank=int(merged.get("fallback_rank", 100)),
+        retired=bool(merged.get("retired", False)),
         description=str(merged.get("description", "")),
         tags=[str(tag) for tag in merged.get("tags", [])],
         cost_input_per_1k=float(merged.get("cost_input_per_1k", 0.0)),
@@ -370,7 +450,7 @@ def get_catalog_stats() -> Dict[str, Any]:
 
 def _auto_enable_models() -> None:
     for model in MODEL_CATALOG.values():
-        model.enabled = _provider_configured(model.provider)
+        model.enabled = not model.retired and _provider_configured(model.provider)
 
 
 _load_catalog()

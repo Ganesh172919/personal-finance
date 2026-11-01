@@ -7,7 +7,7 @@
  *
  * Key data flows:
  * - GET /api/financial-profiles/me provides goals, income, and debts.
- * - GET /api/agent-outputs/recent surfaces AI milestones from various agents
+ * - GET /api/agent-outputs/user/:userId surfaces full AI milestones from various agents
  *   (budget planner, debt optimizer, investment advisor, etc.).
  * - createFinancialStoryShare() generates a time-limited public share link.
  *
@@ -83,8 +83,7 @@ export default function FinancialStory() {
   const { data: insights, isLoading: isLoadingInsights } = useQuery<IAgentOutput[]>({
     queryKey: [`/api/agent-outputs/user`, userId],
     queryFn: async () => {
-      const result = await apiClient("/agent-outputs/recent?limit=20");
-      return (result as any)?.outputs || [];
+        return apiClient<IAgentOutput[]>(`/agent-outputs/user/${userId}?limit=20`);
     },
     enabled: !!userId,
   });
@@ -289,14 +288,14 @@ export default function FinancialStory() {
                     <div className="flex-1 pb-6">
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="font-semibold text-foreground">
-                          {insight.outputData.title || "AI Insight Received"}
+                          {insight.outputData?.title || "AI Insight Received"}
                         </h4>
                         <div className="text-xs text-muted-foreground">
                           {formatMilestoneDate(insight.timestamp || new Date())}
                         </div>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {insight.outputData.description || "You completed a financial review."}
+                        {insight.outputData?.description || "You completed a financial review."}
                       </p>
                     </div>
                   </motion.div>

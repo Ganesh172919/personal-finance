@@ -37,5 +37,7 @@ export * from "./billing";
 export * from "./tools";
 // File upload/download API
 export * from "./files";
+// Newsletter preferences and delivery API
+export * from "./newsletter";
 // V1 API modules (platform, finance, analytics, etc.)
 export * from "./v1";

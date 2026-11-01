@@ -20,6 +20,10 @@ If you need API behavior, read `docs/MEGA_API_PLAYBOOK.md`.
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## 1) Core Principles Used Throughout the Data Model
 
 ### 1.1 Multi-tenancy (org isolation)
@@ -686,3 +690,237 @@ Cleanup:
 - Remove dual-write code after stabilization.
 - Remove unused indexes (after verifying no reads depend on them).
 - Remove legacy fields only after backup/retention requirements are met.
+
+## Documentation mind map
+
+```text
+FinWise Data Model Compendium (Mega)
+|
++-- Scope
+|   +-- Purpose: explain the subject covered by this file
+|   +-- Source: docs/MEGA_DATA_MODEL_COMPENDIUM.md
+|   +-- Inputs: prerequisites, linked references, and implementation facts
+|   +-- Audience: readers who need to understand, use, or maintain this area
+|
++-- Main path
+|   +-- Establish constraints and entry points
+|   +-- Trace components, decisions, and dependencies
+|   +-- Check outputs, risks, and verification evidence
+|
++-- Maintenance
+    +-- Recheck links and examples after changes
+    +-- Record assumptions, limits, and known drift
+    +-- Keep this map aligned with documented behavior
+```
+
+## Documentation ASCII flow
+
+```text
+[Open FinWise Data Model Compendium (Mega)]
+        |
+        v
+[Define the scope and required inputs]
+        |
+        v
+[Follow the documented sequence and decision points]
+        |
+        +--> [Missing context or exception?] --yes--> [Read linked reference]
+        |                                               |
+        +---------------------------no-----------------+
+                                                        v
+[Check outputs, risks, and verification evidence]
+        |
+        v
+[Record the change and refresh this document]
+``````mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#047857', 'lineColor': '#06b6d4', 'secondaryColor': '#8b5cf6', 'tertiaryColor': '#f59e0b'}}}%%
+mindmap
+  root((🗄️ FinWise Data Model Compendium))
+    🔐 Identity & Multi-Tenancy
+      User (Argon2id, TOTP, RBAC roles)
+      Organization (Tenant boundary, settings)
+      Invite (Secure email activation tokens)
+      ApiKey (Hashed SHA-256 tokens, rate tiers)
+      AuditLog (26 immutable security event codes)
+    💳 Core Ledger & Banking
+      Account (Checking, savings, credit, loan)
+      Transaction (Debits, credits, review queue)
+      Budget (Category envelopes, threshold alerts)
+      RecurringTransaction (Predictive schedules)
+    📈 Investments & Wealth
+      Holding (Tickers, shares, cost basis)
+      Portfolio (Asset allocation, dividend yield)
+      Debt (Interest APR, amortization schedules)
+      Goal (Target dates, automated contributions)
+    🤖 AI State & Memory
+      AgentRun (LangGraph execution metrics)
+      AgentState (Persistent graph checkpoints)
+      MemoryChunk (Vector embeddings + BM25 text)
+      DocumentArtifact (Receipt OCR, PDF reports)
+```
+
+## System Architecture & Component ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📥 APPLICATION DATA INGRESS: Mutative Operation (Write / Update)       │
+│    Target Entity: Transaction / Budget / Goal / Account                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STAGE 1: TENANT ENFORCEMENT VIA OrgScopePlugin                       │
+│    ├─► Intercepts Model.find(), update(), delete(), aggregate()       │
+│    ├─► Enforces predicate: { ...query, orgId: req.orgId }              │
+│    └─► Prevents cross-tenant data leakage across all 52 models 🟢      │
+└──────────────────┬─────────────────────────────────┬───────────────────┘
+                   │                                 │
+                   ▼                                 ▼
+┌──────────────────────────────────────┐  ┌──────────────────────────────┐
+│ ⚡ FAST CACHE TIER: Redis 7.0        │  │ 🗄️ PRIMARY STORAGE: MongoDB 7│
+│  ├── Session & Token Blacklists      │  │  ├── BSON Document Stores    │
+│  ├── Rate Limit Counters (Windowed)  │  │  ├── Compound B-Tree Indexes │
+│  └── Hot Aggregations (TTL: 60s)     │  │  └── Org-Scoped Collections  │
+└──────────────────────────────────────┘  └──────────────┬───────────────┘
+                                                         │
+                                                         ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🗃️ COLD STORAGE & BLOB PERSISTENCE: GridFS / S3                        │
+│    ├── Receipt Images (.png, .jpg) & Invoices                          │
+│    └── Generated Financial PDF Exports & Historical Archives           │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## Multi-Tenant Mongoose Schema Implementation (`server/src/models/plugins/orgScope.plugin.ts`)
+
+```typescript
+import { Schema, Document, Query } from "mongoose";
+
+export interface OrgScopedDocument extends Document {
+  orgId: string;
+}
+
+/**
+ * Universal OrgScopePlugin: Injects mandatory { orgId } query filtering
+ * to guarantee strict multi-tenant boundary isolation.
+ */
+export function orgScopePlugin(schema: Schema): void {
+  // Add required indexed orgId field if not explicitly defined
+  if (!schema.path("orgId")) {
+    schema.add({
+      orgId: {
+        type: String,
+        required: true,
+        index: true,
+      },
+    });
+  }
+
+  // Pre-hook for find and findOne queries
+  schema.pre<Query<any, any>>(/^find/, function (this: any) {
+    const filter = this.getFilter();
+    if (this.options?.bypassOrgScope) return;
+    if (!filter.orgId) {
+      throw new Error("SECURITY_VIOLATION: Query executed without mandatory orgId tenant filter");
+    }
+  });
+
+  // Pre-hook for count and update queries
+  schema.pre<Query<any, any>>(/^(count|update|delete)/, function (this: any) {
+    const filter = this.getFilter();
+    if (this.options?.bypassOrgScope) return;
+    if (!filter.orgId) {
+      throw new Error("SECURITY_VIOLATION: Mutation executed without mandatory orgId tenant filter");
+    }
+  });
+}
+```
+
+
+---
+
+## 6) Latest Platform Models (2026 Phase 1–5 Additions)
+
+### 6.1 HealthScore Model (`server/src/models/HealthScore.ts`)
+Stores historical snapshots of the composite 0–100 financial vitals calculated by `budgetHealthService.ts`.
+
+```typescript
+export interface IHealthScore extends Document {
+  orgId: string;
+  userId: string;
+  healthScore: number; // 0-100 composite
+  periodStart: Date;
+  periodEnd: Date;
+  breakdown: {
+    budgetAdherence: number; // 0-40 points
+    reviewCleanliness: number; // 0-20 points
+    goalProgress: number; // 0-20 points
+    debtManagement: number; // 0-20 points
+  };
+  burnRateAlerts: Array<{
+    categoryId: string;
+    categoryName: string;
+    burnRate: number;
+    recommendedCap: number;
+  }>;
+  runwayDays: number;
+  createdAt: Date;
+}
+```
+**Indexing Strategy:**
+- `{ orgId: 1, userId: 1, periodEnd: -1 }`: Optimizes dashboard lookups for latest health score.
+
+---
+
+### 6.2 NewsletterPreference Model (`server/src/models/newsletterPreferenceModel.ts`)
+Stores subscriber delivery preferences and scheduled UTC dispatch windows for automated digests.
+
+```typescript
+export interface INewsletterPreference extends Document {
+  orgId: string;
+  userId: string;
+  email: string;
+  enabled: boolean;
+  cadence: 'weekly' | 'biweekly' | 'monthly';
+  preferredDay: number; // 0 (Sun) - 6 (Sat)
+  preferredTimeUtc: string; // '08:00'
+  sections: {
+    includeKpis: boolean;
+    includeInsights: boolean;
+    includeUpcomingBills: boolean;
+    includeBurnRateAlerts: boolean;
+  };
+  lastSentAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+**Indexing Strategy:**
+- `{ orgId: 1, enabled: 1, preferredDay: 1 }`: Optimizes the BullMQ `newsletterScheduler.ts` cron polling query.
+
+---
+
+### 6.3 WorkspaceKnowledgeChunk Model (`server/src/models/workspaceKnowledgeChunkModel.ts`)
+Stores bounded 1,800-character text chunks extracted from uploaded workspace documents for RAG Phase 2 retrieval.
+
+```typescript
+export interface IWorkspaceKnowledgeChunk extends Document {
+  orgId: string;
+  documentId: mongoose.Types.ObjectId;
+  chunkIndex: number;
+  text: string;
+  charStart: number;
+  charEnd: number;
+  tokenCount: number;
+  embedding?: number[]; // Dense 768-dim vector for semantic search
+  metadata: {
+    fileName: string;
+    fileType: string;
+    pageNumber?: number;
+  };
+  createdAt: Date;
+}
+```
+**Indexing Strategy:**
+- Compound Index: `{ orgId: 1, documentId: 1, chunkIndex: 1 }`
+- Full-Text Search Index: `{ text: "text" }` (Supports fast lexical BM25 retrieval for grounding formula $G \ge 0.70$)

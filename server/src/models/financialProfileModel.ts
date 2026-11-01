@@ -1,3 +1,53 @@
+/**
+ * @fileoverview Financial Profile Model
+ *
+ * Defines the core user financial profile schema, goals, debt instruments,
+ * and cache-invalidation metadata for AI planning.
+ *
+ * ============================================================================
+ * MINDMAP FLOW: FINANCIAL PROFILE SCHEMA & SUBDOCUMENT TOPOLOGY
+ * ============================================================================
+ * - Financial Profile Data Model
+ *     ├── 1. Tenant Scoping & Uniqueness
+ *     │   ├── orgId: Organization ObjectId reference (indexed)
+ *     │   ├── userId: User ObjectId reference (indexed)
+ *     │   └── Unique Compound Index: { orgId: 1, userId: 1 }
+ *     ├── 2. Baseline Financial Attributes
+ *     │   ├── Income & Outflows: annual_income, monthly_expenses, savings
+ *     │   ├── Demographics: age
+ *     │   └── Behavioral Profiles: risk_tolerance, investment_experience
+ *     ├── 3. Embedded Subdocument Collections
+ *     │   ├── Goals (IFinancialGoal): target, current, deadline, priority
+ *     │   └── Debts (IDebt): balance, interest_rate, minimum_payment, type
+ *     └── 4. State & Cache Invalidation Invariants
+ *         ├── transactionsCount: Counter used for data freshness checks
+ *         ├── transactionsUpdatedAt: Mutation timestamp to bust AI cache keys
+ *         ├── transactionsMigratedAt: Legacy embedded to relational migration flag
+ *         └── lastMutation: Provenance tracking (source: ai, user, sync)
+ *
+ * ============================================================================
+ * ASCII FLOW: PROFILE ENTITY RELATIONSHIPS & CACHE METADATA
+ * ============================================================================
+ *                      +----------------------------------+
+ *                      |    FinancialProfileDocument      |
+ *                      |    - orgId (Multi-tenant ref)    |
+ *                      |    - userId (Account owner ref)  |
+ *                      |    - annual_income / expenses    |
+ *                      +----------------+-----------------+
+ *                                       |
+ *             +-------------------------+-------------------------+
+ *             |                         |                         |
+ *             v                         v                         v
+ *    +------------------+      +------------------+      +------------------+
+ *    | goals []         |      | debts []         |      | Cache Metadata   |
+ *    | - target amount  |      | - balance        |      | - txnsUpdatedAt  |
+ *    | - current savings|      | - interest rate  |      | - txnsCount      |
+ *    | - deadline (ISO) |      | - min payment    |      | - lastMutation   |
+ *    +------------------+      +------------------+      +------------------+
+ *
+ * @module models/financialProfileModel
+ */
+
 import { Schema, model, Document, Types } from "mongoose";
 import type { MutationSource } from "../types/provenance";
 

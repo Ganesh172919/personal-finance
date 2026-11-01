@@ -4,13 +4,18 @@
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## Overview
 
 | Subsystem   | Framework                      | Runner | Test Count | Location                |
 | ----------- | ------------------------------ | ------ | ---------- | ----------------------- |
-| **Server**  | Vitest + Supertest             | Vitest | 34 files   | `server/src/test/`      |
-| **Client**  | Vitest + Testing Library + MSW | Vitest | —          | `client/src/test/`      |
-| **AI Core** | Pytest                         | Pytest | —          | `server/AI_Core/tests/` |
+| **Server**  | Vitest + Supertest             | Vitest | **49 files / 193 tests passed** | `server/src/test/`      |
+| **Client**  | Vitest + Testing Library + MSW | Vitest | **45 files / 293 tests passed** | `client/src/test/` & co-located |
+| **AI Core Unit** | Pytest 8.x + FastAPI TestClient | Pytest | **29 files / 217 tests passed** | `server/AI_Core/tests/` |
+| **AI Evals**| Custom Evaluation Harness      | Python | **175 evaluations passed**     | `server/AI_Core/evals/` |
 
 ---
 
@@ -75,6 +80,23 @@ npm run test:ci       # Alias for single run in CI pipelines
 | `planContract.test.ts`            | Subscription plan contract validation             |
 | `openapiRoutesCoverage.test.ts`   | Ensures all routes are documented in OpenAPI spec |
 | `vnextPlatform.test.ts`           | Next-generation platform feature tests            |
+| `retrievalLifecycle.test.ts`      | RAG bounded chunking lifecycle & cleanup          |
+| `retrievalService.test.ts`        | Lexical BM25 retrieval, stop words & scoring      |
+| `deadLetterQueue.test.ts`         | DLQ error trapping, ring buffer & stats           |
+| `jobRecovery.test.ts`             | Orphan job detection & lock lease recovery        |
+| `healthDeep.test.ts`              | Deep health check diagnostics & database pings    |
+| `fileTextExtraction.test.ts`      | Text extraction from PDF, DOCX, CSV, JSON         |
+| `financeBudgets.test.ts`          | Budget envelope calculations & overspend caps     |
+| `conversationInsightsCache.test.ts`| Multi-tenant insights caching & coalescing       |
+| `transactionIndexes.test.ts`      | Dynamic compound index audit & verification       |
+| `analyticsBalances.test.ts`       | Account balance aggregation & multi-timeframe stats|
+| `noSqlInjection.test.ts`          | NoSQL sanitize middleware ($ and . stripping)     |
+| `securityHeaders.test.ts`         | Strict Helmet CSP, HSTS, and referrer headers     |
+| `rateLimiting.test.ts`            | Sliding window rate limiting & quota enforcement  |
+| `sse.test.ts`                     | Server-Sent Events token streaming & heartbeat    |
+| `workspaceFileLifecycle.test.ts`  | Workspace file upload, GridFS & cascade deletion  |
+| `errorHandler.test.ts`            | Normalized HTTP error mapping & Pino logging      |
+| `aiCoreTraceMetrics.test.ts`      | AI Core trace metrics & latency tracking          |
 
 ---
 
@@ -104,14 +126,31 @@ npm run lint          # ESLint — also catches type errors and bad patterns
 - **[MSW](https://mswjs.io/)** — Intercepts network requests at the service worker level
 - **[jsdom](https://github.com/jsdom/jsdom)** — Browser environment simulation
 
-### Client Test Files
+### Client Test Files (45 Test Suites / 293 Tests)
 
-| Test File            | Covers                                       |
-| -------------------- | -------------------------------------------- |
-| `useAuth.test.tsx`   | Authentication hook (login, logout, loading) |
-| `stores.test.ts`     | Zustand stores unit tests                    |
-| `Dashboard.test.tsx` | Dashboard component rendering                |
-| `features.test.ts`   | Feature flag and entitlement logic           |
+| Test File | Covers |
+| :--- | :--- |
+| `useAuth.test.tsx` | Authentication hook (login, logout, loading, token refresh) |
+| `stores.test.ts` / `chatStore.test.ts` | Zustand stores unit tests (sessions, streaming, actions) |
+| `Dashboard.test.tsx` | Dashboard component rendering & responsive layout |
+| `Analytics.test.tsx` | Analytics stat cards, charts (inflow/outflow, merchants), time ranges |
+| `Notes.test.tsx` | Handwriting notes OCR recognition, goal generation, detail sheet |
+| `Workflows.test.tsx` | Workflow listing, simulation, execution modal, templates |
+| `Exports.test.tsx` | Custom CSV column selection chips, export requests, download |
+| `Portfolio.test.tsx` | Asset inference, target models (60/40, All-Weather), drift rebalance |
+| `Scenarios.test.tsx` | Multi-scenario comparison matrix, Monte Carlo risk bounds (P10-P90) |
+| `FinancialCalendar.test.tsx` | Recurring bill candidate detection & RFC 5545 .ics calendar export |
+| `GoalsAndDebts.test.tsx` | Multi-goal rebalancing, priority strategies, windfall redistribution |
+| `Tasks.test.tsx` | Task multi-select batch completion, dismiss, and calendar sync |
+| `FinanceOS.test.tsx` | Multi-period auto-budget roll-forward & predictive spending caps |
+| `ConversationInsightsPanel.test.tsx` | Insights caching, factual recap fallback, source review |
+| `SourceEvidenceList.test.tsx` | RAG evidence drawer, verified snippet preview, PDF page jump |
+| `ExtractedFileText.test.tsx` | Document page-by-page text rendering & extraction warnings |
+| `Billing.test.tsx` | Plan selection, seat allocations, usage limits & payment cards |
+| `ActivityFeed.test.tsx` | Real-time domain event rendering & notification dismissals |
+| `FinancialCopilot.test.tsx` | Copilot conversational UI, tool calls, and typing indicators |
+| `FinancialVitals.test.tsx` | 4-pillar vitals, cash runway in days, and spending trend bars |
+| `OfflineBanner.test.tsx` | Network disconnect detection, offline warning, and reconnect retry |
 
 ### Writing a Client Test
 
@@ -236,3 +275,117 @@ cd client && npm run build
 ---
 
 _See also_: [CONTRIBUTING.md](./CONTRIBUTING.md) · [SETUP.md](./SETUP.md) · [ARCHITECTURE.md](./ARCHITECTURE.md)
+
+## Testing Architecture & Quality Assurance Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#10b981', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#059669', 'lineColor': '#6366f1', 'secondaryColor': '#0284c7', 'tertiaryColor': '#ec4899'}}}%%
+mindmap
+  root((🧪 FinWise Testing Matrix))
+    🛡️ Server API Tests (Vitest)
+      Route Coverage (Vitest + Supertest)
+      In-Memory Database (mongodb-memory-server)
+      Security & Injection (NoSQL, Auth, CSRF)
+      Multi-Tenant Isolation (Org Scope Plugin)
+      Mock AI Core Client Responses
+    🧠 AI Core Tests (Pytest)
+      LangGraph State Transitions
+      Master Agent Semantic Routing
+      KeyPool Rotation & 429 Cooldown
+      Provider Failover Chains
+      Deterministic Tool Math Invariants
+    💻 Client Tests (Vitest & MSW)
+      Component Rendering (Testing Library)
+      Mock Service Worker (API contract mocking)
+      Zustand Store State Mutations
+      Keyboard Shortcut Triggers
+    🔄 CI/CD Automation Gates
+      Pre-push Hooks (Lint + Typecheck)
+      GitHub Actions Test Matrix
+      Code Coverage Enforcement (>=80%)
+```
+
+## Automated Quality Assurance & Verification ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 1: PRE-COMMIT LOCAL VERIFICATION HOOKS                         │
+│    $ npm run lint • $ ruff check . • $ tsc --noEmit                    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧪 STEP 2: SERVER INTEGRATION SUITE (Vitest + In-Memory Mongo)         │
+│    ├─► Spin up mongodb-memory-server replica set                       │
+│    ├─► Execute 35+ test files (Auth, Transactions, Org Isolation)      │
+│    ├─► Validate OpenAPI contract schema conformity                     │
+│    └─► 100% assertions green in ~14 seconds 🟢                         │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧠 STEP 3: AI CORE AGENT SUITE (Pytest + LangGraph Harness)            │
+│    ├─► Test MasterAgent routing against intent test vectors            │
+│    ├─► Test KeyPool cooldown rotation under simulated 429 errors       │
+│    ├─► Verify financial calculations (Avalanche, 50/30/20, Compound)   │
+│    └─► Pytest suite passes with 0 failures 🟢                          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 💻 STEP 4: CLIENT COMPONENT & STORE SUITE (MSW Mocks)                  │
+│    ├─► MSW intercepts /api/v1 endpoints                                │
+│    ├─► Test FinanceOS, ReviewQueue, and Copilot dialogs                │
+│    └─► Validate accessibility (a11y) & DOM assertions 🟢               │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+## Production Implementation Blueprints
+
+### 1. Server Integration Test with In-Memory Mongo (`server/src/test/orgIsolation.test.ts`)
+
+```typescript
+// Tests that queries from Org A cannot leak or read transactions from Org B
+describe("Multi-Tenant Org Isolation", () => {
+  it("should prevent User A in Org 1 from accessing transactions in Org 2", async () => {
+    const { token: tokenOrg1 } = await createTestUserAndOrg("user1@test.com", "Org 1");
+    const { org: org2 } = await createTestUserAndOrg("user2@test.com", "Org 2");
+
+    // Seed transaction directly in Org 2
+    const tx = await TransactionModel.create({
+      orgId: org2._id,
+      amount: 450,
+      category: "Equipment",
+      date: new Date()
+    });
+
+    // Query transactions with Org 1's authorization token
+    const res = await request(app)
+      .get(`/api/v1/finance/transactions/${tx._id}`)
+      .set("Authorization", `Bearer ${tokenOrg1}`)
+      .expect(404);
+
+    expect(res.body.success).toBe(false);
+  });
+});
+```
+
+### 2. AI Core Invariant Verification Test (`server/AI_Core/evals/test_number_safety.py`)
+
+```python
+# Verifies that LLM cannot mutate numbers produced by deterministic math calculators
+def test_number_safety_invariant_holds():
+    master_agent = MasterFinancialStrategistAgent()
+    ref_markdown = "Your monthly surplus is $850.00. Allocate $500.00 to Debt and $350.00 to Savings."
+    
+    # Valid narrative maintaining exact figures
+    valid_candidate = "Based on our review, you have $850.00 in surplus. We advise putting $500.00 into debt and $350.00 into savings."
+    assert master_agent._numbers_are_subset(valid_candidate, ref_markdown) is True
+
+    # Hallucinated candidate altering figures
+    invalid_candidate = "Based on our review, you have $900.00 in surplus. Put $500.00 into debt."
+    assert master_agent._numbers_are_subset(invalid_candidate, ref_markdown) is False
+```

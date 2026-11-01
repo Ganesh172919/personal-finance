@@ -22,7 +22,7 @@
  *  - `isSubmitting` state is managed separately from the mutation to handle the `onSettled` callback.
  */
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -45,15 +45,15 @@ export function CreateBlogForm({ open, onOpenChange }: CreateBlogFormProps) {
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { register, handleSubmit, formState: { errors }, setValue, reset, watch } = useForm<Partial<IBlogPost>>({
+  const { register, handleSubmit, formState: { errors }, setValue, reset, control } = useForm<Partial<IBlogPost>>({
     defaultValues: {
       category: 'personal-growth',
       tags: [],
     }
   });
 
-  const selectedCategory = watch("category");
-  const tagsString = watch("tags")?.join(", ") || "";
+  const selectedCategory = useWatch({ control, name: "category" });
+  const tagsString = useWatch({ control, name: "tags" })?.join(", ") || "";
 
   const mutation = useMutation({
     mutationFn: createBlog,

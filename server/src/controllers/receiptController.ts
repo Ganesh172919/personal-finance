@@ -41,6 +41,7 @@ import {
 import { publishDomainEvent } from "../services/domainEvents";
 import { recordOcrParse } from "../observability/metrics";
 import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements";
+import { recordDeadLetter } from "../services/deadLetterQueue";
 import { logger } from "../config/logger";
 
 const mapTransactionRecord = (transaction: {
@@ -125,7 +126,13 @@ export const parseReceipt = async (req: Request, res: Response) => {
   );
   recordOcrParse({ success: Boolean(ocr.success) });
 
-  const extracted: ReceiptExtracted = ocr.extracted || {};
+  const extracted: ReceiptExtracted = { ...(ocr.extracted || {}) };
+  if (extracted.total !== undefined && (!Number.isFinite(extracted.total) || extracted.total <= 0)) {
+    extracted.total = undefined;
+  }
+  if (extracted.date && isNaN(new Date(extracted.date).getTime())) {
+    extracted.date = undefined;
+  }
 
   const receipt = await ReceiptModel.create({
     orgId,
@@ -177,7 +184,24 @@ export const confirmReceipt = async (req: Request, res: Response) => {
     throw new HttpError(404, "NOT_FOUND", "Receipt not found");
   }
 
+  if (receipt.status === "confirmed") {
+    throw new HttpError(409, "ALREADY_CONFIRMED", "Receipt has already been confirmed");
+  }
+
   const { vendor, date, total, tax, currency, category, description, items } = req.body as any;
+
+  const numTotal = Number(total);
+  if (!Number.isFinite(numTotal) || numTotal <= 0) {
+    throw new HttpError(400, "INVALID_AMOUNT", "Total amount must be a positive number");
+  }
+
+  const dateStr = typeof date === "string" ? date.trim() : "";
+  const parsedDate = dateStr ? new Date(dateStr) : new Date();
+  const txDate = isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+
+  const categoryStr = (typeof category === "string" && category.trim()) || receipt.categorySuggestion || "Other";
+  const vendorStr = String(vendor || receipt.extracted?.vendor || "").trim();
+  const descriptionStr = String(description || vendorStr || "Receipt expense").trim().slice(0, 250);
 
   const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
   const source = {
@@ -191,11 +215,11 @@ export const confirmReceipt = async (req: Request, res: Response) => {
   const created = await TransactionModel.create({
     orgId,
     userId: user._id,
-    amount: -Math.abs(Number(total)),
-    category: String(category),
-    description: String(description || vendor || "Receipt expense").slice(0, 250),
+    amount: -Math.abs(numTotal),
+    category: categoryStr,
+    description: descriptionStr,
     type: "expense",
-    date: new Date(String(date)),
+    date: txDate,
     source,
   });
 
@@ -203,12 +227,13 @@ export const confirmReceipt = async (req: Request, res: Response) => {
   setProfileMutationSource(profile, source);
   await profile.save();
 
+  const numTax = Number(tax);
   const corrections: ReceiptExtracted = {
-    vendor: String(vendor),
-    date: String(date),
-    total: Number(total),
-    tax: tax === undefined ? undefined : Number(tax),
-    currency: currency ? String(currency) : undefined,
+    vendor: vendorStr,
+    date: txDate.toISOString().slice(0, 10),
+    total: numTotal,
+    tax: tax === undefined || !Number.isFinite(numTax) ? undefined : numTax,
+    currency: currency ? String(currency).trim().toUpperCase() : undefined,
     items: Array.isArray(items) ? items : undefined,
   };
 
@@ -231,7 +256,14 @@ export const confirmReceipt = async (req: Request, res: Response) => {
       amount: created.amount,
       receipt_id: receiptId,
     },
-  }).catch(() => null);
+  }).catch((err) => {
+    recordDeadLetter({
+      context: "ReceiptTransactionCreatedEvent",
+      operation: "publishDomainEvent",
+      error: err,
+      payload: { receiptId, transactionId: created._id.toString(), orgId: orgId.toString() },
+    });
+  });
 
   await publishDomainEvent({
     orgId,
@@ -245,7 +277,14 @@ export const confirmReceipt = async (req: Request, res: Response) => {
       transaction_id: created._id.toString(),
       source,
     },
-  }).catch(() => null);
+  }).catch((err) => {
+    recordDeadLetter({
+      context: "ReceiptConfirmedEvent",
+      operation: "publishDomainEvent",
+      error: err,
+      payload: { receiptId, transactionId: created._id.toString(), orgId: orgId.toString() },
+    });
+  });
 
   res.json({
     source,

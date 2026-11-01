@@ -30,11 +30,14 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from "react";
 
 import { ApiError, apiClient, fetchCsrfToken } from "@/services/api";
 import { reportClientError, reportClientWarning } from "@/lib/runtimeLogger";
+import { clearActiveOrgId } from "@/lib/orgContext";
+import { retireRequestContext } from "@/lib/requestContext";
 
 /**
  * User profile interface.
@@ -76,46 +79,85 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true); // Start as loading
+  const authRevision = useRef(0);
+  const identity = useRef<string | null>(null);
+  const loggingOut = useRef(false);
+
+  const rememberIdentity = (id: string | null) => {
+    try {
+      if (id) localStorage.setItem("userId", id);
+      else localStorage.removeItem("userId");
+    } catch {
+      // Authentication itself must work when browser storage is unavailable.
+    }
+  };
 
   /**
    * Checks the current authentication status by fetching the user profile.
    * This is called on mount and can be called manually to refresh auth state.
    */
+  /**
+   * Checks the current authentication status by fetching the user profile.
+   * This is called on mount and can be called manually to refresh auth state.
+   *
+   * Flow:
+   * 1. Set loading=true (shows spinner in route guards)
+   * 2. GET /auth/profile with JWT cookie
+   * 3. On success: set user state, store userId for analytics
+   * 4. On 401: clear user state (not authenticated)
+   * 5. On other errors: log and clear user state
+   * 6. Set loading=false (renders the app)
+   */
   const checkAuthStatus = useCallback(async () => {
+    if (loggingOut.current) return;
+    const revision = ++authRevision.current;
     setLoading(true);
 
     try {
-      // Fetch user profile (JWT cookie is sent automatically)
+      // Fetch user profile (JWT cookie is sent automatically via credentials: "include")
       const profile = await apiClient<User>("/auth/profile", {
         method: "GET",
-        credentials: "include", // Send HTTP-only cookie
+        credentials: "include", // Send HTTP-only cookie for authentication
       });
 
+      if (revision !== authRevision.current) return;
+      if (identity.current && identity.current !== profile.id) clearActiveOrgId();
+      identity.current = profile.id;
       setUser(profile);
 
       // Store userId in localStorage for non-auth API calls (e.g., analytics)
-      if (profile.id) {
-        localStorage.setItem("userId", profile.id);
+      rememberIdentity(profile.id);
+
+      // Log successful authentication (dev only)
+      if (import.meta.env.DEV) {
+        console.log(`[Auth] Authenticated as ${profile.email} (provider: ${profile.authProvider || "email"})`);
       }
     } catch (error) {
+      if (revision !== authRevision.current) return;
+      identity.current = null;
+      clearActiveOrgId();
       // 401 means not logged in (expected for unauthenticated users)
       if (error instanceof ApiError && error.status === 401) {
         setUser(null);
-        localStorage.removeItem("userId");
+        rememberIdentity(null);
+        if (import.meta.env.DEV) {
+          console.log("[Auth] Not authenticated (401)");
+        }
         return;
       }
 
-      // Other errors are unexpected
+      // Other errors are unexpected — log them
       reportClientError("Failed to fetch user profile", error);
       setUser(null);
-      localStorage.removeItem("userId");
+      rememberIdentity(null);
     } finally {
-      setLoading(false);
+      if (revision === authRevision.current) setLoading(false);
     }
   }, []);
 
   // On mount: fetch CSRF token, then check auth status
   useEffect(() => {
+    let active = true;
     void (async () => {
       try {
         // Fetch CSRF token first (needed for state-changing requests)
@@ -126,8 +168,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Check if user is authenticated
-      await checkAuthStatus();
+      if (active) await checkAuthStatus();
     })();
+    return () => { active = false; authRevision.current += 1; };
   }, [checkAuthStatus]);
 
   /**
@@ -135,6 +178,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Calls the logout endpoint, then clears local state regardless of success.
    */
   const logout = async () => {
+    const revision = ++authRevision.current;
+    retireRequestContext();
+    loggingOut.current = true;
+    setLoading(true);
+    setUser(null);
+    identity.current = null;
+    rememberIdentity(null);
+    clearActiveOrgId();
     try {
       await apiClient("/auth/logout", {
         method: "POST",
@@ -145,8 +196,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       reportClientError("Logout failed", error);
     } finally {
       // Always clear local state (even if server call fails)
-      setUser(null);
-      localStorage.removeItem("userId");
+      loggingOut.current = false;
+      if (revision === authRevision.current) setLoading(false);
     }
   };
 

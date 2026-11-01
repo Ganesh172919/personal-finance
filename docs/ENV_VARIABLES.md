@@ -4,6 +4,10 @@
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## Server (`server/.env`)
 
 ### Core
@@ -115,7 +119,7 @@
 | Variable                            | Required | Description                                  | Default                 | Example          |
 | ----------------------------------- | -------- | -------------------------------------------- | ----------------------- | ---------------- |
 | `PYTHON_API_URL`                    | No       | URL of the Python AI Core service            | `http://localhost:8001` | `http://ai:8001` |
-| `AI_CORE_TOOLS_TOKEN`               | No       | Shared token for AI Core ↔ Server tool calls | —                       | (min 16 chars)   |
+| `AI_CORE_TOOLS_TOKEN`               | No       | Shared token for AI Core <-> Server tool calls | —                       | (min 16 chars)   |
 | `AI_CORE_MAX_CONCURRENCY`           | No       | Global max concurrent AI requests            | `8`                     | `16`             |
 | `AI_CORE_MAX_CONCURRENCY_PER_USER`  | No       | Per-user max concurrent AI requests          | `2`                     | `4`              |
 | `AI_CORE_STATUS_TIMEOUT_MS`         | No       | AI Core status check timeout                 | `2500`                  | `5000`           |
@@ -124,6 +128,15 @@
 | `AI_CORE_CIRCUIT_FAILURE_THRESHOLD` | No       | Failures before circuit breaker opens        | `3`                     | `5`              |
 | `AI_CORE_CIRCUIT_OPEN_MS`           | No       | Duration circuit stays open                  | `30000`                 | `60000`          |
 | `AI_CORE_HEALTH_CACHE_MS`           | No       | Health check response cache duration         | `5000`                  | `10000`          |
+| `CONVERSATION_INSIGHTS_CACHE_TTL_MS` | No | Owned dashboard-summary cache TTL; 0 disables, maximum 300000 | `120000` | `60000` |
+
+Conversation summaries are keyed by user, organization and the current AI
+request context. Request timestamps are normalized to their UTC day. Cache
+reads enforce expiry even before MongoDB TTL cleanup. Degraded replies expire
+within 15 seconds. Explicit dashboard Refresh uses `refresh=1` to bypass reads;
+concurrent identical computations share work within each Node process. Only
+new computations consume an AI usage unit. Cached replies report zero new
+model calls and omit historical execution traces.
 
 ---
 
@@ -291,3 +304,111 @@ echo "GEMINI_API_KEY=your-key-here" > server/AI_Core/.env
 ---
 
 _See also_: [SETUP.md](./SETUP.md) · [DEPLOYMENT.md](./DEPLOYMENT.md) · [SECURITY.md](./SECURITY.md)
+
+## Environment Configuration Architecture Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#047857', 'lineColor': '#8b5cf6', 'secondaryColor': '#0284c7', 'tertiaryColor': '#f59e0b'}}}%%
+mindmap
+  root((⚙️ FinWise Env Config Matrix))
+    🛡️ Server Gateway (server/.env)
+      JWT_SECRET & REFRESH_SECRET (Min 64 chars)
+      DATABASE_URL (mongodb://...)
+      REDIS_URL (redis://...)
+      AI_CORE_URL (http://localhost:8001)
+      RATE_LIMIT_WINDOW_MS & MAX
+      CORS_ORIGINS (Allowed browser origins)
+    🧠 AI Core (server/AI_Core/.env)
+      GROQ_API_KEY (Primary fast LLaMA)
+      GEMINI_API_KEY (Multi-modal & reasoning)
+      OPENAI_API_KEY (GPT-4o fallback)
+      OPENROUTER_API_KEYS (Pooled JSON list)
+      LLM_PROVIDER_PRIORITY (Failover order)
+    💻 Client Frontend (client/.env)
+      VITE_API_URL (/api/v1)
+      VITE_GOOGLE_CLIENT_ID (OAuth2 PKCE)
+      VITE_ENABLE_DEV_LOGS (true/false)
+    🔒 Production Hardening Flags
+      NODE_ENV=production
+      COOKIE_SECURE=true
+      COOKIE_SAME_SITE=strict
+```
+
+## Configuration Ingestion & Schema Validation ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 PROCESS BOOTSTRAP (Node.js or Python runtime start)                 │
+│    Reads local .env file using dotenv                                  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STAGE 1: SCHEMA VALIDATION & INTEGRITY GUARDS                       │
+│    ├─► Server: server/src/config/env.ts validates with Zod             │
+│    │   ├── Missing JWT_SECRET? ──► Crash immediately with fatal log 🔴 │
+│    │   └── Malformed REDIS_URL? ──► Prevent startup & report error 🔴  │
+│    └─► AI Core: Pydantic BaseSettings verifies required keys           │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ (Config Validated)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔑 STAGE 2: SECRET MASKING & TELEMETRY REGISTRATION                    │
+│    ├─► Redact sensitive tokens in logs (only display sk-...3f8)        │
+│    ├─► Register provider keys into KeyPool with cooldown tracking      │
+│    └─► Expose typed, immutable config object to entire runtime 🟢      │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+## Production Implementation Blueprint: Zod Environment Loader (`server/src/config/env.ts`)
+
+```typescript
+import dotenv from "dotenv";
+import { z } from "zod";
+
+dotenv.config();
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  PORT: z.coerce.number().int().positive().default(3000),
+  DATABASE_URL: z.string().url(),
+  REDIS_URL: z.string().url().default("redis://localhost:6379"),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters long"),
+  PYTHON_API_URL: z.string().url().default("http://localhost:8001"),
+  CLIENT_URL: z.string().url().default("http://localhost:5173"),
+  AI_CORE_TIMEOUT_MS: z.coerce.number().default(45000),
+  CSRF_ENABLED: z.coerce.boolean().default(true),
+});
+
+export type Env = z.infer<typeof envSchema>;
+
+let parsedEnv: Env | null = null;
+
+export function getEnv(): Env {
+  if (!parsedEnv) {
+    const result = envSchema.safeParse(process.env);
+    if (!result.success) {
+      console.error("FATAL: Environment validation failed:", result.error.format());
+      process.exit(1);
+    }
+    parsedEnv = result.data;
+  }
+  return parsedEnv;
+}
+```
+
+---
+
+## 2026 Enterprise Feature Environment Variables
+
+| Variable | Required | Description | Default | Example |
+| :--- | :--- | :--- | :--- | :--- |
+| `AI_CORE_INTERNAL_TOKEN` | Yes (in prod) | Shared internal bearer token protecting Python AI Core | — | `sec_token_9900aabbcc11` |
+| `GRIDFS_UPLOAD_TIMEOUT_MS` | No | Timeout for PDFKit document compilation stream writes | `60000` | `60000` |
+| `DLQ_MAX_CAPACITY` | No | Maximum quarantined jobs in `bull:finwise-dlq` | `500` | `500` |
+| `NEWSLETTER_CRON_INTERVAL_MS`| No | Polling frequency for scheduled user financial digests | `60000` | `60000` |
+| `CONVERSATION_INSIGHTS_TTL_MS`| No | Cache TTL for in-process coalesced session insights | `120000` | `120000` |
+| `METRICS_TOKEN` | Yes (in prod) | Bearer token required to scrape Prometheus `GET /api/metrics` | — | `metric_secret_key_88` |

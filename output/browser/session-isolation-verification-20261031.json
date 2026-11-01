@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-31",
+  "build": "index-DDfTGWqs.js",
+  "method": "Inbuilt browser Computer Use",
+  "workspaceIsolation": {
+    "emptyFixture": true,
+    "noOriginalGoals": true,
+    "noOriginalChatHistory": true,
+    "originalRecordsRestored": true,
+    "originalFileStatus": 200,
+    "otherWorkspaceFileStatus": 404
+  },
+  "chat": {
+    "conversation": "6ae526effcde8b9f067c2dff",
+    "file": "6ae526f1fcde8b9f067c2e17",
+    "createdPdf": true,
+    "downloaded": true,
+    "quotedSaved": "USD 25.25",
+    "quotedTarget": "USD 1250.50",
+    "deadline": "2027-05-01",
+    "physicalPage": 1,
+    "reloadAndBack": true,
+    "copyExact": true,
+    "logoutAndSignIn": true
+  },
+  "mobile": {
+    "widths": [
+      390,
+      320
+    ],
+    "horizontalOverflow": false
+  },
+  "screenshots": [
+    "workspace-isolation-fixed-20261031.jpg",
+    "mobile-chat-source-20261031.jpg",
+    "mobile-chat-320-20261031.jpg"
+  ],
+  "finalRoutesChecked": 24,
+  "integrationBuild": "index-BxDdinUb.js",
+  "finalBuild": "index-DDfTGWqs.js",
+  "finalQuoteRestored": true,
+  "finalFrontendTests": {
+    "passed": 271,
+    "files": 45
+  }
+}

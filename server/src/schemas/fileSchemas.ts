@@ -28,3 +28,17 @@ export const analyzeWorkspaceFileBodySchema = z
     prompt: z.string().trim().min(1).max(2000).optional(),
   })
   .strict();
+
+export const renderWorkspaceFilePdfBodySchema = z
+  .object({
+    title: z.string().trim().min(1).max(160).optional(),
+  })
+  .strict();
+
+export const renderPdfFromTextBodySchema = z
+  .object({
+    prompt_text: z.string().trim().min(1).max(20000),
+    title: z.string().trim().min(1).max(160).optional(),
+    file_name: z.string().trim().min(1).max(160).optional(),
+  })
+  .strict();

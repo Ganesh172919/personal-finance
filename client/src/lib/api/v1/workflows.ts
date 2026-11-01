@@ -37,12 +37,12 @@ export type Workflow = NonNullable<ListWorkflowsResponse["workflows"]>[number];
 
 /** List all workflows for the active organisation. */
 export async function listWorkflows(): Promise<ListWorkflowsResponse> {
-  return apiClient("/v1/workflows");
+  return apiClient("/workflows");
 }
 
 /** Create a new workflow automation rule. */
 export async function createWorkflow(body: CreateWorkflowRequest): Promise<CreateWorkflowResponse> {
-  return apiClient("/v1/workflows", {
+  return apiClient("/workflows", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -50,7 +50,7 @@ export async function createWorkflow(body: CreateWorkflowRequest): Promise<Creat
 
 /** Trigger a workflow run, executing its defined actions. */
 export async function runWorkflow(workflowId: string, body: RunWorkflowRequest = {}): Promise<RunWorkflowResponse> {
-  return apiClient(`/v1/workflows/${workflowId}/run`, {
+  return apiClient(`/workflows/${workflowId}/run`, {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -74,7 +74,7 @@ export type ListWorkflowTemplatesResponse = {
 
 /** List available workflow templates from installed plugins. */
 export async function listWorkflowTemplates(): Promise<ListWorkflowTemplatesResponse> {
-  return apiClient("/v1/workflows/templates") as Promise<ListWorkflowTemplatesResponse>;
+  return apiClient("/workflows/templates") as Promise<ListWorkflowTemplatesResponse>;
 }
 
 

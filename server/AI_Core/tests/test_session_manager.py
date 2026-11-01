@@ -2,21 +2,18 @@
 Tests for session manager with checkpointing and resumable state.
 """
 
-import json
 import os
 import tempfile
 import time
+
 import pytest
-from pathlib import Path
 
 from utils.session_manager import (
+    CheckpointPhase,
+    SessionCheckpoint,
     SessionManager,
     SessionState,
-    SessionCheckpoint,
     SessionStatus,
-    CheckpointPhase,
-    CompactedMemory,
-    get_session_manager,
     reset_session_manager,
 )
 

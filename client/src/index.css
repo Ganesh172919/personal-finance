@@ -1,7 +1,5 @@
 /* stylelint-disable at-rule-no-unknown */
 
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap");
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -13,7 +11,7 @@
   --card-foreground: hsl(222 35% 12%);
   --popover: hsl(0 0% 100%);
   --popover-foreground: hsl(222 35% 12%);
-  --primary: hsl(222 47% 11%);
+  --primary: hsl(221 73% 44%);
   --primary-foreground: hsl(0 0% 100%);
   --secondary: hsl(210 32% 96%);
   --secondary-foreground: hsl(222 35% 14%);
@@ -39,21 +37,21 @@
   --sidebar-accent-foreground: hsl(222 35% 12%);
   --sidebar-border: hsl(214 24% 88%);
   --sidebar-ring: hsl(222 47% 11%);
-  --font-sans: "Manrope", system-ui, sans-serif;
+  --font-sans: Arial, system-ui, sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: "JetBrains Mono", monospace;
-  --radius: 20px;
+  --font-mono: ui-monospace, Consolas, monospace;
+  --radius: 10px;
 }
 
 .dark {
-  --background: hsl(0 0% 0%);
+  --background: hsl(222 30% 10%);
   --foreground: hsl(0 0% 98%);
-  --card: hsl(0 0% 4%);
+  --card: hsl(222 27% 14%);
   --card-foreground: hsl(0 0% 98%);
   --popover: hsl(0 0% 4%);
   --popover-foreground: hsl(0 0% 98%);
-  --primary: hsl(0 0% 100%);
-  --primary-foreground: hsl(0 0% 0%);
+  --primary: hsl(217 92% 70%);
+  --primary-foreground: hsl(222 35% 10%);
   --secondary: hsl(0 0% 8%);
   --secondary-foreground: hsl(0 0% 96%);
   --muted: hsl(0 0% 8%);
@@ -65,11 +63,11 @@
   --border: hsl(0 0% 14%);
   --input: hsl(0 0% 14%);
   --ring: hsl(0 0% 100%);
-  --chart-1: hsl(0 0% 98%);
-  --chart-2: hsl(0 0% 84%);
-  --chart-3: hsl(0 0% 70%);
-  --chart-4: hsl(0 0% 56%);
-  --chart-5: hsl(0 0% 42%);
+  --chart-1: hsl(217 92% 70%);
+  --chart-2: hsl(160 65% 55%);
+  --chart-3: hsl(270 85% 76%);
+  --chart-4: hsl(35 90% 65%);
+  --chart-5: hsl(340 80% 72%);
   --sidebar: hsl(0 0% 3% / 0.98);
   --sidebar-foreground: hsl(0 0% 98%);
   --sidebar-primary: hsl(0 0% 100%);
@@ -92,10 +90,7 @@
   body {
     @apply bg-background font-sans text-foreground antialiased;
     min-height: 100vh;
-    background-image:
-      radial-gradient(circle at top left, hsl(221 83% 53% / 0.08), transparent 24%),
-      radial-gradient(circle at bottom right, hsl(186 96% 38% / 0.08), transparent 26%),
-      linear-gradient(180deg, hsl(0 0% 100%), hsl(210 33% 99%));
+    background-image: none;
     background-attachment: fixed;
   }
 
@@ -111,10 +106,7 @@
 }
 
 .dark body {
-  background-image:
-    radial-gradient(circle at top left, hsl(0 0% 100% / 0.07), transparent 20%),
-    radial-gradient(circle at bottom right, hsl(0 0% 100% / 0.04), transparent 24%),
-    linear-gradient(180deg, hsl(0 0% 0%), hsl(0 0% 0%));
+  background-image: none;
 }
 
 .dark ::selection {
@@ -153,15 +145,11 @@
   }
 
   .surface-panel {
-    background:
-      linear-gradient(180deg, hsl(0 0% 100% / 0.86), hsl(210 40% 98% / 0.96)),
-      radial-gradient(circle at top left, hsl(221 83% 53% / 0.08), transparent 35%);
-    backdrop-filter: blur(18px);
+    background: var(--card);
   }
 
   .dark .surface-panel {
-    background:
-      linear-gradient(180deg, hsl(0 0% 4% / 0.92), hsl(0 0% 1% / 0.98));
+    background: var(--card);
   }
 
   .dark .gradient-border {

@@ -45,6 +45,7 @@ import { processExportJob } from "../services/exports";
 import { processIntegrationSyncRun } from "../services/integrations";
 import { processWorkflowRun } from "../services/workflows";
 import { startWorkflowScheduler } from "../services/workflowScheduler";
+import { recoverStaleJobs } from "../services/jobRecovery";
 
 // Discriminated union type for all job kinds
 // Each job has a 'kind' discriminator and the job document's MongoDB _id
@@ -274,6 +275,11 @@ async function start() {
   // Connect to MongoDB (strict mode: requires MONGO_URI, no in-memory fallback)
   await connectDBStrict();
 
+  // Run initial sweep to recover any jobs abandoned during previous process termination
+  await recoverStaleJobs().catch((err) =>
+    workerLogger.warn({ err }, "Initial stale job recovery sweep encountered an error")
+  );
+
   // Create a concurrency-limited promise queue
   // This limits how many jobs can run in parallel
   const queue = new PQueue({ concurrency: env.WORKER_CONCURRENCY });
@@ -292,6 +298,8 @@ async function start() {
     "Worker started"
   );
 
+  let lastRecoveryAt = Date.now();
+
   /**
    * Single polling tick: claims and queues up to `capacity` jobs.
    *
@@ -301,6 +309,14 @@ async function start() {
    */
   const tick = async () => {
     if (shuttingDown) return;
+
+    // Periodic sweep for stale/crashed jobs every 5 minutes
+    if (Date.now() - lastRecoveryAt > 5 * 60 * 1000) {
+      lastRecoveryAt = Date.now();
+      void recoverStaleJobs().catch((err) =>
+        workerLogger.warn({ err }, "Periodic stale job recovery sweep failed")
+      );
+    }
 
     try {
       // Calculate available capacity

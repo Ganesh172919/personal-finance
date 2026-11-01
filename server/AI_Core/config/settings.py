@@ -44,7 +44,6 @@ from typing import Any, Dict, List
 
 from dotenv import dotenv_values
 
-
 # --- Directory resolution ---
 # Walk up from this file to find the .env files.
 _CONFIG_DIR = Path(__file__).resolve().parent       # AI_Core/config/
@@ -142,12 +141,12 @@ class Settings:
     # specifies a model).  Comma-separated list.
     _model_candidates_env = os.getenv(
         "MODEL_CANDIDATES",
-        "gemini-2.5-flash,gemini-2.5-flash-lite",
+        "gemini-3.5-flash-lite",
     )
     MODEL_CANDIDATES: List[str] = [
         model.strip() for model in _model_candidates_env.split(",") if model.strip()
     ]
-    MODEL_NAME = MODEL_CANDIDATES[0] if MODEL_CANDIDATES else "gemini-2.5-flash"
+    MODEL_NAME = MODEL_CANDIDATES[0] if MODEL_CANDIDATES else "gemini-3.5-flash-lite"
     TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.1"))
     MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "4096"))
 
@@ -190,6 +189,7 @@ class Settings:
     EMERGENCY_FUND_MONTHS = 3           # Minimum emergency fund runway
     DEFAULT_SAVINGS_RATE = 0.2          # Target savings rate (20%)
     MAX_DEBT_TO_INCOME_RATIO = 0.36     # Maximum healthy debt-to-income ratio
+    MIN_EXTRA_DEBT_PAYMENT = 100        # Minimum extra payment capacity for debt snowball
 
     # ======================================================================
     # Vision Configuration (OCR + Handwriting)

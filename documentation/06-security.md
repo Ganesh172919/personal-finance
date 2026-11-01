@@ -25,6 +25,10 @@
 
 ---
 
+> [!TIP]
+> **Building Secure Features?**  
+> For multi-tenant data isolation rules (`orgScopePlugin`), JWT verification, and security testing recipes, see the [**Master Developer Handbook: Building on This Project**](../docs/BUILDING_ON_THIS_PROJECT.md).
+
 ## 1. Security Overview
 
 ### Security Philosophy
@@ -873,6 +877,25 @@ Two middleware variants available:
 
 Both set `req.apiKey` with `{ id, orgId, createdByUserId, scopes, keyPrefix }` and ensure `req.org` is populated.
 
+### 9.7 Internal Service Security (`AI_CORE_INTERNAL_TOKEN`)
+
+Communication between the Node.js API Gateway and the Python AI Core (Port 8001) is protected with a shared bearer secret:
+
+| Setting | Value / Variable | Purpose |
+|---|---|---|
+| Header | `Authorization: Bearer <AI_CORE_INTERNAL_TOKEN>` | Verifies that calls to AI Core originate from authorized internal services |
+| Server Client | `server/src/services/aiCoreClient.ts` | Injects header on all proxy and streaming requests |
+| AI Core Guard | `server/AI_Core/api_service.py` | Validates token against environment before executing workflows |
+| Circuit Breaker | 5 failures / 30s reset | Isolates AI Core failures without cascading gateway crashes |
+
+### 9.8 Dead Letter Queue (DLQ) & Job Quarantine
+
+Background queue jobs that fail repeatedly (exports, newsletters, integration syncs) are automatically quarantined in the Dead Letter Queue (`deadLetterQueue.ts`):
+
+- **Poison-Pill Isolation**: Malformed payloads or failing queries do not block other tenant jobs.
+- **Payload Sanitization**: Quarantined error payloads redact sensitive credentials before logging.
+- **Administrative Inspection**: Replay or purge operations require administrative authentication.
+
 ---
 
 ## 10. Email Security
@@ -1186,4 +1209,336 @@ express.json({
 
 ---
 
+## Security Architecture & Threat Defense Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4f46e5', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#4338ca', 'lineColor': '#06b6d4', 'secondaryColor': '#f43f5e', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((🛡️ FinWise Security Framework))
+    🔐 Authentication & Identity
+      Dual-Token JWT (Access: 15m, Refresh: 7d)
+      Google OAuth 2.0 PKCE Flow
+      Time-Based OTP (TOTP 2FA)
+      Hashed API Keys (SHA-256 + Server Pepper)
+      Argon2 / BCrypt Password Hashing
+    🏢 Multi-Tenant Data Boundaries
+      Organization Scoping (orgId)
+      Mongoose orgScopePlugin Guard
+      Role-Based Access Control (RBAC)
+      Seat Limits & Entitlement Enforcement
+    🧱 Edge & Transport Defense
+      Helmet Security Headers (CSP, HSTS)
+      Strict CORS Origin Allowlist
+      Double-Submit Cookie CSRF Protection
+      Sliding-Window Rate Limiting (Redis)
+      Request Size Limits & Payload Sanitization
+    🔍 Auditing & Compliance
+      Tamper-Evident AuditLog Collection
+      Security Event Telemetry
+      Credential Rotation Protocols
+      Automated Threat & NoSQL Injection Testing
+```
+
+## Zero-Trust Request Authentication & Authorization ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 INCOMING INGRESS REQUEST (HTTP / REST / SSE)                        │
+│    Header: Authorization: Bearer <jwt> OR X-API-Key: <key>             │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STAGE 1: EDGE SHIELD & INTEGRITY INSPECTION                         │
+│    ├─► TLS 1.3 Termination & HSTS enforcement                          │
+│    ├─► Helmet Security Headers (CSP, X-Frame-Options: DENY)            │
+│    ├─► CORS Origin Validation against whitelist                        │
+│    └─► Sliding Window Rate Limiter (IP & Token keyed)                  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔑 STAGE 2: CREDENTIAL VERIFICATION (authAny)                          │
+│    ├── Bearer Token? ──► Verify JWT signature & expiration             │
+│    │                     ├── Valid? ──► Extract { userId, orgId }      │
+│    │                     └── Expired? ──► Reject 401 Unauthorized      │
+│    └── API Key? ──► Hash with PEPPER ──► Lookup in DB active keys      │
+│                     ├── Valid & Active? ──► Check Quota & Scopes       │
+│                     └── Invalid/Revoked? ──► Reject 401 Unauthorized   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🏢 STAGE 3: TENANT ORG-SCOPE ENFORCEMENT                               │
+│    ├─► Verify caller belongs to target organization                    │
+│    ├─► RBAC Permission Check (Admin / Member / ReadOnly)               │
+│    └─► Auto-inject { orgId } constraint into database query            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟣 STAGE 4: AUDIT TRAIL LOGGING                                        │
+│    ├─► Capture: actorId, orgId, action, targetResource, ipAddress, UA  │
+│    ├─► Write to append-only AuditLog collection                        │
+│    └─► Dispatch safe, sanitized response to caller                     │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
 *This document should be reviewed and updated with each major release or security-relevant change.*
+
+
+---
+
+## Production Implementation Blueprints
+
+### 1. Dual-Authentication Middleware Guard (`server/src/middleware/authAny.ts`)
+
+```typescript
+// Seamlessly authenticates requests via 15-minute JWT Bearer or SHA-256 peppered API Key
+export async function authAny(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  const apiKeyHeader = req.headers["x-api-key"] as string | undefined;
+
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const token = authHeader.substring(7);
+      const decoded = jwt.verify(token, config.JWT_SECRET) as { userId: string; orgId?: string };
+      const user = await UserModel.findById(decoded.userId).lean();
+      if (!user) return res.status(401).json({ success: false, error: "Invalid user session" });
+      req.user = user;
+      req.orgId = (req.headers["x-org-id"] as string) || decoded.orgId;
+      return next();
+    } catch {
+      return res.status(401).json({ success: false, error: "Token expired or malformed" });
+    }
+  }
+
+  if (apiKeyHeader) {
+    const hashedKey = crypto.createHmac("sha256", config.API_KEY_PEPPER).update(apiKeyHeader).digest("hex");
+    const keyDoc = await ApiKeyModel.findOne({ keyHash: hashedKey, active: true }).lean();
+    if (!keyDoc) return res.status(401).json({ success: false, error: "Invalid or revoked API key" });
+    req.user = await UserModel.findById(keyDoc.userId).lean();
+    req.orgId = keyDoc.orgId;
+    return next();
+  }
+
+  return res.status(401).json({ success: false, error: "Authorization credentials required" });
+}
+```
+
+### 2. Double-Submit CSRF Verification (`server/src/middleware/csrfProtection.ts`)
+
+```typescript
+// Enforce CSRF header match against secure cookie secret for all mutating HTTP verbs
+export function csrfProtection(req: Request, res: Response, next: NextFunction) {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
+  if (req.headers["x-api-key"]) return next(); // API keys bypass cookie CSRF
+
+  const cookieSecret = req.cookies["XSRF-TOKEN"];
+  const headerToken = req.headers["x-csrf-token"];
+
+  if (!cookieSecret || !headerToken || cookieSecret !== headerToken) {
+    logger.warn({ ip: req.ip, path: req.path }, "[CSRF Violation] Request rejected due to token mismatch");
+    return res.status(403).json({ success: false, error: "CSRF token mismatch or missing" });
+  }
+
+  next();
+}
+```
+
+### 3. Account Lockout Brute-Force Defense (`server/src/services/accountLockout.ts`)
+
+```typescript
+// Enforces exponential lockout after 5 consecutive failed login attempts
+export async function handleFailedLogin(userId: string) {
+  const user = await UserModel.findById(userId);
+  if (!user) return;
+
+  user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+  if (user.failedLoginAttempts >= 5) {
+    user.lockoutUntil = new Date(Date.now() + 15 * 60 * 1000); // 15-minute lockout
+    logger.warn({ userId }, "[Security Alert] Account temporarily locked due to repeated failures");
+  }
+  await user.save();
+}
+```
+
+### 4. Monotonic Context Revision Guard (`server/src/services/contextRevisionGuard.ts`)
+
+```typescript
+// Protects against out-of-order SSE streaming or background worker race conditions
+// Enforces that incoming context updates strictly increment the monotonic revision counter
+export interface ContextRevisionRecord {
+  sessionId: string;
+  revision: number;
+  updatedAt: Date;
+}
+
+const revisionStore = new Map<string, number>();
+
+export function validateAndCommitRevision(sessionId: string, incomingRevision: number): boolean {
+  const currentRevision = revisionStore.get(sessionId) || 0;
+  
+  if (incomingRevision <= currentRevision) {
+    // Drop late-arriving packet or out-of-order background evaluation
+    return false;
+  }
+  
+  revisionStore.set(sessionId, incomingRevision);
+  return true;
+}
+
+export function resetSessionRevision(sessionId: string): void {
+  revisionStore.delete(sessionId);
+}
+```
+
+### 5. Private Session Boundary QueryClient (`client/src/lib/queryClient.ts`)
+
+```typescript
+// Guarantees strict query cache isolation across user sessions
+// Creates an isolated QueryClient instance per authenticated user to prevent cross-account cache bleed
+import { QueryClient } from "@tanstack/react-query";
+
+let currentUserId: string | null = null;
+let currentClient: QueryClient | null = null;
+
+export function getScopedQueryClient(userId: string | null): QueryClient {
+  if (!userId) {
+    if (currentClient) {
+      currentClient.clear();
+      currentClient = null;
+    }
+    currentUserId = null;
+    return new QueryClient();
+  }
+
+  if (currentUserId !== userId || !currentClient) {
+    if (currentClient) {
+      currentClient.clear();
+    }
+    currentUserId = userId;
+    currentClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          staleTime: 1000 * 60 * 2, // 2 minutes
+          gcTime: 1000 * 60 * 10,   // 10 minutes
+          retry: 1,
+          refetchOnWindowFocus: false,
+        },
+      },
+    });
+  }
+
+  return currentClient;
+}
+```
+
+### 6. Dead Letter Queue Payload Sanitizer & PII Scrubber (`server/src/services/deadLetterQueue.ts`)
+
+```typescript
+// Scrubs authorization tokens, credentials, and sensitive payment details before DLQ quarantining
+const REDACTED_KEYS = new Set([
+  "authorization",
+  "cookie",
+  "password",
+  "token",
+  "jwt",
+  "apiKey",
+  "secret",
+  "cardNumber",
+  "cvv",
+  "ssn",
+  "accountNumber"
+]);
+
+export function scrubPayloadForDLQ(payload: unknown): unknown {
+  if (payload === null || typeof payload !== "object") {
+    return payload;
+  }
+
+  if (Array.isArray(payload)) {
+    return payload.map(scrubPayloadForDLQ);
+  }
+
+  const cleanObj: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(payload as Record<string, unknown>)) {
+    const lowerKey = key.toLowerCase();
+    if (REDACTED_KEYS.has(lowerKey) || lowerKey.includes("secret") || lowerKey.includes("token")) {
+      cleanObj[key] = "[REDACTED_BY_DLQ_POLICY]";
+    } else if (typeof val === "object" && val !== null) {
+      cleanObj[key] = scrubPayloadForDLQ(val);
+    } else {
+      cleanObj[key] = val;
+    }
+  }
+
+  return cleanObj;
+}
+```
+
+---
+
+## 15. Advanced Session Security & Tenant Boundary Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#dc2626', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#b91c1c', 'lineColor': '#f87171', 'secondaryColor': '#ea580c', 'tertiaryColor': '#059669'}}}%%
+mindmap
+  root((🛡️ Enterprise Security Matrix))
+    🔐 Authentication & Identity
+      15-Min Stateless JWT Bearer
+      HTTP-Only SameSite Cookie
+      SHA-256 Peppered API Keys
+      Multi-Factor TOTP Authenticator
+    🏢 Multi-Tenant Data Isolation
+      Mongoose OrgScopePlugin Injection
+      Strict { orgId } Query Predicates
+      Workspace Knowledge Chunk Scoping
+      Cross-Tenant Query Rejection (403)
+    ⚡ Session Integrity & Race Guards
+      Monotonic Context Revisions
+      Per-User QueryClient Sandboxing
+      Out-of-Order Packet Quarantining
+      Client Cache Purge on Sign-Out
+    📦 Resilience & Safe Quarantining
+      Redis DLQ bull:finwise-dlq (500 cap)
+      Automatic Payload PII Scrubbing
+      Credential Masking & Sanitization
+      Admin-Audited Manual Replay
+```
+
+---
+
+## 16. Multi-Tenant Isolation & Monotonic Revision Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🌐 INCOMING REQUEST / SSE STREAM PACKET                                │
+│    Payload includes: { orgId, sessionId, revision: N, data: {...} }    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STEP 1: AUTHENTICATION & MULTI-TENANT BOUNDARY CHECK                │
+│    ├─► Verify caller's orgId strictly matches target resource orgId    │
+│    ├─► OrgScopePlugin injects { orgId } into all Mongoose queries      │
+│    └─► Disallow cross-tenant leakage or parameter spoofing             │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔄 STEP 2: MONOTONIC REVISION VERIFICATION                             │
+│    ├─► Read latest committed revision for sessionId (Current: R)       │
+│    ├─► Check: Is incoming revision N > R?                              │
+│    │   ├── YES ──► Commit revision N, proceed to UI update / processing│
+│    │   └── NO  ──► STALE PACKET DETECTED: Discard silently             │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📦 STEP 3: ERROR HANDLING & DLQ SCRUBBING                              │
+│    ├─► If downstream processing throws unrecoverable error:            │
+│    ├─► Scrub all credentials, tokens, PII, and secrets from payload    │
+│    └─► Quarantine sanitized packet in Redis bull:finwise-dlq           │
+└────────────────────────────────────────────────────────────────────────┘
+```

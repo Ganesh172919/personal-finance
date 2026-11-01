@@ -24,6 +24,7 @@
  */
 
 import { Schema, model, Document, Types } from "mongoose"; // MongoDB ODM
+import { orgScopePlugin } from "../utils/orgScopePlugin";
 
 /**
  * Account Type Enum
@@ -140,6 +141,8 @@ const accountSchema = new Schema<IAccountDocument>(
  */
 accountSchema.index({ orgId: 1, status: 1, updatedAt: -1 });
 accountSchema.index({ orgId: 1, type: 1, status: 1, updatedAt: -1 });
+
+accountSchema.plugin(orgScopePlugin);
 
 /**
  * Account Model

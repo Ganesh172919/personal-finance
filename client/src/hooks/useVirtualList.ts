@@ -41,7 +41,7 @@
  * );
  */
 
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
 
 /**
  * Virtual scrolling hook for long lists.
@@ -72,7 +72,7 @@ interface UseVirtualListResult<T> {
   /** Total height of the virtual list (for scroll spacer) */
   totalHeight: number;
   /** Ref to attach to the scroll container */
-  containerRef: React.RefObject<HTMLDivElement | null>;
+  containerRef: React.RefObject<HTMLDivElement>;
   /** Call to force re-measure */
   refresh: () => void;
 }
@@ -84,14 +84,13 @@ export function useVirtualList<T>({
   containerHeight: fixedHeight,
 }: UseVirtualListOptions<T>): UseVirtualListResult<T> {
   const containerRef = useRef<HTMLDivElement>(null);
-  const scrollTopRef = useRef(0);
-  const heightRef = useRef(fixedHeight || 400);
-  const forceUpdateRef = useRef(0);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(fixedHeight || 400);
 
   // Measure container height
   useEffect(() => {
     if (fixedHeight) {
-      heightRef.current = fixedHeight;
+      setViewportHeight(fixedHeight);
       return;
     }
 
@@ -100,11 +99,11 @@ export function useVirtualList<T>({
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        heightRef.current = entry.contentRect.height;
+        setViewportHeight(entry.contentRect.height);
       }
     });
     observer.observe(el);
-    heightRef.current = el.clientHeight;
+    setViewportHeight(el.clientHeight);
 
     return () => observer.disconnect();
   }, [fixedHeight]);
@@ -115,8 +114,7 @@ export function useVirtualList<T>({
     if (!el) return;
 
     const handleScroll = () => {
-      scrollTopRef.current = el.scrollTop;
-      forceUpdateRef.current++;
+      setScrollTop(el.scrollTop);
     };
 
     el.addEventListener("scroll", handleScroll, { passive: true });
@@ -124,8 +122,6 @@ export function useVirtualList<T>({
   }, []);
 
   const totalHeight = items.length * itemHeight;
-  const scrollTop = scrollTopRef.current;
-  const viewportHeight = heightRef.current;
 
   const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
   const endIndex = Math.min(
@@ -143,8 +139,12 @@ export function useVirtualList<T>({
   }
 
   const refresh = useCallback(() => {
-    forceUpdateRef.current++;
-  }, []);
+    const el = containerRef.current;
+    if (el) {
+      setScrollTop(el.scrollTop);
+      setViewportHeight(fixedHeight || el.clientHeight);
+    }
+  }, [fixedHeight]);
 
   return {
     visibleItems,

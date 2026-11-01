@@ -6,8 +6,68 @@
  * transaction is created), the server pushes events to the client, and
  * this hook automatically invalidates the relevant React Query caches.
  *
+ * ============================================================================
+ * MINDMAP FLOW: SERVER-SENT EVENTS & REACT QUERY CACHE INVALIDATION
+ * ============================================================================
+ * - Real-Time Domain Events (SSE)
+ *     ├── 1. Connection Lifecycle Management
+ *     │   ├── Authentication Guard: Only connects when authenticated user is present
+ *     │   ├── EventSource Endpoint: GET /api/events/stream
+ *     │   ├── Auto-Reconnection: 5-second backoff timer on network drops/disconnects
+ *     │   └── Teardown: EventSource closed on component unmount or logout
+ *     ├── 2. Event Ingestion & Payload Decoding
+ *     │   ├── Structured Wire Frame: { type, aggregate_type, payload }
+ *     │   └── Error Resilient JSON Parser
+ *     ├── 3. Event-to-Query Invalidation Matrix (EVENT_INVALIDATION_MAP)
+ *     │   ├── TransactionCreated/Updated/Deleted: Refetches txns, summaries, analytics, feeds
+ *     │   ├── BudgetAllocationUpdated: Refetches budget envelopes & dashboard
+ *     │   ├── GoalUpdated: Refetches financial profile & goal trackers
+ *     │   ├── ReceiptProcessed: Refetches receipts, transactions & summary
+ *     │   └── WorkflowRunCompleted: Refetches workflow runs, tasks & activity
+ *     └── 4. Deterministic Background Re-synchronization
+ *         └── React Query queryClient.invalidateQueries triggers seamless, zero-flicker UI updates
+ *
+ * ============================================================================
+ * ASCII FLOW: SSE DOMAIN EVENT PROPAGATION & CACHE INVALIDATION
+ * ============================================================================
+ *               [ Backend Domain Event Emitted (e.g., Transaction Created) ]
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Express SSE Server Broadcasts Line:    |
+ *                 | "data: {"type": "TransactionCreated"}" |
+ *                 +--------------------+-------------------+
+ *                                      |
+ *                            HTTP/2 Persistent Stream
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Browser EventSource in useRealtimeEvents|
+ *                 | onmessage handler triggered            |
+ *                 +--------------------+-------------------+
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Parse JSON & Lookup Invalidation Keys: |
+ *                 | EVENT_INVALIDATION_MAP[message.type]   |
+ *                 +--------------------+-------------------+
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Loop over Target Query Key Arrays:     |
+ *                 | queryClient.invalidateQueries(key)     |
+ *                 +--------------------+-------------------+
+ *                                      |
+ *                                      v
+ *      +-------------------------------------------------------------------+
+ *      | TanStack Query Automatically Refetches in Background:             |
+ *      |  - GET /api/transactions (New transaction appears)                |
+ *      |  - GET /api/dashboard/summary (Balances update live)              |
+ *      |  - GET /api/transactions/summary (Category totals update)         |
+ *      +-------------------------------------------------------------------+
+ *
  * HOW SSE WORKS:
- * 1. Client opens a persistent HTTP connection to /api/v1/events/stream
+ * 1. Client opens a persistent HTTP connection to /api/events/stream
  * 2. Server sends events as "data: {...}\n\n" lines
  * 3. Client parses events and invalidates affected queries
  * 4. Invalidated queries automatically refetch fresh data
@@ -190,7 +250,7 @@ const buildInvalidationKeys = (event: SSEMessage) => {
  * Hook that establishes an SSE connection for real-time event handling.
  *
  * This hook:
- * 1. Connects to /api/v1/events/stream when user is authenticated
+ * 1. Connects to /api/events/stream when user is authenticated
  * 2. Listens for domain_event messages
  * 3. Invalidates affected React Query caches
  * 4. Automatically reconnects on connection loss (5s delay)
@@ -201,6 +261,7 @@ export function useRealtimeEvents() {
   const { user } = useAuth();
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
 
   useEffect(() => {
     // Only connect when user is authenticated
@@ -212,11 +273,16 @@ export function useRealtimeEvents() {
       if (stopped) return;
 
       // Create SSE connection with credentials (for JWT cookie)
-      const es = new EventSource("/api/v1/events/stream", {
+      const es = new EventSource("/api/events/stream", {
         withCredentials: true,
       });
 
       esRef.current = es;
+
+      // Reset backoff on successful connection
+      es.onopen = () => {
+        reconnectAttemptRef.current = 0;
+      };
 
       // Listen for domain events
       es.addEventListener("domain_event", (e: MessageEvent) => {
@@ -230,12 +296,16 @@ export function useRealtimeEvents() {
         }
       });
 
-      // Handle connection errors (reconnect after 5 seconds)
+      // Handle connection errors with exponential backoff
       es.onerror = () => {
         es.close();
         esRef.current = null;
         if (!stopped) {
-          reconnectTimerRef.current = setTimeout(connect, 5000);
+          // Exponential backoff: 1s → 2s → 4s → 8s → 30s max
+          const attempt = reconnectAttemptRef.current;
+          const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+          reconnectAttemptRef.current = attempt + 1;
+          reconnectTimerRef.current = setTimeout(connect, delay);
         }
       };
     };
@@ -245,6 +315,7 @@ export function useRealtimeEvents() {
     // Cleanup on unmount
     return () => {
       stopped = true;
+      reconnectAttemptRef.current = 0;
       esRef.current?.close();
       esRef.current = null;
       if (reconnectTimerRef.current) {
@@ -281,7 +352,7 @@ export function useRealtimeEvents() {
  * HOW THIS FITS INTO THE SYSTEM:
  * ─────────────────────────────
  * useRealtimeEvents → activated in AppProviders (runs for entire app)
- * useRealtimeEvents → receives events from /api/v1/events/stream
+ * useRealtimeEvents → receives events from /api/events/stream
  * useRealtimeEvents → invalidates React Query caches
  * useRealtimeEvents → queries automatically refetch fresh data
  * ══════════════════════════════════════════════════════════════════════

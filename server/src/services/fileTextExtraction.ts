@@ -11,6 +11,7 @@ export type ExtractedWorkspaceContent = {
   preview: string;
   warnings: string[];
   extractionMethod: string;
+  pageCount?: number;
 };
 
 const MAX_TEXT_LENGTH = 24_000;
@@ -27,7 +28,6 @@ const CODE_EXTENSIONS = new Set([
   ".js",
   ".json",
   ".jsx",
-  ".md",
   ".mjs",
   ".py",
   ".rb",
@@ -36,7 +36,6 @@ const CODE_EXTENSIONS = new Set([
   ".sql",
   ".ts",
   ".tsx",
-  ".txt",
   ".xml",
   ".yaml",
   ".yml",
@@ -66,16 +65,24 @@ const truncateText = (value: string, limit: number) => {
 const buildResult = (
   text: string,
   warnings: string[],
-  extractionMethod: string
+  extractionMethod: string,
+  pageCount?: number
 ): ExtractedWorkspaceContent => {
-  const normalized = normalizeWhitespace(text);
+  // Trimming the whole PDF would remove form feeds for leading/trailing blank pages.
+  const normalized = pageCount === undefined
+    ? normalizeWhitespace(text)
+    : text.split("\f").map(normalizeWhitespace).join("\f");
   const trimmed = truncateText(normalized, MAX_TEXT_LENGTH);
+  if (normalized.length > MAX_TEXT_LENGTH) {
+    warnings.push("Extracted text was limited to the first 24,000 characters. Later content may be missing; open the original file to review it.");
+  }
 
   return {
     text: trimmed,
-    preview: truncateText(trimmed, MAX_PREVIEW_LENGTH),
+    preview: truncateText(trimmed.replace(/\f/g, "\n\n").trim(), MAX_PREVIEW_LENGTH),
     warnings,
     extractionMethod,
+    ...(pageCount === undefined ? {} : { pageCount }),
   };
 };
 
@@ -181,8 +188,15 @@ export const extractWorkspaceFileText = async (params: {
     const parser = new PDFParse({ data: buffer });
     try {
       const parsed = await parser.getText();
-      warnings.push(`Parsed ${parsed.total || parsed.pages.length || 0} page(s) from PDF.`);
-      return buildResult(parsed.text || "", warnings, "pdf");
+      const pageCount = parsed.total || parsed.pages.length;
+      // Use actual page text instead of the parser's flattened text/page markers.
+      const pages = new Map(parsed.pages.map((page) => [page.num, page.text.replace(/\f/g, "\n")]));
+      const text = Array.from({ length: pageCount }, (_, index) => pages.get(index + 1) || "").join("\f");
+      warnings.push(`Parsed ${pageCount} page(s) from PDF.`);
+      if (parsed.pages.some((page) => !page.text.trim())) {
+        warnings.push("Some PDF pages have no selectable text. They may be blank or scanned; image-only pages need OCR before the AI can read them.");
+      }
+      return buildResult(text, warnings, "pdf", pageCount);
     } finally {
       await parser.destroy().catch(() => undefined);
     }

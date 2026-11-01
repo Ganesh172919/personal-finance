@@ -497,3 +497,183 @@ See [EXAMPLES.md](./EXAMPLES.md) for practical code examples including:
 - Creating event-triggered workflows
 - Adding client invalidation mappings
 - Testing SSE connections
+
+## Realtime Event Streaming Architecture Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0891b2', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0e7490', 'lineColor': '#8b5cf6', 'secondaryColor': '#ec4899', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((⚡ FinWise Realtime Hub))
+    📡 Transport Layer
+      Server-Sent Events (SSE)
+      GET /api/v1/events/stream
+      Keepalive Heartbeats (15s ping)
+      Auto-Reconnect with Exponential Backoff
+    🚌 Server Event Bus
+      In-Memory Pub/Sub by orgId
+      Deduplication Cache (10m TTL, 2000 cap)
+      Listener Error Isolation
+    🔄 Domain Event Fanout
+      MongoDB Change Streams (Replica Set)
+      Polling Fallback (1000ms Interval)
+      High-Watermark Tracking (lastSeenId)
+    📱 Client Integration
+      useRealtimeEvents React Hook
+      TanStack Query Invalidation
+      Live In-App Toast Alerts
+      AI Streaming Token Feed
+```
+
+## Realtime Domain Event Fanout & Client Dispatch ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 DOMAIN MUTATION OCCURS                                              │
+│    User imports transactions / AI generates budget alert               │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🗄️ STAGE 1: PERSISTENCE & FANOUT CAPTURE                               │
+│    ├─► MongoDB DomainEvent document inserted                           │
+│    ├─► Fanout Mode: Change Stream (native) OR Poller (_id > lastSeenId)│
+│    └─► DomainEventFanout emits event to local EventBus                 │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🚌 STAGE 2: ORG-SCOPED EVENT BUS DISPATCH                              │
+│    ├─► Filter target subscribers by event.orgId                        │
+│    ├─► Deduplicate: verify event.id not in recent cache (10min TTL)    │
+│    └─► Deliver event to active SSE response streams for that tenant    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ ⚡ STAGE 3: SSE TRANSPORT STREAMING                                     │
+│    ├─► HTTP text/event-stream format: "event: transaction.created\n"   │
+│    ├─► "data: { id: '...', amount: 120, category: 'Food' }\n\n"        │
+│    └─► Flush socket immediately; send :ping heartbeat every 15s        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📱 STAGE 4: CLIENT REACTIVE RE-RENDERING                               │
+│    ├─► useRealtimeEvents hook receives event payload                   │
+│    ├─► Invalidate TanStack Query key: ['transactions', orgId]          │
+│    └─► Optimistically update UI badges & notification counter 🟢       │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
+## Production Implementation Blueprints
+
+### 1. Domain Event Ingestion & Fanout (`server/src/services/domainEvents.ts`)
+
+```typescript
+// Persist domain event and emit across local and distributed pub/sub buses
+export async function publishDomainEvent(eventData: Omit<IDomainEvent, "createdAt" | "updatedAt">) {
+  const event = await DomainEventModel.create({
+    ...eventData,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+
+  // Emit to local in-memory event bus
+  localEventBus.emit(`org:${event.orgId}`, event);
+
+  // Publish to Redis for multi-instance horizontal scaling
+  if (redisPub) {
+    await redisPub.publish(`finwise:events:${event.orgId}`, JSON.stringify(event));
+  }
+
+  return event;
+}
+```
+
+### 2. Client-Side Realtime Hook (`client/src/hooks/useRealtimeEvents.ts`)
+
+```typescript
+// Subscribes to SSE stream, filters events, and invalidates TanStack Query keys
+export function useRealtimeEvents() {
+  const { currentOrg } = useOrg();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!currentOrg?.id) return;
+
+    const eventSource = new EventSource(`/api/v1/events/stream?orgId=${currentOrg.id}`, {
+      withCredentials: true
+    });
+
+    eventSource.addEventListener("TransactionCreated", () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions", currentOrg.id] });
+      queryClient.invalidateQueries({ queryKey: ["budget-health", currentOrg.id] });
+      queryClient.invalidateQueries({ queryKey: ["command-center", currentOrg.id] });
+    });
+
+    eventSource.addEventListener("WorkflowCompleted", (e) => {
+      const data = JSON.parse(e.data);
+      queryClient.invalidateQueries({ queryKey: ["workflows", currentOrg.id] });
+      toast.success(`Automation '${data.workflowName}' completed successfully`);
+    });
+
+    return () => {
+      eventSource.close();
+    };
+  }, [currentOrg?.id, queryClient]);
+}
+```
+
+---
+
+### 3. AI Token Streaming with Provenance Footnotes (`server/src/controllers/aiController.ts`)
+
+Streams LLM tokens via Server-Sent Events with inline document citation tags and revision guards:
+
+```typescript
+// server/src/controllers/aiController.ts
+import { Request, Response } from "express";
+
+export async function streamAiInference(req: Request, res: Response) {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // Disable proxy buffering
+
+  let revisionCounter = 1;
+
+  const sendEvent = (event: string, data: any) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify({ ...data, revision: revisionCounter++ })}\n\n`);
+  };
+
+  try {
+    sendEvent("phase", { phase: "routing", activeAgent: "MasterStrategist" });
+
+    // Stream LLM tokens as they arrive
+    for await (const token of tokenStream) {
+      sendEvent("token", { token });
+    }
+
+    // Attach RAG Phase 2 citation evidence
+    sendEvent("evidence", {
+      citations: [
+        { id: 1, fileName: "Q3_Report.pdf", pageNumber: 4, excerpt: "Net margin increased by 4.2%" }
+      ]
+    });
+
+    sendEvent("done", { status: "completed" });
+    res.end();
+  } catch (err: any) {
+    sendEvent("error", { message: err.message });
+    res.end();
+  }
+}
+```

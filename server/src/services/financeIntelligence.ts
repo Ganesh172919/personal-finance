@@ -1,6 +1,82 @@
+/**
+ * @fileoverview Financial Intelligence & Analytics Service
+ *
+ * Implements core financial computations, budget envelope reconciliation,
+ * recurring subscription detection, and cash flow trend analysis.
+ *
+ * ============================================================================
+ * MINDMAP FLOW: FINANCIAL INTELLIGENCE & ENVELOPE RECONCILIATION
+ * ============================================================================
+ * - Financial Intelligence Engine
+ *     ├── 1. Period Key Parsing & Temporal Ranges
+ *     │   ├── parsePeriodKey: Validates YYYY-MM format
+ *     │   └── UTC Date Boundaries: [start of month, end of month)
+ *     ├── 2. Budget Envelope Reconciliation (getBudgetEnvelopes)
+ *     │   ├── Redis Caching: env:<orgId>:<periodKey>
+ *     │   ├── Planned Allocations: BudgetAllocationModel lookup
+ *     │   ├── Actual Spend Aggregation: TransactionModel $group by category
+ *     │   ├── Variance Derivation: remaining = planned - spent
+ *     │   └── Unbudgeted Category Detection: Spends without envelope limits
+ *     ├── 3. Recurring Subscription Detection (detectRecurringCandidates)
+ *     │   ├── Merchant Transaction Clustering: Group by description & amount
+ *     │   ├── Cadence Frequency Derivation: Weekly, bi-weekly, monthly, quarterly
+ *     │   └── Confidence Scoring: Regularity of time delta + amount stability
+ *     └── 4. Cash Flow & Net Worth Computation
+ *         ├── Inflows vs Outflows aggregation
+ *         ├── Net Savings Rate calculation
+ *         └── Multi-Account Balance rollups (liquid, savings, debts)
+ *
+ * ============================================================================
+ * ASCII FLOW: BUDGET ENVELOPE CALCULATION & CACHING PIPELINE
+ * ============================================================================
+ *               [ Request Budget Envelopes (orgId, periodKey) ]
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Check Redis Cache: env:<org>:<period>|
+ *                  +------------------+-------------------+
+ *                                /          \
+ *                         Hit   /            \ Miss
+ *                              v              v
+ *                  [ Return Cached Result ] +--------------------------+
+ *                                           | parsePeriodKey(period)   |
+ *                                           | [start, end) Date Range  |
+ *                                           +-------------+------------+
+ *                                                         |
+ *                                                         v
+ *                                           +--------------------------+
+ *                                           | Query BudgetAllocations  |
+ *                                           | Planned amounts by cat   |
+ *                                           +-------------+------------+
+ *                                                         |
+ *                                                         v
+ *                                           +--------------------------+
+ *                                           | Aggregate Transactions:  |
+ *                                           | $match date, amount < 0  |
+ *                                           | $group by category       |
+ *                                           +-------------+------------+
+ *                                                         |
+ *                                                         v
+ *                                           +--------------------------+
+ *                                           | Reconcile Planned vs     |
+ *                                           | Spent per Category:      |
+ *                                           | remaining = planned-spent|
+ *                                           | Flag unbudgeted spending |
+ *                                           +-------------+------------+
+ *                                                         |
+ *                                                         v
+ *                                           +--------------------------+
+ *                                           | Cache in Redis (env:...) |
+ *                                           | Return BudgetEnvelopes   |
+ *                                           +--------------------------+
+ *
+ * @module services/financeIntelligence
+ */
+
 import crypto from "crypto";
 import mongoose from "mongoose";
 
+import AccountModel from "../models/accountModel";
 import BudgetAllocationModel from "../models/budgetAllocationModel";
 import MerchantModel from "../models/merchantModel";
 import OrganizationModel from "../models/organizationModel";
@@ -452,6 +528,36 @@ export type ForecastCategoryRow = {
   expense_monthly_avg: number;
 };
 
+export type ForecastBudgetPressureRow = {
+  category: string;
+  planned: number;
+  spent: number;
+  remaining: number;
+  projected_spend: number;
+  projected_over_by: number;
+  burn_rate_pct: number;
+  severity: "watch" | "at_risk" | "over";
+  unbudgeted: boolean;
+};
+
+export type ForecastRiskAlert = {
+  id: string;
+  severity: "info" | "warning" | "critical";
+  title: string;
+  detail: string;
+  recommended_action: string;
+  category?: string;
+  amount?: number;
+};
+
+export type ForecastActionItem = {
+  id: string;
+  priority: "high" | "medium" | "low";
+  title: string;
+  detail: string;
+  impact_estimate: number | null;
+};
+
 export type ForecastResult = {
   org_id: string;
   currency: string;
@@ -459,6 +565,7 @@ export type ForecastResult = {
   months: number;
   baseline: {
     days_covered: number;
+    transaction_count: number;
     income_monthly_avg: number;
     expense_monthly_avg: number;
     net_monthly_avg: number;
@@ -474,12 +581,120 @@ export type ForecastResult = {
     income: number;
     expense: number;
     net: number;
+    cumulative_net: number;
+    projected_cash_balance: number | null;
   }>;
+  budget_pressure: {
+    period_key: string;
+    days_elapsed_ratio: number;
+    projected_total_spend: number;
+    projected_total_over_by: number;
+    over_budget_count: number;
+    at_risk_count: number;
+    unbudgeted_spent: number;
+    categories: ForecastBudgetPressureRow[];
+  };
+  cashflow_health: {
+    score: number;
+    status: "healthy" | "watch" | "at_risk";
+    savings_rate_pct: number;
+    liquidity_balance: number | null;
+    liquidity_accounts: number;
+    runway_months: number | null;
+    projected_end_balance: number | null;
+    confidence: "low" | "medium" | "high";
+    data_quality: string[];
+  };
+  risk_alerts: ForecastRiskAlert[];
+  recommended_actions: ForecastActionItem[];
 };
 
 const periodKeyFromDate = (date: Date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 
 const addMonthsUtc = (date: Date, months: number) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1, 0, 0, 0, 0));
+
+const roundMoney = (value: number) => Math.round(value * 100) / 100;
+
+const roundRatio = (value: number) => Math.round(value * 1000) / 1000;
+
+const clampScore = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+
+const severityRank: Record<ForecastBudgetPressureRow["severity"], number> = {
+  over: 3,
+  at_risk: 2,
+  watch: 1,
+};
+
+const buildBudgetPressure = (envelopesResult: BudgetEnvelopesResult, periodKey: string, now: Date) => {
+  const { start, end } = parsePeriodKey(periodKey);
+  const totalMs = Math.max(1, end.getTime() - start.getTime());
+  const elapsedMs = Math.min(Math.max(0, now.getTime() - start.getTime()), totalMs);
+  const elapsedRatio = elapsedMs / totalMs;
+  const projectionRatio = elapsedRatio > 0 && elapsedRatio < 1 ? Math.max(0.08, elapsedRatio) : 1;
+
+  let projectedTotalSpend = 0;
+  let projectedTotalOverBy = 0;
+  let overBudgetCount = 0;
+  let atRiskCount = 0;
+
+  const categories: ForecastBudgetPressureRow[] = [];
+
+  for (const row of envelopesResult.envelopes) {
+    const planned = Math.max(0, Number(row.planned || 0));
+    const spent = Math.max(0, Number(row.spent || 0));
+    const projectedSpend = elapsedRatio > 0 && elapsedRatio < 1 ? spent / projectionRatio : spent;
+    const projectedOverBy = row.unbudgeted ? projectedSpend : Math.max(0, projectedSpend - planned);
+    const burnRatePct = planned > 0 ? (projectedSpend / planned) * 100 : row.unbudgeted && spent > 0 ? 100 : 0;
+
+    projectedTotalSpend += projectedSpend;
+    projectedTotalOverBy += projectedOverBy;
+
+    let severity: ForecastBudgetPressureRow["severity"] | null = null;
+    if (row.unbudgeted && spent > 0) {
+      severity = "over";
+      overBudgetCount += 1;
+    } else if (planned > 0 && row.remaining < 0) {
+      severity = "over";
+      overBudgetCount += 1;
+    } else if (planned > 0 && projectedOverBy > 0) {
+      severity = "at_risk";
+      atRiskCount += 1;
+    } else if (planned > 0 && burnRatePct >= 85) {
+      severity = "watch";
+    }
+
+    if (!severity) continue;
+
+    categories.push({
+      category: row.category,
+      planned: roundMoney(planned),
+      spent: roundMoney(spent),
+      remaining: roundMoney(Number(row.remaining || 0)),
+      projected_spend: roundMoney(projectedSpend),
+      projected_over_by: roundMoney(projectedOverBy),
+      burn_rate_pct: Math.round(burnRatePct),
+      severity,
+      unbudgeted: row.unbudgeted,
+    });
+  }
+
+  categories.sort((a, b) => {
+    const severityDelta = severityRank[b.severity] - severityRank[a.severity];
+    if (severityDelta !== 0) return severityDelta;
+    return b.projected_over_by - a.projected_over_by;
+  });
+
+  return {
+    period_key: periodKey,
+    days_elapsed_ratio: roundRatio(elapsedRatio),
+    projected_total_spend: roundMoney(projectedTotalSpend),
+    projected_total_over_by: roundMoney(projectedTotalOverBy),
+    over_budget_count: overBudgetCount,
+    at_risk_count: atRiskCount,
+    unbudgeted_spent: roundMoney(envelopesResult.totals.unbudgeted_spent),
+    categories: categories.slice(0, 12),
+  };
+};
 
 export const buildForecast = async (params: {
   orgId: mongoose.Types.ObjectId;
@@ -508,6 +723,7 @@ export const buildForecast = async (params: {
         income: { $sum: { $cond: [{ $gt: ["$amount", 0] }, "$amount", 0] } },
         expense: { $sum: { $cond: [{ $lt: ["$amount", 0] }, { $abs: "$amount" }, 0] } },
         net: { $sum: "$amount" },
+        transaction_count: { $sum: 1 },
       },
     },
   ]);
@@ -518,6 +734,7 @@ export const buildForecast = async (params: {
   const incomeMonthlyAvg = Number(totals.income || 0) * scale;
   const expenseMonthlyAvg = Number(totals.expense || 0) * scale;
   const netMonthlyAvg = Number(totals.net || 0) * scale;
+  const transactionCount = Number(totals.transaction_count || 0);
 
   const categoryRows = topCategories
     ? await TransactionModel.aggregate([
@@ -564,16 +781,255 @@ export const buildForecast = async (params: {
     .sort((a, b) => b.expense_expected_monthly - a.expense_expected_monthly)
     .slice(0, 20);
 
+  const expenseMonthlyForecast = Math.max(expenseMonthlyAvg, recurringTotal);
+  const netMonthlyForecast = incomeMonthlyAvg - expenseMonthlyForecast;
+
+  const liquidityAccounts = await AccountModel.find({
+    orgId: params.orgId,
+    status: "active",
+    type: { $in: ["checking", "savings", "cash"] },
+  })
+    .select({ _id: 1, openingBalance: 1 })
+    .lean();
+
+  const liquidityAccountIds = (liquidityAccounts as any[]).map((account) => new mongoose.Types.ObjectId(String(account._id)));
+  const liquidityRows = liquidityAccountIds.length
+    ? await TransactionModel.aggregate([
+        {
+          $match: {
+            orgId: params.orgId,
+            accountId: { $in: liquidityAccountIds },
+          },
+        },
+        {
+          $group: {
+            _id: "$accountId",
+            transaction_total: { $sum: "$amount" },
+          },
+        },
+      ])
+    : [];
+
+  const transactionTotalByAccount = new Map(
+    liquidityRows.map((row: any) => [String(row?._id), Number(row?.transaction_total || 0)])
+  );
+
+  const liquidityBalance =
+    liquidityAccounts.length > 0
+      ? roundMoney(
+          (liquidityAccounts as any[]).reduce((sum, account) => {
+            const accountId = String(account._id);
+            return sum + Number(account.openingBalance || 0) + Number(transactionTotalByAccount.get(accountId) || 0);
+          }, 0)
+        )
+      : null;
+
+  const envelopesResult = await getBudgetEnvelopes({ orgId: params.orgId, periodKey });
+  const budgetPressure = buildBudgetPressure(envelopesResult, periodKey, now);
+  const hasBudgetAllocations = envelopesResult.envelopes.some((row) => Number(row.planned || 0) > 0);
+
+  const savingsRatePct =
+    incomeMonthlyAvg > 0
+      ? (netMonthlyForecast / incomeMonthlyAvg) * 100
+      : netMonthlyForecast < 0
+        ? -100
+        : 0;
+
+  const runwayMonths =
+    liquidityBalance !== null && netMonthlyForecast < 0
+      ? Math.max(0, liquidityBalance) / Math.max(1, Math.abs(netMonthlyForecast))
+      : null;
+
   const baseDate = parsePeriodKey(periodKey).start;
+  let cumulativeNet = 0;
   const projection = Array.from({ length: months }).map((_, idx) => {
     const monthDate = addMonthsUtc(baseDate, idx);
+    cumulativeNet += netMonthlyForecast;
     return {
       period_key: periodKeyFromDate(monthDate),
       income: Math.round(incomeMonthlyAvg * 100) / 100,
-      expense: Math.round(expenseMonthlyAvg * 100) / 100,
-      net: Math.round(netMonthlyAvg * 100) / 100,
+      expense: Math.round(expenseMonthlyForecast * 100) / 100,
+      net: Math.round(netMonthlyForecast * 100) / 100,
+      cumulative_net: roundMoney(cumulativeNet),
+      projected_cash_balance: liquidityBalance === null ? null : roundMoney(liquidityBalance + cumulativeNet),
     };
   });
+
+  const projectedEndBalance =
+    liquidityBalance === null ? null : roundMoney(liquidityBalance + projection.reduce((sum, row) => sum + row.net, 0));
+
+  const dataQuality: string[] = [];
+  if (transactionCount < 8) {
+    dataQuality.push("Fewer than 8 transactions in the last 90 days.");
+  }
+  if (liquidityAccounts.length === 0) {
+    dataQuality.push("No active checking, savings, or cash accounts; runway is unavailable.");
+  }
+  if (!hasBudgetAllocations) {
+    dataQuality.push("No budget allocations found for the selected period.");
+  }
+  if (recurringRules.length === 0) {
+    dataQuality.push("No active recurring rules; fixed obligations may be under-modeled.");
+  }
+
+  let confidenceScore = 0;
+  if (transactionCount >= 30) confidenceScore += 2;
+  else if (transactionCount >= 8) confidenceScore += 1;
+  if (liquidityAccounts.length > 0) confidenceScore += 1;
+  if (hasBudgetAllocations) confidenceScore += 1;
+  if (recurringRules.length > 0) confidenceScore += 1;
+
+  const confidence: "low" | "medium" | "high" =
+    confidenceScore >= 4 ? "high" : confidenceScore >= 2 ? "medium" : "low";
+
+  let healthScore = 55;
+  if (incomeMonthlyAvg <= 0 && expenseMonthlyForecast > 0) {
+    healthScore -= 20;
+  } else if (savingsRatePct >= 20) {
+    healthScore += 25;
+  } else if (savingsRatePct >= 10) {
+    healthScore += 15;
+  } else if (savingsRatePct >= 0) {
+    healthScore += 5;
+  } else if (savingsRatePct > -10) {
+    healthScore -= 10;
+  } else {
+    healthScore -= 20;
+  }
+
+  if (liquidityBalance === null) {
+    healthScore -= 5;
+  } else if (netMonthlyForecast < 0) {
+    if (runwayMonths !== null && runwayMonths < 1) healthScore -= 35;
+    else if (runwayMonths !== null && runwayMonths < 3) healthScore -= 25;
+    else if (runwayMonths !== null && runwayMonths < 6) healthScore -= 10;
+    else healthScore += 10;
+  } else if (expenseMonthlyForecast > 0) {
+    const reserveMonths = liquidityBalance / expenseMonthlyForecast;
+    if (reserveMonths >= 3) healthScore += 10;
+    else if (reserveMonths >= 1) healthScore += 5;
+  } else {
+    healthScore += 10;
+  }
+
+  healthScore -= Math.min(20, (budgetPressure.projected_total_over_by / Math.max(100, expenseMonthlyForecast)) * 25);
+  healthScore -= Math.min(10, (budgetPressure.unbudgeted_spent / Math.max(100, expenseMonthlyForecast)) * 15);
+  if (confidence === "low") healthScore -= 5;
+
+  const score = clampScore(healthScore);
+  const status: "healthy" | "watch" | "at_risk" = score >= 75 ? "healthy" : score >= 50 ? "watch" : "at_risk";
+
+  const riskAlerts: ForecastRiskAlert[] = [];
+  if (netMonthlyForecast < 0) {
+    riskAlerts.push({
+      id: "negative-cashflow",
+      severity: runwayMonths !== null && runwayMonths < 3 ? "critical" : "warning",
+      title: "Projected monthly cashflow is negative",
+      detail: `Forecasted expenses exceed income by ${roundMoney(Math.abs(netMonthlyForecast)).toFixed(2)} ${currency} per month.`,
+      recommended_action: "Reduce flexible spending, increase income, or move a nonessential recurring charge out of the forecast.",
+      amount: roundMoney(Math.abs(netMonthlyForecast)),
+    });
+  }
+
+  if (runwayMonths !== null && runwayMonths < 6) {
+    riskAlerts.push({
+      id: "low-runway",
+      severity: runwayMonths < 3 ? "critical" : "warning",
+      title: "Cash runway is thin",
+      detail: `Available cash covers about ${roundRatio(runwayMonths)} months at the current projected burn rate.`,
+      recommended_action: "Prioritize an emergency buffer before adding new discretionary commitments.",
+      amount: liquidityBalance ?? undefined,
+    });
+  }
+
+  const topBudgetRisk = budgetPressure.categories[0];
+  if (topBudgetRisk) {
+    riskAlerts.push({
+      id: `budget-${normalizeRecurringKey(topBudgetRisk.category) || "risk"}`,
+      severity: topBudgetRisk.severity === "over" ? "warning" : "info",
+      title: `${topBudgetRisk.category} needs attention`,
+      detail: topBudgetRisk.unbudgeted
+        ? `${topBudgetRisk.category} has ${topBudgetRisk.spent.toFixed(2)} ${currency} of unbudgeted spend.`
+        : `${topBudgetRisk.category} is tracking toward ${topBudgetRisk.projected_spend.toFixed(2)} ${currency} against a ${topBudgetRisk.planned.toFixed(2)} ${currency} budget.`,
+      recommended_action: topBudgetRisk.unbudgeted
+        ? "Create an allocation or reclassify transactions so this spend is planned."
+        : "Trim upcoming spend in this category or reallocate budget from a lower-priority envelope.",
+      category: topBudgetRisk.category,
+      amount: topBudgetRisk.projected_over_by,
+    });
+  }
+
+  if (recurringTotal > 0 && incomeMonthlyAvg > 0 && recurringTotal / incomeMonthlyAvg > 0.45) {
+    riskAlerts.push({
+      id: "recurring-load",
+      severity: "warning",
+      title: "Recurring commitments are high",
+      detail: `Active recurring rules consume about ${Math.round((recurringTotal / incomeMonthlyAvg) * 100)}% of monthly income.`,
+      recommended_action: "Review subscriptions, fixed bills, and debt payments for cancellations or renegotiation opportunities.",
+      amount: roundMoney(recurringTotal),
+    });
+  }
+
+  if (confidence === "low") {
+    riskAlerts.push({
+      id: "low-confidence",
+      severity: "info",
+      title: "Forecast confidence is low",
+      detail: dataQuality[0] || "More account, budget, transaction, and recurring-rule data will improve this forecast.",
+      recommended_action: "Import recent transactions and add active cash accounts before making major decisions from this projection.",
+    });
+  }
+
+  if (riskAlerts.length === 0) {
+    riskAlerts.push({
+      id: "stable-cashflow",
+      severity: "info",
+      title: "Cashflow looks stable",
+      detail: "The current forecast does not show urgent cashflow, runway, or budget pressure issues.",
+      recommended_action: "Use the projected surplus to fund goals, pay down debt, or increase emergency reserves.",
+      amount: roundMoney(Math.max(0, netMonthlyForecast)),
+    });
+  }
+
+  const recommendedActions: ForecastActionItem[] = [];
+  if (netMonthlyForecast < 0) {
+    recommendedActions.push({
+      id: "close-monthly-gap",
+      priority: "high",
+      title: "Close the monthly cashflow gap",
+      detail: `Find ${roundMoney(Math.abs(netMonthlyForecast)).toFixed(2)} ${currency} per month through cuts, income, or timing changes.`,
+      impact_estimate: roundMoney(Math.abs(netMonthlyForecast)),
+    });
+  }
+  if (topBudgetRisk) {
+    recommendedActions.push({
+      id: "stabilize-top-budget-risk",
+      priority: topBudgetRisk.severity === "over" ? "high" : "medium",
+      title: `Stabilize ${topBudgetRisk.category}`,
+      detail: topBudgetRisk.unbudgeted
+        ? "Add a budget allocation so this spending is visible before it becomes a surprise."
+        : `Bring projected spend down by ${topBudgetRisk.projected_over_by.toFixed(2)} ${currency} or formally reallocate budget.`,
+      impact_estimate: topBudgetRisk.projected_over_by,
+    });
+  }
+  if (recurringRules.length === 0) {
+    recommendedActions.push({
+      id: "add-recurring-rules",
+      priority: "medium",
+      title: "Model fixed obligations",
+      detail: "Add recurring rules for rent, subscriptions, debt payments, and insurance to make forecasts less noisy.",
+      impact_estimate: null,
+    });
+  }
+  if (netMonthlyForecast > 0 && savingsRatePct >= 10) {
+    recommendedActions.push({
+      id: "route-surplus",
+      priority: "low",
+      title: "Route the projected surplus",
+      detail: `Assign the ${roundMoney(netMonthlyForecast).toFixed(2)} ${currency} monthly surplus to emergency savings, goals, or debt payoff.`,
+      impact_estimate: roundMoney(netMonthlyForecast),
+    });
+  }
 
   return {
     org_id: params.orgId.toString(),
@@ -582,6 +1038,7 @@ export const buildForecast = async (params: {
     months,
     baseline: {
       days_covered: daysCovered,
+      transaction_count: transactionCount,
       income_monthly_avg: Math.round(incomeMonthlyAvg * 100) / 100,
       expense_monthly_avg: Math.round(expenseMonthlyAvg * 100) / 100,
       net_monthly_avg: Math.round(netMonthlyAvg * 100) / 100,
@@ -593,6 +1050,19 @@ export const buildForecast = async (params: {
     },
     top_categories: topCats,
     projection,
+    budget_pressure: budgetPressure,
+    cashflow_health: {
+      score,
+      status,
+      savings_rate_pct: Math.round(savingsRatePct * 10) / 10,
+      liquidity_balance: liquidityBalance,
+      liquidity_accounts: liquidityAccounts.length,
+      runway_months: runwayMonths === null ? null : roundRatio(runwayMonths),
+      projected_end_balance: projectedEndBalance,
+      confidence,
+      data_quality: dataQuality,
+    },
+    risk_alerts: riskAlerts.slice(0, 6),
+    recommended_actions: recommendedActions.slice(0, 5),
   };
 };
-

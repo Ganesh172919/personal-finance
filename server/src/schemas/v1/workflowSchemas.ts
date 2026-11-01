@@ -2,30 +2,28 @@
  * @fileoverview Zod validation schemas for workflow automation management.
  *
  * Exported schemas:
- *   createWorkflowBodySchema - Validates creating a new workflow (name, trigger, actions)
- *   workflowIdParamSchema    - Validates :id route param as a 24-char hex ObjectId
- *   runWorkflowBodySchema    - Validates triggering a workflow run (optional idempotency_key)
+ *   createWorkflowBodySchema   - Validates creating a new workflow (name, trigger, actions)
+ *   workflowIdParamSchema      - Validates :id route param as a 24-char hex ObjectId
+ *   runWorkflowBodySchema      - Validates triggering a workflow run (optional idempotency_key, optional payload)
+ *   webhookTokenParamSchema    - Validates :token route param for inbound webhooks (16-128 chars)
+ *   webhookPayloadBodySchema   - Validates inbound webhook JSON payload (Record<string, unknown>)
  *
  * Workflow trigger types (discriminated on "type"):
- *   manual  - Triggered explicitly by user action
- *   cron    - Triggered on a cron schedule (cron expression: 5-120 chars)
- *   event   - Triggered by a domain event (event_type: 2-120 chars)
+ *   manual   - Triggered explicitly by user action
+ *   cron     - Triggered on a cron schedule (cron expression: 5-120 chars)
+ *   event    - Triggered by a domain event (event_type: 2-120 chars)
+ *   webhook  - Triggered by an external HTTP POST request with a unique webhook_token
  *
  * Workflow action types (discriminated on "type"):
  *   create_task        - Create a task with title, why, steps, priority, kind, due_days
  *   send_notification  - Send email or in-app notification with subject and message
  *   export_report      - Generate an export (transactions_csv or monthly_summary_pdf)
  *
- * Used by: v1Routes (GET /workflows/templates, GET/POST /workflows, POST /workflows/:id/run)
+ * Conditional Branching:
+ *   All actions support an optional `condition` object ({ field, operator, value })
+ *   to selectively execute or bypass based on the trigger context / webhook payload.
  *
- * Key validation rules:
- *   - Workflow name: required, 2-160 chars
- *   - Actions: required array, 1-50 items
- *   - Task actions: kind enum cashflow | budget | debt | invest | goal | education | generic
- *   - Task priority: low | medium | high (default medium)
- *   - Notification actions: channel email | in_app (default email)
- *   - Export actions: monthly_summary_pdf requires period_key in params (enforced by .superRefine)
- *   - runWorkflow idempotency_key: optional 8-128 chars for safe retries
+ * Used by: v1Routes (GET /workflows/templates, GET/POST /workflows, POST /workflows/:id/run, POST /workflows/webhook/:token)
  */
 import { z } from "zod";
 
@@ -37,7 +35,17 @@ const exportTypeSchema = z.enum(["transactions_csv", "monthly_summary_pdf"]);
 const notificationChannelSchema = z.enum(["email", "in_app"]);
 const domainEventTypeSchema = z.string().trim().min(2).max(120);
 
-const workflowActionSchema = z.discriminatedUnion("type", [
+export const workflowConditionOperatorSchema = z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "contains"]);
+
+export const workflowActionConditionSchema = z
+  .object({
+    field: z.string().trim().min(1).max(120),
+    operator: workflowConditionOperatorSchema,
+    value: z.union([z.string(), z.number(), z.boolean()]),
+  })
+  .strict();
+
+export const workflowActionSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("create_task"),
@@ -49,6 +57,7 @@ const workflowActionSchema = z.discriminatedUnion("type", [
       expected_impact: z.string().trim().min(2).max(600),
       kind: taskKindSchema.default("generic"),
       due_days: z.number().int().positive().max(3650).optional(),
+      condition: workflowActionConditionSchema.optional(),
     })
     .strict(),
   z
@@ -57,6 +66,7 @@ const workflowActionSchema = z.discriminatedUnion("type", [
       channel: notificationChannelSchema.default("email"),
       subject: z.string().trim().min(2).max(160),
       message: z.string().trim().min(2).max(2000),
+      condition: workflowActionConditionSchema.optional(),
     })
     .strict(),
   z
@@ -64,6 +74,7 @@ const workflowActionSchema = z.discriminatedUnion("type", [
       type: z.literal("export_report"),
       export_type: exportTypeSchema,
       params: z.record(z.string(), z.unknown()).optional().default({}),
+      condition: workflowActionConditionSchema.optional(),
     })
     .strict()
     .superRefine((value, ctx) => {
@@ -102,6 +113,12 @@ export const createWorkflowBodySchema = z
           event_type: domainEventTypeSchema,
         })
         .strict(),
+      z
+        .object({
+          type: z.literal("webhook"),
+          webhook_token: z.string().trim().min(16).max(128).optional(),
+        })
+        .strict(),
     ]),
     actions: z.array(workflowActionSchema).min(1).max(50),
   })
@@ -116,5 +133,14 @@ export const workflowIdParamSchema = z
 export const runWorkflowBodySchema = z
   .object({
     idempotency_key: z.string().trim().min(8).max(128).optional(),
+    payload: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
+
+export const webhookTokenParamSchema = z
+  .object({
+    token: z.string().trim().min(16).max(128),
+  })
+  .strict();
+
+export const webhookPayloadBodySchema = z.record(z.string(), z.unknown());

@@ -2,19 +2,16 @@
 Tests for multi-key pool with health tracking, rotation, and circuit breaker.
 """
 
-import os
 import time
+
 import pytest
-from unittest.mock import patch
 
 from utils.key_pool import (
     KeyPool,
     KeyPoolConfig,
     KeyStatus,
-    KeyEntry,
-    KeyHealth,
-    get_key_pool,
     get_all_key_pools,
+    get_key_pool,
     reset_all_key_pools,
 )
 

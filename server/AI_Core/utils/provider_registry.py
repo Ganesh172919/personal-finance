@@ -111,8 +111,8 @@ class OpenAICompatibleChatClient(BaseProviderChatClient):
         usage = getattr(response, "usage", None)
 
         usage_metadata = {
-            "prompt_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
-            "completion_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
+            "input_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
+            "output_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
             "total_tokens": int(getattr(usage, "total_tokens", 0) or 0),
         }
 
@@ -176,11 +176,9 @@ PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
         display_name="Google Gemini",
         env_key="GEMINI_API_KEY",
         base_url="",
-        default_model="gemini/gemini-2.5-flash",
+        default_model="gemini/gemini-3.5-flash-lite",
         model_candidates=[
-            "gemini/gemini-2.5-flash",
-            "gemini/gemini-2.5-flash-lite",
-            "gemini/gemini-1.5-flash",
+            "gemini/gemini-3.5-flash-lite",
         ],
         client_kind="gemini",
     ),
@@ -210,7 +208,7 @@ PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
         model_candidates=[
             "groq/llama-3.3-70b-versatile",
             "groq/llama-3.1-8b-instant",
-            "groq/gemma2-9b-it",
+            "groq/openai/gpt-oss-20b",
         ],
     ),
     "openai": ProviderConfig(

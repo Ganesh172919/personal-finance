@@ -298,6 +298,7 @@ const envSchema = z
     API_KEY_PEPPER: optionalNonEmptyString,
 
     // AI Core Service Configuration
+    AI_CORE_INTERNAL_TOKEN: optionalNonEmptyString,
     AI_CORE_TOOLS_TOKEN: z.preprocess(
       emptyStringToUndefined,
       z.string().trim().min(16).max(256).optional()
@@ -324,6 +325,7 @@ const envSchema = z
     AI_CORE_CIRCUIT_FAILURE_THRESHOLD: z.coerce.number().int().positive().default(3),
     AI_CORE_CIRCUIT_OPEN_MS: z.coerce.number().int().positive().default(30_000),
     AI_CORE_HEALTH_CACHE_MS: z.coerce.number().int().positive().default(5000),
+    CONVERSATION_INSIGHTS_CACHE_TTL_MS: z.coerce.number().int().min(0).max(300_000).default(120_000),
 
     // Plugin Runtime Configuration
     PLUGIN_RUNTIME_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),

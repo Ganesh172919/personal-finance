@@ -31,7 +31,8 @@
 
 // ── Imports ───────────────────────────────────────────────────────────
 import { NodeSDK } from "@opentelemetry/sdk-node";                        // OpenTelemetry SDK for Node.js
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"; // Auto-instrumentation
+import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
+import { MongooseInstrumentation } from "@opentelemetry/instrumentation-mongoose";
 import { getEnv } from "./env";                                           // Environment configuration
 import { logger } from "./logger";                                        // Application logger
 
@@ -70,12 +71,8 @@ export const initTelemetry = (): void => {
     sdk = new NodeSDK({
       serviceName: "finwise-server", // Identifies this service in trace data
       instrumentations: [
-        getNodeAutoInstrumentations({
-          // Enable Mongoose instrumentation (traces MongoDB queries)
-          "@opentelemetry/instrumentation-mongoose": { enabled: true },
-          // Enable HTTP instrumentation (traces Express routes and outgoing requests)
-          "@opentelemetry/instrumentation-http": { enabled: true },
-        }),
+        new HttpInstrumentation(),
+        new MongooseInstrumentation(),
       ],
     });
 

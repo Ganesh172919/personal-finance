@@ -14,6 +14,7 @@ client/.vite/
 
 
 server/.env
+.env
 client/.env
 server/AI_Core/.env
 plugin-runtime/.env

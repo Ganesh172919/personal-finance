@@ -13,6 +13,41 @@
 | **Memory** | SQLite (FTS5) |
 | **Entry point** | `server/AI_Core/api_service.py` (HTTP) / `server/AI_Core/main.py` (CLI) |
 
+> [!TIP]
+> **Developer Guide: Adding Specialist AI Agents**  
+> For complete blueprints on creating and registering new LangGraph subagents with Pydantic V2 contracts and number safety invariant tests, see [**docs/BUILDING_ON_THIS_PROJECT.md**](../docs/BUILDING_ON_THIS_PROJECT.md).
+
+## Latest AI Runtime Update
+
+Since this document was first written, the AI runtime has expanded in ways that materially affect product and platform work.
+
+### New runtime capabilities
+
+- provider and model failover are now richer and more observable
+- multi-key routing and cooldown logic are now part of normal operations
+- sessions can be checkpointed and resumed
+- workflow execution can report recovery details and active phase metadata
+- support tooling can inspect models, sessions, and runtime status through dedicated endpoints
+
+### Node-to-AI-Core contract changes
+
+The Node server now acts as a stronger gateway for AI work:
+
+- request shaping is handled in `server/src/services/aiRequestBuilder.ts`
+- transport resilience, normalization, and circuit-breaker behavior are handled in `server/src/services/aiCoreClient.ts`
+- downstream consumers can receive provider/model/session metadata in addition to content
+
+### Why this matters
+
+New AI-facing work should now account for:
+
+- session continuity
+- workflow phase visibility
+- deterministic fallback behavior
+- runtime observability for support and operations
+
+---
+
 ---
 
 ## Table of Contents
@@ -95,33 +130,102 @@ The FinWise AI Core is a **deterministic-first, LLM-polished** financial reasoni
 
 ---
 
-## 2. Multi-Agent Architecture
+## 2. Multi-Agent & SubAgent Architecture
 
-The system comprises **6 agents** coordinated by a LangGraph StateGraph. Each agent has a single responsibility and produces structured output.
+The FinWise AI Core is built around an advanced multi-agent architecture featuring **10 specialized agent roles**, coordinated either through direct LangGraph state routing or dynamically decomposed topological Directed Acyclic Graphs (DAGs).
 
-| Agent | File | Lines | Responsibility |
+| Agent | File | Primary Responsibility | Execution Pattern |
 |---|---|---|---|
-| **MasterFinancialStrategistAgent** | `agents/master_agent.py` | 642 | Intent classification, routing, plan synthesis, tool-call generation |
-| **IncomeExpenseAnalyzerAgent** | `agents/income_expense_analyzer.py` | — | Cash flow analysis, savings rate, spending patterns |
-| **BudgetPlannerAgent** | `agents/budget_planner.py` | — | Budget plan generation, category allocations, savings targets |
-| **InvestmentAdvisorAgent** | `agents/investment_advisor.py` | — | Portfolio recommendations, risk profiling, asset allocation |
-| **DebtOptimizerAgent** | `agents/debt_optimizer.py` | — | Avalanche/snowball strategies, payoff timelines |
-| **FinancialEducatorAgent** | `agents/financial_educator.py` | — | Financial concept explanations, educational content |
+| **MasterFinancialStrategistAgent** | `agents/master_agent.py` | Intent classification, routing, plan synthesis, tool-call generation | Deterministic router / LangGraph root |
+| **TaskDecomposerAgent** | `agents/task_decomposer.py` | Request complexity evaluation (0.0–1.0) and subtask DAG generation | Deterministic heuristics + optional LLM |
+| **SubAgentManager** | `agents/sub_agent_manager.py` | Kahn's topological sort and parallel thread pool execution of subtasks | Concurrent `ThreadPoolExecutor` |
+| **AggregatorAgent** | `agents/aggregator.py` | Subtask output normalization, deterministic plan synthesis, number safety | Deterministic math + optional LLM polish |
+| **NewsletterAgent** | `agents/newsletter_agent.py` | Spending summary, budget alerts, 7-day bill horizon, tips & action items | Deterministic sections + LLM tips |
+| **ConversationSummarizer** | `agents/conversation_summarizer.py` | Cross-conversation synthesis from caller snapshots, pulse, next moves | Read-only factual recap + optional LLM polish |
+| **IncomeExpenseAnalyzerAgent** | `agents/income_expense_analyzer.py` | Cash flow trends, savings rate, volatility, anomaly detection | Deterministic math + LLM narrative |
+| **BudgetPlannerAgent** | `agents/budget_planner.py` | 50/30/20 & zero-based allocations, envelope tracking, deficit repair | Pure deterministic calculator |
+| **InvestmentAdvisorAgent** | `agents/investment_advisor.py` | Risk profiling, asset allocation slices, SIP projections | Deterministic compound growth models |
+| **DebtOptimizerAgent** | `agents/debt_optimizer.py` | Snowball vs. Avalanche interest calculations, amortization schedules | Pure mathematical solvers |
+| **FinancialEducatorAgent** | `agents/financial_educator.py` | Tax brackets, compound interest, personal finance concepts | Knowledge base + cached LLM |
 
-### Agent-to-Provider Mapping
+### SubAgent DAG Execution Lifecycle
 
-To distribute load across free-tier quotas, each agent is mapped to a specific LLM provider:
+When user inquiries involve cross-cutting financial objectives (e.g., *"How can I pay off my credit cards while saving for a home down payment and maintaining emergency savings?"*), the query is routed through the **SubAgent DAG execution engine**:
 
-| Agent Role | Provider | Default Model |
-|---|---|---|
-| `master` | Gemini | `gemini-2.5-flash` |
-| `educator` | OpenRouter | `meta-llama/llama-3.3-70b-instruct:free` |
-| `analyzer` | Groq | `llama-3.3-70b-versatile` |
-| `planner` | Gemini | `gemini-2.5-flash` |
-| `advisor` | OpenRouter | `qwen/qwen3-235b-a22b:free` |
-| `optimizer` | Groq | `llama-3.1-8b-instant` |
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ 1. INCOMING REQUEST & CONTEXT INGESTION                                         │
+│    User query + Financial Profile (income, debts, goals) + Conversation History │
+└────────────────────────────────────────┬────────────────────────────────────────┘
+                                         │
+                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ 2. TASK DECOMPOSITION (TaskDecomposerAgent)                                     │
+│    - Compute Complexity Score C in [0.0, 1.0]                                   │
+│    - If C < 0.5: Fast-path to single specialist agent                            │
+│    - If C >= 0.5: Decompose into discrete Subtasks with explicit dependencies   │
+└────────────────────────────────────────┬────────────────────────────────────────┘
+                                         │ Subtask DAG: [T1, T2, ..., Tn]
+                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ 3. TOPOLOGICAL SORT & LEVEL GROUPING (SubAgentManager)                          │
+│    - Apply Kahn's Algorithm to partition tasks into dependency levels:          │
+│      Level 0 (no dependencies) -> Level 1 (depends on L0) -> Level 2 ...        │
+└────────────────────────────────────────┬────────────────────────────────────────┘
+                                         │
+                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ 4. CONCURRENT POOL EXECUTION (ThreadPoolExecutor)                               │
+│    - For each Level L_k:                                                        │
+│      * Concurrency clamped: min(max_workers=4, len(tasks))                      │
+│      * Inject upstream results from completed levels                            │
+│      * 30s deadline per subtask with 1 transient error retry                    │
+│      * Record execution traces and timings for telemetry                       │
+└────────────────────────────────────────┬────────────────────────────────────────┘
+                                         │ Subtask outputs dictionary
+                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ 5. RESULT AGGREGATION & NUMBER SAFETY (AggregatorAgent)                         │
+│    - Normalize outputs across canonical keys                                    │
+│    - Call tools.build_plan() for deterministic financial synthesis              │
+│    - Enforce Number Safety Invariant: Sum(Delta Budgets) == 0, B_i >= 0         │
+│    - Render format-preserving markdown with optional LLM narrative polish       │
+└────────────────────────────────────────┬────────────────────────────────────────┘
+                                         │
+                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ 6. RESPONSE DELIVERY & CACHE UPDATE                                             │
+│    JSON / SSE Stream response returned to API Gateway with telemetry metadata   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
 
-Configuration lives in `utils/llm_wrapper.py` as `AGENT_PROVIDER_MAP`. The `create_llm(agent_type)` factory resolves the correct provider and model for each agent.
+### Pydantic V2 Output Contracts
+
+Every specialist agent conforms to strongly typed Pydantic models in `contracts/agent_outputs.py`:
+
+- **IncomeAnalysisOutput**: `summary` (total income, expenses, cash flow, savings rate), `category_breakdown` (category, amount, percentage, count), `anomalies` (z-score, reason), `recurring_items`.
+- **BudgetPlanOutput**: `allocations` (needs, wants, savings, debt), `savings_plan` (emergency fund target, monthly target, horizon gap), `action_steps`.
+- **InvestmentAdviceOutput**: `slices` (asset class, target percentage, rationale), `expected_returns` (nominal CAGR, inflation-adjusted real CAGR, 5/10/20-year projections).
+- **DebtOptimizationOutput**: `schedules` (month, debt name, payment, remaining principal), `strategy_comparison` (avalanche total interest vs. snowball total interest, months to freedom).
+- **FinancialEducationOutput**: `concept` (topic, core definition, key takeaways, practical examples).
+
+### Agent-to-Provider Mapping & Multi-Key Failover
+
+To distribute load across vendor quotas and handle outages transparently, each agent role maps to a primary provider and fallback chain:
+
+| Agent Role | Primary Provider | Primary Model | Fallback Chain |
+|---|---|---|---|
+| `master` | Gemini | `gemini-2.5-flash` | OpenRouter $\to$ Groq $\to$ Deterministic |
+| `task_decomposer` | Gemini | `gemini-2.5-flash` | Deterministic Rule-Based Fallback |
+| `aggregator` | Gemini | `gemini-2.5-flash` | Pure Deterministic `build_plan()` |
+| `newsletter` | Gemini | `gemini-2.5-flash` | OpenRouter $\to$ Static Template Fallback |
+| `analyzer` | Groq | `llama-3.3-70b-versatile` | Gemini $\to$ Pure Python Math |
+| `planner` | Gemini | `gemini-2.5-flash` | Pure Deterministic Budget Allocator |
+| `advisor` | OpenRouter | `meta-llama/llama-3.3-70b-instruct:free` | Deterministic Portfolio Model |
+| `optimizer` | Groq | `llama-3.1-8b-instant` | Pure Mathematical Amortization Solver |
+| `educator` | OpenRouter | `meta-llama/llama-3.3-70b-instruct:free` | Gemini $\to$ Cached SQLite Dictionary |
+
+Configuration lives in `utils/llm_wrapper.py` and `utils/key_pool.py`. When an API key encounters an HTTP 429 (Rate Limit), the `KeyPool` rotates to the next available key in the vendor pool. If all keys for that vendor are exhausted, the request fails over to the next provider in the chain.
 
 ---
 
@@ -858,15 +962,77 @@ The system exposes Prometheus metrics at `/metrics` (token-protected):
 ```bash
 cd server/AI_Core
 
-# Run all tests
+# Run all unit tests
 pytest tests/ -v
 
 # Run with coverage
 pytest tests/ -v --cov=. --cov-report=html
 
 # Run specific test file
-pytest tests/test_master_agent_routing.py -v
+pytest tests/test_sub_agent_manager.py -v
 ```
+
+---
+
+## 15. Evaluation Suite & Invariant Verification (`evals/`)
+
+FinWise incorporates an automated evaluation test harness in `server/AI_Core/evals/` to rigorously verify safety invariants, latency boundaries, and planning quality before and after model upgrades.
+
+### Eval Test Suite
+
+| Test Module | File | Target Invariant | Target Threshold |
+|---|---|---|---|
+| **Determinism** | `evals/test_determinism.py` | 100 identical runs produce identical outputs | 100% Deterministic |
+| **Number Safety** | `evals/test_number_safety.py` | Zero hallucinated numbers in narrative text | 0 Hallucinations ($\sum \Delta B = 0$) |
+| **Latency Bounds** | `evals/test_latency.py` | P95 latency for single-agent and DAG runs | Single < 2.5s, DAG < 6.0s |
+| **Plan Quality** | `evals/test_plan_quality.py` | Completeness, valid markdown, non-empty advice | Quality Score $\ge 0.85$ |
+| **Routing Accuracy** | `evals/test_routing_accuracy.py` | Intent classification across 50 benchmark queries | Accuracy $\ge 95\%$ |
+
+### Running the Eval Harness
+
+```bash
+cd server/AI_Core
+python -m evals.runner
+```
+
+Output reports mean execution latency, standard deviation, number safety violations, and pass/fail status per evaluation module.
+
+---
+
+## 16. LoRA Fine-Tuning Pipeline (`lora/`)
+
+For self-hosted open-source models (such as LLaMA-3.1-8B-Instruct or Qwen-2.5-7B), FinWise includes a Parameter-Efficient Fine-Tuning (PEFT) LoRA pipeline in `server/AI_Core/lora/`.
+
+### Directory Layout
+
+```
+server/AI_Core/lora/
+├── config.json          # LoRA rank, alpha, dropout, and target modules
+├── train.py             # PyTorch + HuggingFace PEFT training script
+├── requirements.txt     # PEFT, TRL, Transformers, Datasets dependencies
+└── data/
+    ├── train.jsonl      # Curated financial instruction-following dataset
+    └── eval.jsonl       # Held-out evaluation prompts for perplexity scoring
+```
+
+### LoRA Hyperparameters (`config.json`)
+
+- **Base Model**: `meta-llama/Llama-3.1-8B-Instruct`
+- **LoRA Rank ($r$)**: `16`
+- **LoRA Alpha ($\alpha$)**: `32`
+- **Target Modules**: `["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]`
+- **LoRA Dropout**: `0.05`
+- **Quantization**: 4-bit NormalFloat (QLoRA) via `bitsandbytes`
+
+### Running Training
+
+```bash
+cd server/AI_Core/lora
+pip install -r requirements.txt
+python train.py --config config.json
+```
+
+---
 
 ### Linting
 
@@ -898,6 +1064,132 @@ opencv-python-headless==4.10.0.84
 prometheus-client==0.20.0
 pytest==8.3.4
 ruff==0.7.4
+```
+
+---
+
+## AI Multi-Agent Architecture Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#dc2626', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#b91c1c', 'lineColor': '#8b5cf6', 'secondaryColor': '#06b6d4', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((🧠 FinWise AI Core Engine))
+    🎯 Master Agent (Supervisor)
+      Intent Classification & Semantic Routing
+      Task Decomposition & Sub-Task Planning
+      Agent State Compilation & Final Synthesis
+    👥 Specialist Agents
+      Budget Planner Agent (50/30/20 & Zero-Based)
+      Debt Optimizer Agent (Avalanche & Snowball)
+      Investment Advisor Agent (Asset Allocation)
+      Financial Educator Agent (Concepts & Guidance)
+      Newsletter Agent (Personalized Digest)
+    ⚡ Resilient Execution & Fallback
+      Multi-Key Pool Rotation
+      Provider Failover: Groq ➔ Gemini ➔ OpenAI ➔ Ollama
+      Circuit Breakers & Exponential Backoff
+      Response Caching & Deduplication
+    🔧 Deterministic Financial Tools
+      Compound Interest Calculator
+      Debt Payoff Simulator
+      Emergency Fund Sizer
+      Portfolio Rebalancer
+    💾 State & Checkpointing
+      LangGraph StateGraph Execution
+      SQLite Memory (FTS5 Search)
+      Session Checkpoint & Workflow Resume
+```
+
+## LangGraph Multi-Agent Execution & Failover ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 INCOMING USER PROMPT / INTENT                                       │
+│    "How do I pay off $15k debt while saving for an emergency fund?"    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧠 MASTER AGENT: INTENT CLASSIFICATION & STATE INITIALIZATION          │
+│    ├─► Parse financial entities, currency, goals, accounts             │
+│    ├─► Build LangGraph Execution Plan                                  │
+│    └─► Branch execution to specialist sub-agents                       │
+└───────────────────┬────────────────────────────────┬───────────────────┘
+                    │                                │
+                    ▼                                ▼
+┌──────────────────────────────────┐┌────────────────────────────────────┐
+│ 🔴 DEBT OPTIMIZER AGENT          ││ 🟡 BUDGET PLANNER AGENT            │
+│  ├─ Compute Avalanche vs Snowball││  ├─ Audit current expense buckets  │
+│  ├─ Tool: debt_payoff_simulator  ││  ├─ Tool: calculate_50_30_20       │
+│  └─ Generate milestone timeline  ││  └─ Allocate emergency cash buffer │
+└──────────────────┬───────────────┘└────────────────┬───────────────────┘
+                   │                                 │
+                   └────────────────┬────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ PROVIDER RESOLUTION & RESILIENCE ENGINE                             │
+│    ├─► KeyPool: Select healthy active key (Groq LLaMA 3.3 70B)         │
+│    │   ├── 429 RateLimit / Timeout? ──► Cooldown key & Failover        │
+│    │   └── Failover Chain: Groq ──► Gemini 2.5 ──► OpenAI ──► Ollama   │
+│    └─► Execute Agent LLM Inference with structured output validation   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟣 SYNTHESIS & CHECKPOINTING (AGGREGATOR)                              │
+│    ├─► Merge specialist outputs into unified actionable recommendations│
+│    ├─► Checkpoint state graph to SQLite (session_id resumable)         │
+│    └─► Stream tokens / structured payload back to Node Express Gateway │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Production Implementation Blueprints
+
+### 1. Kahn's Topological Subtask Scheduler (`server/AI_Core/agents/sub_agent_manager.py`)
+
+```python
+def _topological_sort(self, subtasks: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    """Sorts subtasks into parallel execution levels using Kahn's algorithm."""
+    task_map = {s["id"]: s for s in subtasks}
+    in_degree: Dict[str, int] = {s["id"]: 0 for s in subtasks}
+    graph = defaultdict(list)
+
+    for s in subtasks:
+        for dep in s.get("dependencies", []):
+            if dep in task_map:
+                graph[dep].append(s["id"])
+                in_degree[s["id"]] += 1
+
+    queue = deque([sid for sid, deg in in_degree.items() if deg == 0])
+    levels: List[List[Dict[str, Any]]] = []
+
+    while queue:
+        current_level = []
+        for _ in range(len(queue)):
+            sid = queue.popleft()
+            current_level.append(task_map[sid])
+            for dependent in graph[sid]:
+                in_degree[dependent] -= 1
+                if in_degree[dependent] == 0:
+                    queue.append(dependent)
+        levels.append(current_level)
+
+    return levels
+```
+
+### 2. Number Safety Invariant Verification (`server/AI_Core/agents/aggregator.py`)
+
+```python
+def _numbers_are_subset(self, candidate: str, reference: str) -> bool:
+    """Verifies that all numerical sequences in candidate exist in reference."""
+    pattern = r"\b\d+(?:\.\d+)?\b"
+    cand_numbers = set(re.findall(pattern, candidate))
+    ref_numbers = set(re.findall(pattern, reference))
+    # If candidate modifies or invents numbers, it fails immediately
+    return cand_numbers.issubset(ref_numbers)
 ```
 
 ---

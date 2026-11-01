@@ -4,6 +4,10 @@ Welcome to the ultimate guide for the Personal Finance Platform. This vast docum
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## TABLE OF CONTENTS
 
 1. [Platform Overview](#1-platform-overview)
@@ -203,3 +207,112 @@ For absolute peace of mind, Administrators can view the unmodifiable Audit Log. 
 ---
 
 _End of User Manual. For technical architecture or API endpoints, please see ARCHITECTURE.md and API.md._
+
+## User & Admin Experience Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0284c7', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0369a1', 'lineColor': '#8b5cf6', 'secondaryColor': '#ec4899', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((📱 FinWise User Experience))
+    🖥️ FinanceOS Operating Space
+      Command Center (Quick Action Launcher)
+      Budget Health Dial (Composite 0-100 Score)
+      Net Worth & Spending Trends
+      Live Notifications & Activity Feed
+    💳 Daily Transaction Management
+      Instant Transaction Review Queue
+      Batch Approval & "Always Categorize" Rules
+      Multi-Receipt OCR Camera Scanning
+      CSV / Bank Statement Bulk Import
+    🧠 AI Copilot & Planning
+      Context-Aware Financial Assistant
+      Debt Avalanche vs Snowball Visualizer
+      50/30/20 & Zero-Based Budget Generators
+      Inspectable Evidence & Source Grounding
+    🏢 Collaboration & Workspace Admin
+      Household & Team Org Switching
+      Granular Role Permissions (Owner / Member)
+      Weekly Digest Financial Newsletter
+      Tamper-Evident Security Audit Logs
+```
+
+## User Daily Operating Lifecycle & Review ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 1: MORNING BRIEFING & COMMAND CENTER                           │
+│    User opens FinanceOS dashboard ──► Inspects Budget Health Score     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 💳 STEP 2: TRANSACTION REVIEW QUEUE                                    │
+│    ├─► Review 5 new uncategorized transactions imported from bank/CSV  │
+│    ├─► Click "Categorize with AI" ──► Auto-assigned: Food & Groceries  │
+│    ├─► Click "Always Categorize 'Trader Joe' as Groceries"             │
+│    └─► Click "Approve All"; transactions merge into confirmed ledger 🟢│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧠 STEP 3: FINANCIAL COPILOT CONSULTATION                              │
+│    ├─► User asks: "Can I afford a $2,000 summer vacation?"            │
+│    ├─► AI analyzes savings rate, current debt, and emergency buffer    │
+│    └─► Generates 3-month savings plan with milestone checkpoints 🟢    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📊 STEP 4: GOAL PROGRESS & NEWSLETTER PREVIEW                          │
+│    ├─► View vacation goal updated to 65% complete                      │
+│    └─► Download PDF executive summary report for weekly review 🟢      │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+## Production Implementation Blueprint: Client CSV Importer (`client/src/lib/csvImporter.ts`)
+
+```typescript
+import Papa from "papaparse";
+
+export interface ParsedCsvTransaction {
+  date: string;
+  description: string;
+  amount: number;
+  type: "income" | "expense";
+  category?: string;
+}
+
+export function parseTransactionCsv(csvText: string): Promise<ParsedCsvTransaction[]> {
+  return new Promise((resolve, reject) => {
+    Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.trim().toLowerCase(),
+      complete: (results) => {
+        try {
+          const transactions: ParsedCsvTransaction[] = results.data.map((row: any) => {
+            const rawAmount = parseFloat(row.amount || row.price || "0");
+            const isNegative = rawAmount < 0;
+            const amount = Math.abs(rawAmount);
+
+            return {
+              date: new Date(row.date || row.timestamp || Date.now()).toISOString(),
+              description: String(row.description || row.payee || "Uncategorized Item").trim(),
+              amount,
+              type: isNegative || row.type === "expense" ? "expense" : "income",
+              category: row.category ? String(row.category).trim() : undefined,
+            };
+          });
+          resolve(transactions);
+        } catch (err) {
+          reject(new Error("FAILED_CSV_TRANSFORM: Malformed data rows detected"));
+        }
+      },
+      error: (err) => reject(err),
+    });
+  });
+}
+```

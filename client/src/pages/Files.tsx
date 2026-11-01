@@ -19,9 +19,64 @@
  * the AI analysis textarea, and the delete action.
  *
  * Accessible from the sidebar under "Files" for authenticated users.
+ *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * Files Workspace Page
+ * ├── 1. File Listing & Pagination (listWorkspaceFiles)
+ * │   ├── Filter by Search Keyword & Document Kind
+ * │   └── Display File Cards (document, spreadsheet, image, receipt, archive)
+ * ├── 2. Upload Management (uploadWorkspaceFiles)
+ * │   ├── Multi-file file input picker
+ * │   ├── Progress indicator & toast notification
+ * │   └── Triggers server-side text extraction & RAG chunking
+ * ├── 3. File Detail Sheet & Preview
+ * │   ├── Metadata display (size, type, upload timestamp, chunk count)
+ * │   ├── Direct GridFS preview link (buildApiUrl)
+ * │   └── Generate PDF action for text files
+ * ├── 4. AI Document Analysis (analyzeWorkspaceFile)
+ * │   ├── Custom prompt input (e.g., "Extract summary", "Audit expenses")
+ * │   └── Markdown result display with copy and cite capabilities
+ * └── 5. Deletion & Cleanup (deleteWorkspaceFile)
+ *     ├── Confirmation prompt
+ *     └── Cascade cleanup of file & knowledge chunks
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +---------------------------------------------------------------+
+ *   |                     Files Page Mounts                         |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |    useQuery(['workspaceFiles', page, search])                 |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |                   Render Workspace File Grid                  |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *            +----------------------+----------------------+
+ *            |                      |                      |
+ *            v                      v                      v
+ *     [Upload Files]         [Select File]          [Delete File]
+ *     POST /workspace-files  Open Detail Sheet      DELETE /workspace-files
+ *            |                      |                      |
+ *            v                      v                      v
+ *     Triggers chunking      [Run AI Analysis]      Cascade delete chunks
+ *     & invalidates cache    POST /analyze          & invalidate cache
+ *   +---------------------------------------------------------------+
+ * ```
+ *
+ * @module pages/Files
  */
 
 import { useMemo, useRef, useState } from "react";
+import { Link, useLocation, useSearchParams } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
@@ -39,6 +94,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { Badge } from "@/components/ui/Badge";
+import { ExtractedFileText } from "@/components/ExtractedFileText";
+import { SourceEvidenceList } from "@/components/SourceEvidenceList";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -54,6 +111,7 @@ import {
   uploadWorkspaceFiles,
 } from "@/lib/api/files";
 import { buildApiUrl } from "@/lib/apiBase";
+import { isWorkspaceFileId, readChatReturnPath, readSourcePage } from "@/lib/fileReferences";
 
 const EMPTY_FILES: Awaited<ReturnType<typeof listWorkspaceFiles>>["files"] = [];
 
@@ -92,7 +150,18 @@ const fileKindIcon: Record<string, typeof FileText> = {
 export default function FilesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailParams, setDetailParams] = useSearchParams();
+  const [, navigate] = useLocation();
+  const requestedFileId = detailParams.get("file");
+  const selectedId = isWorkspaceFileId(requestedFileId) ? requestedFileId : null;
+  const selectedPage = readSourcePage(detailParams.get("page"));
+  const returnToChat = readChatReturnPath(detailParams.get("returnTo"));
+  const setSelectedId = (id: string | null) => id
+    ? setDetailParams({ file: id })
+    : navigate(returnToChat || "/files", { replace: true });
+  const setSourcePage = (fileId: string, nextPage: number) => setDetailParams({
+    file: fileId, page: String(nextPage), ...(returnToChat ? { returnTo: returnToChat } : {}),
+  }, { replace: true });
   const [analysisPrompt, setAnalysisPrompt] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { toast } = useToast();
@@ -180,7 +249,7 @@ export default function FilesPage() {
   const stats = useMemo(() => {
     const total = files.length;
     const processed = files.filter((file) => file.status === "processed").length;
-    const analyzed = files.filter((file) => Boolean(file.analysis)).length;
+    const analyzed = files.filter((file) => Boolean(file.lastAnalyzedAt)).length;
 
     return { total, processed, analyzed };
   }, [files]);
@@ -209,9 +278,9 @@ export default function FilesPage() {
                 Workspace files
               </div>
               <div className="space-y-2">
-                <h1 className="text-3xl font-semibold tracking-tight text-foreground">Store and analyze anything you want the AI to use</h1>
+                <h1 className="text-3xl font-semibold tracking-tight text-foreground">Files</h1>
                 <p className="max-w-3xl text-sm leading-6 text-muted-foreground sm:text-base">
-                  Upload documents, spreadsheets, images, code, and notes. The app stores them locally in your workspace,
+                  Upload documents, spreadsheets, images, code, and notes. The app stores them in your workspace,
                   extracts useful text when possible, and lets you run AI analysis or attach them to conversations.
                 </p>
               </div>
@@ -254,6 +323,7 @@ export default function FilesPage() {
                     setSearch(event.target.value);
                   }}
                   placeholder="Search by file name or extracted preview"
+                  aria-label="Search workspace files"
                   className="pl-9"
                 />
               </div>
@@ -266,6 +336,11 @@ export default function FilesPage() {
               {filesQuery.isLoading ? (
                 <div className="col-span-full rounded-[calc(var(--radius)-6px)] border border-border/70 bg-muted/20 p-6 text-sm text-muted-foreground">
                   Loading your files...
+                </div>
+              ) : filesQuery.isError ? (
+                <div role="alert" className="col-span-full rounded-lg border border-destructive/30 p-6">
+                  <p className="text-sm">Your files could not be loaded. Try again to view your workspace.</p>
+                  <Button className="mt-3" variant="outline" onClick={() => void filesQuery.refetch()}>Try again</Button>
                 </div>
               ) : files.length === 0 ? (
                 <div className="col-span-full rounded-[calc(var(--radius)-6px)] border border-dashed border-border/70 bg-muted/20 p-8 text-center">
@@ -359,13 +434,24 @@ export default function FilesPage() {
       </div>
 
       <Sheet open={Boolean(selectedId)} onOpenChange={(open) => !open && setSelectedId(null)}>
-        <SheetContent side="right" className="w-full sm:max-w-2xl">
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
           <SheetHeader>
-            <SheetTitle>{selectedFile?.originalName || "Workspace file"}</SheetTitle>
+            <SheetTitle className="break-words pr-6">{selectedFile?.originalName || "Workspace file"}</SheetTitle>
             <SheetDescription>Inspect extracted content, open the original file, and run AI analysis.</SheetDescription>
           </SheetHeader>
 
-          {!selectedFile ? (
+          {returnToChat ? (
+            <Button asChild variant="outline" className="mt-4">
+              <Link href={returnToChat}>Back to chat</Link>
+            </Button>
+          ) : null}
+
+          {detailQuery.isError ? (
+            <div role="alert" className="mt-6 space-y-3">
+              <p className="text-sm">File details could not be loaded.</p>
+              <Button variant="outline" onClick={() => void detailQuery.refetch()}>Try again</Button>
+            </div>
+          ) : !selectedFile ? (
             <div className="mt-6 text-sm text-muted-foreground">
               {detailQuery.isLoading ? "Loading file details..." : "Select a file to inspect it."}
             </div>
@@ -376,6 +462,10 @@ export default function FilesPage() {
                 <Badge variant="outline">{selectedFile.status}</Badge>
                 <Badge variant="outline">{formatBytes(selectedFile.sizeBytes)}</Badge>
               </div>
+
+              <ExtractedFileText key={selectedFile.id} text={selectedFile.extractedText}
+                pageCount={selectedFile.extractedPageCount} page={selectedPage}
+                onPageChange={(next) => setSourcePage(selectedFile.id, next)} />
 
               {selectedFile.kind === "image" ? (
                 <div className="overflow-hidden rounded-[calc(var(--radius)-8px)] border border-border/70">
@@ -388,14 +478,16 @@ export default function FilesPage() {
               ) : null}
 
               <div className="flex flex-wrap items-center gap-3">
+                <Button asChild variant="outline">
                 <a
                   href={buildApiUrl(`/media/${selectedFile.fileId}`)}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex"
                 >
-                  <Button variant="outline">Open original</Button>
+                  Open original
                 </a>
+                </Button>
                 <Button
                   onClick={() =>
                     analyzeMutation.mutate({
@@ -440,17 +532,13 @@ export default function FilesPage() {
                 </div>
               ) : null}
 
-              <div className="space-y-2">
-                <div className="text-sm font-semibold text-foreground">Extracted text</div>
-                <Textarea
-                  value={selectedFile.extractedText || "No extracted text available for this file yet."}
-                  readOnly
-                  className="min-h-[220px]"
-                />
-              </div>
-
               {selectedFile.analysis?.response ? (
                 <Card className="rounded-[calc(var(--radius)-8px)] border-border/70 p-4">
+                  {selectedFile.analysis.fallbackUsed ? (
+                    <p role="status" className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-foreground">
+                      AI narration is unavailable. This is a fallback financial plan; review the extracted text to verify file details.
+                    </p>
+                  ) : null}
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold text-foreground">Latest AI analysis</div>
@@ -470,6 +558,9 @@ export default function FilesPage() {
                       {selectedFile.analysis.response}
                     </ReactMarkdown>
                   </div>
+                  {selectedFile.analysis.evidence?.length ? (
+                    <div className="mt-4"><SourceEvidenceList items={selectedFile.analysis.evidence} returnTo={returnToChat} /></div>
+                  ) : null}
                 </Card>
               ) : null}
             </div>

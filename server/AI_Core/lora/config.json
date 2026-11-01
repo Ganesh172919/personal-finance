@@ -1,0 +1,21 @@
+{
+  "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "train_file": "data/train.jsonl",
+  "eval_file": "data/eval.jsonl",
+  "output_dir": "outputs/finance-assistant-lora",
+  "max_length": 512,
+  "seed": 42,
+  "lora": { "r": 8, "lora_alpha": 16, "lora_dropout": 0.05, "target_modules": ["q_proj", "v_proj"] },
+  "training": {
+    "num_train_epochs": 3,
+    "learning_rate": 0.0002,
+    "per_device_train_batch_size": 1,
+    "per_device_eval_batch_size": 1,
+    "gradient_accumulation_steps": 4,
+    "logging_steps": 1,
+    "save_strategy": "epoch",
+    "eval_strategy": "epoch",
+    "save_total_limit": 2,
+    "report_to": "none"
+  }
+}

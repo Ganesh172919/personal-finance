@@ -18,9 +18,12 @@
  *  - Purely read-only; portfolio mutations live in dedicated portfolio management pages.
  */
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
+import { Link } from "wouter";
 
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { InvestmentPortfolioSkeleton } from "@/components/ui/CardSkeleton";
 import { getPortfolioSummary, PortfolioSummaryResponse } from "@/lib/apiClient";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
@@ -34,10 +37,14 @@ const allocationColor = (name: string) => {
 
 export function InvestmentPortfolio() {
   const { formatMoney } = useOrgFormatters();
-  const { data } = useQuery<PortfolioSummaryResponse>({
+  const { data, isLoading } = useQuery<PortfolioSummaryResponse>({
     queryKey: ["/api/portfolio/summary", 12],
     queryFn: () => getPortfolioSummary({ months: 12 }),
   });
+
+  if (isLoading) {
+    return <InvestmentPortfolioSkeleton />;
+  }
 
   const totalValue = Number(data?.summary?.total_invested || 0);
   const monthlySip = Number(data?.summary?.monthly_sip_estimate || 0);
@@ -60,12 +67,14 @@ export function InvestmentPortfolio() {
     <Card className="p-6" data-testid="investment-portfolio">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-foreground">Investment Portfolio</h3>
-        <Button
-          variant="ghost"
-          className="text-primary hover:text-primary/80 text-sm font-medium"
-        >
-          Manage
-        </Button>
+        <Link href="/portfolio">
+          <Button
+            variant="ghost"
+            className="text-primary hover:text-primary/80 text-sm font-medium"
+          >
+            Manage →
+          </Button>
+        </Link>
       </div>
 
       <div className="chart-container rounded-lg p-4 mb-6 relative overflow-hidden">

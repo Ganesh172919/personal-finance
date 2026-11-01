@@ -46,6 +46,7 @@ If you are brand new, read these sections in order:
 5. AI Core architecture
 6. End-to-end request flows
 7. Common engineering tasks
+8. Master Developer Handbook: `docs/BUILDING_ON_THIS_PROJECT.md`
 
 After that, use the focused guides linked at the end for deeper work.
 
@@ -1188,3 +1189,68 @@ When in doubt:
 - follow it inward one layer at a time
 - keep HTTP, service, and UI concerns separate
 - preserve the shared patterns instead of building one-off shortcuts
+
+## Developer Onboarding Architecture Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#8b5cf6', 'secondaryColor': '#10b981', 'tertiaryColor': '#f59e0b'}}}%%
+mindmap
+  root((🚀 FinWise Full-Stack Onboarding))
+    ⚙️ Prerequisites
+      Node.js >= 24.14.1 (Strict package.json engine)
+      Python 3.11+ Virtualenv
+      Docker Engine (Mongo 7.0 + Redis 7.0)
+    📦 Multi-Service Topology
+      Frontend: Vite + React 18 (Port 5173)
+      Backend: Express /api/v1 (Port 3000)
+      AI Core: FastAPI LangGraph (Port 8001)
+    🛡️ Architecture Invariants
+      Multi-Tenant orgId scoping on all DB models
+      Mongoose orgScopePlugin active
+      Zod schema validation on all inputs
+      AI Provider failover with KeyPool cooldown
+    🧪 Verification Gates
+      Server: npm test --workspace=server (Vitest)
+      AI Core: pytest tests/ (Pytest)
+      Client: npm test --workspace=client (MSW)
+```
+
+## End-to-End Contributor Onboarding ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 1: WORKSPACE CLONING & PREREQUISITES VERIFICATION              │
+│    $ node -v (>=24.14.1) • $ python --version (3.11+) • $ docker -v    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟡 STEP 2: INFRASTRUCTURE CONTAINER INITIALIZATION                     │
+│    $ docker-compose up -d mongodb redis                               │
+│    ► Mongo: localhost:27017 (Replica Set) • Redis: localhost:6379      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟣 STEP 3: ENVIRONMENT PREPARATION (.env)                              │
+│    ├─► server/.env: DATABASE_URL, REDIS_URL, JWT_SECRET, AI_CORE_URL   │
+│    ├─► client/.env: VITE_API_URL=/api/v1                              │
+│    └─► server/AI_Core/.env: GROQ_API_KEY, GEMINI_API_KEY, OLLAMA_HOST  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔷 STEP 4: SERVICE BOOTSTRAP IN PARALLEL                               │
+│    ├─► Terminal 1: cd server && npm run dev (Port 3000)                │
+│    ├─► Terminal 2: cd server/AI_Core && uvicorn api_service:app (8001) │
+│    └─► Terminal 3: cd client && npm run dev (Port 5173)                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧪 STEP 5: VERIFICATION HEALTH CHECKS & FIRST LOGIN                    │
+│    ├─► Gateway Health: GET http://localhost:3000/api/health ──► 200 OK 🟢  │
+│    ├─► AI Core Health: GET http://localhost:8001/health ──► 200 OK 🟢  │
+│    └─► Open http://localhost:5173, create test account, review queue 🟢│
+└────────────────────────────────────────────────────────────────────────┘
+```

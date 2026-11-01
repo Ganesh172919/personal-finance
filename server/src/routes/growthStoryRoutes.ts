@@ -16,6 +16,7 @@
  * Controllers: growthStoryController
  */
 import { Router } from "express";
+import passport from "passport";
 import { growthStoryController } from "../controllers/growthStoryController";
 import { optionalJwtAuth } from "../middleware/optionalJwtAuth";
 import { validate } from "../middleware/validate";
@@ -39,7 +40,7 @@ router.get("/:slug", validate({ params: growthStorySlugParamSchema }), asyncRout
 // Protected routes
 router.post(
   "/",
-  optionalJwtAuth,
+  passport.authenticate("jwt", { session: false }),
   validate({ body: createGrowthStoryBodySchema }),
   asyncRoute(growthStoryController.createStory),
 );

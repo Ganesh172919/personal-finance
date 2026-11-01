@@ -2,6 +2,23 @@
 
 > Everything you need to set up FinWise locally and start contributing.
 
+## Current Release Notes
+
+Before using the setup steps below, note the following changes from the latest platform update:
+
+- The server now declares Node `>=24.14.1 <25` in `server/package.json`.
+- The current release added heavier AI runtime behavior, so local development is more reliable when the Node server, MongoDB, Redis, and AI Core are all available.
+- New dashboard and transaction-review features depend on the expanded backend route surface and summary services.
+
+### Practical onboarding guidance
+
+- Prefer aligning your local Node version with `server/.node-version` and `server/.nvmrc`.
+- If you are touching AI, chat, command center, or transaction review flows, run the Python AI Core locally as part of your normal setup.
+- Treat `/api/v1/*` as the canonical route surface for new development work.
+- Consult the [**Master Developer Handbook (Building on This Project)**](../docs/BUILDING_ON_THIS_PROJECT.md) for complete end-to-end blueprints on adding database models, Zod validation schemas, Express controllers, React views, and LangGraph subagents.
+
+---
+
 ---
 
 ## Table of Contents
@@ -24,24 +41,24 @@ Ensure the following tools are installed before proceeding. Version numbers list
 
 | Tool | Minimum Version | Required For | Install Link |
 |---|---|---|---|
-| **Node.js** | 18.x LTS | Server + Client runtime | [nodejs.org](https://nodejs.org/) |
-| **npm** | 9.x | Package management (workspaces) | Bundled with Node.js |
+| **Node.js** | `>=24.14.1 <25` | Server + Client runtime | [nodejs.org](https://nodejs.org/) |
+| **npm** | `>=11.0.0` | Package management | Bundled with Node.js 24 |
 | **Git** | 2.30+ | Version control | [git-scm.com](https://git-scm.com/) |
-| **MongoDB** | 6.0+ | Primary datastore | [mongodb.com](https://www.mongodb.com/try/download/community) |
-| **Redis** | 6.0+ | Queues, rate limiting, caching | [redis.io](https://redis.io/docs/install/) |
-| **Python** | 3.10+ | AI Core (optional) | [python.org](https://www.python.org/downloads/) |
-| **Docker** | 24+ | Containerized services (optional) | [docker.com](https://www.docker.com/) |
-| **Docker Compose** | 2.20+ | Multi-container orchestration (optional) | Bundled with Docker Desktop |
+| **MongoDB** | 6.0+ (7.0+ recommended) | Primary datastore | [mongodb.com](https://www.mongodb.com/try/download/community) |
+| **Redis** | 7.0+ | Queues, rate limiting, caching | [redis.io](https://redis.io/docs/install/) |
+| **Python** | 3.11+ (<3.13 for PaddleOCR) | AI Core multi-agent engine | [python.org](https://www.python.org/downloads/) |
+| **Docker** | 24+ | Containerized services | [docker.com](https://www.docker.com/) |
+| **Docker Compose** | 2.20+ | Multi-container orchestration | Bundled with Docker Desktop |
 
 > **Note:** MongoDB and Redis can be run natively or via Docker (see [Docker Setup](#7-docker-setup)). The server includes an in-memory MongoDB fallback (`mongodb-memory-server`) for development when no live MongoDB instance is available.
 
 ### Verify Your Environment
 
 ```bash
-node -v        # >= v18.0.0
-npm -v         # >= 9.0.0
+node -v        # >= v24.14.1
+npm -v         # >= 11.0.0
 git --version  # >= 2.30
-python --version  # >= 3.10 (optional)
+python --version  # >= 3.11
 docker --version  # >= 24.0 (optional)
 docker compose version  # >= 2.20 (optional)
 ```
@@ -50,17 +67,17 @@ docker compose version  # >= 2.20 (optional)
 
 ## 2. Project Structure Overview
 
-FinWise is organized as a **monorepo** using npm workspaces. The three primary services communicate over HTTP.
+FinWise is organized as a multi-tier monorepo. The three primary services communicate over HTTP and SSE.
 
 ```
 personal-finance/
-├── client/                     # React 18 + Vite 7 SPA
+├── client/                     # React 18 + Vite 7 SPA (Port 5173)
 │   ├── src/
 │   │   ├── components/         # 36+ reusable UI components (Radix primitives)
 │   │   ├── features/           # Feature modules (chat, journaling, workflows)
-│   │   ├── hooks/              # 13 custom React hooks
-│   │   ├── lib/                # API client layer (14 domain modules)
-│   │   ├── pages/              # 34 route-level page components
+│   │   ├── hooks/              # 13 custom React hooks (useAIStream, useRealtimeEvents)
+│   │   ├── lib/                # API client layer (14 domain modules + v1 APIs)
+│   │   ├── pages/              # 35 route-level page components (FinanceOS, Dashboard)
 │   │   ├── stores/             # 6 Zustand state stores
 │   │   ├── routes/             # Wouter router definitions
 │   │   ├── context/            # Auth context provider
@@ -70,35 +87,40 @@ personal-finance/
 │   ├── tailwind.config.ts      # Tailwind CSS configuration
 │   └── tsconfig.json           # TypeScript configuration
 │
-├── server/                     # Express 5 + TypeScript API
+├── server/                     # Express 5 + TypeScript API (Port 3000)
 │   ├── src/
 │   │   ├── config/             # 6 config modules (env, DB, Redis, passport)
-│   │   ├── controllers/        # 14 root + 30 v1 controllers
-│   │   ├── middleware/          # 13 middleware modules
-│   │   ├── models/             # 49 Mongoose models
-│   │   ├── routes/             # 17 route files (100+ endpoints)
-│   │   ├── schemas/            # 12 root + 23 v1 Zod validation schemas
-│   │   ├── services/           # 49 business-logic services
+│   │   ├── controllers/        # 16 root + 32 v1 controllers (newsletter, pdf)
+│   │   ├── middleware/         # 13 middleware modules (authAny, orgScope)
+│   │   ├── models/             # 52 Mongoose models (HealthScore, chunks)
+│   │   ├── routes/             # 18 route files (100+ endpoints + /v1/*)
+│   │   ├── schemas/            # 13 root + 29 v1 Zod validation schemas
+│   │   ├── services/           # 60 business-logic services (retrieval, newsletter)
 │   │   ├── modules/            # Domain modules (plugins, queue, realtime)
 │   │   ├── connectors/         # External service connectors
 │   │   ├── worker/             # BullMQ background worker
-│   │   ├── scripts/            # Migration and seed scripts
-│   │   └── test/               # 35 integration test files
-│   ├── AI_Core/                # Python FastAPI AI service
-│   │   ├── agents/             # Specialist agent definitions
+│   │   ├── scripts/            # Migration, chunk backfill, and seed scripts
+│   │   └── test/               # 34 integration test files (in-memory Mongo)
+│   ├── AI_Core/                # Python FastAPI AI Core (Port 8001)
+│   │   ├── agents/             # TaskDecomposer, SubAgentManager, Aggregator, Specialists
+│   │   ├── contracts/          # Pydantic V2 agent output contracts
+│   │   ├── evals/              # Evaluation test harness and invariant runner
+│   │   ├── lora/               # Fine-tuning dataset and training pipeline
 │   │   ├── graph/              # LangGraph workflow orchestration
-│   │   ├── tools/              # AI tool definitions
-│   │   ├── memory/             # SQLite-backed memory system
-│   │   ├── vision/             # OCR / image processing
-│   │   ├── api_service.py      # FastAPI entry point
+│   │   ├── tools/              # Deterministic financial calculators and plan builder
+│   │   ├── memory/             # SQLite FTS5 conversation memory & facts
+│   │   ├── vision/             # PaddleOCR receipt & handwriting parser
+│   │   ├── api_service.py      # FastAPI HTTP entry point
 │   │   └── requirements.txt    # Python dependencies
+│   ├── Dockerfile              # Production Dockerfile for Express API
 │   └── tsconfig.json           # TypeScript configuration
 │
 ├── packages/contracts/         # Shared OpenAPI specs and typed contracts
-├── docs/                       # Project documentation (33 files)
-├── documentation/              # Structured documentation (this directory)
-├── research_references/        # Academic and research materials
-└── research_survey/            # User research and survey data
+├── docs/                       # Project documentation (59 detailed reference guides)
+├── documentation/              # Numbered, structured master guide (chapters 01-12)
+├── compose.yaml                # Production Docker Compose orchestration
+├── research_references/        # Academic papers and reference models
+└── research_survey/            # User research and empirical data
 ```
 
 ### Service Summary
@@ -107,9 +129,9 @@ personal-finance/
 |---|---|---|---|
 | **Client** | React 18 + Vite 7 + TypeScript | 5173 | Single-page application with PWA support |
 | **Server** | Express 5 + TypeScript | 3000 | REST API, authentication, background workers, SSE |
-| **AI Core** | Python 3.10+ + FastAPI + LangGraph | 8001 | Multi-agent LLM orchestration, file analysis, OCR |
-| **MongoDB** | MongoDB 6+ | 27017 | Primary datastore (49 models, GridFS) |
-| **Redis** | Redis 6+ | 6379 | Rate limiting, BullMQ queues, caching |
+| **AI Core** | Python 3.11+ + FastAPI + LangGraph | 8001 | Multi-agent DAG orchestration, RAG, subagents, OCR |
+| **MongoDB** | MongoDB 7+ | 27017 | Primary datastore (52 models, GridFS) |
+| **Redis** | Redis 7+ | 6379 | Rate limiting, BullMQ queues, DLQ, caching |
 
 ---
 
@@ -408,17 +430,19 @@ npx serve ../client/dist -l 5173
 
 | Command | Description |
 |---|---|
-| `npm run dev` | Start with hot reload (`tsx watch`) |
-| `npm run start` | Start in production mode |
-| `npm run build` | Compile TypeScript |
-| `npm run check` | Type-check without emitting |
+| `npm run dev` | Start with hot reload (`tsx watch src/server.ts`) |
+| `npm run start` | Start in production mode (`node dist/server.js`) |
+| `npm run build` | Compile TypeScript (`tsc --noEmit && node scripts/build.mjs`) |
+| `npm run check` | Type-check without emitting (`tsc --noEmit`) |
 | `npm run worker:dev` | Start BullMQ background worker with hot reload |
-| `npm run worker:start` | Start BullMQ background worker (production) |
-| `npm test` | Run tests in watch mode |
-| `npm run test:ci` | Run tests once (CI mode) |
+| `npm run worker:start` | Start BullMQ background worker in production mode |
+| `npm test` | Run tests with Vitest |
+| `npm run test:watch` | Run tests in interactive watch mode |
+| `npm run test:ci` | Run tests once (CI mode: `vitest run`) |
+| `npm run backfill:retrieval` | Backfill workspace text documents into RAG Phase 2 knowledge chunks |
 | `npm run migrate:transactions` | Run transaction migration script |
 | `npm run migrate:orgids` | Run organization ID migration script |
-| `npm run seed:content` | Seed mock content data |
+| `npm run seed:content` | Seed mock content and educational data |
 | `npm run generate:openapi` | Generate OpenAPI path specifications |
 
 ### Useful Client Scripts
@@ -426,10 +450,20 @@ npx serve ../client/dist -l 5173
 | Command | Description |
 |---|---|
 | `npm run dev` | Start Vite dev server with HMR |
-| `npm run build` | Type-check + production build |
+| `npm run build` | Type-check + production build (`tsc && vite build`) |
 | `npm run preview` | Preview production build locally |
-| `npm test` | Run tests in watch mode |
+| `npm test` | Run client tests with Vitest (`vitest run`) |
+| `npm run test:watch` | Run client tests in watch mode |
 | `npm run lint` | ESLint check with strict rules |
+
+### Useful AI Core Scripts
+
+| Command | Description |
+|---|---|
+| `uvicorn api_service:app --host 0.0.0.0 --port 8001 --reload` | Start AI Core FastAPI server with hot reload |
+| `pytest tests/ -v` | Run full test suite for agents, tools, memory, and failover |
+| `python -m evals.runner` | Run invariant evaluation suite (determinism, latency, number safety) |
+| `python lora/train.py` | Run LoRA fine-tuning training job |
 
 ---
 
@@ -612,3 +646,200 @@ mongosh --eval "db.adminCommand('ping')"
 ---
 
 *Next: [02 — Architecture](./02-architecture.md)*
+
+## Onboarding & System Setup Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#6366f1', 'secondaryColor': '#ec4899', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((🚀 FinWise Onboarding))
+    ⚙️ Prerequisites
+      Node.js >=24.14.1
+      Python 3.11+
+      MongoDB 7.0+
+      Redis 7.0+
+    📦 Environment Setup
+      Server .env
+        JWT_SECRET & REFRESH_SECRET
+        DATABASE_URL & REDIS_URL
+        AI_CORE_URL http://localhost:8001
+      Client .env
+        VITE_API_URL /api/v1
+        VITE_SOCKET_URL ws://localhost:3000
+      AI Core .env
+        GROQ_API_KEY / OPENAI_API_KEY
+        PORT 8001
+    🖥️ Service Orchestration
+      Database Layer
+        docker-compose up -d mongo redis
+      API Gateway
+        npm run dev (Port 3000)
+      AI Core Engine
+        uvicorn api_service:app (Port 8001)
+      Web Frontend
+        npm run dev (Port 5173)
+    🔍 Health Verification
+      GET /health Check OK
+      GET /api/v1/tools/ping
+      AI Core /health Model Catalog
+      Frontend Dashboard Login
+    🛠️ Troubleshooting
+      Mongo Auth / Connection
+      Redis Queue Fallback
+      LLM Provider Failover
+```
+
+## Local Development Lifecycle ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 1: HOST PREREQUISITES VERIFICATION                             │
+│    Node.js >= 24.14.1 • Python 3.11+ • Docker Engine • Git             │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟡 STEP 2: INFRASTRUCTURE BOOTSTRAP                                   │
+│    $ docker-compose up -d mongodb redis                               │
+│    ► Mongo: localhost:27017 (Data & Audit Logs)                        │
+│    ► Redis: localhost:6379 (BullMQ Queues & Caching)                   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟣 STEP 3: ENVIRONMENT CONFIGURATION (.env)                           │
+│    ► server/.env ── JWT_SECRET, DATABASE_URL, REDIS_URL, AI_CORE_URL  │
+│    ► client/.env ── VITE_API_URL=/api/v1                               │
+│    ► server/AI_Core/.env ── GROQ_API_KEY / GEMINI_API_KEY / OLLAMA     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                  ┌─────────────────┴─────────────────┐
+                  ▼                                   ▼
+┌──────────────────────────────────┐┌────────────────────────────────────┐
+│ 🔷 STEP 4A: SERVER & AI ENGINE   ││ 🔶 STEP 4B: FRONTEND WEB APP       │
+│    $ cd server && npm install    ││    $ cd client && npm install      │
+│    $ npm run dev (Port 3000)     ││    $ npm run dev (Port 5173)       │
+│    $ cd AI_Core && venv/activate ││    ► Vite Hot Module Reloading     │
+│    $ uvicorn api_service:app     ││    ► Proxied /api/v1 calls         │
+└─────────────────┬────────────────┘└─────────────────┬──────────────────┘
+                  │                                   │
+                  └─────────────────┬─────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 5: END-TO-END HEALTH VERIFICATION                              │
+│    ├─► Node Gateway: GET http://localhost:3000/api/health (200 OK)         │
+│    ├─► AI Core Engine: GET http://localhost:8001/health (200 OK)       │
+│    └─► Client Portal: http://localhost:5173 (Auth & Dashboard Ready)   │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+## Production Implementation Blueprints
+
+### 1. Rapid Development Multi-Terminal Launch Script (`scripts/dev.sh`)
+
+```bash
+#!/usr/bin/env bash
+# Spins up infrastructure, AI Core, Express API, and React Frontend in development mode
+
+echo "1. Bootstrapping MongoDB and Redis..."
+docker compose up -d mongo redis
+
+echo "2. Launching Python AI Core..."
+(cd server/AI_Core && source .venv/bin/activate && uvicorn api_service:app --host 0.0.0.0 --port 8001 --reload) &
+
+echo "3. Launching Express API Gateway..."
+(cd server && npm run dev) &
+
+echo "4. Launching Vite Frontend..."
+(cd client && npm run dev) &
+
+wait
+```
+
+### 2. Environment Variable Validation Schema (`server/src/schemas/envSchema.ts`)
+
+```typescript
+// Zod schema enforcing strict environment variable validation at server boot
+export const envSchema = z.object({
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  PORT: z.coerce.number().default(3000),
+  MONGO_URI: z.string().min(1, "MONGO_URI is required"),
+  REDIS_URL: z.string().min(1, "REDIS_URL is required"),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
+  AI_CORE_URL: z.string().url().default("http://localhost:8001"),
+  AI_CORE_INTERNAL_TOKEN: z.string().min(16)
+});
+```
+
+### 3. Windows PaddleOCR Environment Check & Fallback (`server/AI_Core/scripts/check_paddleocr.py`)
+
+```python
+"""
+Verifies PaddleOCR native dependencies, C++ runtimes, and falls back to
+pytesseract / deterministic regex extraction when compiled binaries fail to load.
+"""
+import sys
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("paddle_check")
+
+def verify_ocr_subsystem():
+    logger.info("Python version: %s", sys.version)
+    if sys.version_info >= (3, 13):
+        logger.warning("PaddleOCR is incompatible with Python >= 3.13. Please use Python 3.11 or 3.12.")
+    
+    try:
+        import paddle
+        logger.info("PaddlePaddle core installed: v%s (CUDA available: %s)", paddle.__version__, paddle.is_compiled_with_cuda())
+    except ImportError as e:
+        logger.error("PaddlePaddle core missing: %s. Run: pip install paddlepaddle", e)
+        return False
+        
+    try:
+        from paddleocr import PaddleOCR
+        ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+        logger.info("PaddleOCR successfully initialized with native C++ runtimes.")
+        return True
+    except Exception as e:
+        logger.error("Failed initializing PaddleOCR: %s", e)
+        logger.info("Windows Troubleshooting Guide:")
+        logger.info("  1. Install Microsoft Visual C++ 2015-2022 Redistributable (x64).")
+        logger.info("  2. If using Python 3.13+, recreate virtual environment with Python 3.11 or 3.12.")
+        logger.info("  3. Server will automatically fallback to Tesseract or pure LLM vision parser.")
+        return False
+
+if __name__ == "__main__":
+    verify_ocr_subsystem()
+```
+
+### 4. Node Engine & Pre-flight Diagnostics (`server/src/scripts/checkNodeEngine.ts`)
+
+```typescript
+// Enforces Node >=24.14.1 <25 and validates environment connectivity before starting server
+import semver from "semver";
+import { logger } from "../config/logger";
+
+export function checkNodeEngine(): void {
+  const currentVersion = process.version;
+  const expectedRange = ">=24.14.1 <25";
+
+  if (!semver.satisfies(currentVersion, expectedRange)) {
+    logger.error(
+      { currentVersion, expectedRange },
+      "[FATAL] Unsupported Node.js version. FinWise requires Node >=24.14.1 <25 for ES2024 features and high-throughput crypto."
+    );
+    process.exit(1);
+  }
+
+  logger.info({ currentVersion }, "[OK] Node.js engine version verified.");
+}
+
+if (require.main === module) {
+  checkNodeEngine();
+}
+```

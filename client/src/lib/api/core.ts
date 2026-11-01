@@ -31,6 +31,7 @@ import { useAppDialogStore } from "@/stores/appDialogStore";
 import { buildApiUrl } from "../apiBase";
 import { ApiError, parseApiError } from "../apiError";
 import { clearActiveOrgId, getActiveOrgId } from "../orgContext";
+import { getRequestContextRevision } from "../requestContext";
 
 /**
  * HTTP methods that do not modify state.
@@ -40,6 +41,11 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** In-memory CSRF token cache (set by fetchCsrfToken or AuthContext) */
 let csrfToken: string | null = null;
+
+const storedUserId = () => {
+  try { return typeof window === "undefined" ? null : window.localStorage.getItem("userId"); }
+  catch { return null; }
+};
 
 export { ApiError };
 
@@ -86,6 +92,11 @@ const apiClientInternal = async <T>(
   options: RequestInit,
   state: { retriedCsrf: boolean; retriedOrg: boolean }
 ): Promise<T> => {
+  const contextRevision = getRequestContextRevision();
+  const activeOrgId = getActiveOrgId();
+  const userId = storedUserId();
+  const isCurrentContext = () => contextRevision === getRequestContextRevision()
+    && activeOrgId === getActiveOrgId() && userId === storedUserId();
   const method = String(options.method || "GET").toUpperCase();
   const isFormDataBody = typeof FormData !== "undefined" && options.body instanceof FormData;
 
@@ -103,7 +114,6 @@ const apiClientInternal = async <T>(
   }
 
   // Inject org context for multi-tenancy (server scopes data to this org)
-  const activeOrgId = getActiveOrgId();
   const orgHeaderInjected = Boolean(activeOrgId && !headers.has("X-Org-Id"));
   if (activeOrgId && orgHeaderInjected) {
     headers.set("X-Org-Id", activeOrgId);
@@ -121,6 +131,9 @@ const apiClientInternal = async <T>(
   // Handle error responses
   if (!response.ok) {
     const apiError = await parseApiError(response);
+    // Preserve the server error, but never clear a newer workspace, open its
+    // dialogs or replay a retired write using its credentials/context.
+    if (!isCurrentContext()) throw apiError;
 
     // Feature limit errors (402) → show upgrade dialog
     if (
@@ -159,7 +172,7 @@ const apiClientInternal = async <T>(
     // Retry: refresh CSRF token and re-send the request
     if (shouldRetryCsrf) {
       const refreshed = await fetchCsrfToken().catch(() => null);
-      if (refreshed) {
+      if (refreshed && isCurrentContext()) {
         return apiClientInternal(endpoint, options, { ...state, retriedCsrf: true });
       }
     }

@@ -29,6 +29,16 @@ import type { MutationSource, TransactionType } from "./transactions";
 
 /** Possible statuses a task can be in. */
 export type TaskStatus = "open" | "completed" | "dismissed";
+
+/** Recurrence cadence for automated task rescheduling */
+export type TaskRecurrenceCadence = "none" | "daily" | "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
+
+export interface TaskRecurrence {
+  cadence: TaskRecurrenceCadence;
+  nextDueDate?: string;
+  parentTaskId?: string;
+  generation?: number;
+}
 /**
  * Discriminated union of financial side-effects a completed task can propose.
  * Each variant targets a different domain entity (transaction, goal, debt, profile).
@@ -103,6 +113,8 @@ export interface Task {
   actionLinkId?: string;
   /** References to outcomes generated when effects were applied. */
   outcomeRefs?: string[];
+  /** Automated recurrence cadence settings */
+  recurrence?: TaskRecurrence;
 }
 
 /**
@@ -115,6 +127,31 @@ export async function createTasksFromPlan(payload: {
   plan: any;
 }): Promise<{ created: number; tasks: Task[] }> {
   return apiClient("/tasks/from-plan", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Create a single actionable task directly.
+ */
+export async function createTask(payload: {
+  title: string;
+  why: string;
+  steps?: string[];
+  priority?: "low" | "medium" | "high";
+  expected_impact?: string;
+  kind?: "cashflow" | "budget" | "debt" | "invest" | "goal" | "education" | "generic";
+  bucket?: 7 | 30 | 365;
+  due_days?: number;
+  dueDate?: string | Date;
+  recurrence?: {
+    cadence: TaskRecurrenceCadence;
+    parentTaskId?: string;
+    generation?: number;
+  };
+}): Promise<{ task: Task }> {
+  return apiClient("/tasks", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -146,8 +183,13 @@ export async function updateTaskStatus(
     completion_evidence?: { note?: string; completed_at?: string };
     apply_status?: "pending" | "succeeded" | "failed";
     apply_error_code?: string;
+    recurrence?: {
+      cadence: TaskRecurrenceCadence;
+      parentTaskId?: string;
+      generation?: number;
+    };
   } = {}
-): Promise<{ task: Task }> {
+): Promise<{ task: Task; next_task?: Task }> {
   return apiClient(`/tasks/${taskId}`, {
     method: "PATCH",
     body: JSON.stringify({ status, ...options }),
@@ -201,4 +243,42 @@ export async function getTaskById(taskId: string): Promise<{
   request_id?: string;
 }> {
   return apiClient(`/tasks/${taskId}`);
+}
+
+export interface TaskWebhookTokenResult {
+  webhook_token: string;
+  webhook_path: string;
+  request_id?: string;
+}
+
+/** Get or generate the organization's task webhook token */
+export async function getTaskWebhookToken(): Promise<TaskWebhookTokenResult> {
+  return apiClient("/tasks/webhook-token");
+}
+
+export interface DispatchTasksWebhookPayload {
+  target: "generic" | "linear" | "todoist" | "jira" | "slack";
+  webhook_url: string;
+  task_ids: string[];
+  headers?: Record<string, string>;
+}
+
+export interface DispatchTasksWebhookResult {
+  success: boolean;
+  target: string;
+  dispatched_count: number;
+  delivery_status: string;
+  http_code: number;
+  response_snippet: string;
+  request_id?: string;
+}
+
+/** Dispatch selected tasks to an external webhook URL formatted for target tracker */
+export async function dispatchTasksWebhook(
+  payload: DispatchTasksWebhookPayload
+): Promise<DispatchTasksWebhookResult> {
+  return apiClient("/tasks/dispatch-webhook", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }

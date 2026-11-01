@@ -120,6 +120,13 @@ export const listBudgetAllocationsQuerySchema = z
   })
   .strict();
 
+export const budgetAllocationIdParamSchema = z
+  .object({
+    periodKey: periodKeySchema,
+    id: z.string().regex(/^[a-f\d]{24}$/i, "Invalid id format"),
+  })
+  .strict();
+
 export const recurringRuleIdParamSchema = z
   .object({
     id: z.string().regex(/^[a-f\d]{24}$/i, "Invalid id format"),

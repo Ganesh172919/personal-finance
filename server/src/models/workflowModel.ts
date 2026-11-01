@@ -3,13 +3,22 @@ import { Schema, model, Document, Types } from "mongoose";
 import type { TaskKind, TaskPriority } from "./taskModel";
 import type { ExportJobType } from "./exportJobModel";
 
-export type WorkflowTriggerType = "manual" | "cron" | "event";
+export type WorkflowTriggerType = "manual" | "cron" | "event" | "webhook";
 export type WorkflowActionType = "create_task" | "send_notification" | "export_report";
+
+export type WorkflowConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "contains";
+
+export type WorkflowActionCondition = {
+  field: string;
+  operator: WorkflowConditionOperator;
+  value: string | number | boolean;
+};
 
 export type WorkflowTrigger = {
   type: WorkflowTriggerType;
   cron?: string;
   event_type?: string;
+  webhook_token?: string;
 };
 
 export type WorkflowCreateTaskAction = {
@@ -22,6 +31,7 @@ export type WorkflowCreateTaskAction = {
   expected_impact: string;
   kind: TaskKind;
   due_days?: number;
+  condition?: WorkflowActionCondition;
 };
 
 export type WorkflowSendNotificationAction = {
@@ -29,12 +39,14 @@ export type WorkflowSendNotificationAction = {
   channel: "email" | "in_app";
   subject: string;
   message: string;
+  condition?: WorkflowActionCondition;
 };
 
 export type WorkflowExportReportAction = {
   type: "export_report";
   export_type: ExportJobType;
   params?: Record<string, unknown>;
+  condition?: WorkflowActionCondition;
 };
 
 export type WorkflowAction = WorkflowCreateTaskAction | WorkflowSendNotificationAction | WorkflowExportReportAction;
@@ -58,6 +70,19 @@ export interface IWorkflowDocument extends IWorkflow, Document {
   _id: Types.ObjectId;
 }
 
+const workflowActionConditionSchema = new Schema<WorkflowActionCondition>(
+  {
+    field: { type: String, required: true, trim: true, maxlength: 120 },
+    operator: {
+      type: String,
+      enum: ["eq", "neq", "gt", "gte", "lt", "lte", "contains"],
+      required: true,
+    },
+    value: { type: Schema.Types.Mixed, required: true },
+  },
+  { _id: false }
+);
+
 const workflowCreateTaskActionSchema = new Schema<WorkflowCreateTaskAction>(
   {
     type: { type: String, enum: ["create_task"], required: true },
@@ -73,6 +98,7 @@ const workflowCreateTaskActionSchema = new Schema<WorkflowCreateTaskAction>(
       default: "generic",
     },
     due_days: { type: Number, min: 1, max: 3650 },
+    condition: { type: workflowActionConditionSchema, required: false },
   },
   { _id: false }
 );
@@ -83,6 +109,7 @@ const workflowSendNotificationActionSchema = new Schema<WorkflowSendNotification
     channel: { type: String, enum: ["email", "in_app"], required: true, default: "email" },
     subject: { type: String, required: true, trim: true, maxlength: 160 },
     message: { type: String, required: true, trim: true, maxlength: 2000 },
+    condition: { type: workflowActionConditionSchema, required: false },
   },
   { _id: false }
 );
@@ -92,6 +119,7 @@ const workflowExportReportActionSchema = new Schema<WorkflowExportReportAction>(
     type: { type: String, enum: ["export_report"], required: true },
     export_type: { type: String, enum: ["transactions_csv", "monthly_summary_pdf"], required: true },
     params: { type: Schema.Types.Mixed, default: {} },
+    condition: { type: workflowActionConditionSchema, required: false },
   },
   { _id: false }
 );
@@ -109,12 +137,13 @@ const workflowSchema = new Schema<IWorkflowDocument>(
     trigger: {
       type: {
         type: String,
-        enum: ["manual", "cron", "event"],
+        enum: ["manual", "cron", "event", "webhook"],
         required: true,
         default: "manual",
       },
       cron: { type: String, trim: true, maxlength: 120 },
       event_type: { type: String, trim: true, maxlength: 120 },
+      webhook_token: { type: String, trim: true, maxlength: 128 },
     },
     actions: { type: [Schema.Types.Mixed as any], default: [] },
   },
@@ -125,6 +154,7 @@ workflowSchema.index({ orgId: 1, enabled: 1, createdAt: -1 });
 workflowSchema.index({ orgId: 1, createdByUserId: 1, createdAt: -1 });
 workflowSchema.index({ orgId: 1, enabled: 1, "trigger.type": 1, "trigger.event_type": 1, createdAt: -1 });
 workflowSchema.index({ enabled: 1, "trigger.type": 1, nextRunAt: 1, orgId: 1 });
+workflowSchema.index({ "trigger.webhook_token": 1 }, { unique: true, sparse: true });
 
 const WorkflowModel = model<IWorkflowDocument>("Workflow", workflowSchema);
 export default WorkflowModel;

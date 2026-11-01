@@ -101,6 +101,7 @@ const mapTransactionRecord = (transaction: {
   description: string;
   date: Date;
   type: TransactionType;
+  splits?: Array<{ category: string; amount: number }>;
   source?: unknown;
   review?: unknown;
   reconciliation?: unknown;
@@ -113,6 +114,10 @@ const mapTransactionRecord = (transaction: {
   description: transaction.description,
   date: transaction.date,
   type: transaction.type,
+  splits:
+    transaction.splits && transaction.splits.length > 0
+      ? transaction.splits.map(s => ({ category: s.category, amount: s.amount }))
+      : undefined,
   source: transaction.source || undefined,
   review: transaction.review || undefined,
   reconciliation: transaction.reconciliation || undefined,
@@ -179,9 +184,11 @@ const buildMutationSource = (
 
 const inferAssetClass = (value: string) => {
   const lower = String(value || "").toLowerCase();
-  if (lower.includes("debt") || lower.includes("bond")) return "Debt";
-  if (lower.includes("gold") || lower.includes("commodity")) return "Gold";
-  if (lower.includes("liquid") || lower.includes("cash")) return "Cash";
+  if (lower.includes("debt") || lower.includes("bond") || lower.includes("treasury") || lower.includes("fixed income")) return "Debt";
+  if (lower.includes("gold") || lower.includes("commodity") || lower.includes("silver") || lower.includes("metal")) return "Commodity";
+  if (lower.includes("crypto") || lower.includes("bitcoin") || lower.includes("btc") || lower.includes("eth") || lower.includes("ethereum") || lower.includes("solana")) return "Crypto";
+  if (lower.includes("liquid") || lower.includes("cash") || lower.includes("money market")) return "Cash";
+  if (lower.includes("reit") || lower.includes("real estate")) return "Real Estate";
   return "Equity";
 };
 
@@ -204,6 +211,7 @@ export const createTransaction = async (req: Request, res: Response) => {
       description: body.description,
       type: body.type,
       date: body.date ? new Date(body.date) : new Date(),
+      splits: (body as any).splits && (body as any).splits.length > 0 ? (body as any).splits : undefined,
       source
     });
 
@@ -240,7 +248,7 @@ export const createTransaction = async (req: Request, res: Response) => {
       transaction: mapTransactionRecord(created.toObject())
     });
   } catch (error: any) {
-    logger.error(`[requestId=${req.requestId}] Error creating transaction:`, error);
+    logger.error({ err: error, requestId: req.requestId }, "Error creating transaction");
     res.status(500).json({ message: "Failed to create transaction", request_id: req.requestId });
   }
 };
@@ -449,6 +457,9 @@ export const updateTransaction = async (req: Request, res: Response) => {
     }
     if (updates.date !== undefined) {
       updateDoc.date = new Date(updates.date);
+    }
+    if ((updates as any).splits !== undefined) {
+      updateDoc.splits = (updates as any).splits;
     }
 
     const updated = await TransactionModel.findOneAndUpdate(
@@ -1320,6 +1331,96 @@ export const getPortfolioSummary = async (req: Request, res: Response) => {
         ? recentContributions.reduce((sum, row) => sum + row.invested, 0) / recentContributions.length
         : 0;
 
+    // Dividend and income distribution aggregation
+    const dividendTx = await TransactionModel.find({
+      orgId,
+      userId: user._id,
+      type: "income",
+      $or: [
+        { category: { $in: ["Investments", "Dividends", "Dividend", "Interest", "Distribution"] } },
+        { description: { $regex: /dividend|distribution|yield|interest payout|drip/i } },
+      ],
+    })
+      .sort({ date: -1 })
+      .lean();
+
+    const ttmStart = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    let totalDividends = 0;
+    let ttmDividends = 0;
+    const monthlyDividendMap = new Map<string, number>();
+    const holdingPayoutMap = new Map<string, { total_amount: number; payout_count: number }>();
+
+    for (const tx of dividendTx) {
+      const amount = Math.abs(Number(tx.amount || 0));
+      totalDividends += amount;
+
+      const txDate = new Date(tx.date);
+      if (txDate >= ttmStart) {
+        ttmDividends += amount;
+      }
+
+      const mKey = monthKey(txDate);
+      monthlyDividendMap.set(mKey, Number(monthlyDividendMap.get(mKey) || 0) + amount);
+
+      const desc = String(tx.description || "Dividend").trim();
+      let matchedHolding = "";
+      for (const hName of holdingsMap.keys()) {
+        if (desc.toLowerCase().includes(hName.toLowerCase()) || hName.toLowerCase().includes(desc.toLowerCase())) {
+          matchedHolding = hName;
+          break;
+        }
+      }
+      if (!matchedHolding) {
+        matchedHolding = desc.replace(/\s*(dividend|distribution|interest payout|payout|yield)\s*/gi, "").trim() || desc;
+      }
+
+      const existingHoldingPayout = holdingPayoutMap.get(matchedHolding);
+      if (existingHoldingPayout) {
+        existingHoldingPayout.total_amount += amount;
+        existingHoldingPayout.payout_count += 1;
+      } else {
+        holdingPayoutMap.set(matchedHolding, {
+          total_amount: amount,
+          payout_count: 1,
+        });
+      }
+    }
+
+    const dividendProgressionCursor = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+    const monthlyProgression: Array<{ month: string; amount: number }> = [];
+    for (let index = 0; index < months; index += 1) {
+      const key = monthKey(dividendProgressionCursor);
+      const amount = Number(monthlyDividendMap.get(key) || 0);
+      monthlyProgression.push({ month: key, amount });
+      dividendProgressionCursor.setMonth(dividendProgressionCursor.getMonth() + 1);
+    }
+
+    const payoutsByHolding = Array.from(holdingPayoutMap.entries())
+      .map(([holdingName, stats]) => {
+        const holdingInfo = holdingsMap.get(holdingName);
+        const invested = holdingInfo?.invested_amount || 0;
+        const yieldOnCost = invested > 0 ? Number(((stats.total_amount / invested) * 100).toFixed(2)) : 0;
+        return {
+          holding_name: holdingName,
+          total_amount: stats.total_amount,
+          payout_count: stats.payout_count,
+          invested_amount: invested,
+          yield_on_cost_pct: yieldOnCost,
+        };
+      })
+      .sort((a, b) => b.total_amount - a.total_amount);
+
+    const portfolioYieldPct = totalInvested > 0 ? Number(((ttmDividends / totalInvested) * 100).toFixed(2)) : 0;
+    const monthlyDividendAverage = Number((ttmDividends / 12).toFixed(2));
+
+    const recentPayouts = dividendTx.slice(0, 5).map(tx => ({
+      id: String(tx._id),
+      description: tx.description,
+      amount: Math.abs(Number(tx.amount || 0)),
+      date: tx.date,
+      category: tx.category,
+    }));
+
     const responsePayload = {
       generated_at: now.toISOString(),
       summary: {
@@ -1334,6 +1435,15 @@ export const getPortfolioSummary = async (req: Request, res: Response) => {
       allocations,
       holdings,
       performance,
+      dividends: {
+        total_received: totalDividends,
+        ttm_received: ttmDividends,
+        portfolio_yield_pct: portfolioYieldPct,
+        monthly_average: monthlyDividendAverage,
+        payouts_by_holding: payoutsByHolding,
+        monthly_progression: monthlyProgression,
+        recent_payouts: recentPayouts,
+      },
       assumptions: [
         "Portfolio values use recorded investment transactions as invested capital.",
         "Return percentage is unavailable until live/mark-to-market valuations are integrated."
@@ -1527,5 +1637,99 @@ export const alwaysCategorizeEndpoint = async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error(`[requestId=${req.requestId}] Error creating category rule:`, error);
     return res.status(500).json({ message: "Failed to create category rule", request_id: req.requestId });
+  }
+};
+
+export const bulkDeleteEndpoint = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
+    const { transaction_ids } = req.body as { transaction_ids: string[] };
+
+    const validIds = transaction_ids
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    if (validIds.length === 0) {
+      return res.json({ message: "No valid transactions to delete", deleted_count: 0 });
+    }
+
+    const deleteResult = await TransactionModel.deleteMany({
+      _id: { $in: validIds },
+      orgId,
+      userId: user._id,
+    });
+
+    const now = new Date();
+    const newCount = await TransactionModel.countDocuments({ orgId, userId: user._id });
+    const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
+    const source = buildMutationSource(req.requestId, "manual", {
+      note: "transaction_bulk_delete",
+    });
+    bumpTransactionMetadata(profile, { setCount: newCount, at: now });
+    setProfileMutationSource(profile, source);
+    await profile.save();
+
+    return res.json({
+      message: "Transactions deleted",
+      deleted_count: deleteResult.deletedCount || 0,
+      source,
+    });
+  } catch (error: any) {
+    logger.error(`[requestId=${req.requestId}] Error bulk deleting transactions:`, error);
+    return res.status(500).json({ message: "Failed to bulk delete transactions", request_id: req.requestId });
+  }
+};
+
+export const bulkCategorizeEndpoint = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as IUserDocument;
+    const orgId = requireOrgId(req);
+    const { transaction_ids, category } = req.body as { transaction_ids: string[]; category: string };
+
+    const validIds = transaction_ids
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    if (validIds.length === 0) {
+      return res.json({ message: "No valid transactions to categorize", modified_count: 0 });
+    }
+
+    const cleanCategory = category.trim();
+
+    const updateResult = await TransactionModel.updateMany(
+      {
+        _id: { $in: validIds },
+        orgId,
+        userId: user._id,
+      },
+      {
+        $set: {
+          category: cleanCategory,
+          "source.note": "transaction_bulk_categorize",
+        },
+        $pull: {
+          "review.flags": "uncategorized",
+        },
+      }
+    );
+
+    const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
+    const source = buildMutationSource(req.requestId, "manual", {
+      note: "transaction_bulk_categorize",
+    });
+    bumpTransactionMetadata(profile, { deltaCount: 0 });
+    setProfileMutationSource(profile, source);
+    await profile.save();
+
+    return res.json({
+      message: "Transactions categorized",
+      modified_count: updateResult.modifiedCount || 0,
+      category: cleanCategory,
+      source,
+    });
+  } catch (error: any) {
+    logger.error(`[requestId=${req.requestId}] Error bulk categorizing transactions:`, error);
+    return res.status(500).json({ message: "Failed to bulk categorize transactions", request_id: req.requestId });
   }
 };

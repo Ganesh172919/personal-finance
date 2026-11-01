@@ -61,25 +61,25 @@ export type ChangePasswordResponse = {
 // ─── Two-Factor Authentication ────────────────────────────
 
 export async function setup2FA(): Promise<TwoFactorSetupResponse> {
-  return apiClient("/v1/auth/2fa/setup", { method: "POST" });
+  return apiClient("/auth/2fa/setup", { method: "POST" });
 }
 
 export async function verify2FA(token: string): Promise<TwoFactorVerifyResponse> {
-  return apiClient("/v1/auth/2fa/verify", {
+  return apiClient("/auth/2fa/verify", {
     method: "POST",
     body: JSON.stringify({ token }),
   });
 }
 
 export async function disable2FA(token: string): Promise<TwoFactorDisableResponse> {
-  return apiClient("/v1/auth/2fa/disable", {
+  return apiClient("/auth/2fa/disable", {
     method: "POST",
     body: JSON.stringify({ token }),
   });
 }
 
 export async function get2FAStatus(): Promise<TwoFactorStatusResponse> {
-  return apiClient("/v1/auth/2fa/status", { method: "GET" });
+  return apiClient("/auth/2fa/status", { method: "GET" });
 }
 
 // ─── Profile Management ───────────────────────────────────

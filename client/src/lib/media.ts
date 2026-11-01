@@ -31,7 +31,7 @@ export function resolveMediaUrl(source: string | null | undefined, fallback?: st
   }
 
   if (MONGODB_OBJECT_ID_PATTERN.test(trimmed)) {
-    return `/api/v1/media/${trimmed}`;
+    return `/api/media/${trimmed}`;
   }
 
   return trimmed;

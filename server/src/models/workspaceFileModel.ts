@@ -1,3 +1,62 @@
+/**
+ * workspaceFileModel.ts - Workspace File Metadata & Analysis Schema
+ * ==================================================================
+ *
+ * Manages metadata, GridFS backing IDs, extracted text, and AI analysis
+ * results for user-uploaded documents and spreadsheets.
+ *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * WorkspaceFileModel
+ * ├── 1. Tenant & Ownership
+ * │   ├── orgId: ObjectId (Ref: Organization)
+ * │   ├── userId: ObjectId (Ref: User)
+ * │   └── fileId: ObjectId (MongoDB GridFS file ID)
+ * ├── 2. File Properties
+ * │   ├── originalName: string & filename: string
+ * │   ├── mimeType: string & size: number (bytes)
+ * │   ├── kind: "document" | "spreadsheet" | "image" | "code" | "data" | "archive" | "other"
+ * │   └── status: "uploaded" | "processed" | "error"
+ * ├── 3. RAG & Content Extraction
+ * │   ├── extractedText?: string (Normalized plain text)
+ * │   ├── textExtractionStatus?: "pending" | "completed" | "failed" | "unsupported"
+ * │   └── chunkCount?: number (Count of generated WorkspaceKnowledgeChunks)
+ * └── 4. AI Analysis Results (latestAnalysis)
+ *     ├── summary & response markdown
+ *     ├── evidence items list with confidence score
+ *     └── workflowTrace & agentsInvolved audit
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +-------------------------------------------------------------+
+ *   |                 File Uploaded to Express API                |
+ *   +------------------------------+------------------------------+
+ *                                  |
+ *                                  v
+ *   +-------------------------------------------------------------+
+ *   |  1. Stream File to MongoDB GridFS -> fileId                 |
+ *   |  2. Create WorkspaceFileModel with status: "uploaded"       |
+ *   +------------------------------+------------------------------+
+ *                                  |
+ *                                  v
+ *   +-------------------------------------------------------------+
+ *   |         Text Extraction Worker (fileTextExtraction)         |
+ *   |  - Parse PDF / TXT / CSV / DOCX                             |
+ *   |  - Save extractedText on WorkspaceFileModel                 |
+ *   +------------------------------+------------------------------+
+ *                                  |
+ *                                  v
+ *   +-------------------------------------------------------------+
+ *   |             Trigger RAG Chunk Sync (retrievalService)       |
+ *   |  - Generate knowledge chunks in WorkspaceKnowledgeChunkModel|
+ *   |  - Update chunkCount on WorkspaceFileModel                  |
+ *   +-------------------------------------------------------------+
+ * ```
+ */
+
 import { Document, Schema, Types, model } from "mongoose";
 
 export type WorkspaceFileKind =
@@ -15,6 +74,20 @@ export type WorkspaceFileAnalysis = {
   summary: string;
   response: string;
   plan?: Record<string, unknown>;
+  evidence?: Array<{
+    id?: string;
+    type?: string;
+    label?: string;
+    snippet?: string;
+    entity_id?: string;
+    page_number?: number;
+  }>;
+  confidence?: {
+    score?: number;
+    label?: string;
+    notes?: string[];
+    coverage?: Record<string, unknown>;
+  };
   analysisType?: string;
   agentsInvolved?: string[];
   workflowTrace?: Array<{
@@ -42,6 +115,7 @@ export interface IWorkspaceFile {
   status: WorkspaceFileStatus;
   extractedText?: string;
   extractedPreview?: string;
+  extractedPageCount?: number;
   extractionWarnings: string[];
   analysis?: WorkspaceFileAnalysis;
   lastAnalyzedAt?: Date;
@@ -109,6 +183,10 @@ const workspaceFileSchema = new Schema<IWorkspaceFileDocument>(
       type: String,
       default: "",
     },
+    extractedPageCount: {
+      type: Number,
+      min: 1,
+    },
     extractionWarnings: {
       type: [String],
       default: [],
@@ -117,6 +195,14 @@ const workspaceFileSchema = new Schema<IWorkspaceFileDocument>(
       summary: String,
       response: String,
       plan: {
+        type: Schema.Types.Mixed,
+        default: undefined,
+      },
+      evidence: {
+        type: [Schema.Types.Mixed],
+        default: [],
+      },
+      confidence: {
         type: Schema.Types.Mixed,
         default: undefined,
       },

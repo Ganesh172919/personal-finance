@@ -55,7 +55,7 @@ function wrapWithLayout(route: AppRouteDefinition, page: ReactNode) {
     return <ChatLayout>{page}</ChatLayout>;  // Chat-specific layout
   }
 
-  return page; // No layout wrapper (default)
+  return <main id="main-content" tabIndex={-1}>{page}</main>;
 }
 
 /**

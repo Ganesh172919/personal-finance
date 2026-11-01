@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createApp } from "../app";
 import { configurePassport } from "../config/passport";
+import AccountModel from "../models/accountModel";
 import BudgetAllocationModel from "../models/budgetAllocationModel";
 import RecurringRuleModel from "../models/recurringRuleModel";
 import TransactionModel from "../models/transactionModel";
@@ -104,7 +105,7 @@ describe("finance intelligence endpoints", () => {
     } as any);
 
     const res = await request(app)
-      .get(`/api/v1/finance/budgets/${periodKey}/envelopes`)
+      .get(`/api/finance/budgets/${periodKey}/envelopes`)
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);
@@ -144,7 +145,7 @@ describe("finance intelligence endpoints", () => {
     }
 
     const res = await request(app)
-      .get("/api/v1/finance/recurring/candidates?days_back=365&limit=10")
+      .get("/api/finance/recurring/candidates?days_back=365&limit=10")
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);
@@ -158,11 +159,22 @@ describe("finance intelligence endpoints", () => {
 
   it("returns a baseline forecast projection", async () => {
     const now = new Date();
-    const start = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), Math.max(1, Math.min(5, now.getUTCDate())), 12, 0, 0));
+    const account = await AccountModel.create({
+      orgId,
+      name: "Main checking",
+      type: "checking",
+      currency: "USD",
+      openingBalance: 800,
+      status: "active",
+      createdByUserId: userId,
+      metadata: { source: "test" },
+    } as any);
 
     await TransactionModel.create({
       orgId,
       userId,
+      accountId: account._id,
       amount: 3000,
       category: "Salary",
       description: "Paycheck",
@@ -173,11 +185,23 @@ describe("finance intelligence endpoints", () => {
     await TransactionModel.create({
       orgId,
       userId,
+      accountId: account._id,
       amount: -1200,
       category: "Rent",
       description: "Rent",
       date: start,
       type: "expense",
+    } as any);
+
+    await BudgetAllocationModel.create({
+      orgId,
+      periodKey: currentPeriodKey(),
+      category: "Rent",
+      amount: 1000,
+      currency: "USD",
+      createdByUserId: userId,
+      updatedByUserId: userId,
+      metadata: { source: "test" },
     } as any);
 
     await RecurringRuleModel.create({
@@ -195,7 +219,7 @@ describe("finance intelligence endpoints", () => {
 
     const periodKey = currentPeriodKey();
     const res = await request(app)
-      .get(`/api/v1/finance/forecast?period_key=${encodeURIComponent(periodKey)}&months=4&top_categories=5`)
+      .get(`/api/finance/forecast?period_key=${encodeURIComponent(periodKey)}&months=4&top_categories=5`)
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);
@@ -203,9 +227,87 @@ describe("finance intelligence endpoints", () => {
     expect(res.body.period_key).toBe(periodKey);
     expect(res.body.months).toBe(4);
     expect(res.body.baseline.days_covered).toBe(90);
+    expect(res.body.baseline.transaction_count).toBe(2);
     expect(Array.isArray(res.body.projection)).toBe(true);
     expect(res.body.projection.length).toBe(4);
+    expect(res.body.projection[0].cumulative_net).toBeGreaterThan(0);
+    expect(res.body.projection[0].projected_cash_balance).toBeGreaterThan(0);
     expect(res.body.recurring_rules.active_rules).toBe(1);
     expect(res.body.recurring_rules.expense_expected_monthly).toBeGreaterThan(0);
+    expect(res.body.cashflow_health.score).toBeGreaterThanOrEqual(0);
+    expect(res.body.cashflow_health.score).toBeLessThanOrEqual(100);
+    expect(res.body.cashflow_health.liquidity_balance).toBe(2600);
+    expect(["healthy", "watch", "at_risk"]).toContain(res.body.cashflow_health.status);
+    expect(res.body.budget_pressure.over_budget_count).toBeGreaterThanOrEqual(1);
+    expect(res.body.budget_pressure.categories.some((row: any) => row.category === "Rent")).toBe(true);
+    expect(Array.isArray(res.body.risk_alerts)).toBe(true);
+    expect(res.body.risk_alerts.length).toBeGreaterThan(0);
+    expect(Array.isArray(res.body.recommended_actions)).toBe(true);
+  });
+
+  it("returns critical cashflow alerts when projected runway is low", async () => {
+    const now = new Date();
+    const txDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), Math.max(1, Math.min(5, now.getUTCDate())), 12, 0, 0));
+    const periodKey = currentPeriodKey();
+
+    const account = await AccountModel.create({
+      orgId,
+      name: "Emergency cash",
+      type: "checking",
+      currency: "USD",
+      openingBalance: 1000,
+      status: "active",
+      createdByUserId: userId,
+      metadata: { source: "test" },
+    } as any);
+
+    await BudgetAllocationModel.create({
+      orgId,
+      periodKey,
+      category: "Food",
+      amount: 100,
+      currency: "USD",
+      createdByUserId: userId,
+      updatedByUserId: userId,
+      metadata: { source: "test" },
+    } as any);
+
+    await TransactionModel.create({
+      orgId,
+      userId,
+      accountId: account._id,
+      amount: 300,
+      category: "Salary",
+      description: "Part-time income",
+      date: txDate,
+      type: "income",
+    } as any);
+
+    await TransactionModel.create({
+      orgId,
+      userId,
+      accountId: account._id,
+      amount: -1200,
+      category: "Food",
+      description: "Large grocery run",
+      date: txDate,
+      type: "expense",
+    } as any);
+
+    const res = await request(app)
+      .get(`/api/finance/forecast?period_key=${encodeURIComponent(periodKey)}&months=2`)
+      .set("Cookie", [cookie])
+      .set("X-Org-Id", orgId)
+      .expect(200);
+
+    expect(res.body.cashflow_health.status).toBe("at_risk");
+    expect(res.body.cashflow_health.runway_months).toBeLessThan(1);
+    expect(res.body.cashflow_health.projected_end_balance).toBeLessThan(0);
+    expect(res.body.budget_pressure.over_budget_count).toBeGreaterThanOrEqual(1);
+
+    const alerts = new Map<string, any>((res.body.risk_alerts as any[]).map((alert: any) => [alert.id, alert]));
+    expect(alerts.get("negative-cashflow")?.severity).toBe("critical");
+    expect(alerts.get("low-runway")?.severity).toBe("critical");
+    expect((res.body.recommended_actions as any[]).some((action: any) => action.id === "close-monthly-gap")).toBe(true);
   });
 });

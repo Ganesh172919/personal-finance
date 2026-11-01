@@ -56,6 +56,8 @@ import {
 } from "../schemas/aiSchemas";
 import { objectIdSchema, userIdParamSchema } from "../schemas/common";
 import { asyncRoute } from "../utils/asyncRoute";
+import { getEnv } from "../config/env";
+import axios from "axios";
 
 const router = Router();
 
@@ -68,8 +70,6 @@ router.post("/ai/process/stream", validate({ body: processCommandBodySchema }), 
 router.post("/scenarios/what-if", validate({ body: whatIfScenarioBodySchema }), asyncRoute(processWhatIfScenario));
 router.get("/ai-core/status", asyncRoute(getAiCoreStatus));
 router.get("/ai-core/providers", asyncRoute(async (req: any, res: any) => {
-  const { getEnv } = await import("../config/env");
-  const { default: axios } = await import("axios");
   const env = getEnv();
   try {
     const result = await axios.get(`${env.PYTHON_API_URL}/api/providers`, {
@@ -88,8 +88,6 @@ router.get("/ai-core/providers", asyncRoute(async (req: any, res: any) => {
 
 // Enhanced AI status endpoint - proxies to AI Core /api/ai/status
 router.get("/ai-core/ai/status", asyncRoute(async (req: any, res: any) => {
-  const { getEnv } = await import("../config/env");
-  const { default: axios } = await import("axios");
   const env = getEnv();
   try {
     const result = await axios.get(`${env.PYTHON_API_URL}/api/ai/status`, {
@@ -108,8 +106,6 @@ router.get("/ai-core/ai/status", asyncRoute(async (req: any, res: any) => {
 
 // AI sessions list endpoint
 router.get("/ai-core/ai/sessions", asyncRoute(async (req: any, res: any) => {
-  const { getEnv } = await import("../config/env");
-  const { default: axios } = await import("axios");
   const env = getEnv();
   const { org_id, user_id, limit } = req.query;
   try {
@@ -135,8 +131,6 @@ router.get("/ai-core/ai/sessions", asyncRoute(async (req: any, res: any) => {
 
 // AI session detail endpoint
 router.get("/ai-core/ai/sessions/:sessionId", asyncRoute(async (req: any, res: any) => {
-  const { getEnv } = await import("../config/env");
-  const { default: axios } = await import("axios");
   const env = getEnv();
   const { sessionId } = req.params;
   try {
@@ -164,8 +158,6 @@ router.get("/ai-core/ai/sessions/:sessionId", asyncRoute(async (req: any, res: a
 
 // AI session resume endpoint
 router.post("/ai-core/ai/sessions/:sessionId/resume", asyncRoute(async (req: any, res: any) => {
-  const { getEnv } = await import("../config/env");
-  const { default: axios } = await import("axios");
   const env = getEnv();
   const { sessionId } = req.params;
   try {
@@ -199,8 +191,6 @@ router.post("/ai-core/ai/sessions/:sessionId/resume", asyncRoute(async (req: any
 
 // AI models list endpoint
 router.get("/ai-core/ai/models", asyncRoute(async (req: any, res: any) => {
-  const { getEnv } = await import("../config/env");
-  const { default: axios } = await import("axios");
   const env = getEnv();
   const { provider, capability } = req.query;
   try {
@@ -254,5 +244,36 @@ router.post(
   asyncRoute(submitAgentOutputFeedback)
 );
 router.get("/agent-outputs/user/:userId", validate({ params: userIdParamSchema }), asyncRoute(getAgentOutputs));
+
+// Newsletter AI Core proxy endpoint
+router.post("/ai-core/newsletter", asyncRoute(async (req: any, res: any) => {
+  const { getEnv } = await import("../config/env");
+  const { default: axios } = await import("axios");
+  const env = getEnv();
+  try {
+    const result = await axios.post(`${env.PYTHON_API_URL}/api/agents/newsletter`, req.body, {
+      timeout: 30_000,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Request-Id": req.requestId,
+      },
+    });
+    res.json({ ...result.data, request_id: req.requestId });
+  } catch (err: any) {
+    if (err.response?.status === 422) {
+      res.status(400).json({
+        message: err.response?.data?.detail || "Invalid request body",
+        code: "INVALID_REQUEST",
+        request_id: req.requestId,
+      });
+    } else {
+      res.status(502).json({
+        message: "AI Core newsletter endpoint unreachable",
+        code: "AI_CORE_UNAVAILABLE",
+        request_id: req.requestId,
+      });
+    }
+  }
+}));
 
 export default router;

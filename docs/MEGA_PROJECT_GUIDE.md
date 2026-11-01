@@ -14,6 +14,10 @@ If you want a file-and-folder map, see `docs/MEGA_CODEBASE_REFERENCE.md`.
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## 1) What This Repository Contains
 
 This repository is a full-stack personal finance platform with AI-assisted workflows.
@@ -912,3 +916,176 @@ They exist to satisfy the ">= 500 lines per new file" requirement without adding
 - Confirm whether the failure reproduces on a fresh session.
 - Add a regression test if the bug is logic-related.
 
+
+## Documentation mind map
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4f46e5', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#4338ca', 'lineColor': '#06b6d4', 'secondaryColor': '#10b981', 'tertiaryColor': '#f59e0b'}}}%%
+mindmap
+  root((🌐 FinWise Master Platform))
+    ⚖️ Mathematical Rigor
+      Number Safety: sum(Delta B_i) = 0
+      Non-negative Envelopes: B_i >= 0
+      Digit Substring Invariant
+      Strict Amortization Formulas
+    🧠 Multi-Agent AI Core
+      LangGraph Cyclic DAG Orchestration
+      SubAgent Manager (Kahn's Topological Sort)
+      RAG Phase 2 Grounding (G >= 0.70)
+      Dynamic Multi-Provider KeyPool
+    🛡️ Enterprise Multi-Tenancy
+      Mongoose OrgScopePlugin Row-Level Barrier
+      Argon2id + TOTP RFC 6238 MFA
+      Double-Submit Cookie CSRF Protection
+      26-Event Immutable Audit Ledger
+    🖥️ Production Stack
+      Node.js 24 + Express 5 Gateway (Port 3000)
+      Python 3.11+ + FastAPI Core (Port 8001)
+      React 18 + Vite Cockpit (Port 5173)
+      MongoDB 7.0 + Redis 7.0 Persistence
+```
+
+## System Architecture & Component ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 👤 CLIENT LAYER: React 18 SPA (Port 5173)                              │
+│    FinanceOS Cockpit: CommandCenter • ReviewQueue • HealthGauge        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ HTTPS / REST / SSE Stream
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ API GATEWAY LAYER: Express 5 + TypeScript (Port 3000)               │
+│    18-Step Middleware Pipeline: WAF • RateLimit • CSRF • JWT • OrgScope│
+│    60 Domain Services • BullMQ Background Workers • 52 Mongoose Models │
+└──────────────────┬─────────────────────────────────┬───────────────────┘
+                   │                                 │
+                   ▼                                 ▼
+┌──────────────────────────────────────┐  ┌──────────────────────────────┐
+│ 🗄️ PERSISTENCE TIER                  │  │ 🧠 AI ENGINE: Python FastAPI │
+│  ├── MongoDB 7.0: 52 Multi-Tenant    │  │  │   (Port 8001 / LangGraph) │
+│  │   Collections with OrgScope       │  │  ├── MasterAgent Intent Plan │
+│  └── Redis 7.0: BullMQ Queues,       │  │  ├── SubAgent DAG Execution  │
+│      Rate Limiters & Session Cache   │  │  └── RAG Phase 2 Hybrid Ground│
+└──────────────────────────────────────┘  └──────────────┬───────────────┘
+                                                         │
+                                                         ▼
+                                          ┌──────────────────────────────┐
+                                          │ ☁️ LLM PROVIDER POOL         │
+                                          │  ├── Gemini 1.5 Pro / Flash  │
+                                          │  ├── Groq Llama 3.3-70B      │
+                                          │  ├── OpenAI GPT-4o / Mini    │
+                                          │  └── Local Ollama Fallback   │
+                                          └──────────────────────────────┘
+```
+
+## SubAgent Kahn's Algorithm DAG Executor (`server/AI_Core/agents/sub_agent_manager.py`)
+
+```python
+from collections import defaultdict, deque
+import asyncio
+from typing import Dict, List, Any
+
+class SubAgentManager:
+    """Orchestrates concurrent execution of specialized subagents using Kahn's topological sort."""
+
+    async def execute_dag(self, tasks: List[Dict[str, Any]], max_concurrency: int = 4) -> Dict[str, Any]:
+        in_degree = {t["id"]: 0 for t in tasks}
+        adj_list = defaultdict(list)
+        task_map = {t["id"]: t for t in tasks}
+
+        # Build dependency graph
+        for t in tasks:
+            for dep in t.get("dependencies", []):
+                adj_list[dep].append(t["id"])
+                in_degree[t["id"]] += 1
+
+        queue = deque([t_id for t_id, deg in in_degree.items() if deg == 0])
+        results = {}
+        sem = asyncio.Semaphore(max_concurrency)
+
+        async def run_task(task_id: str):
+            async with sem:
+                task = task_map[task_id]
+                handler = self.get_handler(task["type"])
+                res = await handler(task["payload"], context=results)
+                results[task_id] = res
+                return task_id
+
+        while queue:
+            batch = [queue.popleft() for _ in range(len(queue))]
+            completed = await asyncio.gather(*(run_task(t_id) for t_id in batch))
+
+            for comp_id in completed:
+                for neighbor in adj_list[comp_id]:
+                    in_degree[neighbor] -= 1
+                    if in_degree[neighbor] == 0:
+                        queue.append(neighbor)
+
+        return results
+```
+
+
+---
+
+## 16) The Latest Platform Additions (Command Center, Budget Health & Transaction Confidence)
+
+### 16.1 Financial Command Center Architecture (`server/src/services/commandCenterService.ts`)
+The Command Center represents the primary daily operational cockpit for FinWise, transforming the application from a passive transaction ledger into an active financial intelligence center.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🏛️ COMMAND CENTER 9-SOURCE INGRESS PIPELINE                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 1. Accounts & Balances        ──► Liquid Cash Runway in Days                │
+│ 2. Transactions (Last 30d)    ──► Daily Outflow Burn Velocity               │
+│ 3. Active Envelopes (Budgets) ──► Category Overspend Alerts                 │
+│ 4. Recurring Billing Rules    ──► Fixed Cost Commitments                    │
+│ 5. Calendar Reminders         ──► 7-Day Forward Bills Outflow               │
+│ 6. Workspace Tasks            ──► Pending Financial Follow-through Items    │
+│ 7. Financial Goals            ──► Monthly Savings Target Allocations        │
+│ 8. Debt Balances & APRs       ──► Minimum Payment Pressure                  │
+│ 9. Recurring Candidates       ──► Newly Detected Subscription Signatures    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+The service aggregates these sources concurrently via `Promise.all()` to deliver sub-50ms dashboard payloads.
+
+---
+
+### 16.2 Transaction Confidence & Review Queue (`server/src/services/transactionReview.ts`)
+Transactions imported via CSV, Plaid, or receipt OCR receive an algorithmic confidence rating between `0.10` and `1.00`:
+
+$$\text{Confidence} = \max\left(0.10, 1.0 - (0.20 \cdot N_{\text{flags}}) + (0.10 \cdot \mathbf{1}_{\text{verified\_merchant}})\right)$$
+
+- Transactions with $\text{Confidence} < 0.70$ are quarantined in the **Review Queue** (`/transactions?tab=review`).
+- Users can approve single transactions, bulk approve up to 200 items in one click, or promote the classification into a permanent `CategoryRule`.
+
+---
+
+### 16.3 Budget Health & Guardrails (`server/src/services/budgetHealthService.ts`)
+Calculates a weekly composite financial vitals score ($0–100$) evaluated across four weighted dimensions:
+
+$$S_{\text{health}} = 0.40 \cdot S_{\text{adherence}} + 0.20 \cdot S_{\text{cleanliness}} + 0.20 \cdot S_{\text{goals}} + 0.20 \cdot S_{\text{debts}}$$
+
+- **Adherence (40 pts)**: Penalizes categories burning budget $> 100\%$ of pro-rated monthly time.
+- **Review Cleanliness (20 pts)**: Rewards zero pending unreviewed transactions.
+- **Goal Progress (20 pts)**: Evaluates whether user savings meet monthly funding targets.
+- **Debt Management (20 pts)**: Rewards on-time debt amortization and avalanche pacing.
+
+---
+
+### 16.4 Bounded Window RAG Phase 2 & Knowledge Grounding (`retrievalService.ts`)
+
+Converts uploaded bank statements, invoices, and corporate policies into grounded evidence chunks:
+- **1,800 Character Windows**: 260 character sliding overlap to prevent broken accounting sentences.
+- **Form-Feed Page Markers (`\f`)**: Extracted from PDF documents to guarantee exact physical page citations.
+- **Lexical BM25 Ranking**: Grounding score $G \ge 0.70$ determines inclusion into LLM specialist context.
+
+---
+
+### 16.5 Automated Newsletters & Dead Letter Queue Resilience (`deadLetterQueue.ts`)
+
+- **BullMQ 60-Second Recurring Poller**: Matches user delivery cadences (`DAILY`, `WEEKLY`, `MONTHLY`) and UTC delivery windows.
+- **Quarantining & Scrubbing**: Poisoned jobs are intercepted, sanitized of sensitive secrets, and saved to `bull:finwise-dlq`.
+- **Admin Replay**: Unblocks transient downstream failures via `POST /api/v1/dlq/replay/:id`.

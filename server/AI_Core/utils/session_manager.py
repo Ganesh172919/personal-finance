@@ -1,4 +1,4 @@
-"""
+r"""
 Session Manager with Checkpointing and Resumable State.
 
 Provides persistent session state for long-running multi-agent workflows:
@@ -6,6 +6,76 @@ Provides persistent session state for long-running multi-agent workflows:
 - Resumable state after failures or restarts
 - Memory compaction with rolling summaries
 - Artifact storage for intermediate results
+
+================================================================================
+MINDMAP FLOW: SESSION LIFECYCLE & STATE CHECKPOINTING
+================================================================================
+- Session & Checkpoint Management Engine
+    ├── 1. Session Lifecycle State Machine
+    │   ├── CREATED: Initial session instantiation with org_id & user_id
+    │   ├── IN_PROGRESS: Active multi-agent execution
+    │   ├── PAUSED: Suspended waiting for user confirmation or async task
+    │   ├── COMPLETED: Successful end-to-end synthesis & delivery
+    │   ├── FAILED: Unrecoverable workflow failure recorded
+    │   └── EXPIRED: TTL timeout eviction
+    ├── 2. Multi-Phase Checkpointing Engine
+    │   ├── Phases: ROUTING -> PLANNING -> RESEARCH -> EXECUTION -> VERIFICATION -> SYNTHESIS -> COMPLETE
+    │   ├── Checkpoint Payload: state_data, agent_outputs, context_summary, telemetry
+    │   └── Output Normalization: Backward-compatible scalar/string to dict mapping
+    ├── 3. SQLite Relational Persistence Engine
+    │   ├── sessions Table: metadata, status, created_at, updated_at
+    │   ├── checkpoints Table: indexed by session_id & phase, JSON serialized state
+    │   └── artifacts Table: binary/text outputs, charts, generated budgets
+    ├── 4. Memory Compaction & Context Pruning
+    │   ├── Rolling Summaries: Compresses chat & execution history to prevent context overflow
+    │   └── Truncation & Token Budgeting: Limits context window per LLM call
+    └── 5. Resumption & Crash Recovery Flow
+        ├── Latest Checkpoint Retrieval
+        ├── State Reconstruction & Edge Re-eval
+        └── Replay Execution from Failure Boundary
+
+================================================================================
+ASCII FLOW: CHECKPOINTING & RECOVERY LIFECYCLE
+================================================================================
+         Client Request: create_session(org_id, user_id)
+                                |
+                                v
+               +----------------------------------+
+               |  Session Created (Status: CREATED)|
+               |  Persisted in SQLite 'sessions'  |
+               +----------------+-----------------+
+                                |
+                   Phase 1: ROUTING Node
+                                |
+                                v
+               +----------------------------------+
+               |  save_checkpoint(Phase.ROUTING)  |
+               |  Captures: routing intent & plan |
+               +----------------+-----------------+
+                                |
+                   Phase 2: EXECUTION Node
+                                |
+                                v
+               +----------------------------------+
+               | save_checkpoint(Phase.EXECUTION) |
+               | Captures: Subagent outputs & data|
+               +----------------+-----------------+
+                                |
+             +------------------+------------------+
+             |                                     |
+       [ Normal Flow ]                     [ System Crash / Worker Dies ]
+             |                                     |
+             v                                     v
+   Phase 3: VERIFICATION                 Worker Reboots / Resumes Session
+             |                                     |
+             v                                     v
+   save_checkpoint(VERIFICATION)         get_latest_checkpoint(session_id)
+             |                                     |
+             v                                     v
+     Phase 4: SYNTHESIS                  Reconstruct AgentState Dict
+             |                                     |
+             v                                     +-----> Resume at VERIFICATION!
+   SessionStatus: COMPLETED
 
 Usage:
     from utils.session_manager import (
@@ -936,6 +1006,7 @@ def get_session_manager(db_path: Optional[str] = None) -> SessionManager:
             if db_path is None:
                 # Use default path
                 import os
+
                 from config import settings
 
                 db_path = os.path.join(

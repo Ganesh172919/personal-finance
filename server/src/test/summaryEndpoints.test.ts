@@ -84,6 +84,32 @@ describe("summary endpoints", () => {
       })
       .expect(201);
 
+    await request(app)
+      .post("/api/transactions")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({
+        amount: 2000,
+        category: "Crypto",
+        description: "Bitcoin Holding",
+        type: "investment",
+        date: "2026-02-04",
+      })
+      .expect(201);
+
+    await request(app)
+      .post("/api/transactions")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({
+        amount: 150,
+        category: "Investments",
+        description: "Nifty SIP Dividend Payout",
+        type: "income",
+        date: "2026-02-05",
+      })
+      .expect(201);
+
     const dashboard = await request(app)
       .get("/api/dashboard/summary")
       .set("Cookie", [cookie, csrfCookie])
@@ -99,9 +125,21 @@ describe("summary endpoints", () => {
       .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 
-    expect(portfolio.body.summary.total_invested).toBe(3000);
+    expect(portfolio.body.summary.total_invested).toBe(5000);
     expect(portfolio.body.allocations.length).toBeGreaterThan(0);
+    const cryptoAlloc = portfolio.body.allocations.find((a: any) => a.name === "Crypto");
+    expect(cryptoAlloc).toBeDefined();
+    expect(cryptoAlloc.amount).toBe(2000);
     expect(portfolio.body.performance.length).toBe(6);
     expect(portfolio.body.summary.returns_basis).toContain("market");
+
+    // Dividend metrics assertions
+    expect(portfolio.body.dividends).toBeDefined();
+    expect(portfolio.body.dividends.total_received).toBe(150);
+    expect(portfolio.body.dividends.portfolio_yield_pct).toBeGreaterThan(0);
+    expect(portfolio.body.dividends.payouts_by_holding.length).toBe(1);
+    expect(portfolio.body.dividends.payouts_by_holding[0].holding_name).toBe("Nifty SIP");
+    expect(portfolio.body.dividends.payouts_by_holding[0].total_amount).toBe(150);
+    expect(portfolio.body.dividends.monthly_progression.length).toBe(6);
   });
 });

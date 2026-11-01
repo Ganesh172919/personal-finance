@@ -4,6 +4,7 @@ import Stripe from "stripe";
 import { getEnv } from "../config/env";
 import BillingAccountModel from "../models/billingAccountModel";
 import SubscriptionModel from "../models/subscriptionModel";
+import InvoiceModel from "../models/invoiceModel";
 import type { PlanTier, EntitlementStatus } from "../models/entitlementModel";
 import { getOrCreateEntitlement } from "./entitlements";
 import OrgMemberModel from "../models/orgMemberModel";
@@ -42,6 +43,7 @@ export const setOrgPlan = async (params: {
   userId: mongoose.Types.ObjectId;
   provider: "stub" | "stripe";
   planTier: PlanTier;
+  billingCycle?: "monthly" | "annual";
   status: EntitlementStatus;
   seats?: number;
   stripeCustomerId?: string;
@@ -70,6 +72,7 @@ export const setOrgPlan = async (params: {
         orgId: params.orgId,
         provider: params.provider,
         planTier: params.planTier,
+        billingCycle: params.billingCycle || "monthly",
         status: params.status,
         seats: params.seats,
         stripeSubscriptionId: params.stripeSubscriptionId,
@@ -96,25 +99,52 @@ export const createCheckout = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
   planTier: Exclude<PlanTier, "free" | "enterprise">;
+  billingCycle?: "monthly" | "annual";
   seats?: number;
   successUrl?: string;
   cancelUrl?: string;
 }) => {
   const env = getEnv();
   const clientUrl = env.CLIENT_URL.replace(/\/$/, "");
+  const billingCycle = params.billingCycle || "monthly";
+  const isAnnual = billingCycle === "annual";
+  const durationDays = isAnnual ? 365 : 30;
 
   if (env.BILLING_PROVIDER === "stub") {
     const now = new Date();
-    const end = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const end = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
     await setOrgPlan({
       orgId: params.orgId,
       userId: params.userId,
       provider: "stub",
       planTier: params.planTier,
+      billingCycle,
       status: "active",
       seats: params.seats,
       currentPeriodStart: now,
       currentPeriodEnd: end,
+    });
+
+    const basePrice =
+      params.planTier === "team"
+        ? (isAnnual ? 39 * 12 : 49) * Math.max(1, Number(params.seats || 1))
+        : (isAnnual ? 180 : 19);
+
+    const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    await InvoiceModel.create({
+      orgId: params.orgId,
+      userId: params.userId,
+      invoiceNumber,
+      planTier: params.planTier,
+      billingCycle,
+      amountUsd: basePrice,
+      taxUsd: 0,
+      totalUsd: basePrice,
+      status: "paid",
+      paymentMethod: "Stub Activation (Instant)",
+      periodStart: now,
+      periodEnd: end,
+      issuedAt: now,
     });
 
     return {

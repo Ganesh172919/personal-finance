@@ -375,9 +375,9 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
             onSubmit={handleSubmit}
             className="flex items-center bg-background rounded-md p-3"
           >
-            <div className="flex items-center space-x-3 flex-1">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
               <motion.div
-                className="w-8 h-8 bg-primary rounded-full flex items-center justify-center"
+                className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary sm:flex"
                 animate={processCommandMutation.isPending ? {
                   opacity: [1, 0.5, 1],
                 } : {}}
@@ -387,23 +387,25 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
                 <Wand2 className="w-4 h-4 text-primary-foreground" />
               </motion.div>
               <Input
+                aria-label="Ask the finance assistant"
                 type="text"
                 placeholder={`Ask me anything about your finances... (e.g., "What if I buy a new phone for ${phone}?")`}
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
                 onFocus={() => setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                className="flex-1 bg-transparent border-none outline-none focus-visible:ring-0"
+                className="order-1 min-w-0 flex-1 basis-full border-none bg-transparent outline-none focus-visible:ring-0 sm:order-none sm:basis-0"
                 data-testid="input-ai-command"
               />
-              <label className="flex items-center gap-2 pr-1" title="Enable slower, more narrative responses">
+              <label className="order-2 flex items-center gap-2 pr-1 sm:order-none" title="Enable more detailed responses">
                 <span className="text-xs text-muted-foreground whitespace-nowrap">Narrative</span>
-                <ToggleSwitch checked={narrative} onCheckedChange={setNarrative} />
+                <ToggleSwitch aria-label="Detailed answer" checked={narrative} onCheckedChange={setNarrative} />
               </label>
               <Button
                 type="submit"
-                className="bg-primary text-primary-foreground hover:opacity-90"
-                disabled={processCommandMutation.isPending}
+                aria-label="Send question to the finance assistant"
+                className="order-3 ml-auto shrink-0 bg-primary text-primary-foreground hover:opacity-90 sm:order-none"
+                disabled={!command.trim() || processCommandMutation.isPending}
                 data-testid="button-submit-command"
               >
                 <Send className="w-4 h-4" />

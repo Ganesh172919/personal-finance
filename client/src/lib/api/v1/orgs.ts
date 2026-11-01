@@ -48,12 +48,12 @@ export type OrgSummary = OrgsMeResponse["orgs"][number];
 
 /** Fetch all organisations the user belongs to, including the active one. */
 export async function getMyOrgs(): Promise<OrgsMeResponse> {
-  return apiClient("/v1/orgs/me");
+  return apiClient("/orgs/me");
 }
 
 /** Create a new organisation (the caller becomes the owner). */
 export async function createOrg(body: CreateOrgRequest): Promise<CreateOrgResponse> {
-  return apiClient("/v1/orgs", {
+  return apiClient("/orgs", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -61,7 +61,7 @@ export async function createOrg(body: CreateOrgRequest): Promise<CreateOrgRespon
 
 /** Add a member to an organisation by email with a specified role. */
 export async function addOrgMember(orgId: string, body: AddOrgMemberRequest): Promise<AddOrgMemberResponse> {
-  return apiClient(`/v1/orgs/${orgId}/members`, {
+  return apiClient(`/orgs/${orgId}/members`, {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -72,7 +72,7 @@ export async function updateOrgSettings(
   orgId: string,
   body: UpdateOrgSettingsRequest
 ): Promise<UpdateOrgSettingsResponse> {
-  return apiClient(`/v1/orgs/${orgId}/settings`, {
+  return apiClient(`/orgs/${orgId}/settings`, {
     method: "PATCH",
     body: JSON.stringify(body),
   });

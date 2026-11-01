@@ -17,8 +17,72 @@
  * 4. Recurring transaction candidates
  * 5. Active tasks
  * 6. Calendar reminders
- * 7. Workspace files
+ * 7. Workspace files & RAG knowledge chunks
  * 8. Memory records (user facts from past conversations)
+ *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * FinanceGrounding Engine
+ * ├── 1. Request Identity & Multi-Tenant Scope
+ * │   ├── orgId & userId isolation
+ * │   ├── Timeframe & Period Key (YYYY-MM)
+ * │   └── User Query string
+ * ├── 2. Parallel Core Financial Extraction
+ * │   ├── AccountModel: Balances, accounts, assets
+ * │   ├── BudgetEnvelopes: Allocations vs actual spend
+ * │   ├── TransactionService: Recent transactions (30-90 days)
+ * │   ├── RecurringCandidates: Detected recurring subscriptions
+ * │   ├── TaskModel: Active user financial todos
+ * │   └── CalendarReminderModel: Scheduled bill reminders
+ * ├── 3. Memory & Personal Context
+ * │   └── MemoryRecordModel: Extracted facts, financial goals, constraints
+ * ├── 4. RAG Document Grounding (retrievalService)
+ * │   ├── ensureWorkspaceFileChunks (on-demand backfill)
+ * │   ├── retrieveRelevantWorkspaceChunks (lexical search)
+ * │   └── File snippets and source citation formation
+ * └── 5. Grounding Context Packaging
+ *     ├── finance_context dictionary for AI Core
+ *     ├── evidence items list with citations & confidence scores
+ *     └── Token-budget management and clipping
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +-------------------------------------------------------------+
+ *   |         Incoming AI Prompt / Chat Query Request             |
+ *   +------------------------------+------------------------------+
+ *                                  |
+ *                                  v
+ *   +-------------------------------------------------------------+
+ *   |       Parallel Data Fetching via Promise.allSettled         |
+ *   +------------------------------+------------------------------+
+ *          |          |          |          |          |
+ *          v          v          v          v          v
+ *     [Accounts]  [Envelopes] [Tasks]   [Reminders] [Memories]
+ *          |          |          |          |          |
+ *          +----------+----------+----------+----------+
+ *                                |
+ *                                v
+ *   +-------------------------------------------------------------+
+ *   |              RAG Document Retrieval Pipeline                |
+ *   |  - Check on-demand chunk backfill for workspace files       |
+ *   |  - retrieveRelevantWorkspaceChunks(query, limit)            |
+ *   +------------------------------+------------------------------+
+ *                                  |
+ *                                  v
+ *   +-------------------------------------------------------------+
+ *   |               Evidence Synthesis & Formatting               |
+ *   |  - Wrap structured data into Evidence Items                 |
+ *   |  - Attach file source citations and page numbers            |
+ *   +------------------------------+------------------------------+
+ *                                  |
+ *                                  v
+ *   +-------------------------------------------------------------+
+ *   | Output: GroundingContext injected into AI Core Request      |
+ *   +-------------------------------------------------------------+
+ * ```
  *
  * EVIDENCE ITEMS:
  * Each piece of data is wrapped as an "evidence item" with a label and
@@ -30,12 +94,14 @@
 
 import mongoose from "mongoose";
 
+import { logger } from "../config/logger";
 import AccountModel from "../models/accountModel";
 import CalendarReminderModel from "../models/calendarReminderModel";
 import MemoryRecordModel from "../models/memoryRecordModel";
 import TaskModel from "../models/taskModel";
 import WorkspaceFileModel from "../models/workspaceFileModel";
 import { detectRecurringCandidates, getBudgetEnvelopes } from "./financeIntelligence";
+import { ensureWorkspaceFileChunks, retrieveRelevantWorkspaceChunks } from "./retrievalService";
 
 /** Generate the current period key (YYYY-MM format) */
 const currentPeriodKey = () => {
@@ -51,16 +117,18 @@ const isoDate = (value?: Date | string | null) => {
 
 export type AiEvidenceItem = {
   id: string;
-  type: "transaction_scope" | "budget" | "recurring" | "task" | "reminder" | "file" | "memory";
+  type: "transaction_scope" | "budget" | "recurring" | "task" | "reminder" | "file" | "memory" | "retrieval_chunk";
   label: string;
   snippet: string;
   entity_id?: string;
+  page_number?: number;
 };
 
 export const buildAiFinanceGrounding = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
   selectedWorkspaceFileIds?: string[];
+  retrievalQuery?: string;
 }) => {
   const periodKey = currentPeriodKey();
   const next14Days = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
@@ -96,7 +164,7 @@ export const buildAiFinanceGrounding = async (params: {
     WorkspaceFileModel.find({
       orgId: params.orgId,
       userId: params.userId,
-      ...(selectedFileObjectIds.length ? { _id: { $in: selectedFileObjectIds } } : {}),
+      ...(params.selectedWorkspaceFileIds?.length ? { _id: { $in: selectedFileObjectIds } } : {}),
     })
       .sort({ updatedAt: -1 })
       .limit(selectedFileObjectIds.length ? selectedFileObjectIds.length : 5)
@@ -108,6 +176,33 @@ export const buildAiFinanceGrounding = async (params: {
     })),
     getBudgetEnvelopes({ orgId: params.orgId, periodKey }).catch(() => null),
   ]);
+
+  // Repair older uploads and failed indexing before retrieval. This is bounded
+  // by the file query above and also refreshes chunks after text reprocessing.
+  if (params.retrievalQuery) {
+    await Promise.all(workspaceFiles.map((file) => ensureWorkspaceFileChunks({
+      orgId: params.orgId,
+      userId: params.userId,
+      workspaceFileId: file._id,
+      fileId: file.fileId,
+      originalName: file.originalName,
+      sourceKind: file.kind,
+      extractedText: file.extractedText || "",
+      pageCount: file.extractedPageCount,
+    }).catch((error) => {
+      logger.warn({ error, workspaceFileId: file._id }, "Workspace file retrieval indexing failed");
+    })));
+  }
+
+  const retrievedChunks = params.retrievalQuery
+    ? await retrieveRelevantWorkspaceChunks({
+        orgId: params.orgId,
+        userId: params.userId,
+        query: params.retrievalQuery,
+        selectedWorkspaceFileIds: params.selectedWorkspaceFileIds,
+        limit: 4,
+      }).catch(() => [])
+    : [];
 
   const evidence: AiEvidenceItem[] = [];
 
@@ -177,6 +272,21 @@ export const buildAiFinanceGrounding = async (params: {
     });
   });
 
+  retrievedChunks.forEach((chunk) => {
+    evidence.push({
+      id: `retrieval:${chunk.id}`,
+      type: "retrieval_chunk",
+      label: [
+        chunk.metadata?.file_name,
+        chunk.sectionTitle || `Passage ${chunk.chunkIndex + 1}`,
+        chunk.pageNumber ? `page ${chunk.pageNumber}` : undefined,
+      ].filter(Boolean).join(" · "),
+      snippet: chunk.snippet,
+      entity_id: chunk.workspaceFileId,
+      page_number: chunk.pageNumber,
+    });
+  });
+
   const sourceCoverage = {
     accounts: accounts.length,
     tasks: tasks.length,
@@ -185,6 +295,7 @@ export const buildAiFinanceGrounding = async (params: {
     memory_records: memoryRows.length,
     budget_envelopes: budgetResult?.envelopes.length || 0,
     recurring_candidates: recurringCandidates.candidates.length,
+    retrieval_chunks: retrievedChunks.length,
   };
 
   const sourceCount = Object.values(sourceCoverage).filter((count) => count > 0).length;
@@ -241,6 +352,34 @@ export const buildAiFinanceGrounding = async (params: {
         confidence: Number(memory.confidence || 0),
         source: memory.source,
       })),
+      retrieval: {
+        query: params.retrievalQuery || "",
+        top_chunks: retrievedChunks.map((chunk) => ({
+          id: chunk.id,
+          workspace_file_id: chunk.workspaceFileId,
+          file_id: chunk.fileId,
+          chunk_index: chunk.chunkIndex,
+          section_title: chunk.sectionTitle,
+          page_number: chunk.pageNumber,
+          source_kind: chunk.sourceKind,
+          file_name: chunk.metadata?.file_name,
+          score: chunk.score,
+          text: chunk.text,
+          snippet: chunk.snippet,
+        })),
+      },
+      evidence,
+      confidence: {
+        score: Number(confidenceScore.toFixed(2)),
+        label: confidenceScore >= 0.75 ? "high" : confidenceScore >= 0.45 ? "medium" : "low",
+        notes: [
+          `${sourceCoverage.accounts} active account sources`,
+          `${sourceCoverage.files} supporting file sources`,
+          `${sourceCoverage.recurring_candidates} recurring spending signals`,
+          `${sourceCoverage.retrieval_chunks} retrieved file chunks`,
+        ],
+        coverage: sourceCoverage,
+      },
     },
     evidence,
     confidence: {
@@ -250,6 +389,7 @@ export const buildAiFinanceGrounding = async (params: {
         `${sourceCoverage.accounts} active account sources`,
         `${sourceCoverage.files} supporting file sources`,
         `${sourceCoverage.recurring_candidates} recurring spending signals`,
+        `${sourceCoverage.retrieval_chunks} retrieved file chunks`,
       ],
       coverage: sourceCoverage,
     },

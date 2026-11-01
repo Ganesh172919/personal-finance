@@ -23,10 +23,82 @@
  * - Supports both canonical (/api/v1) and legacy (/api) route structures
  * - Integrates with Python AI service for AI-related features
  *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * Express App Middleware & Routing Pipeline (app.ts)
+ * ├── 1. Foundation & Request Context
+ * │   ├── requestContext (Assign UUID request_id, trace_id)
+ * │   └── metricsMiddleware (Prometheus HTTP request counters & histograms)
+ * ├── 2. Security Shield
+ * │   ├── securityHeaders & helmet (CSP, HSTS, frameguard, XSS filter)
+ * │   ├── cors (Allow trusted client origins with credentials)
+ * │   ├── cookieParser & express.json / express.urlencoded
+ * │   └── csrfProtection (Validates double-submit cookie / header on mutations)
+ * ├── 3. Identity & Tenant Scoping
+ * │   ├── optionalJwtAuth (Extracts Bearer token and loads req.user)
+ * │   ├── apiKeyAuth (Alternative machine-to-machine authentication)
+ * │   └── orgContext (Extracts active X-Org-ID and resolves user permissions)
+ * ├── 4. Route Dispatcher (mountApiRoutes via routeRegistry)
+ * │   ├── /api/auth (Login, register, refresh, logout, OAuth)
+ * │   ├── /api/v1/finance (Accounts, budgets, transactions, envelopes)
+ * │   ├── /api/v1/newsletter (Preferences, preview, immediate dispatch)
+ * │   ├── /api/workspace-files (GridFS file uploads, RAG chunking, PDF generation)
+ * │   ├── /api/chat (Conversational sessions, message history, streaming)
+ * │   └── /api/ai (Direct AI Core agent gateway)
+ * └── 5. Error & Fallback Termination
+ *     ├── notFoundHandler (404 catch-all)
+ *     └── errorHandler (Centralized exception formatting & HttpError translation)
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +---------------------------------------------------------------+
+ *   |                    Incoming HTTP Request                      |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |   [1] requestContext: attach request_id & start timer         |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |   [2] securityHeaders + helmet + cors + cookieParser          |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |   [3] csrfProtection (validates non-GET mutations)            |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |   [4] optionalJwtAuth / apiKeyAuth + orgContext (Tenant Scope)|
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |   [5] mountApiRoutes(app): route matching & controller exec   |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                     [Did route match & succeed?]
+ *                                /     \
+ *                              YES      NO
+ *                              /         \
+ *                             v           v
+ *                    +-------------+   +----------------------------+
+ *                    | Response 2xx|   | notFoundHandler (404) OR   |
+ *                    | Delivered   |   | errorHandler (HttpError)   |
+ *                    +-------------+   +----------------------------+
+ * ```
+ *
  * @module app
  */
 
 import express from "express"; // Express web framework for building REST APIs
+import mongoose from "mongoose";
 import cors from "cors"; // Cross-Origin Resource Sharing middleware
 import cookieParser from "cookie-parser"; // Parse cookies from request headers
 import helmet from "helmet"; // Security middleware that sets various HTTP headers
@@ -42,11 +114,13 @@ import { metricsHandler, metricsMiddleware } from "./observability/metrics"; // 
 import { csrfProtection } from "./middleware/csrfProtection"; // CSRF token validation
 import { optionalJwtAuth } from "./middleware/optionalJwtAuth"; // Optional JWT authentication
 import { orgContext } from "./middleware/orgContext"; // Organization context middleware
-import { legacyApiDeprecation } from "./middleware/legacyApiDeprecation"; // Legacy API deprecation warnings
 import { responseContext } from "./middleware/responseContext"; // Response context middleware
 import { securityHeaders } from "./middleware/securityHeaders"; // Additional security headers
-import { mountCanonicalApiRoutes, mountLegacyApiRoutes } from "./routes/routeRegistry"; // Route mounting utilities
+import { requestLogger } from "./middleware/requestLogger"; // Structured request logging
+import { mountApiRoutes } from "./routes/routeRegistry"; // Route mounting (single /api/* namespace)
 import { sendErrorResponse } from "./utils/apiResponse"; // Standardized error response utility
+import { getDeadLetterStats } from "./services/deadLetterQueue"; // Dead-letter queue stats
+import { getRedis } from "./config/redis"; // Redis cache client
 
 /**
  * Creates and configures a new Express application instance.
@@ -202,7 +276,7 @@ export const createApp = () => {
       verify: (req, _res, buf) => {
         // Preserve raw body for billing webhook signature verification
         const path = String((req as any).originalUrl || (req as any).url || "");
-        if (path.startsWith("/api/v1/billing/webhook")) {
+        if (path.startsWith("/api/billing/webhook")) {
           (req as any).rawBody = buf;
         }
       },
@@ -269,18 +343,19 @@ export const createApp = () => {
   app.use(responseContext);
 
   /**
-   * Legacy API Deprecation Middleware
-   *
-   * Adds deprecation warnings to responses from legacy API endpoints.
-   */
-  app.use(legacyApiDeprecation);
-
-  /**
    * HTTP Logger Middleware
    *
    * Logs HTTP requests and responses for monitoring and debugging.
    */
   app.use(httpLogger);
+
+  /**
+   * Request Logger Middleware
+   *
+   * Enriches req.log with structured context and logs request lifecycle events.
+   * Logs slow requests (>2s) at warn level and 5xx errors at error level.
+   */
+  app.use(requestLogger);
 
   /**
    * Metrics Middleware
@@ -328,6 +403,9 @@ export const createApp = () => {
     max: env.AUTH_RATE_LIMIT_MAX, // Maximum auth attempts per window
     standardHeaders: true, // Return rate limit info in headers
     legacyHeaders: false, // Disable legacy headers
+    // Workspace reloads read these endpoints; they are not credential attempts.
+    // They retain the general API limit applied above.
+    skip: (req) => req.method === "GET" && ["/profile", "/csrf", "/providers"].includes(req.path),
     keyGenerator: (req) => String(req.ip || "unknown"), // Use IP address as key
     handler: (req, res) => {
       // Custom auth rate limit exceeded response
@@ -340,7 +418,6 @@ export const createApp = () => {
   });
 
   // Apply auth rate limiter to authentication endpoints
-  app.use("/api/v1/auth", authRateLimiter);
   app.use("/api/auth", authRateLimiter);
 
   /**
@@ -357,6 +434,93 @@ export const createApp = () => {
   // Kubernetes-style health check endpoint
   app.get("/healthz", (_req, res) => {
     res.status(200).send("ok");
+  });
+
+  app.get("/readyz", (_req, res) => {
+    const ready = mongoose.connection.readyState === 1;
+    res.status(ready ? 200 : 503).json({ status: ready ? "ready" : "unavailable" });
+  });
+
+  app.get("/healthz/diagnostics", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      deadLetters: getDeadLetterStats(),
+    });
+  });
+
+  /**
+   * Deep Health Check Endpoint
+   *
+   * Probes all core external dependencies:
+   * - MongoDB connection state and ping latency
+   * - Redis connection state and ping latency (when enabled)
+   * - Python AI Core /health endpoint
+   * - Dead-letter queue statistics
+   *
+   * Returns 200 with { status: "ok" | "degraded" } or 503 with { status: "error" } if database is unreachable.
+   */
+  app.get("/healthz/deep", async (_req, res) => {
+    const started = Date.now();
+    const checks: Record<string, any> = {};
+
+    // 1. MongoDB check
+    const mongoReady = mongoose.connection.readyState === 1;
+    if (mongoReady && mongoose.connection.db) {
+      const mongoStart = Date.now();
+      try {
+        await mongoose.connection.db.admin().ping();
+        checks.database = { status: "connected", latencyMs: Date.now() - mongoStart };
+      } catch (err: any) {
+        checks.database = { status: "error", error: err?.message };
+      }
+    } else {
+      checks.database = { status: "disconnected" };
+    }
+
+    // 2. Redis check
+    const redis = getRedis();
+    if (redis) {
+      const redisStart = Date.now();
+      try {
+        await redis.ping();
+        checks.redis = { status: "connected", latencyMs: Date.now() - redisStart };
+      } catch (err: any) {
+        checks.redis = { status: "unavailable", error: err?.message };
+      }
+    } else {
+      checks.redis = { status: "disabled" };
+    }
+
+    // 3. AI Core check
+    const aiStart = Date.now();
+    try {
+      await axios.get(`${PYTHON_API_URL}/health`, { timeout: 2000 });
+      checks.ai_core = { status: "healthy", latencyMs: Date.now() - aiStart };
+    } catch {
+      checks.ai_core = { status: "unavailable" };
+    }
+
+    // 4. Dead letter stats
+    const deadLetterCounts = getDeadLetterStats();
+    checks.deadLetters = {
+      total: Object.values(deadLetterCounts).reduce((sum, count) => sum + count, 0),
+      byOperation: deadLetterCounts,
+    };
+
+    const isHealthy = checks.database?.status === "connected";
+    const status = !isHealthy
+      ? "error"
+      : checks.ai_core?.status === "healthy" && (checks.redis?.status === "connected" || checks.redis?.status === "disabled")
+      ? "ok"
+      : "degraded";
+
+    res.status(isHealthy ? 200 : 503).json({
+      status,
+      totalLatencyMs: Date.now() - started,
+      timestamp: new Date().toISOString(),
+      services: checks,
+    });
   });
 
   /**
@@ -386,14 +550,11 @@ export const createApp = () => {
   /**
    * Route Mounting
    *
-   * Mount canonical v1 API routes before legacy routes because Express
-   * matches routes in order, and /api prefix also matches /api/v1/*.
+   * All API routes are mounted under /api/* — there is no versioned
+   * /api/v1 split. This keeps the API surface simple and avoids
+   * duplication between canonical and legacy route sets.
    */
-  // Mount canonical /api/v1 routes
-  mountCanonicalApiRoutes(app, env);
-
-  // Mount legacy /api routes (kept during deprecation window)
-  mountLegacyApiRoutes(app, env);
+  mountApiRoutes(app, env);
 
   /**
    * Prometheus Metrics Endpoint
@@ -414,8 +575,20 @@ export const createApp = () => {
 
   // Log server configuration (except in test environment)
   if (env.NODE_ENV !== "test") {
-    logger.info(`Server configured on PORT=${env.PORT}`);
-    logger.info(`Expecting Python AI service at ${PYTHON_API_URL}`);
+    logger.info("═══════════════════════════════════════════════════════════");
+    logger.info(`  FinWise Server Configuration`);
+    logger.info(`  Environment : ${env.NODE_ENV}`);
+    logger.info(`  Port        : ${env.PORT}`);
+    logger.info(`  Client URL  : ${env.CLIENT_URL}`);
+    logger.info(`  Python AI   : ${PYTHON_API_URL}`);
+    logger.info(`  CORS Origins: ${CORS_ORIGINS.join(", ")}`);
+    logger.info(`  Google Auth : ${env.GOOGLE_CLIENT_ID ? "ENABLED" : "DISABLED"}`);
+    logger.info(`  CSRF        : ${env.CSRF_ENABLED ? "ENABLED" : "DISABLED"}`);
+    logger.info(`  Tasks       : ${env.TASKS_ENABLED ? "ENABLED" : "DISABLED"}`);
+    logger.info(`  Monetization: ${env.MONETIZATION_ENABLED ? "ENABLED" : "DISABLED"}`);
+    logger.info(`  Cookie Sec  : ${env.COOKIE_SECURE}`);
+    logger.info(`  Trust Proxy : ${env.TRUST_PROXY}`);
+    logger.info("═══════════════════════════════════════════════════════════");
   }
 
   // Return configured Express application

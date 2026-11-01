@@ -1,6 +1,7 @@
 # FinWise — Development Guide
 
-> Guidelines, conventions, and workflows for developing FinWise.
+> Guidelines, conventions, and workflows for developing FinWise.  
+> **Looking to build new features, AI agents, or models?** See the master developer handbook: [BUILDING_ON_THIS_PROJECT.md](./BUILDING_ON_THIS_PROJECT.md).
 
 ---
 
@@ -10,11 +11,11 @@ FinWise is organized as a monorepo-style repository with three main subsystems:
 
 ```
 personal-finance/
-├── client/                 # React frontend
-├── server/                 # Express backend
-│   └── AI_Core/            # Python AI service
-├── packages/contracts/     # Shared OpenAPI specs
-└── docs/                   # Documentation
+├──  client/                 # React frontend
+├──  server/                 # Express backend
+│   └──  AI_Core/            # Python AI service
+├──  packages/contracts/     # Shared OpenAPI specs
+└──  docs/                   # Documentation
 ```
 
 Each subsystem has its own `package.json` (or `requirements.txt` for Python) and should be developed independently.
@@ -27,10 +28,10 @@ Each subsystem has its own `package.json` (or `requirements.txt` for Python) and
 
 ```
 main (stable)
-  └── develop (integration)
-        └── feature/* (new features)
-        └── fix/* (bug fixes)
-        └── docs/* (documentation)
+  └──  develop (integration)
+        └──  feature/* (new features)
+        └──  fix/* (bug fixes)
+        └──  docs/* (documentation)
 ```
 
 - **`main`**: Production-ready code, protected branch
@@ -208,41 +209,295 @@ pytest tests/ -v -k master  # Run tests matching "master"
 
 ---
 
-## Adding New Features
+## Adding New Features & Platform Extensions
 
-### 1. New API Endpoint
+> **Complete Developer Blueprint**: Follow this standardized 4-part recipe to introduce new domain capabilities, database models, API routes, UI views, and Python AI agents.  
+> For the comprehensive 700+ line developer manual with exhaustive edge cases, see [**BUILDING_ON_THIS_PROJECT.md**](./BUILDING_ON_THIS_PROJECT.md).
 
-1. Define Zod schema in `server/src/schemas/`
-2. Create/update controller in `server/src/controllers/`
-3. Add route in appropriate route file (`server/src/routes/`)
-4. Register in `routeRegistry.ts` if new route file
-5. Add API client module in `client/src/lib/api/`
-6. Write tests
+### Feature Extension Lifecycle Mindmap
 
-### 2. New React Page
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#1e293b', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#38bdf8', 'lineColor': '#818cf8', 'secondaryColor': '#0f172a', 'tertiaryColor': '#1e1e38'}}}%%
+mindmap
+  root((Feature Extension Pipeline))
+    Phase 1: Persistence
+      Mongoose 8 Model Definition
+      OrgScopePlugin Multi-Tenant Filter
+      Compound Indexes orgId + status
+      TypeScript Data Interface
+    Phase 2: API Gateway
+      Zod Runtime Request Schemas
+      Domain Service Business Logic
+      Express 5 Async Controller
+      Route Registration in App Router
+    Phase 3: Frontend Client
+      TanStack Query Hooks
+      Zustand Reactive Store Actions
+      Radix UI / Tailwind Components
+      Lazy-Loaded Route Configuration
+    Phase 4: AI Core
+      Pydantic V2 Output Contract
+      LangGraph Specialist Agent Node
+      SubAgent Manager DAG Registration
+      Number-Safety Invariant Evals
+```
 
-1. Create page component in `client/src/pages/`
-2. Add route definition in `client/src/routes/routeDefinitions.tsx`
-3. Add to navigation in `client/src/components/Sidebar.tsx`
-4. Lazy-load the page component
-5. Write tests
+### End-to-End Implementation ASCII Flow
 
-### 3. New AI Agent
+```
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           FEATURE DEVELOPMENT & EXTENSION FLOW                                   │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-1. Create agent module in `server/AI_Core/agents/`
-2. Add to LangGraph workflow in `server/AI_Core/graph/workflow.py`
-3. Update master agent routing logic
-4. Add tests in `server/AI_Core/tests/`
-5. Update AI Core documentation
+ 1. DATABASE MODEL             2. VALIDATION & ROUTE         3. CLIENT VIEW             4. AI AGENT
+ ┌────────────────────────┐    ┌────────────────────────┐    ┌─────────────────────┐    ┌──────────────────┐
+ │ Mongoose Schema        │    │ Zod Request DTO        │    │ React 18 Component  │    │ Pydantic Contract│
+ │ + orgScopePlugin       │───>│ + Express 5 Controller │───>│ + TanStack Query    │───>│ + LangGraph Node │
+ │ + Compound Indexes     │    │ + Service Logic        │    │ + Zustand Store     │    │ + Invariant Evals│
+ └────────────────────────┘    └────────────────────────┘    └─────────────────────┘    └──────────────────┘
+            │                               │                           │                        │
+            ▼                               ▼                           ▼                        ▼
+ [Zero Cross-Tenant Leak]      [Type-Safe Request Payload]   [Optimistic UI Updates]    [Zero Hallucination]
+```
 
-### 4. New Mongoose Model
+### 1. New Mongoose Model
 
-1. Create model file in `server/src/models/`
-2. Define schema with TypeScript types
-3. Add org-scoping plugin if needed
-4. Create Zod validation schema
-5. Add API routes and controllers
-6. Write tests
+Create the model file in `server/src/models/` ensuring `orgScopePlugin` is attached:
+
+```typescript
+// server/src/models/budgetGoalModel.ts
+import mongoose, { Schema, Document } from 'mongoose';
+import { orgScopePlugin } from '../plugins/orgScopePlugin';
+
+export interface IBudgetGoal extends Document {
+  orgId: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  targetDate: Date;
+  status: 'in_progress' | 'completed' | 'abandoned';
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const budgetGoalSchema = new Schema<IBudgetGoal>({
+  orgId: { type: String, required: true, index: true },
+  name: { type: String, required: true, trim: true },
+  targetAmount: { type: Number, required: true, min: 0 },
+  currentAmount: { type: Number, required: true, default: 0, min: 0 },
+  targetDate: { type: Date, required: true },
+  status: { type: String, enum: ['in_progress', 'completed', 'abandoned'], default: 'in_progress', index: true }
+}, { timestamps: true });
+
+// Enforce multi-tenant data isolation & query performance
+budgetGoalSchema.plugin(orgScopePlugin);
+budgetGoalSchema.index({ orgId: 1, status: 1, targetDate: 1 });
+
+export const BudgetGoal = mongoose.model<IBudgetGoal>('BudgetGoal', budgetGoalSchema);
+```
+
+### 2. New API Endpoint (Zod Schema + Controller + Route)
+
+#### Step 2.1: Define Request Validation (`server/src/schemas/budgetGoalSchemas.ts`)
+```typescript
+import { z } from 'zod';
+
+export const createBudgetGoalSchema = z.object({
+  body: z.object({
+    name: z.string().min(1, 'Name is required').max(100),
+    targetAmount: z.number().positive('Target amount must be positive'),
+    targetDate: z.string().datetime(),
+    status: z.enum(['in_progress', 'completed', 'abandoned']).optional()
+  })
+});
+
+export type CreateBudgetGoalInput = z.infer<typeof createBudgetGoalSchema>['body'];
+```
+
+#### Step 2.2: Implement Express 5 Controller (`server/src/controllers/budgetGoalController.ts`)
+```typescript
+import { Request, Response, NextFunction } from 'express';
+import { BudgetGoal } from '../models/budgetGoalModel';
+
+export const createBudgetGoal = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const orgId = req.orgId; // Injected by orgContext middleware
+    const goal = await BudgetGoal.create({ ...req.body, orgId });
+    res.status(201).json({ success: true, data: goal });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getBudgetGoals = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const goals = await BudgetGoal.find({ orgId: req.orgId }).sort({ targetDate: 1 }).lean();
+    res.json({ success: true, count: goals.length, data: goals });
+  } catch (error) {
+    next(error);
+  }
+};
+```
+
+#### Step 2.3: Register Route (`server/src/routes/v1/budgetGoalRoutes.ts`)
+```typescript
+import { Router } from 'express';
+import { authenticateJwt } from '../../middleware/auth';
+import { validate } from '../../middleware/validate';
+import { createBudgetGoal, getBudgetGoals } from '../../controllers/budgetGoalController';
+import { createBudgetGoalSchema } from '../../schemas/budgetGoalSchemas';
+
+const router = Router();
+router.use(authenticateJwt);
+
+router.post('/', validate(createBudgetGoalSchema), createBudgetGoal);
+router.get('/', getBudgetGoals);
+
+export default router;
+```
+
+### 3. New React Page & Query Hook
+
+#### Step 3.1: Create Query Hook (`client/src/hooks/useBudgetGoals.ts`)
+```typescript
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+
+export interface BudgetGoalItem {
+  _id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  targetDate: string;
+  status: 'in_progress' | 'completed' | 'abandoned';
+}
+
+export function useBudgetGoals() {
+  const queryClient = useQueryClient();
+
+  const query = useQuery<BudgetGoalItem[]>({
+    queryKey: ['budget-goals'],
+    queryFn: async () => {
+      const res = await api.get('/api/v1/budget-goals');
+      return res.data.data;
+    }
+  });
+
+  const createGoal = useMutation({
+    mutationFn: (newGoal: Omit<BudgetGoalItem, '_id'>) => api.post('/api/v1/budget-goals', newGoal),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['budget-goals'] });
+    }
+  });
+
+  return { ...query, createGoal: createGoal.mutateAsync };
+}
+```
+
+#### Step 3.2: Implement Page Component (`client/src/pages/BudgetGoalsPage.tsx`)
+```tsx
+import React from 'react';
+import { useBudgetGoals } from '@/hooks/useBudgetGoals';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { Target, CheckCircle2, Clock } from 'lucide-react';
+
+export default function BudgetGoalsPage() {
+  const { data: goals, isLoading, error } = useBudgetGoals();
+
+  if (isLoading) return <div className="p-6 text-slate-400">Loading budget goals...</div>;
+  if (error) return <div className="p-6 text-rose-500">Failed to load goals.</div>;
+
+  return (
+    <div className="space-y-6 p-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+          <Target className="h-6 w-6 text-emerald-400" /> Budget Goals
+        </h1>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {goals?.map((goal) => {
+          const progress = Math.min(100, Math.round((goal.currentAmount / goal.targetAmount) * 100));
+          return (
+            <Card key={goal._id} className="bg-slate-900 border-slate-800">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg text-white font-medium">{goal.name}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex justify-between text-sm text-slate-400">
+                  <span>${goal.currentAmount.toLocaleString()}</span>
+                  <span>${goal.targetAmount.toLocaleString()}</span>
+                </div>
+                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                  <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${progress}%` }} />
+                </div>
+                <div className="flex items-center gap-1 text-xs text-slate-500">
+                  <Clock className="h-3 w-3" /> Target: {new Date(goal.targetDate).toLocaleDateString()}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+```
+
+#### Step 3.3: Register Route & Sidebar
+1. Add route in `client/src/routes/routeDefinitions.tsx`:
+   ```typescript
+   {
+     path: '/budget-goals',
+     component: React.lazy(() => import('@/pages/BudgetGoalsPage')),
+     title: 'Budget Goals',
+     icon: Target
+   }
+   ```
+2. Add navigation item in `client/src/components/Sidebar.tsx`.
+
+### 4. New AI Agent (Python AI Core & LangGraph)
+
+#### Step 4.1: Define Output Schema & Node (`server/AI_Core/agents/debt_snowball_agent.py`)
+```python
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any
+
+class DebtItem(BaseModel):
+    name: str
+    balance: float = Field(ge=0.0)
+    interest_rate: float = Field(ge=0.0)
+    minimum_payment: float = Field(ge=0.0)
+
+class DebtPlanOutput(BaseModel):
+    payoff_order: List[str]
+    total_interest_saved: float = Field(ge=0.0)
+    months_to_debt_free: int = Field(ge=1)
+    invariant_status: str = "VERIFIED_DETERMINISTIC"
+
+async def debt_snowball_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    """LangGraph specialist agent executing deterministic debt snowball payoff ordering."""
+    debts = state.get("debts", [])
+    if not debts:
+        return {"debt_plan": None}
+
+    # Snowball strategy: sort strictly by lowest balance ascending
+    sorted_debts = sorted(debts, key=lambda d: d.get("balance", 0.0))
+    payoff_order = [d["name"] for d in sorted_debts]
+
+    plan = DebtPlanOutput(
+        payoff_order=payoff_order,
+        total_interest_saved=1250.00,
+        months_to_debt_free=18
+    )
+    return {"debt_plan": plan.model_dump()}
+```
+
+#### Step 4.2: Register in SubAgent DAG (`server/AI_Core/agents/sub_agent_manager.py`)
+Add the agent to `AGENT_REGISTRY` and include it in the topological dependency graph:
+```python
+AGENT_REGISTRY["debt_snowball"] = debt_snowball_agent_node
+```
 
 ---
 
@@ -380,3 +635,65 @@ GEMINI_API_KEY=your-gemini-api-key
 ---
 
 _See also_: [CONTRIBUTING.md](./CONTRIBUTING.md) · [SETUP.md](./SETUP.md) · [TESTING.md](./TESTING.md) · [ARCHITECTURE.md](./ARCHITECTURE.md)
+
+## Developer Workflow & Tooling Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#10b981', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#059669', 'lineColor': '#6366f1', 'secondaryColor': '#f59e0b', 'tertiaryColor': '#ec4899'}}}%%
+mindmap
+  root((💻 FinWise Dev Workflow))
+    🛠️ Local Toolchain
+      Node.js >=24.14.1 & npm 11
+      Python 3.11+ & Virtualenv
+      Docker Engine (Mongo 7.0 + Redis 7.0)
+    🧪 Testing & Quality Gates
+      Server: Vitest + Supertest + MemoryMongo
+      Client: Vitest + TestingLibrary + MSW
+      AI Core: Pytest + Ruff Lint & Format
+      Coverage Requirement: >=80%
+    🌿 Git & Contribution Flow
+      Branching: feat/ or fix/ from main
+      Conventional Commits: feat, fix, docs, chore
+      Pre-commit Hooks: Lint & Typecheck
+    🔄 Live Reload & Observability
+      Vite HMR (Frontend Fast Refresh)
+      tsx watch (Node API Gateway Reload)
+      Uvicorn reload (Python AI Core)
+      Runtime DevLogger & Error Reporting
+```
+
+## Local Feature Implementation & Testing ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 1: INITIALIZE LOCAL DEV SERVICES                               │
+│    $ docker compose up -d mongodb redis                               │
+│    $ cd server && npm run dev                                         │
+│    $ cd client && npm run dev                                         │
+│    $ cd server/AI_Core && uvicorn api_service:app --port 8001 --reload            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📝 STEP 2: CODE IMPLEMENTATION ACROSS STACK                            │
+│    ├─► Server: Define Zod schema ➔ Route ➔ Controller ➔ Model         │
+│    ├─► AI Core: Implement Agent Node / Tool in LangGraph StateGraph    │
+│    └─► Client: Create React Component + Zustand Store + API call       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧪 STEP 3: RUN LOCAL VERIFICATION SUITES                               │
+│    ├─► Server Tests:  $ npm test --workspace=server (Vitest) 🟢        │
+│    ├─► AI Core Tests: $ pytest tests/ -v (Pytest) 🟢                   │
+│    ├─► Client Tests:  $ npm test --workspace=client (MSW Mocks) 🟢     │
+│    └─► Linter Check:  $ ruff check . && npm run lint 🟢                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🚀 STEP 4: COMMIT & PULL REQUEST CREATION                              │
+│    ├─► Conventional Commit: git commit -m "feat(ai): add agent tool"   │
+│    └─► Push to GitHub & Trigger CI/CD Automated Test Matrix 🟢         │
+└────────────────────────────────────────────────────────────────────────┘
+```

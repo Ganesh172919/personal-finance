@@ -5,6 +5,78 @@
  * It provides endpoints for processing AI commands, streaming AI responses,
  * running what-if scenarios, and managing financial profiles.
  *
+ * ============================================================================
+ * MINDMAP FLOW: AI CONTROLLER ORCHESTRATION & STREAMING PIPELINE
+ * ============================================================================
+ * - AI Controller Ecosystem
+ *     ├── 1. Inbound Request Ingestion & Governance
+ *     │   ├── Authentication & Tenant Isolation (orgId, userId validation)
+ *     │   ├── Entitlement Quota Enforcement (enforceFeatureLimit)
+ *     │   └── Input Sanitization & Validation (sanitizeProfileUpdate)
+ *     ├── 2. Grounding Context Assembly
+ *     │   ├── User Financial Profile (Income, expenses, savings, debts, goals)
+ *     │   ├── Transactions Window (fetchTransactionsForAi)
+ *     │   ├── Journal Entries Context (getJournalContextForAi)
+ *     │   └── Financial Evidence Grounding (buildAiFinanceGrounding)
+ *     ├── 3. Tiered Caching & Deterministic Bypass
+ *     │   ├── SHA-256 Command Cache Key (buildProcessCommandCacheKey)
+ *     │   ├── Database Cache Lookup (AiResponseCacheModel with TTL)
+ *     │   └── Cache Hit Telemetry (recordAiCache)
+ *     ├── 4. AI Core Bridge & Execution
+ *     │   ├── Python FastAPI Microservice Dispatch (processAiCoreRequest)
+ *     │   ├── Resilient Fallback Plan Synthesizer (recordAiFallback on circuit open)
+ *     │   └── What-if Scenario Engine (processAiCoreScenario)
+ *     ├── 5. Real-Time Server-Sent Events (SSE) Streaming
+ *     │   ├── HTTP 200 chunked transfer (text/event-stream)
+ *     │   ├── Multi-Phase Progress Events (routing, specialist execution, verification)
+ *     │   └── Completion Packet with normalized action plan
+ *     └── 6. Post-Execution Telemetry & Side Effects
+ *         ├── AgentOutputModel persistence & human feedback linkage
+ *         ├── Domain Event Broadcasting (publishDomainEvent)
+ *         └── Feature Usage Ingestion (recordFeatureUsage)
+ *
+ * ============================================================================
+ * ASCII FLOW: COMMAND PROCESSING & SSE STREAMING LIFECYCLE
+ * ============================================================================
+ *              Client Command (POST /api/ai/command or /stream)
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Entitlement Check & User Context     |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Cache Lookup (AiResponseCacheModel)  |
+ *                  +------------------+-------------------+
+ *                                /          \
+ *                       Cache Hit            Cache Miss
+ *                              /              \
+ *                             v                v
+ *                  [ Return Cached ]  +--------------------------------+
+ *                                     | Build Grounding Context:       |
+ *                                     | - Profile (Debts/Goals)        |
+ *                                     | - Txns (30-day window)         |
+ *                                     | - Journal entries              |
+ *                                     +---------------+----------------+
+ *                                                     |
+ *                                                     v
+ *                                     +--------------------------------+
+ *                                     | Call Python AI Core Client     |
+ *                                     | (FastAPI Subagent Graph)       |
+ *                                     +---------------+----------------+
+ *                                                     |
+ *                              Is Request SSE Stream or Synchronous JSON?
+ *                                     /              \
+ *                            Stream  /                \ Synchronous
+ *                                   v                  v
+ *                 +-----------------------+     +------------------------+
+ *                 | Send SSE Events:      |     | Save to Cache & Model  |
+ *                 | - event: routing      |     | Publish Domain Events  |
+ *                 | - event: trace        |     | Return ProcessResponse |
+ *                 | - event: complete     |     +------------------------+
+ *                 +-----------------------+
+ *
  * KEY FEATURES:
  * - AI command processing with caching
  * - Real-time AI streaming via Server-Sent Events (SSE)
@@ -275,7 +347,7 @@ export const processAICommand = async (req: Request, res: Response) => {
     // Fetch transactions and build finance grounding in parallel
     const [txResult, grounding] = await Promise.all([
       fetchTransactionsForAi({ orgId, userId: user._id }),
-      buildAiFinanceGrounding({ orgId, userId: user._id }),
+      buildAiFinanceGrounding({ orgId, userId: user._id, retrievalQuery: String(command || "") }),
     ]);
 
     // Build AI request
@@ -516,11 +588,15 @@ export const processAiStream = async (req: Request, res: Response) => {
       getOrgAiSettings(orgId),
     ]);
 
-    const txResult = await fetchTransactionsForAi({ orgId, userId: user._id });
+    const [txResult, grounding] = await Promise.all([
+      fetchTransactionsForAi({ orgId, userId: user._id }),
+      buildAiFinanceGrounding({ orgId, userId: user._id, retrievalQuery: String(command || "") }),
+    ]);
 
     const { request: aiRequest } = buildProcessRequest({
       userInput: command,
       profile,
+      financeContext: grounding.finance_context,
       orgId: orgId.toString(),
       userId: user._id.toString(),
       orgSettings,

@@ -5,6 +5,71 @@
  * and API keys for the Personal Finance application. It attempts JWT authentication
  * first, then falls back to API key authentication.
  *
+ * ============================================================================
+ * MINDMAP FLOW: DUAL-AUTHENTICATION GATEWAY & CONTEXT ATTACHMENT
+ * ============================================================================
+ * - Dual Authentication Gateway
+ *     ├── 1. Inbound Request Inspection
+ *     │   ├── Bearer JWT Header or Session Cookie
+ *     │   └── API Key Header (Authorization: Bearer pk_live_... or X-API-Key)
+ *     ├── 2. Primary Route: Stateless JWT Authentication
+ *     │   ├── Passport.js JWT strategy verification
+ *     │   ├── Secret signature validation & expiry check
+ *     │   ├── User document hydration -> req.user
+ *     │   └── Direct short-circuit to next() on success
+ *     ├── 3. Secondary Route: API Key Resolution Fallback
+ *     │   ├── Token extraction via extractRawApiKey()
+ *     │   ├── Database resolution via resolveApiKey()
+ *     │   ├── Revocation / expiration check
+ *     │   └── Key metadata attachment via attachApiKeyToRequest()
+ *     ├── 4. Entitlements & Metering Engine
+ *     │   ├── Tier quota evaluation via enforceFeatureLimit()
+ *     │   └── Usage telemetry recording via recordFeatureUsage()
+ *     └── 5. Context Injection & Error Triaging
+ *         ├── req.org & req.apiKey metadata attachment
+ *         ├── 401 UNAUTHORIZED if both credentials absent
+ *         ├── 401 API_KEY_INVALID if revoked or expired
+ *         └── 429 QUOTA_EXCEEDED if organization limits reached
+ *
+ * ============================================================================
+ * ASCII FLOW: DUAL-STACK AUTHENTICATION LIFECYCLE
+ * ============================================================================
+ *                       [ Incoming API Request ]
+ *                                  |
+ *                                  v
+ *                  +-------------------------------+
+ *                  | Attempt Passport JWT Strategy |
+ *                  +---------------+---------------+
+ *                                  |
+ *                        Did JWT Validate?
+ *                             /         \
+ *                      Yes   /           \ No / Absent
+ *                           v             v
+ *                 +-----------------+  +-------------------------------+
+ *                 | req.user = user |  | Extract API Key from:         |
+ *                 | Call next()     |  | - Authorization: Bearer       |
+ *                 +-----------------+  | - X-API-Key header            |
+ *                                      +---------------+---------------+
+ *                                                      |
+ *                                             Was API Key Provided?
+ *                                                   /     \
+ *                                            Yes   /       \ No
+ *                                                 v         v
+ *                 +---------------------------------+  +--------------------+
+ *                 | resolveApiKey(rawKey)           |  | Return 401         |
+ *                 +---------------+-----------------+  | code: UNAUTHORIZED |
+ *                                 |                    +--------------------+
+ *                        Is API Key Valid & Active?
+ *                               /      \
+ *                        Yes   /        \ No
+ *                             v          v
+ *                 +--------------------+  +-------------------------+
+ *                 | attachApiKeyToReq  |  | Return 401              |
+ *                 | enforceLimits()    |  | code: API_KEY_INVALID   |
+ *                 | recordUsage()      |  +-------------------------+
+ *                 | Call next()        |
+ *                 +--------------------+
+ *
  * KEY FEATURES:
  * - Dual authentication support (JWT and API key)
  * - JWT authentication via Passport.js
@@ -28,12 +93,13 @@ import mongoose from "mongoose"; // MongoDB ODM
 
 import passport from "../config/passport"; // Passport.js configuration
 import { resolveApiKey } from "../services/apiKeys"; // API key resolution service
-import ApiKeyModel from "../models/apiKeyModel"; // API key model
 import {
   enforceFeatureLimit,
   recordFeatureUsage,
 } from "../services/entitlements"; // Entitlement enforcement
 import { HttpError } from "./httpError"; // Custom HTTP error class
+import { extractRawApiKey, attachApiKeyToRequest } from "./apiKeyAuth"; // Shared API key utilities
+import { fireAndForget } from "../services/deadLetterQueue";
 
 /**
  * Authentication Middleware (JWT and API Key)
@@ -66,11 +132,7 @@ export const authAny: RequestHandler = (req, res, next) => {
         }
 
         // JWT authentication failed, try API key authentication
-        const header = String(req.header("authorization") || "");
-        const token = header.startsWith("Bearer ")
-          ? header.slice("Bearer ".length).trim()
-          : "";
-        const rawKey = token || String(req.header("x-api-key") || "").trim();
+        const rawKey = extractRawApiKey(req);
 
         // If no API key provided, return 401
         if (!rawKey) {
@@ -97,31 +159,8 @@ export const authAny: RequestHandler = (req, res, next) => {
           return;
         }
 
-        // Attach API key information to request
-        (req as any).apiKey = {
-          id: String((key as any)._id),
-          orgId: String((key as any).orgId),
-          createdByUserId: String((key as any).createdByUserId || ""),
-          scopes: Array.isArray((key as any).scopes)
-            ? (key as any).scopes.map((s: unknown) => String(s))
-            : [],
-          keyPrefix: String((key as any).keyPrefix || ""),
-        };
-
-        // Set organization context if not already set
-        if (!(req as any).org) {
-          (req as any).org = {
-            orgId: String((key as any).orgId),
-            memberId: "",
-            role: "owner",
-          };
-        }
-
-        // Update last used timestamp (fire-and-forget)
-        void ApiKeyModel.updateOne(
-          { _id: (key as any)._id },
-          { $set: { lastUsedAt: new Date() } },
-        ).catch(() => null);
+        // Attach API key metadata and org context (shared utility)
+        attachApiKeyToRequest(req, key);
 
         // Enforce feature limits and record usage
         const createdByUserId = String((key as any).createdByUserId || "");
@@ -159,18 +198,22 @@ export const authAny: RequestHandler = (req, res, next) => {
             throw enforceError;
           }
 
-          // Record feature usage (fire-and-forget)
-          await recordFeatureUsage({
-            orgId: orgObjectId,
-            userId: userObjectId,
-            feature: "api_requests",
-            units: 1,
-            requestId: req.requestId,
-            context: {
-              path: req.path,
-              method: req.method,
-            },
-          }).catch(() => null);
+          // Record feature usage (fire-and-forget with DLQ tracking)
+          fireAndForget(
+            recordFeatureUsage({
+              orgId: orgObjectId,
+              userId: userObjectId,
+              feature: "api_requests",
+              units: 1,
+              requestId: req.requestId,
+              context: {
+                path: req.path,
+                method: req.method,
+              },
+            }),
+            "record_feature_usage",
+            { orgId: String(orgObjectId), userId: String(userObjectId) },
+          );
         }
 
         // Continue to next middleware

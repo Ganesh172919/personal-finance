@@ -36,6 +36,7 @@ const transactionsCsvParamsSchema = z
     date_to: isoDateString.optional(),
     tx_type: transactionTypeSchema.optional(),
     category: z.string().trim().min(1).max(100).optional(),
+    columns: z.array(z.string().trim().min(1).max(50)).min(1).max(25).optional(),
   })
   .strict();
 

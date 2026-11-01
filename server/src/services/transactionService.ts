@@ -6,6 +6,78 @@
  * processing. It is a focused data-access layer that sits between the
  * TransactionModel (MongoDB) and the AI request builder.
  *
+ * ============================================================================
+ * MINDMAP FLOW: TRANSACTION RETRIEVAL & AI CONTEXT WINDOWING
+ * ============================================================================
+ * - Transaction AI Retrieval Service
+ *     ├── 1. Pre-Flight Migration Check
+ *     │   └── ensureUserTransactionsMigrated(orgId, userId)
+ *     ├── 2. Scoping & Temporal Filtering
+ *     │   ├── Multi-tenant Filter: { orgId, userId }
+ *     │   └── Date Cutoff: maxAgeDays (default: 365 days ago)
+ *     ├── 3. Concurrent Database Querying (Promise.all)
+ *     │   ├── countDocuments(filter) -> Total matching transaction volume
+ *     │   └── find(filter).sort({ date: -1 }).limit(maxItems).lean() -> Top 300 recent
+ *     ├── 4. Chronological Re-ordering
+ *     │   └── .reverse() -> Flips descending fetch to ascending time for LLM reasoning
+ *     ├── 5. Type Normalization (AiTransaction)
+ *     │   ├── Amount: Positive for income, negative for expenses
+ *     │   ├── Category: Non-empty fallback string
+ *     │   ├── Description: Guaranteed string, trimmed
+ *     │   └── Type: 'income' | 'expense' | 'investment'
+ *     └── 6. Telemetry & Quota Stats
+ *         └── totalTransactions, sentTransactions, droppedTransactions
+ *
+ * ============================================================================
+ * ASCII FLOW: DATA ACCESS & TEMPORAL NORMALIZATION PIPELINE
+ * ============================================================================
+ *               [ AI Controller / Command Pipeline Request ]
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  |  fetchTransactionsForAi(org, user)   |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | ensureUserTransactionsMigrated()     |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Compute Cutoff: now - 365 days       |
+ *                  | Filter: { orgId, userId, date>=cut } |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  |    Promise.all Concurrent Queries    |
+ *                  +------------------+-------------------+
+ *                                /          \
+ *                               /            \
+ *                              v              v
+ *                  [ countDocuments ]    [ find().limit(300).lean() ]
+ *                  Total Pool Size       Most Recent 300 Items (Desc)
+ *                              \              /
+ *                               \            /
+ *                                v          v
+ *                  +--------------------------------------+
+ *                  | .reverse() -> Chronological (Asc)    |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Normalize to AiTransaction[]         |
+ *                  | - Ensure positive income / neg spend |
+ *                  | - Compute droppedTransactions count  |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Return AiTransactionFetchResult      |
+ *                  | Ready for aiRequestBuilder & Core    |
+ *                  +--------------------------------------+
+ *
  * WHY A SEPARATE SERVICE?
  * The AI service needs transactions in a specific format (AiTransaction type)
  * with specific limits (max items, max age). Rather than embedding this logic

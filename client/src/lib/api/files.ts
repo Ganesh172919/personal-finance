@@ -26,6 +26,7 @@
 
 import type { IWorkflowTraceEntry } from "@/types";
 import type { Plan } from "@/types/ai.types";
+import type { EvidenceItem } from "@/types/evidence.types";
 
 import { apiClient } from "./core";
 
@@ -46,6 +47,7 @@ export interface WorkspaceFileAnalysis {
   summary: string;
   response: string;
   plan?: Plan;
+  evidence?: EvidenceItem[];
   analysisType?: string;
   agentsInvolved?: string[];
   workflowTrace?: IWorkflowTraceEntry[];
@@ -67,6 +69,7 @@ export interface WorkspaceFileRecord {
   status: WorkspaceFileStatus;
   extractedPreview?: string;
   extractedText?: string;
+  extractedPageCount?: number;
   extractionWarnings: string[];
   lastAnalyzedAt?: string;
   analysis?: WorkspaceFileAnalysis;

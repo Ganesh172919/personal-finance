@@ -33,7 +33,7 @@ describe("share links API", () => {
     const csrfToken = csrf.body.csrf_token as string;
 
     const goalResp = await request(app)
-      .post("/api/v1/goals")
+      .post("/api/goals")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -48,7 +48,7 @@ describe("share links API", () => {
     expect(goalResp.status).toBe(201);
 
     const createShare = await request(app)
-      .post("/api/v1/shares/financial-story")
+      .post("/api/shares/financial-story")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -64,7 +64,7 @@ describe("share links API", () => {
     expect(typeof createShare.body?.share?.share_url).toBe("string");
 
     const token = String(createShare.body.token);
-    const publicResp = await request(app).get(`/api/v1/public/shares/financial-story/${encodeURIComponent(token)}`);
+    const publicResp = await request(app).get(`/api/public/shares/financial-story/${encodeURIComponent(token)}`);
     expect(publicResp.status).toBe(200);
 
     const payload = publicResp.body?.payload;
@@ -84,7 +84,7 @@ describe("share links API", () => {
     const csrfToken = csrf.body.csrf_token as string;
 
     const goalResp = await request(app)
-      .post("/api/v1/goals")
+      .post("/api/goals")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -99,7 +99,7 @@ describe("share links API", () => {
     expect(goalResp.status).toBe(201);
 
     const createShare = await request(app)
-      .post("/api/v1/shares/financial-story")
+      .post("/api/shares/financial-story")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -111,7 +111,7 @@ describe("share links API", () => {
 
     expect(createShare.status).toBe(201);
     const token = String(createShare.body.token);
-    const publicResp = await request(app).get(`/api/v1/public/shares/financial-story/${encodeURIComponent(token)}`);
+    const publicResp = await request(app).get(`/api/public/shares/financial-story/${encodeURIComponent(token)}`);
     expect(publicResp.status).toBe(200);
     expect(publicResp.body?.payload?.goals?.[0]?.name).toBe("Emergency Fund");
     expect(publicResp.body?.payload?.goals?.[0]?.deadline).toBe("2027-01-01");

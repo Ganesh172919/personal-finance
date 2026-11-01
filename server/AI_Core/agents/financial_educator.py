@@ -1,4 +1,4 @@
-"""
+r"""
 financial_educator.py - Financial Educator Agent
 ==================================================
 
@@ -15,6 +15,75 @@ Key responsibilities
 - Invoke the LLM with a system prompt that constrains the response to
   definitions, explanations, and simple examples (no personalised advice).
 - Fall back to a deterministic explanation if the LLM is unavailable.
+
+MINDMAP FLOW
+------------
+::
+
+    FinancialEducatorAgent
+    ├── 1. Concept Extraction & Parsing
+    │   ├── Deterministic Regex Prefix Stripping ("what is", "how does", etc.)
+    │   └── Topic Normalization (lowercase, trimmed keyword)
+    ├── 2. In-Memory LRU Cache Check
+    │   ├── Key: Normalized Concept String
+    │   ├── TTL Verification (30-minute expiration window)
+    │   ├── Max Capacity Clamp (256 entries with LRU eviction)
+    │   └── Immediate Return on Valid Cache Hit
+    ├── 3. LLM Educational Synthesis
+    │   ├── System Prompt: Educational Clarity & Objective Explanation
+    │   ├── Guardrails: Prohibit Individual Specific Advice or Speculation
+    │   └── Multi-Provider Failover LLM Execution
+    └── 4. Graceful Fallback & Result Delivery
+        ├── Fallback to Pre-written Deterministic Educational Definitions
+        ├── Update LRU Cache with Fresh Response
+        └── Structured Output Formatting for Chat & Master Agent
+
+ASCII FLOW
+----------
+::
+
+    +---------------------------------------------------------------+
+    |             Input: user_input ("What is SIP?")                |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |              Concept Extraction via Regex                     |
+    |  - Strip conversational preamble                              |
+    |  - Extract key topic: e.g., "sip", "compound interest"        |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                 Query In-Memory LRU Cache                     |
+    +-------------------------------+-------------------------------+
+                                    |
+                       [Is Cached & Non-Expired?]
+                               /          \
+                             YES           NO
+                             /              \
+                            v                v
+     +-------------------------------+   +-----------------------------+
+     | Return Cached Educational     |   | Invoke LLM with System      |
+     | Markdown Response             |   | Educational Prompt          |
+     +-------------------------------+   +--------------+--------------+
+                                                        |
+                                                [LLM Call Succeeded?]
+                                                       /      \
+                                                     YES       NO
+                                                     /          \
+                                                    v            v
+                                      +------------------+  +------------------+
+                                      | Use LLM Prose    |  | get_fallback_    |
+                                      | & formatting     |  | response()       |
+                                      +--------+---------+  +--------+---------+
+                                               \                    /
+                                                \                  /
+                                                 v                v
+                                         +-----------------------------+
+                                         | Cache Entry (TTL 30 mins)   |
+                                         | Return Result Dictionary    |
+                                         +-----------------------------+
 
 Design decisions
 ----------------
@@ -33,7 +102,6 @@ from typing import Any, Dict, Optional, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from config import settings
 from utils import create_llm, get_fallback_response
 
 logger = logging.getLogger(__name__)

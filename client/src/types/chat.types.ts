@@ -16,6 +16,7 @@
  */
 
 import type { Plan, ToolCall } from "@/types/ai.types";
+import type { EvidenceItem } from "@/types/evidence.types";
 
 /** File attachment in a chat message (references a workspace file) */
 export interface IChatAttachment {
@@ -39,6 +40,7 @@ export interface IChatSession {
 }
 
 export interface IChatMessageMetadata {
+  generatedDocuments?: Array<{ workspaceFileId: string; fileId: string; title: string; filename: string; mimeType: string; sizeBytes: number }>;
   attachments?: IChatAttachment[];
   analysisType?: string;
   agentsInvolved?: string[];
@@ -50,13 +52,7 @@ export interface IChatMessageMetadata {
   taskIds?: string[];
   appliedTaskIds?: string[];
   detailedAnalysis?: Record<string, unknown>;
-  evidence?: Array<{
-    id?: string;
-    type?: string;
-    label?: string;
-    snippet?: string;
-    entity_id?: string;
-  }>;
+  evidence?: EvidenceItem[];
   confidence?: {
     score?: number;
     label?: string;

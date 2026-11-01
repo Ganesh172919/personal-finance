@@ -1,0 +1,153 @@
+# ══════════════════════════════════════════════════════════════════════
+# FinWise — Test Pipeline
+# ══════════════════════════════════════════════════════════════════════
+# Runs on every push and pull request to main/develop branches.
+# Tests all three tiers: client, server, AI Core.
+# ══════════════════════════════════════════════════════════════════════
+
+name: Tests
+
+on:
+  push:
+    branches: [main, develop, features/*]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Client Tests ────────────────────────────────────────────────────
+  client-tests:
+    name: Client Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+        env:
+          CI: true
+
+      - name: Build client
+        run: npm run build
+
+  # ── Server Tests ────────────────────────────────────────────────────
+  server-tests:
+    name: Server Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:ci
+        env:
+          CI: true
+          NODE_ENV: test
+          JWT_SECRET: test-jwt-secret-for-ci
+          MONGO_URI: mongodb://localhost:27017/finwise-test
+
+      - name: Build server and worker
+        run: npm run build
+
+  # ── AI Core Tests ───────────────────────────────────────────────────
+  ai-core-tests:
+    name: AI Core Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server/AI_Core
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: server/AI_Core/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+        env:
+          CI: true
+          LLM_PROVIDER: ""
+
+      - name: Run evals
+        run: pytest evals/ -v --tb=short -m "not latency"
+        env:
+          CI: true
+          LLM_PROVIDER: ""
+
+  # ── Lint ────────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
+
+      - name: Install client dependencies
+        run: cd client && npm ci
+
+      - name: Lint client
+        run: cd client && npm run lint
+
+      - name: Install server dependencies
+        run: cd server && npm ci
+
+      - name: Type check server
+        run: cd server && npx tsc --noEmit
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Lint AI Core
+        run: cd server/AI_Core && pip install ruff && ruff check .

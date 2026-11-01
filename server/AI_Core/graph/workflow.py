@@ -1,4 +1,4 @@
-"""
+r"""
 workflow.py - LangGraph Multi-Agent Financial Workflow
 ======================================================
 
@@ -25,11 +25,109 @@ Key features:
   subtasks with status (pending/in_progress/completed/failed).
 - **Verification phase** -- before synthesis, a lightweight QA step checks
   that recommendations are consistent and feasible.
-- **Parallel execution** -- the comprehensive analysis node runs all four
-  specialist agents concurrently using ``ThreadPoolExecutor``.
+- **Selective parallel execution** -- comprehensive and decomposed requests
+  share a bounded specialist pool and run only relevant agents.
 - **Retry with graceful degradation** -- each node is wrapped in
   ``_execute_with_trace`` which retries up to ``DEFAULT_MAX_RETRIES`` times
   before propagating the error.
+
+MINDMAP FLOW
+------------
+::
+
+    FinancialWorkflow (LangGraph StateGraph)
+    ├── 1. Workflow Initialization & Component Registration
+    │   ├── Agents Instantiation (Master, Income, Budget, Invest, Debt, Educator, Decomposer, Aggregator)
+    │   ├── SubAgentManager & Execution Concurrency Pool
+    │   ├── SessionManager Checkpointing (SQLite lazy-loaded store)
+    │   └── StateGraph Nodes & Edge Bindings
+    ├── 2. State Ingestion & Checkpoint Restoration
+    │   ├── GraphState Ingestion (user_input, profile, context, traces)
+    │   ├── Resume Check: Restore GraphState from Checkpoint if present
+    │   └── Phase Tracking (INITIALIZED -> ROUTING -> EXECUTING -> VERIFYING -> SYNTHESIZING)
+    ├── 3. Master Routing & Task Decomposition Node
+    │   ├── Compute Deterministic Analysis Type (MasterAgent)
+    │   ├── Request Complexity Evaluation (TaskDecomposer)
+    │   │   ├── Simple Query -> Single Specialist Route
+    │   │   └── Complex Query -> Subtask Decomposition DAG
+    ├── 4. Parallel Specialist Execution Engine
+    │   ├── Single Agent Branch: Dispatches to target specialist node
+    │   └── Comprehensive Branch (_comprehensive_analysis_node):
+    │       ├── Select Relevant Specialists via agent_routing
+    │       ├── Concurrent ThreadPoolExecutor Execution
+    │       ├── Resilient Exception Catching & Partial Output Preservation
+    │       └── Structured Trace Logging (status, duration, error)
+    ├── 5. Verification Phase Node (_verification_node)
+    │   ├── Feasibility Check: Savings + Debt + Living Costs vs Total Income
+    │   ├── Sanity Metric Validation
+    │   └── Risk Flag Generation (e.g., negative free cashflow)
+    └── 6. Synthesis & Final Response Node (_synthesize_node)
+        ├── Aggregator or Master Synthesis
+        ├── Tool Suggestions Attachment
+        ├── Final Output State Serialization
+        └── Checkpoint State Completion
+
+ASCII FLOW
+----------
+::
+
+    +-------------------------------------------------------------------+
+    |                 FinancialWorkflow.run(initial_state)              |
+    +---------------------------------+---------------------------------+
+                                      |
+                                      v
+    +-------------------------------------------------------------------+
+    |       1. Checkpoint Check: Resume Existing Session or Start Fresh |
+    +---------------------------------+---------------------------------+
+                                      |
+                                      v
+    +-------------------------------------------------------------------+
+    |                      Node: master_agent                           |
+    |  - Classify query into AnalysisType                               |
+    |  - If complex, trigger TaskDecomposer (subtasks generated)        |
+    +---------------------------------+---------------------------------+
+                                      |
+                      [Evaluate Conditional Edge Routing]
+                 /            /           |           \            \
+                /            /            |            \            \
+               v            v             v             v            v
+        +-----------+ +-----------+ +-----------+ +-----------+ +-------------+
+        |  Income   | |  Budget   | | Invest.   | |   Debt    | | Financial   |
+        |  Analyzer | |  Planner  | |  Advisor  | | Optimizer | | Educator    |
+        +-----+-----+ +-----+-----+ +-----+-----+ +-----+-----+ +------+------+
+              |             |             |             |              |
+              \             |             /             /              v
+               \            |            /             /        +-------------+
+                \           |           /             /         | Return Edu. |
+                 v          v          v             v          | Response    |
+          +--------------------------------------------+        +------+------+
+          | Or: comprehensive_analysis Node            |               |
+          |  - Run required specialists in parallel    |               |
+          |  - SubAgentManager topological execution   |               |
+          |  - Collect all analyses & traces           |               |
+          +---------------------+----------------------+               |
+                                |                                      |
+                                v                                      |
+          +--------------------------------------------+               |
+          |            Node: verification              |               |
+          |  - Sanity check cash flow math             |               |
+          |  - Validate recommendations consistency    |               |
+          +---------------------+----------------------+               |
+                                |                                      |
+                                v                                      |
+          +--------------------------------------------+               |
+          |             Node: synthesize               |               |
+          |  - Master / Aggregator synthesizes plan    |               |
+          |  - Generate markdown & action tool calls   |               |
+          +---------------------+----------------------+               |
+                                |                                      |
+                                +-------------------+------------------+
+                                                    |
+                                                    v
+                                          +-------------------+
+                                          |     Node: END     |
+                                          | Final GraphState  |
+                                          +-------------------+
 
 Design decisions
 ----------------
@@ -41,15 +139,36 @@ Design decisions
 """
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
+from uuid import uuid4
 
 from langgraph.graph import END, StateGraph
 
-from .state import AgentState, AnalysisType, WorkflowPhase, SubtaskStatus
+from utils.agent_execution import AgentExecution
+from utils.agent_routing import select_specialists
+
+from .state import AgentState, AnalysisType, SubtaskStatus, WorkflowPhase
 
 logger = logging.getLogger(__name__)
+
+# Lazy import to avoid circular dependency at module level.
+_workflow_logger_cls = None
+
+
+class WorkflowNodeError(RuntimeError):
+    def __init__(self, message: str, workflow_trace: List[Dict[str, Any]]):
+        super().__init__(message)
+        self.workflow_trace = workflow_trace
+
+
+def _get_workflow_logger(workflow_id: str, phase: Optional[str] = None):
+    """Return a WorkflowLogger, importing the class on first use."""
+    global _workflow_logger_cls
+    if _workflow_logger_cls is None:
+        from utils.helpers import WorkflowLogger
+        _workflow_logger_cls = WorkflowLogger
+    return _workflow_logger_cls(workflow_id=workflow_id, phase=phase)
 
 
 class FinancialWorkflow:
@@ -75,6 +194,8 @@ class FinancialWorkflow:
         from agents.income_expense_analyzer import IncomeExpenseAnalyzerAgent
         from agents.investment_advisor import InvestmentAdvisorAgent
         from agents.master_agent import MasterFinancialStrategistAgent
+        from agents.sub_agent_manager import SubAgentManager
+        from agents.task_decomposer import TaskDecomposerAgent
 
         # Instantiate all specialist agents (stateless, reusable).
         self.master_agent = MasterFinancialStrategistAgent()
@@ -83,6 +204,18 @@ class FinancialWorkflow:
         self.investment_advisor = InvestmentAdvisorAgent()
         self.debt_optimizer = DebtOptimizerAgent()
         self.financial_educator = FinancialEducatorAgent()
+
+        # Sub-agent architecture components.
+        self.task_decomposer = TaskDecomposerAgent()
+        self.sub_agent_manager = SubAgentManager(
+            agent_registry={
+                "income_expense_analyzer": self.income_analyzer,
+                "budget_planner": self.budget_planner,
+                "investment_advisor": self.investment_advisor,
+                "debt_optimizer": self.debt_optimizer,
+                "financial_educator": self.financial_educator,
+            }
+        )
 
         # Build and compile the LangGraph state graph.
         self.workflow = self._build_workflow()
@@ -115,11 +248,17 @@ class FinancialWorkflow:
                           ├─> investment_advisor   ──────> synthesize
                           ├─> debt_optimizer       ──────> synthesize
                           ├─> financial_educator   ──────> END
-                          └─> comprehensive_analysis ──> verification ──> synthesize
+                          ├─> comprehensive_analysis ──> verification ──> synthesize
+                          └─> task_decomposer ──> sub_agent_pool ──> verification ──> synthesize
 
         The ``master_agent`` node uses conditional edges to route to the
         appropriate specialist based on the analysis type determined by
         ``MasterFinancialStrategistAgent.determine_analysis_type()``.
+
+        When the analysis type is ``DECOMPOSE`` (complex multi-domain request),
+        the sub-agent pipeline is used: ``task_decomposer`` breaks the request
+        into subtasks and ``sub_agent_pool`` executes them in parallel.
+        Outputs are normalized for verification, followed by one final synthesis.
 
         Note: ``financial_educator`` goes directly to ``END`` (no synthesis
         needed) because educational responses are self-contained.
@@ -134,6 +273,8 @@ class FinancialWorkflow:
         workflow.add_node("debt_optimizer", self._debt_optimizer_node)
         workflow.add_node("financial_educator", self._financial_educator_node)
         workflow.add_node("comprehensive_analysis", self._comprehensive_analysis_node)
+        workflow.add_node("task_decomposer", self._task_decomposer_node)
+        workflow.add_node("sub_agent_pool", self._sub_agent_pool_node)
         workflow.add_node("verification", self._verification_node)
         workflow.add_node("synthesize", self._synthesize_node)
 
@@ -152,6 +293,7 @@ class FinancialWorkflow:
                 AnalysisType.DEBT_OPTIMIZATION.value: "debt_optimizer",
                 AnalysisType.FINANCIAL_EDUCATION.value: "financial_educator",
                 AnalysisType.COMPREHENSIVE.value: "comprehensive_analysis",
+                AnalysisType.DECOMPOSE.value: "task_decomposer",
                 "end": END,
             },
         )
@@ -169,11 +311,20 @@ class FinancialWorkflow:
         workflow.add_edge("financial_educator", END)
         workflow.add_edge("synthesize", END)
 
+        # Sub-agent pipeline: plan -> execute -> verify -> synthesize once
+        workflow.add_edge("task_decomposer", "sub_agent_pool")
+        workflow.add_edge("sub_agent_pool", "verification")
+
         return workflow.compile()
 
     def _utc_now_iso(self) -> str:
         """Return the current UTC time as an ISO 8601 string."""
         return datetime.now(timezone.utc).isoformat()
+
+    @staticmethod
+    def _perf_counter() -> float:
+        """Return a monotonic performance counter (seconds)."""
+        return __import__("time").perf_counter()
 
     def _build_trace_entry(
         self,
@@ -344,9 +495,8 @@ class FinancialWorkflow:
         2. Calls the ``handler`` (a zero-argument callable that runs the agent).
         3. On success: appends a trace entry, saves a checkpoint, compacts
            session memory, and returns the handler's output dict.
-        4. On failure with retries remaining: increments ``retry_count`` in
-           the state and returns a partial update (LangGraph will re-invoke
-           the node).
+        4. On failure with retries remaining: retries the handler within this
+           node before the graph can advance.
         5. On failure after max retries: saves an error checkpoint, logs the
            exception, and re-raises.
 
@@ -368,44 +518,42 @@ class FinancialWorkflow:
             State updates to merge into the graph state.
         """
         trace = list(state.get("workflow_trace") or [])
-        started_at = self._utc_now_iso()
-        retry_count = state.get("retry_count", 0)
-        max_retries = state.get("max_retries", self.DEFAULT_MAX_RETRIES)
+        max_retries = max(0, int(state.get("max_retries", self.DEFAULT_MAX_RETRIES)))
+        workflow_id = state.get("session_id") or "no-session"
+        wf_logger = _get_workflow_logger(workflow_id, phase)
 
-        try:
-            updates = handler() or {}
-            ended_at = self._utc_now_iso()
-            status = "error" if updates.get("error") else "success"
-            trace.append(self._build_trace_entry(agent_name, started_at, ended_at, status, updates.get("error"), phase))
+        # Retry in this node. Returning a partial update would advance the graph
+        # to the next node rather than retrying the failed operation.
+        for attempt in range(max_retries + 1):
+            execution = AgentExecution(agent_name, phase)
+            try:
+                with execution:
+                    updates = handler() or {}
+                    execution.result = updates
+            except Exception as exc:
+                entry = dict(execution.trace)
+                entry["status"] = "retry" if attempt < max_retries else "error"
+                trace.append(entry)
+                wf_logger.warning("node_failed: agent=%s attempt=%d error=%s", agent_name, attempt + 1, str(exc))
+                if attempt < max_retries:
+                    continue
+                self._save_checkpoint(state, "error", agent_name, error=str(exc))
+                raise WorkflowNodeError(str(exc), trace) from exc
+
+            # Pool handlers include their worker traces; preserve those entries.
+            child_trace = updates.get("workflow_trace")
+            if child_trace:
+                trace.extend(entry for entry in child_trace if entry not in trace)
+            trace.append(execution.trace)
             updates["workflow_trace"] = trace
             updates["phase"] = phase
-
-            # Save checkpoint on success for session resumption.
+            updates["retry_count"] = 0
+            updates["error"] = updates.get("error")
+            wf_logger.info("node_completed: agent=%s status=%s latency_ms=%.1f", agent_name,
+                           execution.trace["status"], execution.trace["latencyMs"])
             self._save_checkpoint(state, phase, agent_name, updates)
             self._compact_session_memory(state, phase, updates)
-
             return updates
-        except Exception as exc:
-            ended_at = self._utc_now_iso()
-            error_msg = str(exc)
-
-            # Retry logic: if retries remain, return a partial state update
-            # with an incremented retry count.  LangGraph will re-invoke this
-            # node, and the handler can try again.
-            if retry_count < max_retries:
-                logger.warning("%s node failed (retry %d/%d): %s", agent_name, retry_count + 1, max_retries, error_msg)
-                trace.append(self._build_trace_entry(agent_name, started_at, ended_at, "retry", error_msg, phase))
-                return {
-                    "workflow_trace": trace,
-                    "retry_count": retry_count + 1,
-                    "error": error_msg,
-                }
-
-            # Max retries exceeded -- save error checkpoint and propagate.
-            trace.append(self._build_trace_entry(agent_name, started_at, ended_at, "error", error_msg, phase))
-            self._save_checkpoint(state, "error", agent_name, error=error_msg)
-            logger.exception("%s node failed after %d retries", agent_name, retry_count)
-            raise
 
     def _route_based_on_analysis(self, state: AgentState) -> str:
         """Conditional edge function: route to the appropriate specialist node.
@@ -416,7 +564,7 @@ class FinancialWorkflow:
         "financial_education" since personalised analysis requires data.
         """
         analysis_type = str(state.get("current_analysis", {}).get("type") or AnalysisType.COMPREHENSIVE.value).lower()
-        if not state.get("user_profile") and analysis_type == AnalysisType.COMPREHENSIVE.value:
+        if not state.get("user_profile") and analysis_type in (AnalysisType.COMPREHENSIVE.value, AnalysisType.DECOMPOSE.value):
             return AnalysisType.FINANCIAL_EDUCATION.value
         return analysis_type
 
@@ -437,12 +585,17 @@ class FinancialWorkflow:
             session_summary=session_summary,
         )
         analysis_value = analysis_type.value if hasattr(analysis_type, "value") else str(analysis_type).lower()
+        if not user_profile and analysis_value in (AnalysisType.COMPREHENSIVE.value, AnalysisType.DECOMPOSE.value):
+            analysis_value = AnalysisType.FINANCIAL_EDUCATION.value
+        selected_agents = ["financial_educator"] if analysis_value == AnalysisType.FINANCIAL_EDUCATION.value else select_specialists(
+            user_input, user_profile, conversation_history, session_summary
+        )
 
         # Decompose complex requests into subtasks for progress tracking.
-        subtasks = self._decompose_request(user_input, analysis_value, user_profile)
+        subtasks = self._decompose_request(user_input, analysis_value, user_profile, selected_agents)
 
         return {
-            "current_analysis": {"type": analysis_value},
+            "current_analysis": {"type": analysis_value, "selected_agents": selected_agents},
             "next_agent": analysis_value,
             "subtasks": subtasks,
             "phase": WorkflowPhase.ROUTING.value,
@@ -453,6 +606,7 @@ class FinancialWorkflow:
         user_input: str,
         analysis_type: str,
         user_profile: Optional[Dict[str, Any]],
+        selected_agents: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """Decompose a request into subtasks for progress tracking.
 
@@ -477,54 +631,19 @@ class FinancialWorkflow:
             }
         )
 
-        # For comprehensive analysis, add subtasks for each specialist
         if analysis_type == AnalysisType.COMPREHENSIVE.value:
-            if user_profile:
-                if user_profile.get("transactions"):
-                    subtasks.append(
-                        {
-                            "id": "subtask_income_expense",
-                            "type": "income_expense",
-                            "status": SubtaskStatus.PENDING.value,
-                            "description": "Analyze income and expenses",
-                            "priority": 1,
-                            "can_parallel": True,
-                        }
-                    )
-
-                subtasks.append(
-                    {
-                        "id": "subtask_budget",
-                        "type": "budget_planning",
+            task_types = {
+                "income_expense_analyzer": "income_expense", "budget_planner": "budget_planning",
+                "investment_advisor": "investment_advice", "debt_optimizer": "debt_optimization",
+            }
+            for agent in selected_agents or select_specialists(user_input, user_profile):
+                if agent in task_types:
+                    subtasks.append({
+                        "id": f"subtask_{agent}", "type": task_types[agent],
                         "status": SubtaskStatus.PENDING.value,
-                        "description": "Create budget plan",
-                        "priority": 1,
-                        "can_parallel": True,
-                    }
-                )
-
-                subtasks.append(
-                    {
-                        "id": "subtask_investment",
-                        "type": "investment_advice",
-                        "status": SubtaskStatus.PENDING.value,
-                        "description": "Generate investment recommendations",
-                        "priority": 2,
-                        "can_parallel": True,
-                    }
-                )
-
-                if user_profile.get("debts"):
-                    subtasks.append(
-                        {
-                            "id": "subtask_debt",
-                            "type": "debt_optimization",
-                            "status": SubtaskStatus.PENDING.value,
-                            "description": "Optimize debt repayment",
-                            "priority": 1,
-                            "can_parallel": True,
-                        }
-                    )
+                        "description": f"Run {agent.replace('_', ' ')} analysis",
+                        "priority": 1, "can_parallel": True,
+                    })
 
         # Add verification and synthesis as final subtasks
         subtasks.append(
@@ -560,19 +679,26 @@ class FinancialWorkflow:
         """Update subtask status in state."""
         subtasks = list(state.get("subtasks") or [])
         for subtask in subtasks:
-            if subtask["type"] == subtask_type:
+            if subtask.get("type") == subtask_type:
                 subtask["status"] = status.value
                 break
         return subtasks
 
     def _master_agent_node(self, state: AgentState) -> Dict[str, Any]:
         logger.info("Master agent processing request")
-        return self._execute_with_trace(
+        result = self._execute_with_trace(
             state,
             "master_agent",
             lambda: self._run_master(state),
             phase=WorkflowPhase.ROUTING.value,
         )
+        analysis_type = result.get("current_analysis", {}).get("type", "unknown")
+        logger.info(
+            "Routing decision: type=%s",
+            analysis_type,
+            extra={"event": "routing_decision", "analysis_type": analysis_type, "agent_name": "master_agent"},
+        )
+        return result
 
     def _run_income_analysis(self, user_profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         if not user_profile:
@@ -657,116 +783,56 @@ class FinancialWorkflow:
 
     def _financial_educator_node(self, state: AgentState) -> Dict[str, Any]:
         logger.info("Financial educator processing request")
-        return self._execute_with_trace(
+        updates = self._execute_with_trace(
             state,
             "financial_educator",
             lambda: self._run_financial_education(state),
             phase=WorkflowPhase.EXECUTION.value,
         )
-
-    def _run_with_subtrace(
-        self,
-        trace: list[Dict[str, Any]],
-        agent_name: str,
-        handler: Callable[[], Dict[str, Any]],
-    ) -> Tuple[Dict[str, Any], list[Dict[str, Any]]]:
-        started_at = self._utc_now_iso()
-        try:
-            updates = handler() or {}
-            ended_at = self._utc_now_iso()
-            status = "error" if updates.get("error") else "success"
-            trace.append(self._build_trace_entry(agent_name, started_at, ended_at, status, updates.get("error")))
-            return updates, trace
-        except Exception as exc:
-            ended_at = self._utc_now_iso()
-            trace.append(self._build_trace_entry(agent_name, started_at, ended_at, "error", str(exc)))
-            raise
+        updates["phase"] = WorkflowPhase.COMPLETE.value
+        return updates
 
     def _comprehensive_analysis_node(self, state: AgentState) -> Dict[str, Any]:
-        """Run all four specialist agents, reusing any outputs already in state.
-
-        This node is used for ``COMPREHENSIVE`` analysis requests.  It:
-        1. Checks which specialist outputs already exist in the state (e.g.
-           from a previous checkpoint).
-        2. Runs the remaining specialists **in parallel** using a
-           ``ThreadPoolExecutor`` with up to 4 workers.
-        3. Collects all results and returns a merged state update.
-
-        Parallel execution significantly reduces wall-clock latency for
-        comprehensive requests (four agents instead of sequential).
-        """
-        logger.info("Comprehensive analysis: running all deterministic specialists")
-        trace = list(state.get("workflow_trace") or [])
-        comprehensive_started = self._utc_now_iso()
-
-        user_profile = state.get("user_profile")
-        existing_outputs = {
-            "income_expense_analyzer": {"income_analysis": state.get("income_analysis")} if state.get("income_analysis") else None,
-            "budget_planner": {"budget_plan": state.get("budget_plan")} if state.get("budget_plan") else None,
-            "investment_advisor": {"investment_advice": state.get("investment_advice")} if state.get("investment_advice") else None,
-            "debt_optimizer": {"debt_optimization": state.get("debt_optimization")} if state.get("debt_optimization") else None,
-        }
-
-        jobs = {
-            "income_expense_analyzer": lambda: self._run_income_analysis(user_profile),
-            "budget_planner": lambda: self._run_budget_plan(user_profile),
-            "investment_advisor": lambda: self._run_investment_advice(user_profile),
-            "debt_optimizer": lambda: self._run_debt_optimization(user_profile),
-        }
-
-        results: Dict[str, Dict[str, Any]] = {}
-        pending_jobs = {
-            name: handler for name, handler in jobs.items()
-            if existing_outputs.get(name) is None
-        }
-
-        if pending_jobs:
-            with ThreadPoolExecutor(max_workers=min(4, len(pending_jobs))) as executor:
-                future_map = {executor.submit(handler): name for name, handler in pending_jobs.items()}
-                for future in as_completed(future_map):
-                    name = future_map[future]
-                    updates, trace = self._run_with_subtrace(trace, name, lambda future=future: future.result())
-                    results[name] = updates
-
-        for name, existing in existing_outputs.items():
-            if existing is not None:
-                results[name] = existing
-                trace.append(
-                    self._build_trace_entry(
-                        name,
-                        comprehensive_started,
-                        self._utc_now_iso(),
-                        "reused",
-                        phase=WorkflowPhase.EXECUTION.value,
-                    )
-                )
-
-        comprehensive_ended = self._utc_now_iso()
-        trace.append(
-            self._build_trace_entry(
-                "comprehensive_analysis",
-                comprehensive_started,
-                comprehensive_ended,
-                "success",
-                phase=WorkflowPhase.EXECUTION.value,
-            )
+        """Run relevant specialists once, with the shared timeout/retry policy."""
+        user_profile = state.get("user_profile") or {}
+        selected = (state.get("current_analysis") or {}).get("selected_agents") or select_specialists(
+            state.get("user_input", ""), user_profile, state.get("conversation_history"), state.get("session_summary")
         )
-
-        # Update subtask statuses
-        subtasks = list(state.get("subtasks") or [])
-        for subtask in subtasks:
-            if subtask["type"] in ["income_expense", "budget_planning", "investment_advice", "debt_optimization"]:
-                subtask["status"] = SubtaskStatus.COMPLETED.value
-
-        return {
-            "income_analysis": (results.get("income_expense_analyzer") or {}).get("income_analysis"),
-            "budget_plan": (results.get("budget_planner") or {}).get("budget_plan"),
-            "investment_advice": (results.get("investment_advisor") or {}).get("investment_advice"),
-            "debt_optimization": (results.get("debt_optimizer") or {}).get("debt_optimization"),
-            "workflow_trace": trace,
-            "subtasks": subtasks,
-            "phase": WorkflowPhase.EXECUTION.value,
+        output_keys = {
+            "income_expense_analyzer": "income_analysis", "budget_planner": "budget_plan",
+            "investment_advisor": "investment_advice", "debt_optimizer": "debt_optimization",
         }
+        trace = list(state.get("workflow_trace") or [])
+        outputs = {key: None for key in output_keys.values()}
+        tasks = []
+        for agent in selected:
+            key = output_keys.get(agent)
+            if key is None:
+                continue
+            existing = state.get(key)
+            if isinstance(existing, dict) and existing and not existing.get("error"):
+                outputs[key] = existing
+                trace.append(self._build_trace_entry(agent, self._utc_now_iso(), self._utc_now_iso(), "reused",
+                                                     phase=WorkflowPhase.EXECUTION.value))
+            else:
+                tasks.append({"id": f"analysis_{agent}", "assigned_agent": agent, "dependencies": []})
+
+        execution = AgentExecution("comprehensive_analysis")
+        with execution:
+            results = self.sub_agent_manager.execute_subtasks(tasks, user_profile, state.get("user_input", ""))
+            outputs.update(self._extract_analysis_from_results(results))
+            for result in results.values():
+                trace.extend(result.get("execution_trace", []))
+            execution.result = {"error": "Some specialists failed"} if any(result.get("error") for result in results.values()) else {}
+        trace.append(execution.trace)
+        subtasks = [dict(task) for task in state.get("subtasks") or []]
+        for task in subtasks:
+            key = {"income_expense": "income_analysis", "budget_planning": "budget_plan",
+                   "investment_advice": "investment_advice", "debt_optimization": "debt_optimization"}.get(task.get("type"))
+            if key:
+                task["status"] = SubtaskStatus.COMPLETED.value if outputs.get(key) else SubtaskStatus.FAILED.value
+        return {**outputs, "sub_agent_results": results, "workflow_trace": trace, "subtasks": subtasks,
+                "phase": WorkflowPhase.EXECUTION.value}
 
     def _run_verification(self, state: AgentState) -> Dict[str, Any]:
         """Lightweight quality-assurance check on the specialist outputs.
@@ -788,12 +854,15 @@ class FinancialWorkflow:
             "warnings": [],
             "adjustments": [],
         }
+        for result in (state.get("sub_agent_results") or {}).values():
+            if isinstance(result, dict) and result.get("error"):
+                verification_results["warnings"].append({
+                    "type": "specialist_unavailable", "severity": "medium",
+                    "message": f"{result.get('agent', 'Specialist')} analysis was unavailable; the plan uses the remaining data.",
+                })
 
         user_profile = state.get("user_profile") or {}
-        income_analysis = state.get("income_analysis") or {}
-        budget_plan = state.get("budget_plan") or {}
         investment_advice = state.get("investment_advice") or {}
-        debt_optimization = state.get("debt_optimization") or {}
 
         # Verify budget doesn't exceed income
         monthly_income = user_profile.get("annual_income", 0) / 12
@@ -824,10 +893,21 @@ class FinancialWorkflow:
         # Verify investment recommendations match risk tolerance
         risk_tolerance = user_profile.get("risk_tolerance", "moderate")
         if investment_advice and isinstance(investment_advice, dict):
-            allocation = investment_advice.get("asset_allocation", {})
-            stocks = allocation.get("stocks", 0) + allocation.get("equities", 0)
+            allocation = investment_advice.get("portfolio_allocation") or investment_advice.get("asset_allocation") or {}
+            # Match actual keys from InvestmentAdvisorAgent: "Domestic Equity", "International Equity"
+            # as well as lowercase and generic equity/stocks aliases for compatibility
+            equity_pct = (
+                allocation.get("Domestic Equity", 0)
+                + allocation.get("International Equity", 0)
+                + allocation.get("domestic_equity", 0)
+                + allocation.get("international_equity", 0)
+                + allocation.get("stocks", 0)
+                + allocation.get("equities", 0)
+                + allocation.get("Equity", 0)
+                + allocation.get("equity", 0)
+            )
 
-            if risk_tolerance == "conservative" and stocks > 40:
+            if risk_tolerance == "conservative" and equity_pct > 40:
                 verification_results["warnings"].append(
                     {
                         "type": "aggressive_for_tolerance",
@@ -853,7 +933,7 @@ class FinancialWorkflow:
         # Update verification subtask
         subtasks = list(state.get("subtasks") or [])
         for subtask in subtasks:
-            if subtask["type"] == "verification":
+            if subtask.get("type") == "verification":
                 subtask["status"] = SubtaskStatus.COMPLETED.value
         updates["subtasks"] = subtasks
 
@@ -879,6 +959,7 @@ class FinancialWorkflow:
         valid_analyses = {key: value for key, value in analyses.items() if value}
 
         context = {
+            "user_input": state.get("user_input", ""),
             "conversation_history": state.get("conversation_history") or [],
             "session_summary": state.get("session_summary"),
             "options": state.get("options") or {},
@@ -911,12 +992,153 @@ class FinancialWorkflow:
         # Update synthesis subtask
         subtasks = list(state.get("subtasks") or [])
         for subtask in subtasks:
-            if subtask["type"] == "synthesis":
+            if subtask.get("type") == "synthesis":
                 subtask["status"] = SubtaskStatus.COMPLETED.value
         updates["subtasks"] = subtasks
         updates["phase"] = WorkflowPhase.COMPLETE.value
 
         return updates
+
+    # ------------------------------------------------------------------
+    # Sub-agent pipeline nodes
+    # ------------------------------------------------------------------
+
+    def _run_task_decomposition(self, state: AgentState) -> Dict[str, Any]:
+        """Decompose a complex request into subtasks for parallel execution.
+
+        Uses a deterministic domain plan by default. LLM planning is explicit
+        via options.llm_decomposition and is separate from narrative mode.
+        """
+        user_input = state.get("user_input", "")
+        user_profile = state.get("user_profile")
+        conversation_history = state.get("conversation_history") or []
+
+        result = self.task_decomposer.decompose(
+            user_input=user_input,
+            user_profile=user_profile,
+            conversation_history=conversation_history,
+            session_summary=state.get("session_summary"),
+            force=True,
+            use_llm=bool((state.get("options") or {}).get("llm_decomposition", False)),
+        )
+
+        subtasks = result.get("subtasks", [])
+        complexity_score = result.get("complexity_score", 0.0)
+        decomposition_plan = result.get("decomposition_plan")
+
+        return {
+            "subtasks": subtasks,
+            "complexity_score": complexity_score,
+            "decomposition_plan": decomposition_plan,
+            "next_agent": "sub_agent_pool",
+        }
+
+    def _task_decomposer_node(self, state: AgentState) -> Dict[str, Any]:
+        logger.info("Task decomposer: evaluating request complexity")
+        return self._execute_with_trace(
+            state,
+            "task_decomposer",
+            lambda: self._run_task_decomposition(state),
+            phase=WorkflowPhase.PLANNING.value,
+        )
+
+    def _run_sub_agent_pool(self, state: AgentState) -> Dict[str, Any]:
+        """Execute decomposed subtasks via the SubAgentManager.
+
+        The manager groups subtasks by dependency level and runs each level
+        in parallel using ``ThreadPoolExecutor``.
+        """
+        subtasks = state.get("subtasks") or []
+        user_profile = state.get("user_profile") or {}
+        user_input = state.get("user_input", "")
+
+        # Filter to subtasks that have an assigned_agent (i.e. from the
+        # decomposer, not the built-in progress-tracking subtasks).
+        decomposed_subtasks = [
+            s for s in subtasks if s.get("assigned_agent")
+        ]
+
+        if not decomposed_subtasks:
+            return {
+                "sub_agent_results": {},
+                "next_agent": "verification",
+            }
+
+        results = self.sub_agent_manager.execute_subtasks(
+            subtasks=decomposed_subtasks,
+            user_profile=user_profile,
+            user_input=user_input,
+        )
+
+        # Also populate the individual analysis fields in state so that the
+        # verification and synthesis nodes can access them.
+        analysis_updates = self._extract_analysis_from_results(results)
+
+        return {
+            "sub_agent_results": results,
+            "workflow_trace": list(state.get("workflow_trace") or []) + [
+                entry for result in results.values() for entry in result.get("execution_trace", [])
+            ],
+            "next_agent": "verification",
+            **analysis_updates,
+        }
+
+    def _sub_agent_pool_node(self, state: AgentState) -> Dict[str, Any]:
+        logger.info("Sub-agent pool: executing decomposed subtasks")
+        updates = self._execute_with_trace(
+            state,
+            "sub_agent_pool",
+            lambda: self._run_sub_agent_pool(state),
+            phase=WorkflowPhase.EXECUTION.value,
+        )
+
+        # Update subtask statuses for completed decomposed subtasks.
+        subtasks = list(state.get("subtasks") or [])
+        sub_agent_results = updates.get("sub_agent_results", {})
+        for subtask in subtasks:
+            task_id = subtask.get("id", "")
+            if task_id in sub_agent_results:
+                result = sub_agent_results[task_id]
+                if isinstance(result, dict) and result.get("error"):
+                    subtask["status"] = SubtaskStatus.FAILED.value
+                else:
+                    subtask["status"] = SubtaskStatus.COMPLETED.value
+        updates["subtasks"] = subtasks
+
+        return updates
+
+    @staticmethod
+    def _extract_analysis_from_results(results: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract individual analysis fields from sub-agent results.
+
+        The sub-agent pool returns results keyed by subtask_id.  This method
+        maps them back to the standard analysis fields in AgentState so that
+        verification and synthesis nodes can access them.
+        """
+        analysis_updates: Dict[str, Any] = {}
+
+        key_map = {
+            "income_expense_analyzer": "income_analysis",
+            "budget_planner": "budget_plan",
+            "investment_advisor": "investment_advice",
+            "debt_optimizer": "debt_optimization",
+            "financial_educator": "financial_education",
+        }
+
+        for _subtask_id, result in results.items():
+            if not isinstance(result, dict) or result.get("error"):
+                continue
+
+            agent_type = result.get("agent") or result.get("assigned_agent", "")
+            analysis_key = key_map.get(agent_type)
+
+            if analysis_key and analysis_key not in analysis_updates:
+                if analysis_key in result:
+                    analysis_updates[analysis_key] = result[analysis_key]
+                else:
+                    analysis_updates[analysis_key] = {key: value for key, value in result.items() if key != "execution_trace"}
+
+        return analysis_updates
 
     def process_request(
         self,
@@ -929,6 +1151,7 @@ class FinancialWorkflow:
         options: Optional[Dict[str, Any]] = None,
         session_id: Optional[str] = None,
         resume_from_checkpoint: bool = False,
+        finance_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Process a financial request through the multi-agent workflow.
 
@@ -970,6 +1193,11 @@ class FinancialWorkflow:
             ``workflow_trace``, ``phase``, ``session_id``, and all
             specialist analysis outputs.
         """
+        # HTTP middleware initializes usage before graph execution. Direct CLI
+        # callers need their own scope before LangGraph copies the context.
+        from utils.request_metrics import begin_request_metrics, get_request_id
+        if get_request_id() is None:
+            begin_request_metrics(None)
         manager = self._get_session_manager()
         checkpoint = None
         session_memory = None
@@ -1002,6 +1230,16 @@ class FinancialWorkflow:
             except Exception as e:
                 logger.warning("Failed to restore checkpoint: %s", e)
 
+        workflow_id = session_id or str(uuid4())
+        wf_logger = _get_workflow_logger(workflow_id, WorkflowPhase.ROUTING.value)
+        wf_logger.info(
+            "workflow_started: input_length=%d has_profile=%s session_id=%s recovered=%s",
+            len(user_input or ""),
+            bool(user_profile),
+            session_id,
+            recovered_from_checkpoint,
+        )
+
         initial_state = AgentState(
             user_input=user_input,
             user_profile=user_profile,
@@ -1029,13 +1267,85 @@ class FinancialWorkflow:
             phase=(checkpoint.state_data.get("phase") if checkpoint else WorkflowPhase.ROUTING.value),
             recovered_from_checkpoint=recovered_from_checkpoint,
             llm_route=checkpoint.agent_outputs.get("llm_route") if checkpoint else None,
+            sub_agent_results=None,
+            complexity_score=None,
+            decomposition_plan=None,
         )
 
+        workflow_start_perf = self._perf_counter()
+
         try:
-            result = self.workflow.invoke(initial_state)
+            from utils.activity_review import activity_review_answer, wants_activity_review
+            from utils.document_answers import document_passage_answer, wants_document_lookup
+            from utils.metric_answers import direct_metric_answer
+            answer_agent = None
+            if (options or {}).get("task_type") == "conversation_insights":
+                answer_agent = "conversation_summarizer"
+            elif isinstance(finance_context, dict) and wants_activity_review(user_input):
+                answer_agent = "activity_review"
+            elif (isinstance(finance_context, dict)
+                  and isinstance(finance_context.get("retrieval"), dict)
+                  and isinstance(finance_context["retrieval"].get("top_chunks"), list)
+                  and (options or {}).get("include_evidence", True)
+                  and (options or {}).get("include_document_passages", True)
+                  and wants_document_lookup(user_input) and not direct_metric_answer(user_input, user_profile)):
+                answer_agent = "document_lookup"
+            if answer_agent:
+                from contracts.plan import Plan
+                with AgentExecution(answer_agent, phase="synthesis") as execution:
+                    if answer_agent == "conversation_summarizer":
+                        from agents.conversation_summarizer import summarize_conversations
+                        summary = summarize_conversations(finance_context, narrative=bool((options or {}).get("narrative")))
+                    else:
+                        summary = {}
+                    output = {
+                        "response": (summary["response"] if answer_agent == "conversation_summarizer" else
+                                     activity_review_answer(user_input, user_profile, finance_context)
+                                     if answer_agent == "activity_review" else document_passage_answer(user_input, finance_context)),
+                        "agent": answer_agent,
+                        "plan": Plan(executive_summary="Review the cited saved records.").model_dump(),
+                        "fallback_used": summary.get("fallback_used", False),
+                        "llm_route": summary.get("llm_route"),
+                    }
+                    execution.result = output
+                result = {**initial_state, "final_output": output, "phase": WorkflowPhase.COMPLETE.value,
+                          "current_analysis": {"type": answer_agent}, "workflow_trace": [execution.trace],
+                          "income_analysis": None, "budget_plan": None, "investment_advice": None,
+                          "debt_optimization": None, "tool_calls": []}
+            else:
+                result = self.workflow.invoke(initial_state)
+            workflow_duration_ms = (self._perf_counter() - workflow_start_perf) * 1000.0
+
             result["session_id"] = session_id
             result["recovered_from_checkpoint"] = recovered_from_checkpoint
             result["session_memory"] = session_memory
+
+            # Count distinct agents that participated
+            workflow_trace = result.get("workflow_trace", []) or []
+            agents_invoked = list(dict.fromkeys(
+                entry.get("agent") for entry in workflow_trace if entry.get("agent")
+            ))
+
+            wf_logger.set_phase(WorkflowPhase.COMPLETE.value)
+            wf_logger.info(
+                "workflow_completed: duration_ms=%.1f agent_count=%d",
+                workflow_duration_ms,
+                len(agents_invoked),
+                extra={
+                    "duration_ms": round(workflow_duration_ms, 2),
+                    "agent_name": "workflow",
+                },
+            )
+
+            # Record workflow telemetry
+            try:
+                from utils.agent_telemetry import record_workflow_execution
+                record_workflow_execution(
+                    duration_ms=workflow_duration_ms,
+                    agent_count=len(agents_invoked),
+                )
+            except Exception:
+                pass
 
             # Complete session if checkpointing
             if session_id:
@@ -1047,7 +1357,15 @@ class FinancialWorkflow:
 
             return result
         except Exception as exc:
+            workflow_duration_ms = (self._perf_counter() - workflow_start_perf) * 1000.0
             logger.error("Workflow execution failed: %s", exc)
+            wf_logger.set_phase(WorkflowPhase.ERROR.value)
+            wf_logger.error(
+                "workflow_failed: duration_ms=%.1f error=%s",
+                workflow_duration_ms,
+                str(exc),
+                extra={"duration_ms": round(workflow_duration_ms, 2), "agent_name": "workflow"},
+            )
 
             # Fail session if checkpointing
             if session_id:
@@ -1061,7 +1379,7 @@ class FinancialWorkflow:
             return {
                 "final_output": f"I encountered an error while processing your request: {exc}",
                 "fallback_used": True,
-                "workflow_trace": initial_state.get("workflow_trace", []),
+                "workflow_trace": getattr(exc, "workflow_trace", initial_state.get("workflow_trace", [])),
                 "error": str(exc),
                 "phase": WorkflowPhase.ERROR.value,
                 "session_id": session_id,
@@ -1090,9 +1408,8 @@ def create_financial_workflow() -> FinancialWorkflow:
 #    appropriate specialist(s), and **static edges** for synthesis and
 #    verification.
 #
-# 3. **Parallel execution** via ``ThreadPoolExecutor`` is used in the
-#    comprehensive analysis node to run all four specialists concurrently,
-#    reducing wall-clock latency.
+# 3. Both multi-domain paths use SubAgentManager to run relevant specialists
+#    with one shared timeout/retry policy and worker-level measurements.
 #
 # 4. Every node is wrapped in ``_execute_with_trace`` which provides:
 #    - Structured trace logging (timestamps, status, errors)

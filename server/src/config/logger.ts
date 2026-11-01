@@ -9,17 +9,67 @@
  * - Automatic request/response logging with pino-http
  * - Sensitive data redaction (passwords, tokens, cookies, etc.)
  * - Custom log levels based on HTTP status codes
- * - Request ID and user ID tracking
+ * - Request ID, trace ID, user ID, and org ID tracking
+ * - Environment-aware pretty-printing (pino-pretty in development, JSON in production)
+ * - Request-scoped child loggers via createRequestLogger()
  * - Silent mode for test environment
  *
  * @module config/logger
  */
 
+import { randomUUID } from "crypto"; // Node.js crypto module for UUID generation
+import { createRequire } from "node:module";
 import pino from "pino"; // Fast JSON logger
 import pinoHttp from "pino-http"; // HTTP request/response logging middleware
+import type { Request } from "express"; // Express types
 
 // Flag to check if running in test environment
 const isTest = process.env.NODE_ENV === "test";
+const isDev = process.env.NODE_ENV === "development";
+
+// Redaction paths shared across the application
+const REDACT_PATHS = [
+  "req.headers.authorization", // JWT tokens
+  "req.headers.cookie", // Session cookies
+  "res.headers.set-cookie", // Set-cookie headers
+  "req.body.password", // User passwords
+  "req.body.otp", // One-time passwords
+  "req.body.token", // Authentication tokens
+  "req.body.command", // Database commands
+  "req.body.rows", // Database rows
+  "req.body.file", // File uploads
+  "req.body.image", // Image uploads
+  "req.body.buffer", // Binary data
+  "req.body.receipt_buffer", // Receipt data
+];
+
+/**
+ * Builds the Pino transport configuration.
+ *
+ * In development, uses pino-pretty for human-readable output.
+ * In production and test, uses the default JSON transport.
+ *
+ * pino-pretty is imported dynamically via the `transport` option so that
+ * the dependency is only loaded when needed (development mode).
+ */
+const buildTransport = (): pino.TransportSingleOptions | undefined => {
+  if (!isDev) return undefined;
+  let target: string;
+  try {
+    target = createRequire(import.meta.url).resolve("pino-pretty");
+  } catch {
+    // JSON logging remains available in minimal installs without the dev formatter.
+    return undefined;
+  }
+  return {
+    target,
+    options: {
+      colorize: true,
+      translateTime: "SYS:standard",
+      ignore: "pid,hostname",
+    },
+  };
+};
 
 /**
  * Application Logger Instance
@@ -28,6 +78,7 @@ const isTest = process.env.NODE_ENV === "test";
  * - Log level: "silent" in test, otherwise from LOG_LEVEL env var (default: "info")
  * - No base properties (cleaner JSON output)
  * - Sensitive data redaction for security
+ * - Pretty-printing in development, JSON in production
  *
  * REDACTED PATHS:
  * - req.headers.authorization (JWT tokens)
@@ -47,23 +98,40 @@ export const logger = pino({
   level: isTest ? "silent" : process.env.LOG_LEVEL || "info", // Silent in test, configurable otherwise
   base: undefined, // No base properties (pid, hostname) for cleaner output
   redact: {
-    paths: [
-      "req.headers.authorization", // JWT tokens
-      "req.headers.cookie", // Session cookies
-      "res.headers.set-cookie", // Set-cookie headers
-      "req.body.password", // User passwords
-      "req.body.otp", // One-time passwords
-      "req.body.token", // Authentication tokens
-      "req.body.command", // Database commands
-      "req.body.rows", // Database rows
-      "req.body.file", // File uploads
-      "req.body.image", // Image uploads
-      "req.body.buffer", // Binary data
-      "req.body.receipt_buffer", // Receipt data
-    ],
+    paths: REDACT_PATHS,
     remove: true, // Remove redacted fields entirely
   },
+  transport: buildTransport(),
 });
+
+/**
+ * Creates a child logger enriched with request context.
+ *
+ * The returned logger includes:
+ * - requestId: Unique request ID for tracing
+ * - traceId: Distributed trace ID (from X-Trace-Id header or generated UUID)
+ * - orgId: Organization ID from request context (if available)
+ * - userId: Authenticated user ID (if available)
+ *
+ * All subsequent log calls through the child logger automatically include
+ * these fields, eliminating the need to pass context manually.
+ *
+ * @param {Request} req - Express request object
+ * @returns {pino.Logger} Child logger with request context
+ */
+export const createRequestLogger = (req: Request): pino.Logger => {
+  const traceId = req.header("x-trace-id") || req.traceId || randomUUID();
+
+  // Store traceId on the request for downstream middleware/routes
+  req.traceId = traceId;
+
+  return logger.child({
+    requestId: req.requestId,
+    traceId,
+    orgId: req.org?.orgId,
+    userId: (req as any).user?._id?.toString?.(),
+  });
+};
 
 /**
  * HTTP Request/Response Logger Middleware
@@ -72,7 +140,7 @@ export const logger = pino({
  *
  * FEATURES:
  * - Uses the application logger instance
- * - Adds custom properties (requestId, userId) to each log entry
+ * - Adds custom properties (requestId, traceId, userId, orgId) to each log entry
  * - Custom log level based on HTTP status code:
  *   - 5xx or errors: "error" level
  *   - 4xx: "warn" level
@@ -80,13 +148,18 @@ export const logger = pino({
  *
  * CUSTOM PROPERTIES:
  * - requestId: Unique request ID for tracing
+ * - traceId: Distributed trace ID
  * - userId: ID of the authenticated user (if any)
+ * - orgId: Organization ID from request context (if any)
  */
 export const httpLogger = pinoHttp({
   logger, // Use the application logger
+  genReqId: req => (req as any).requestId, // Reuse the existing requestId
   customProps: req => ({
     requestId: (req as any).requestId, // Request ID for tracing
+    traceId: (req as any).traceId || req.headers["x-trace-id"] || randomUUID(), // Distributed trace ID
     userId: (req as any).user?._id?.toString?.(), // User ID if authenticated
+    orgId: (req as any).org?.orgId, // Organization ID if available
   }),
   customLogLevel: (_req, res, err) => {
     // Error level for 5xx errors or exceptions
@@ -118,23 +191,28 @@ export const httpLogger = pinoHttp({
  *    - 4xx → warn (client errors, may indicate abuse)
  *    - 2xx/3xx → info (normal operation)
  *
- * 4. **Request Context**: Each log entry includes requestId and userId, making
- *    it possible to trace a single request through all log entries.
+ * 4. **Request Context**: Each log entry includes requestId, traceId, userId,
+ *    and orgId, making it possible to trace a single request through all log entries.
  *
  * 5. **Silent Mode in Test**: Setting level to "silent" in test environment
  *    prevents log noise during test runs.
+ *
+ * 6. **Environment-Aware Transport**: Development uses pino-pretty for readability;
+ *    production uses raw JSON for log aggregation pipelines.
  *
  * PATTERNS TO LEARN:
  * ─────────────────
  * - Structured logging with JSON output
  * - Sensitive data redaction patterns
  * - Log level mapping from HTTP status codes
- * - Request-scoped context in logs
+ * - Request-scoped child loggers for contextual logging
+ * - Dynamic transport loading for environment-specific formatting
  *
  * HOW THIS FITS INTO THE SYSTEM:
  * ─────────────────────────────
  * logger.ts → imported by virtually every file for logging
  * logger.ts → httpLogger middleware in app.ts logs all HTTP requests
+ * logger.ts → createRequestLogger() used by requestLogger middleware
  * logger.ts → Pino's performance is critical (it's the fastest Node.js logger)
  * ══════════════════════════════════════════════════════════════════════
  */

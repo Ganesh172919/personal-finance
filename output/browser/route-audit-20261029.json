@@ -1,0 +1,1493 @@
+{
+  "routes": [
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Detailed answer"
+        },
+        {
+          "disabled": true,
+          "name": "Send question to the finance assistant"
+        },
+        {
+          "disabled": true,
+          "name": "Refresh conversation insights"
+        },
+        {
+          "disabled": false,
+          "name": "Open chat"
+        },
+        {
+          "disabled": false,
+          "name": "Open files workspace"
+        },
+        {
+          "disabled": false,
+          "name": "Open review queue"
+        },
+        {
+          "disabled": false,
+          "name": "Inspect budget envelope"
+        },
+        {
+          "disabled": false,
+          "name": "View all"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "profile. What is my monthly...\n10/26/2026, 10:44:50 AM\nWhy files matter here\nUpload statements, notes, invoices, or planning docs to the new Files workspace, then reference them directly in chat for grounded, higher-signal responses.\nOpen files workspace\n\nTRUST AND CLOSE\n\nReview your transactions\n\nReview queue metrics and monthly close status — now powered by the review queue.\n\nReview queue\n7\n0 uncategorized, 0 duplicate groups, 7 merchant matches.\nOpen review queue\nMonthly close\nIn progress\n2026-10 net 5539 with 2440.25 unbudgeted spend.\nInspect budget envelope\nProactive signals\n1\n0 recurring candidates and 0 upcoming reminders.\nUnbudgeted spend needs categorization: 2440 is outside your planned envelopes.\n\nAI INSIGHTS\n\nSuggested next steps\n\nThis board stays focused on AI-generated recommendations so the most useful guidance remains front and center.\n\nAI-GENERATED INSIGHTS\n\nWhat deserves your attention now\n\nRecommendations are ranked to help you act before financial friction builds up.\n\nView all\nChat Response\nMEDIUM\n## From your files Quoted passages from the available extracted text. Open a source to review the full context. **saved\\_activity\\_final\\_qa.pdf · page 1** > • QA laptop cents 26 Oct: USD 25.25 sav\nChat Response\nMEDIUM\nCreated **Saved activity final QA** as a PDF from your saved workspace records. It is saved in Files.\nChat Response\nLOW\n## From your files Quoted passages from the available extracted text. Open a source to review the full context. **your\\_saved\\_activity.pdf · page 1** > • QA laptop cents 26 Oct: USD 25.25 saved to\nTake Action\nChat Response\nMEDIUM\nCreated **Your saved activity** as a PDF from your saved workspace records. It is saved in Files.",
+      "headings": [
+        "Good afternoon, Deployment"
+      ],
+      "path": "/dashboard",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Scan Receipt"
+        },
+        {
+          "disabled": false,
+          "name": "Import CSV"
+        },
+        {
+          "disabled": false,
+          "name": "Add Transaction"
+        },
+        {
+          "disabled": false,
+          "name": "Ledger"
+        },
+        {
+          "disabled": false,
+          "name": "Review Queue"
+        },
+        {
+          "disabled": false,
+          "name": "Select all transactions"
+        },
+        {
+          "disabled": false,
+          "name": "Select QA index cents 26 Oct"
+        },
+        {
+          "disabled": false,
+          "name": "✓ Approve"
+        },
+        {
+          "disabled": false,
+          "name": "Select QA Gemini browser lunch"
+        },
+        {
+          "disabled": false,
+          "name": "✓ Approve"
+        },
+        {
+          "disabled": false,
+          "name": "Select QA browser transaction"
+        },
+        {
+          "disabled": false,
+          "name": "✓ Approve"
+        },
+        {
+          "disabled": false,
+          "name": "Select QA lunch"
+        },
+        {
+          "disabled": false,
+          "name": "✓ Approve"
+        },
+        {
+          "disabled": false,
+          "name": "Select QA grocery shop"
+        },
+        {
+          "disabled": false,
+          "name": "✓ Approve"
+        },
+        {
+          "disabled": false,
+          "name": "Select QA monthly investment"
+        },
+        {
+          "disabled": false,
+          "name": "✓ Approve"
+        },
+        {
+          "disabled": false,
+          "name": "Select QA apartment rent"
+        },
+        {
+          "disabled": false,
+          "name": "✓ Approve"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nTRANSACTIONS\nTransactions\n\nAdd income and expenses, import a CSV, or filter your transaction history.\n\nVISIBLE ENTRIES\n\n10\n\nVISIBLE INCOME\n\n$7,500.00\n\nVISIBLE OUTFLOW\n\n$2,491.32\n\nScan Receipt\nImport CSV\nAdd Transaction\nLedger\nReview Queue\nTransaction Review Queue\n\nApprove, categorize, or dismiss flagged transactions. Bulk actions are available for batch workflows.\n\nAll\nUncategorized\nDuplicate?\nNo Merchant\nSplit?\nRecurring?\n7 transactions need review\nQA index cents 26 Oct\n80%\nOct 26, 2026\n•\nInvestment\nNo Merchant\nMerchant could not be matched automatically.\n$30.25\n✓ Approve\nQA Gemini browser lunch\n80%\nOct 25, 2026\n•\nFood\nNo Merchant\nMerchant could not be matched automatically.\n$18.75\n✓ Approve\nQA browser transaction\n80%\nOct 25, 2026\n•\nFood\nNo Merchant\nMerchant could not be matched automatically.\n$12.34\n✓ Approve\nQA lunch\n80%\nOct 23, 2026\n•\nDining\nNo Merchant\nMerchant could not be matched automatically.\n$60.00\n✓ Approve\nQA grocery shop\n80%\nOct 20, 2026\n•\nGroceries\nNo Merchant\nMerchant could not be matched automatically.\n$250.00\n✓ Approve\nQA monthly investment\n80%\nOct 4, 2026\n•\nIndex Fund\nNo Merchant\nMerchant could not be matched automatically.\n$500.00\n✓ Approve\nQA apartment rent\n80%\nOct 3, 2026\n•\nHousing\nNo Merchant\nMerchant could not be matched automatically.\n$1,600.00\n✓ Approve",
+      "headings": [
+        "Transactions"
+      ],
+      "path": "/transactions",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Accounts"
+        },
+        {
+          "disabled": false,
+          "name": "Merchants"
+        },
+        {
+          "disabled": false,
+          "name": "Budgets"
+        },
+        {
+          "disabled": false,
+          "name": "Insights"
+        },
+        {
+          "disabled": false,
+          "name": "Recurring"
+        },
+        {
+          "disabled": false,
+          "name": "checking"
+        },
+        {
+          "disabled": true,
+          "name": "Create account"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nFinance\n\nManage your accounts, budgets, and recurring payments.\n\nAccounts\nMerchants\nBudgets\nInsights\nRecurring\nAccounts\nLink transactions to an account to unlock account-level insights.\nName\nType\nchecking\nCurrency\nMask (optional)\nInstitution (optional)\nCreate account\nName\tType\tStatus\tCurrency\tInstitution\tActions\n\nQA regression 1792933390345\n6addfe0e39c5f85c4ab16ed1\n\tChecking\tActive\tUSD\t—\tClose\n\nQA regression 1792909959664\n6adda2878d431bef98625500\n\tChecking\tActive\tUSD\t—\tClose\n\nQA checking account\n6add91985f690fc689d2e002\n\tChecking\tActive\tUSD\t—\tClose",
+      "headings": [
+        "Finance"
+      ],
+      "path": "/finance",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Upload files"
+        },
+        {
+          "disabled": false,
+          "name": "processedsaved_activity_final_qa.pdfDocument2.5 KBSaved activity final QA\nGenerated from a text request on 2026-10-29T11:00:01.466Z\nSaved platform activity\nSnapshot: 2026-10-29 (UTC).\nSource: your saved records in the current workspace. This is a bounded snapshot, not a complete\nactivity history.\nSaved goals\n• QA emergency fund: USD 5000.00 saved toward USD 18000.00. Deadline: 2027-04-01.\n• QA laptop cents 26 Oct: USD 25.25 saved toward USD 1250.50. Deadline: 2027-05-01.\nOpen tasks\n• Automate goal savings (medium priority). Due: 2026-11-01. Automation prevents goal savings\nfrom being crowded out by discretionary spending.\n• QA review 1792909959664 (medium priority). Due: 2026-11-01. Local regression test\n• QA review 1792933390345 (medium priority). Due: 2026-11-01. Local regression test\n• Weekly money check-in (medium priority). Due: 2026-11-03. A short weekly review improves\nfollow-through and prevents drift.\n• Execute a debt payoff strategy (snowball) (high priority). Due: 2026-11-24. Reducing high-\ninterest debt typically yields the best risk-free return.\n• Execute a debt payoff strategy (high priority). Due: 2026-11-28. Reducing high-interest debt\ntypically yields the best risk-free return.\n• Automate long-term investing (medium priority). Due: 2027-10-25. Consistency reduces timing\nrisk and builds wealth gradually.\nReview\nReview the source records before sharing. Completed tasks are excluded. No transactions or\ntransfers were made.\nThis PDF was generated from a user-authored text request. Review financial figures against source records before\nsharing."
+        },
+        {
+          "disabled": false,
+          "name": "processedyour_saved_activity.pdfDocument2.5 KBYour saved activity\nGenerated from a text request on 2026-10-29T10:54:57.280Z\nSaved platform activity\nSnapshot: 2026-10-29 (UTC).\nSource: your saved records in the current workspace. This is a bounded snapshot, not a complete\nactivity history.\n# Saved goals\n• QA emergency fund: USD 5000.00 saved toward USD 18000.00. Deadline: 2027-04-01.\n• QA laptop cents 26 Oct: USD 25.25 saved toward USD 1250.50. Deadline: 2027-05-01.\n# Open tasks\n• Automate goal savings (medium priority). Due: 2026-11-01. Automation prevents goal savings\nfrom being crowded out by discretionary spending.\n• QA review 1792909959664 (medium priority). Due: 2026-11-01. Local regression test\n• QA review 1792933390345 (medium priority). Due: 2026-11-01. Local regression test\n• Weekly money check-in (medium priority). Due: 2026-11-03. A short weekly review improves\nfollow-through and prevents drift.\n• Execute a debt payoff strategy (snowball) (high priority). Due: 2026-11-24. Reducing high-\ninterest debt typically yields the best risk-free return.\n• Execute a debt payoff strategy (high priority). Due: 2026-11-28. Reducing high-interest debt\ntypically yields the best risk-free return.\n• Automate long-term investing (medium priority). Due: 2027-10-25. Consistency reduces timing\nrisk and builds wealth gradually.\n# Review\nReview the source records before sharing. Completed tasks are excluded. No transactions or\ntransfers were made.\nThis PDF was generated from a user-authored text request. Review financial figures against source records before\nsharing."
+        },
+        {
+          "disabled": false,
+          "name": "processedfollow_up_budget_qa.pdfDocument3.0 KBFollow-up Budget QA\nGenerated from a text request on 2026-10-29T05:26:29.935Z\nSynthetic budget review\nSynthetic QA data only. Monthly savings target USD 500.\nReview item 1: Check the synthetic budget progress.\nReview item 2: Check the synthetic budget progress.\nReview item 3: Check the synthetic budget progress.\nReview item 4: Check the synthetic budget progress.\nReview item 5: Check the synthetic budget progress.\nReview item 6: Check the synthetic budget progress.\nReview item 7: Check the synthetic budget progress.\nReview item 8: Check the synthetic budget progress.\nReview item 9: Check the synthetic budget progress.\nReview item 10: Check the synthetic budget progress.\nReview item 11: Check the synthetic budget progress.\nReview item 12: Check the synthetic budget progress.\nReview item 13: Check the synthetic budget progress.\nReview item 14: Check the synthetic budget progress.\nReview item 15: Check the synthetic budget progress.\nReview item 16: Check the synthetic budget progress.\nReview item 17: Check the synthetic budget progress.\nReview item 18: Check the synthetic budget progress.\nReview item 19: Check the synthetic budget progress.\nReview item 20: Check the synthetic budget progress.\nReview item 21: Check the synthetic budget progress.\nReview item 22: Check the synthetic budget progress.\nReview item 23: Check the synthetic budget progress.\nReview item 24: Check the synthetic budget progress.\nReview item 25: Check the synthetic budget progress.\nReview item 26: Check the synthetic budget progress.\nReview item 27: Check the synthetic budget progress.\nReview item 28: Check the synthetic budget progress.\nReview item 29: Check the synthetic budget progress.\nReview item 30: Check the synthetic budget progress.\nReview item 31: Check the synthetic budget progress.\nRevie..."
+        },
+        {
+          "disabled": false,
+          "name": "processedstudent_budget_qa.pdfDocument2.0 KB# Student budget checklist\nSynthetic QA example only. These are test figures, not personal records.\n\n## Monthly targets\nMonthly income: USD 7500.\nSavings target: USD 500 per month.\n\n## Review checklist\n- Review spending and categorize new transactions.\n- Set aside the planned monthly savings.\n- Check progress toward the savings goal.\n- Review original source documents before changing a plan.\n\n## Notes\nRecord any income changes and update the budget at the next monthly review."
+        },
+        {
+          "disabled": false,
+          "name": "processedpdf-pages-20261027.pdfDocument2.9 KBSYNTHETIC QA DOCUMENT\nMonthly income USD 7500. Reference CAMPUS-PDF-27.\n\n\n\nPREPAYMENT TERMS\nPrepayment fee USD 25. This clause is on physical page 4. Synthetic test data only."
+        },
+        {
+          "disabled": false,
+          "name": "processedpdf-pages-20261027.pdfDocument2.9 KBSYNTHETIC QA DOCUMENT\nMonthly income USD 7500. Reference CAMPUS-PDF-27.\n\n\n\nPREPAYMENT TERMS\nPrepayment fee USD 25. This clause is on physical page 4. Synthetic test data only."
+        },
+        {
+          "disabled": false,
+          "name": "processedpdf-pages-20261027.pdfDocument2.9 KBSYNTHETIC QA DOCUMENT\nMonthly income USD 7500. Reference CAMPUS-PDF-27.\n\n\n\nPREPAYMENT TERMS\nPrepayment fee USD 25. This clause is on physical page 4. Synthetic test data only."
+        },
+        {
+          "disabled": false,
+          "name": "processedpdf-pages-20261027.pdfDocument2.9 KBSYNTHETIC QA DOCUMENT\nMonthly income USD 7500. Reference CAMPUS-PDF-27.\n\n\n\nPREPAYMENT TERMS\nPrepayment fee USD 25. This clause is on physical page 4. Synthetic test data only."
+        },
+        {
+          "disabled": false,
+          "name": "processedqa-statement-20261026.txtDocument143 BSynthetic QA statement for 26 October 2026. Monthly income USD 7500. Grocery budget USD 250. Reference CAMPUS-QA-26. Demonstration data only."
+        },
+        {
+          "disabled": false,
+          "name": "processedqa-statement-20261026.txtDocument143 BSynthetic QA statement for 26 October 2026. Monthly income USD 7500. Grocery budget USD 250. Reference CAMPUS-QA-26. Demonstration data only."
+        },
+        {
+          "disabled": false,
+          "name": "processedqa-statement.txtCode118 BDeployment QA statement. October 2026. Salary 7500 USD. Rent 1600 USD. Grocery 250 USD. This is synthetic test data.FINANCIAL PLAN\n==================================================\n\n1. Executive summary\nCash flow is positive; you can allocate surplus to goals, debt, and investing. Emergency fund coverage looks healthy. Debt exists; prioritize high-interest balances while maintaining minimum p"
+        },
+        {
+          "disabled": true,
+          "name": "Previous"
+        },
+        {
+          "disabled": true,
+          "name": "Next"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": " on physical page 4. Synthetic test data only.\nprocessed\npdf-pages-20261027.pdf\nDocument\n2.9 KB\nSYNTHETIC QA DOCUMENT Monthly income USD 7500. Reference CAMPUS-PDF-27. PREPAYMENT TERMS Prepayment fee USD 25. This clause is on physical page 4. Synthetic test data only.\nprocessed\npdf-pages-20261027.pdf\nDocument\n2.9 KB\nSYNTHETIC QA DOCUMENT Monthly income USD 7500. Reference CAMPUS-PDF-27. PREPAYMENT TERMS Prepayment fee USD 25. This clause is on physical page 4. Synthetic test data only.\nprocessed\nqa-statement-20261026.txt\nDocument\n143 B\nSynthetic QA statement for 26 October 2026. Monthly income USD 7500. Grocery budget USD 250. Reference CAMPUS-QA-26. Demonstration data only.\nprocessed\nqa-statement-20261026.txt\nDocument\n143 B\nSynthetic QA statement for 26 October 2026. Monthly income USD 7500. Grocery budget USD 250. Reference CAMPUS-QA-26. Demonstration data only.\nprocessed\nqa-statement.txt\nCode\n118 B\nDeployment QA statement. October 2026. Salary 7500 USD. Rent 1600 USD. Grocery 250 USD. This is synthetic test data.\nFINANCIAL PLAN ================================================== 1. Executive summary Cash flow is positive; you can allocate surplus to goals, debt, and investing. Emergency fund coverage looks healthy. Debt exists; prioritize high-interest balances while maintaining minimum p\nPrevious\nPage 1 of 1\nNext\nHow it works\nEach upload is stored in your workspace, text is extracted when possible, and the AI can use that content for summaries, action plans, and richer chat answers.\nUpload PDFs, spreadsheets, images, notes, and code.\nReview extracted text before sending the file into AI analysis.\nAttach uploaded files in chat to ground the conversation in real context.",
+      "headings": [
+        "Files"
+      ],
+      "path": "/files",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Open"
+        },
+        {
+          "disabled": false,
+          "name": "Completed"
+        },
+        {
+          "disabled": false,
+          "name": "Dismissed"
+        },
+        {
+          "disabled": false,
+          "name": "View task: Automate goal savings"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1792909959664"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1792933390345"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: Weekly money check-in"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: Execute a debt payoff strategy (snowball)"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: Execute a debt payoff strategy"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: Automate long-term investing"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nTasks\n\nTurn AI plans into trackable outcomes.\n\nOpen\nCompleted\nDismissed\nAutomate goal savings\nAutomation prevents goal savings from being crowded out by discretionary spending.\nDue: 11/1/2026 • Priority: medium\nComplete\nDismiss\nApply\nQA review 1792909959664\nLocal regression test\nDue: 11/1/2026 • Priority: medium\nComplete\nDismiss\nApply\nQA review 1792933390345\nLocal regression test\nDue: 11/1/2026 • Priority: medium\nComplete\nDismiss\nApply\nWeekly money check-in\nA short weekly review improves follow-through and prevents drift.\nDue: 11/3/2026 • Priority: medium\nComplete\nDismiss\nApply\nExecute a debt payoff strategy (snowball)\nReducing high-interest debt typically yields the best risk-free return.\nDue: 11/24/2026 • Priority: high\nComplete\nDismiss\nApply\nExecute a debt payoff strategy\nReducing high-interest debt typically yields the best risk-free return.\nDue: 11/28/2026 • Priority: high\nComplete\nDismiss\nApply\nAutomate long-term investing\nConsistency reduces timing risk and builds wealth gradually.\nDue: 10/25/2027 • Priority: medium\nComplete\nDismiss\nApply",
+      "headings": [
+        "Tasks"
+      ],
+      "path": "/tasks",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Add Goal"
+        },
+        {
+          "disabled": false,
+          "name": "Cancel"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Add Debt"
+        },
+        {
+          "disabled": false,
+          "name": "Cancel"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nGoals & Debts\n\nKeep your targets and liabilities updated so FinWise can generate better plans.\n\nGoals\nName\nTarget\nCurrent\nDeadline\nPriority (1-10)\nAdd Goal\nCancel\nQA emergency fund\n$5,000.00 / $18,000.00 (28%)\nDeadline: 2027-04-01\nEdit\nDelete\nQA laptop cents 26 Oct\n$25.25 / $1,250.50 (2%)\nDeadline: 2027-05-01\nEdit\nDelete\nDebts\nName\nBalance\nInterest Rate (%)\nMinimum Payment\nType\nAdd Debt\nCancel\nQA credit card\nBalance: $1,200.00 • APR: 18% • Min: $60.00\nType: credit_card\nEdit\nDelete\nQA fractional loan 26 Oct\nBalance: $100.50 • APR: 18.25% • Min: $12.75\nType: Loan\nEdit\nDelete",
+      "headings": [
+        "Goals & Debts"
+      ],
+      "path": "/goals-debts",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Add Investment"
+        },
+        {
+          "disabled": false,
+          "name": "Overview"
+        },
+        {
+          "disabled": false,
+          "name": "Holdings"
+        },
+        {
+          "disabled": false,
+          "name": "Performance"
+        },
+        {
+          "disabled": false,
+          "name": "Analysis"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nInvestment Portfolio\n\nMonitor and optimize your investment strategy\n\nAdd Investment\nTotal Value\n$530.25\nTotal invested capital\nTotal Returns\n+0.0%\nMonth-over-month invested change\nMonthly SIP\n$176.75\nRecent monthly contribution average\nOverview\nHoldings\nPerformance\nAnalysis\nAsset Allocation\nEquity(100.0%)\nPortfolio Performance\n2025-12\n2026-02\n2026-04\n2026-06\n2026-08\n2026-10\n0\n150\n300\n450\n600\n600",
+      "headings": [
+        "Investment Portfolio"
+      ],
+      "path": "/portfolio",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "New Expense"
+        },
+        {
+          "disabled": true,
+          "name": "Calculate Impact"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nWhat-If Scenarios\n\nModel profile-aware scenarios before changing your real plan.\n\nScenario Builder\nScenario Type\nNew Expense\nAmount\nHorizon (months)\nReturn % (invest)\nDescription\nCalculate Impact\nImpact Analysis\nEnter a scenario to see profile-aware impact.",
+      "headings": [
+        "What-If Scenarios"
+      ],
+      "path": "/scenarios",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Share"
+        },
+        {
+          "disabled": false,
+          "name": "View Details"
+        },
+        {
+          "disabled": false,
+          "name": "View Details"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": " TERMS > Prepayment fee USD 25. This\n\nChat Response\n1 day ago\n\n**Monthly income: USD 7,500.00** (USD 90,000.00 annual income / 12). FINANCIAL PLAN ================================================== 1. Executive summary Cash flow is positive; you can allocate su\n\nChat Response\n1 day ago\n\n**Monthly income: USD 7,500.00** (USD 90,000.00 annual income / 12). FINANCIAL PLAN ================================================== 1. Executive summary Cash flow is positive; you can allocate su\n\nChat Response\n3 days ago\n\n**Monthly income: USD 7,500.00** (USD 90,000.00 annual income / 12). **Minimum debt payment ratio: 0.97%** (USD 72.75 monthly minimum payments / USD 7,500.00 monthly income x 100). FINANCIAL PLAN ==\n\nChat Response\n3 days ago\n\n**Monthly income: USD 7,500.00** (USD 90,000.00 annual income / 12). **Minimum debt payment ratio: 0.80%** (USD 60.00 monthly minimum payments / USD 7,500.00 monthly income x 100). FINANCIAL PLAN ==\n\nChat Response\n3 days ago\n\n**Monthly income: USD 7,500.00** (USD 90,000.00 annual income / 12). **Minimum debt payment ratio: 0.80%** (USD 60.00 monthly minimum payments / USD 7,500.00 monthly income x 100). FINANCIAL PLAN ==\n\nChat Response\n3 days ago\n\nFINANCIAL PLAN ================================================== 1. Executive summary Cash flow is positive; you can allocate surplus to goals, debt, and investing. Emergency fund coverage looks hea\n\nChat Response\n4 days ago\n\n**FINANCIAL PLAN** ================================================== 1. **Executive summary** Your cash flow is positive, giving you room to allocate surplus toward goals, debt repayment, and\n\nStarted Your Financial Journey\n\nYou took the first step by setting up Personal Finance.",
+      "headings": [
+        "Your Financial Story"
+      ],
+      "path": "/financial-story",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "ource to review the full context. **pdf-pages-20261027.pdf · page 4** > PREPAYMENT TERMS > Prepayment fee USD 25. This\nTake Action\nChat Response\n**Monthly income: USD 7,500.00** (USD 90,000.00 annual income / 12). FINANCIAL PLAN ================================================== 1. Executive summary Cash flow is positive; you can allocate su\nTake Action\nChat Response\n**Monthly income: USD 7,500.00** (USD 90,000.00 annual income / 12). FINANCIAL PLAN ================================================== 1. Executive summary Cash flow is positive; you can allocate su\nTake Action\nChat Response\n**Monthly income: USD 7,500.00** (USD 90,000.00 annual income / 12). **Minimum debt payment ratio: 0.97%** (USD 72.75 monthly minimum payments / USD 7,500.00 monthly income x 100). FINANCIAL PLAN ==\nTake Action\nChat Response\n**Monthly income: USD 7,500.00** (USD 90,000.00 annual income / 12). **Minimum debt payment ratio: 0.80%** (USD 60.00 monthly minimum payments / USD 7,500.00 monthly income x 100). FINANCIAL PLAN ==\nTake Action\nChat Response\n**Monthly income: USD 7,500.00** (USD 90,000.00 annual income / 12). **Minimum debt payment ratio: 0.80%** (USD 60.00 monthly minimum payments / USD 7,500.00 monthly income x 100). FINANCIAL PLAN ==\nTake Action\nChat Response\nFINANCIAL PLAN ================================================== 1. Executive summary Cash flow is positive; you can allocate surplus to goals, debt, and investing. Emergency fund coverage looks hea\nTake Action\nChat Response\n**FINANCIAL PLAN** ================================================== 1. **Executive summary** Your cash flow is positive, giving you room to allocate surplus toward goals, debt repayment, and\nTake Action",
+      "headings": [
+        "All AI-Generated Insights"
+      ],
+      "path": "/all-insights",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "3M"
+        },
+        {
+          "disabled": false,
+          "name": "6M"
+        },
+        {
+          "disabled": false,
+          "name": "12M"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nINSIGHT STUDIO\nFinancial analytics that highlight movement, not just totals\n\nTrack whether your cash flow, category mix, and balances are getting healthier over time. Switch the window and use the charts to find drift before it becomes a pattern.\n\nCOVERAGE\n\n12 months\n\nACCOUNTS TRACKED\n\n3\n\nNET WORTH SNAPSHOT\n\n$20\n\n3M\n6M\n12M\nRefreshes every minute\n\nTOTAL INCOME\n\n$7,500\n\nAcross the last 12 months\n\nTOTAL EXPENSES\n\n$1,961\n\nOct 26 closed at $2K\n\nNET WORTH\n\n$20\n\n3 accounts represented\n\nAVERAGE SAVINGS RATE\n\n74%\n\nLatest month landed at 74%\n\nIncome vs expenses\nCompare inflow, outflow, and how much room is left over each month.\nOct 26\n$0\n$2K\n$4K\n$6K\n$8K\nIncomeExpense\nSpending by category\nSee which categories are consuming the biggest share of your spend.\nTop merchants\nThe merchants absorbing the most budget in this time window.\nQA CSV 1792933390345\n1x\n$10\nQA CSV 1792909959664\n1x\n$10\nAccount balances\nAssets at a glance, with liabilities clearly separated.\n$0\n$3\n$6\n$9\n$12\nQA regression1792933390345\nQA regression1792909959664\nQA checkingaccount\n\nAnalytics are based on transaction history across the last 12 months and refresh automatically on a rolling cadence.\n\nQA regression 1792933390345",
+      "headings": [
+        "Financial analytics that highlight movement, not just totals"
+      ],
+      "path": "/analytics",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Previous month"
+        },
+        {
+          "disabled": false,
+          "name": "Next month"
+        },
+        {
+          "disabled": false,
+          "name": "Today"
+        },
+        {
+          "disabled": false,
+          "name": "27"
+        },
+        {
+          "disabled": false,
+          "name": "28"
+        },
+        {
+          "disabled": false,
+          "name": "29"
+        },
+        {
+          "disabled": false,
+          "name": "30"
+        },
+        {
+          "disabled": false,
+          "name": "1"
+        },
+        {
+          "disabled": false,
+          "name": "2"
+        },
+        {
+          "disabled": false,
+          "name": "3"
+        },
+        {
+          "disabled": false,
+          "name": "4"
+        },
+        {
+          "disabled": false,
+          "name": "5"
+        },
+        {
+          "disabled": false,
+          "name": "6"
+        },
+        {
+          "disabled": false,
+          "name": "7"
+        },
+        {
+          "disabled": false,
+          "name": "8"
+        },
+        {
+          "disabled": false,
+          "name": "9"
+        },
+        {
+          "disabled": false,
+          "name": "10"
+        },
+        {
+          "disabled": false,
+          "name": "11"
+        },
+        {
+          "disabled": false,
+          "name": "12"
+        },
+        {
+          "disabled": false,
+          "name": "13"
+        },
+        {
+          "disabled": false,
+          "name": "14"
+        },
+        {
+          "disabled": false,
+          "name": "15"
+        },
+        {
+          "disabled": false,
+          "name": "16"
+        },
+        {
+          "disabled": false,
+          "name": "17"
+        },
+        {
+          "disabled": false,
+          "name": "18"
+        },
+        {
+          "disabled": false,
+          "name": "19"
+        },
+        {
+          "disabled": false,
+          "name": "20"
+        },
+        {
+          "disabled": false,
+          "name": "21"
+        },
+        {
+          "disabled": false,
+          "name": "22"
+        },
+        {
+          "disabled": false,
+          "name": "23"
+        },
+        {
+          "disabled": false,
+          "name": "24"
+        },
+        {
+          "disabled": false,
+          "name": "25"
+        },
+        {
+          "disabled": false,
+          "name": "26"
+        },
+        {
+          "disabled": false,
+          "name": "27"
+        },
+        {
+          "disabled": false,
+          "name": "28"
+        },
+        {
+          "disabled": false,
+          "name": "29"
+        },
+        {
+          "disabled": false,
+          "name": "30"
+        },
+        {
+          "disabled": false,
+          "name": "31"
+        },
+        {
+          "disabled": false,
+          "name": "1"
+        },
+        {
+          "disabled": false,
+          "name": "2"
+        },
+        {
+          "disabled": false,
+          "name": "3"
+        },
+        {
+          "disabled": false,
+          "name": "4"
+        },
+        {
+          "disabled": false,
+          "name": "5"
+        },
+        {
+          "disabled": false,
+          "name": "6"
+        },
+        {
+          "disabled": false,
+          "name": "7"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nFinancial Calendar\n\nVisualize your transactions day by day\n\n$7,500\n$1,961\n+$5,539\nOctober 2026\nToday\nSUN\nMON\nTUE\nWED\nTHU\nFRI\nSAT\n27\n28\n29\n30\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n1\n2\n3\n4\n5\n6\n7\nIncome\nExpense\nSelect a day\n\nClick on a day to see transaction details",
+      "headings": [
+        "Financial Calendar"
+      ],
+      "path": "/calendar",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "All"
+        },
+        {
+          "disabled": false,
+          "name": "Transactions"
+        },
+        {
+          "disabled": false,
+          "name": "Budgets"
+        },
+        {
+          "disabled": false,
+          "name": "Goals"
+        },
+        {
+          "disabled": false,
+          "name": "Workflows"
+        },
+        {
+          "disabled": false,
+          "name": "AI"
+        },
+        {
+          "disabled": false,
+          "name": "Members"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "mple.com ScenarioEvaluated\n\n3d ago\nScenarioEvaluated\n\ndeployment.qa.20261025@example.com AutopilotRunPlanned\n\n3d ago\nAutopilotRunPlanned\n\ndeployment.qa.20261025@example.com TransactionImported\n\n3d ago\nTransactionImported\n\ndeployment.qa.20261025@example.com ScenarioEvaluated\n\n3d ago\nScenarioEvaluated\n\ndeployment.qa.20261025@example.com AutopilotRunPlanned\n\n3d ago\nAutopilotRunPlanned\n\ndeployment.qa.20261025@example.com TransactionCreated\n\n3d ago\nTransactionCreated\n\ndeployment.qa.20261025@example.com AutopilotRunPlanned\n\n4d ago\nAutopilotRunPlanned\n\ndeployment.qa.20261025@example.com TransactionImported\n\n4d ago\nTransactionImported\n\ndeployment.qa.20261025@example.com ScenarioEvaluated\n\n4d ago\nScenarioEvaluated\n\ndeployment.qa.20261025@example.com AutopilotRunExecuted\n\n4d ago\nAutopilotRunExecuted\n\ndeployment.qa.20261025@example.com WorkflowCreated\n\n4d ago\nWorkflowCreated\n\ndeployment.qa.20261025@example.com WorkflowCreated\n\n4d ago\nWorkflowCreated\n\ndeployment.qa.20261025@example.com AutopilotRunSimulated\n\n4d ago\nAutopilotRunSimulated\n\ndeployment.qa.20261025@example.com AutopilotRunPlanned\n\n4d ago\nAutopilotRunPlanned\n\ndeployment.qa.20261025@example.com TransactionCreated\n\n4d ago\nTransactionCreated\n\ndeployment.qa.20261025@example.com TransactionCreated\n\n4d ago\nTransactionCreated\n\ndeployment.qa.20261025@example.com TransactionCreated\n\n4d ago\nTransactionCreated\n\ndeployment.qa.20261025@example.com TransactionCreated\n\n4d ago\nTransactionCreated\n\ndeployment.qa.20261025@example.com TransactionCreated\n\n4d ago\nTransactionCreated\n\ndeployment.qa.20261025@example.com AutopilotRunPlanned\n\n4d ago\nAutopilotRunPlanned\n\ndeployment.qa.20261025@example.com TransactionCreated\n\n4d ago\nTransactionCreated",
+      "headings": [
+        "Activity Feed"
+      ],
+      "path": "/activity",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Save & Continue"
+        },
+        {
+          "disabled": false,
+          "name": "Skip for now"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nWelcome to FinWise\n\nLet's set up your profile so insights and plans are accurate.\n\nBasics\nIncome\nGoals\nDebts\nTransactions\nReview\nBasics\nAge\nRisk tolerance\nConservative\nModerate\nAggressive\nInvestment experience\nBeginner\nIntermediate\nExpert\nSave & Continue\nSkip for now",
+      "headings": [
+        "Welcome to FinWise"
+      ],
+      "path": "/onboarding",
+      "scrollWidth": 759,
+      "width": 759
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "My workflows"
+        },
+        {
+          "disabled": false,
+          "name": "Create"
+        },
+        {
+          "disabled": false,
+          "name": "Templates"
+        },
+        {
+          "disabled": false,
+          "name": "Refresh"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nWorkflows\nAutomate tasks, exports, and notifications. All actions run through simulation + confirmation.\nMy workflows\nCreate\nTemplates\nYour workflows\nEnable/disable, run now, and share templates.\nRefresh\nQA manual workflow 1792933390345\nTrigger: manual | Actions: 1\nStatus: enabled\nTask: QA review 1792933390345\nRun now\nDisable\nShare template\nQA manual workflow 1792909959664\nTrigger: manual | Actions: 1\nStatus: enabled\nTask: QA review 1792909959664\nRun now\nDisable\nShare template\nDebt payoff check-in\nTrigger: cron | Actions: 1\nStatus: enabled\nTask: Debt payoff check-in\nRun now\nDisable\nShare template\nWeekly money check-in\nTrigger: cron | Actions: 1\nStatus: enabled\nTask: Weekly money check-in\nRun now\nDisable\nShare template",
+      "headings": [
+        "Workflows"
+      ],
+      "path": "/workflows",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Any"
+        },
+        {
+          "disabled": false,
+          "name": "Create CSV export"
+        },
+        {
+          "disabled": false,
+          "name": "Create PDF export"
+        },
+        {
+          "disabled": false,
+          "name": "all"
+        },
+        {
+          "disabled": false,
+          "name": "Refresh"
+        },
+        {
+          "disabled": false,
+          "name": "Download"
+        },
+        {
+          "disabled": false,
+          "name": "Download"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nExports\nCreate CSV and PDF exports. Downloads are tenant-scoped and auditable.\nTransactions CSV\nExport filtered transactions as CSV.\nDate from\nDate to\nType\nAny\nCategory\nCreate CSV export\nMonthly summary PDF\nQuick summary for a calendar month (UTC).\nMonth\nCreate PDF export\nRecent exports\nStatus updates automatically while exports are running.\nStatus\nall\nRefresh\nCreated\tType\tStatus\tFile\tSize\t\nOct 25, 2026, 04:42 PM\tmonthly_summary_pdf\tsucceeded\tfinwise_monthly_summary_2026-10.pdf\t1.7 KB\tDownload\nOct 25, 2026, 04:42 PM\ttransactions_csv\tsucceeded\tfinwise_transactions_2026-10-25.csv\t2.0 KB\tDownload",
+      "headings": [
+        "Exports"
+      ],
+      "path": "/exports",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "All"
+        },
+        {
+          "disabled": false,
+          "name": "Parsed"
+        },
+        {
+          "disabled": false,
+          "name": "Confirmed"
+        },
+        {
+          "disabled": true,
+          "name": "Prev"
+        },
+        {
+          "disabled": true,
+          "name": "Next"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nReceipts\n\nReview, correct, and confirm OCR results.\n\nAll\nParsed\nConfirmed\nNo receipts found.\nPrev\nPage 1\nNext",
+      "headings": [
+        "Receipts"
+      ],
+      "path": "/receipts",
+      "scrollWidth": 759,
+      "width": 759
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Deployment QA's Personal Finance (personal)"
+        },
+        {
+          "disabled": false,
+          "name": "Create org"
+        },
+        {
+          "disabled": false,
+          "name": "Members"
+        },
+        {
+          "disabled": false,
+          "name": "Settings"
+        },
+        {
+          "disabled": false,
+          "name": "Integrations"
+        },
+        {
+          "disabled": false,
+          "name": "Marketplace"
+        },
+        {
+          "disabled": false,
+          "name": "API keys"
+        },
+        {
+          "disabled": false,
+          "name": "Referrals"
+        },
+        {
+          "disabled": false,
+          "name": "Usage"
+        },
+        {
+          "disabled": false,
+          "name": "Add member"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nOrganization\nActive org: Deployment QA's Personal Finance (owner)\nTenant context\nSelect which organization your actions apply to.\nActive organization\nDeployment QA's Personal Finance (personal)\nCreate org\nMembers\nSettings\nIntegrations\nMarketplace\nAPI keys\nReferrals\nUsage\nMembers\nAdd members directly, or invite by email.\nYour role: owner (admin)\nAdd member",
+      "headings": [
+        "Organization"
+      ],
+      "path": "/org",
+      "scrollWidth": 759,
+      "width": 759
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Upgrade to Pro"
+        },
+        {
+          "disabled": false,
+          "name": "Upgrade to Team"
+        },
+        {
+          "disabled": false,
+          "name": "Manage billing"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nBilling\nCurrent plan: pro (active)\nUpgrade to Pro\nUpgrade to Team\nManage billing\nNote: In local stub billing mode, upgrades apply immediately without Stripe checkout.",
+      "headings": [
+        "Billing"
+      ],
+      "path": "/billing",
+      "scrollWidth": 759,
+      "width": 759
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Profile"
+        },
+        {
+          "disabled": false,
+          "name": "Security"
+        },
+        {
+          "disabled": false,
+          "name": "API Keys"
+        },
+        {
+          "disabled": false,
+          "name": "Preferences"
+        },
+        {
+          "disabled": false,
+          "name": "Newsletter"
+        },
+        {
+          "disabled": false,
+          "name": "Edit Profile"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nCONTROL CENTER\nSecurity, profile, and workspace preferences in one place\n\nAdjust the settings that define how your account works, how your team workspace is formatted, and how external tools can connect.\n\nSIGNED IN AS\n\ndeployment.qa.20261025@example.com\n\nAUTH PROVIDER\n\nEmail\n\nWORKSPACE PLAN\n\npro\n\nProfile\nSecurity\nAPI Keys\nPreferences\nNewsletter\nProfile Information\n\nUpdate your personal information\n\nName\nEmail\nPhone Number\nAuthentication Provider\nEmail\nVerified\nEdit Profile",
+      "headings": [
+        "Security, profile, and workspace preferences in one place"
+      ],
+      "path": "/settings",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Write a Post"
+        },
+        {
+          "disabled": false,
+          "name": "All Topics"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nFinancial Intelligence\n\nCurated insights, strategies, and deep dives to help you master your money and build wealth.\n\nWrite a Post\nAll Topics\nNo articles found\n\nTry adjusting your filters or search terms.",
+      "headings": [
+        "Financial Intelligence"
+      ],
+      "path": "/blogs",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Share Your Story"
+        },
+        {
+          "disabled": false,
+          "name": "All Stories"
+        },
+        {
+          "disabled": false,
+          "name": "Be the first to share!"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nGrowth Stories\n\nReal stories from people who took control of their finances. Get inspired by their journeys to financial independence.\n\nShare Your Story\nAll Stories\nNo stories found\n\nWe couldn't find any transformation stories matching your filters.\n\nBe the first to share!",
+      "headings": [
+        "Growth Stories"
+      ],
+      "path": "/growth-stories",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Is my financial data secure?"
+        },
+        {
+          "disabled": false,
+          "name": "How does the AI generate financial insights?"
+        },
+        {
+          "disabled": false,
+          "name": "Can I import transactions from my bank?"
+        },
+        {
+          "disabled": false,
+          "name": "What file formats does the Receipt OCR support?"
+        },
+        {
+          "disabled": false,
+          "name": "How is the free plan different from paid plans?"
+        },
+        {
+          "disabled": false,
+          "name": "Can I share my financial data with my partner or advisor?"
+        },
+        {
+          "disabled": false,
+          "name": "How do I export my data?"
+        },
+        {
+          "disabled": false,
+          "name": "What currencies are supported?"
+        },
+        {
+          "disabled": false,
+          "name": "Back to top"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": " goals and transactions\nVersion history tracking\nOrganization\n\nManage multi-user organizations. Invite team members, set roles, configure shared settings, and track currency preferences.\n\nKEY CAPABILITIES\nCreate and manage organizations\nInvite members via email\nRole-based access control (Owner, Admin, Member)\nOrganization-wide currency and locale settings\nShared financial data and reports\nBilling & Plans\n\nManage your subscription plan. View usage limits, upgrade for more features, and manage payment methods via Stripe.\n\nKEY CAPABILITIES\nView current plan and usage\nUpgrade/downgrade subscription tiers\nSecure payment via Stripe\nFeature limit tracking\nInvoice and billing history\nAPI & Integrations\n\nExternal services powering the platform\n\nGoogle OAuth\n\nOne-click sign in with your Google account\n\nStripe Payments\n\nSecure subscription billing and payment processing\n\nCSV Import/Export\n\nBulk data transfer with standard spreadsheet formats\n\nEmail (Nodemailer)\n\nTransactional emails for verification, invitations, and alerts\n\nPDF Generation\n\nRich financial reports with PDFKit\n\nKeyboard Shortcuts\n\nNavigate faster with hotkeys\n\nOpen AI Command Bar\nCtrl+\nK\nFocus search in current page\nCtrl+\n/\nCreate new transaction\nCtrl+\nN\nOpen AI Chat\nCtrl+\nShift+\nC\nGo to Dashboard\nCtrl+\nD\nClose dialog / modal\nEscape\nFrequently Asked Questions\n\nAnswers to common questions\n\nIs my financial data secure?\nHow does the AI generate financial insights?\nCan I import transactions from my bank?\nWhat file formats does the Receipt OCR support?\nHow is the free plan different from paid plans?\nCan I share my financial data with my partner or advisor?\nHow do I export my data?\nWhat currencies are supported?\nBack to top",
+      "headings": [
+        "Documentation"
+      ],
+      "path": "/docs",
+      "scrollWidth": 751,
+      "width": 751
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Undo"
+        },
+        {
+          "disabled": false,
+          "name": "Clear"
+        },
+        {
+          "disabled": false,
+          "name": "Recognize"
+        },
+        {
+          "disabled": true,
+          "name": "Update"
+        },
+        {
+          "disabled": true,
+          "name": "Prev"
+        },
+        {
+          "disabled": true,
+          "name": "Next"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "excerpt": "Skip to main content\nChat\nDashboard\nTransactions\nFinance\nSettings\nMore\nFinancial Journal\nUndo\nClear\nRecognize\n\nWrite budget notes or goals by hand, convert to searchable text, then ask AI for insights.\n\nCanvas\nTip: use a stylus for best handwriting recognition.\nRecognition\nRecognized text\nUpdate monthly expenses\nUpdate\nRecent entries\nPrev\nNext\nNo journal entries yet.",
+      "headings": [
+        "Financial Journal"
+      ],
+      "path": "/notes",
+      "scrollWidth": 751,
+      "width": 751
+    }
+  ],
+  "organizationTabs": [
+    {
+      "tab": "Settings",
+      "panel": "",
+      "selected": "Settings"
+    },
+    {
+      "tab": "Integrations",
+      "panel": "",
+      "selected": "Integrations"
+    },
+    {
+      "tab": "Marketplace",
+      "panel": "",
+      "selected": "Marketplace"
+    },
+    {
+      "tab": "API keys",
+      "panel": "",
+      "selected": "API keys"
+    },
+    {
+      "tab": "Referrals",
+      "panel": "",
+      "selected": "Referrals"
+    },
+    {
+      "tab": "Usage",
+      "panel": "",
+      "selected": "Usage"
+    },
+    {
+      "tab": "Members",
+      "panel": "MembersAdd members directly, or invite by email.Your role: owner (admin)Add member",
+      "selected": "Members"
+    }
+  ]
+}

@@ -83,13 +83,20 @@ export default function Login() {
     navigate("/dashboard");
   }, [user, loading, navigate, nextFromQuery]);
 
+  // Check available auth providers on mount (email is always available)
   useEffect(() => {
     (async () => {
       try {
         const providers = await apiClient<{ email: boolean; google: boolean }>("/auth/providers", { method: "GET" });
         setGoogleEnabled(Boolean(providers.google));
-      } catch {
+        if (import.meta.env.DEV) {
+          console.log(`[Login] Auth providers: email=${providers.email}, google=${providers.google}`);
+        }
+      } catch (err) {
         setGoogleEnabled(false);
+        if (import.meta.env.DEV) {
+          console.warn("[Login] Failed to fetch auth providers:", err);
+        }
       }
     })();
   }, []);
@@ -119,10 +126,10 @@ export default function Login() {
   };
 
   const features = [
-    { icon: Brain, title: "AI-Powered Insights", description: "Get personalized financial advice from our multi-agent AI system" },
-    { icon: TrendingUp, title: "Smart Investments", description: "Optimize your portfolio with intelligent recommendations" },
-    { icon: Shield, title: "Secure & Private", description: "Your financial data is encrypted and protected" },
-    { icon: Users, title: "Expert Guidance", description: "Access to financial education and planning tools" },
+    { icon: Brain, title: "Finance assistant", description: "Ask questions about your saved finances." },
+    { icon: TrendingUp, title: "Transactions and goals", description: "Track expenses, investments, and savings goals." },
+    { icon: Shield, title: "Your workspace", description: "Keep your records in your signed-in account." },
+    { icon: Users, title: "Planning tools", description: "Try budgets, reminders, and what-if scenarios." },
   ];
 
   if (loading) {
@@ -136,7 +143,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
         <motion.div initial={{ opacity: 0, x: -50 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.6 }} className="text-center lg:text-left">
           <div className="flex items-center justify-center lg:justify-start mb-8">
@@ -145,11 +152,11 @@ export default function Login() {
             </motion.div>
             <div>
               <h1 className="text-4xl font-bold text-foreground">Personal Finance</h1>
-              <p className="text-lg text-muted-foreground">AI Financial Strategist</p>
+              <p className="text-lg text-muted-foreground">Personal finance tracker</p>
             </div>
           </div>
           <p className="text-xl text-muted-foreground mb-8">
-            Your intelligent co-pilot for personalized financial planning, powered by coordinated AI agents.
+            A simple place to track your money and plan your next steps.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
             {features.map((feature, index) => (

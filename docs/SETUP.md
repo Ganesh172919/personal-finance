@@ -4,6 +4,10 @@
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## 🏗️ 1. Architecture & Prerequisites
 
 The application employs a decoupled architecture requiring several runtime environments. Before initiating any installation, ensure your system meets the strict minimum requirements outlined below.
@@ -12,9 +16,9 @@ The application employs a decoupled architecture requiring several runtime envir
 
 | Tool / Service | Minimum Version | Hard Requirement | Description & Purpose                                                                                    |
 | -------------- | --------------- | ---------------- | -------------------------------------------------------------------------------------------------------- |
-| **Node.js**    | `v18.x LTS`     | **Yes**          | The core runtime for both the Express Server and the Vite React Client. Check via `node -v`              |
-| **npm**        | `v9.x`          | **Yes**          | Ships automatically with Node.js. Used for deterministic dependency resolution.                          |
-| **MongoDB**    | `v6.0+`         | **Yes**          | The primary NoSQL datastore managing 48 independent domain schemas. Local or Atlas (Cloud) supported.    |
+| **Node.js**    | `>=24.14.1 <25` (Node 24 LTS)     | **Yes**          | The core runtime for both the Express Server and the Vite React Client. Check via `node -v`              |
+| **npm**        | `>=11.0.0` (npm 11)          | **Yes**          | Ships automatically with Node.js. Used for deterministic dependency resolution.                          |
+| **MongoDB**    | `v7.0+` (MongoDB 7)         | **Yes**          | The primary NoSQL datastore managing 52 independent domain schemas. Local or Atlas (Cloud) supported.    |
 | **Redis**      | `v7.0+`         | **Yes**          | In-memory data structure store required for rate-limiting (token buckets) and BullMQ background workers. |
 | **Python**     | `v3.11+`        | No\*             | Required exclusively if you intend to run the **AI Core Service** (Financial Copilot, OCR, Autopilot).   |
 | **Git**        | `v2.30+`        | **Yes**          | Version control system to fetch and manage the repository branches.                                      |
@@ -225,7 +229,7 @@ npm run lint       # Asserts formatting, accessibility rules, and valid hooks
 
 ---
 
-## 🚑 8. Advanced Troubleshooting Matrix
+## 🚨 8. Advanced Troubleshooting Matrix
 
 If things go wrong, cross-reference your specific issues here before opening a GitHub Issue.
 
@@ -243,3 +247,90 @@ If things go wrong, cross-reference your specific issues here before opening a G
 
 **Next Steps**
 Familiarize yourself with the business domain by reading the [System Architecture Guide](./ARCHITECTURE.md) and exploring the comprehensive [REST API definitions](./API.md).
+
+## Environment Setup & Configuration Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#8b5cf6', 'secondaryColor': '#059669', 'tertiaryColor': '#f59e0b'}}}%%
+mindmap
+  root((⚙️ FinWise Environment Setup))
+    🖥️ Prerequisites
+      Node.js >=24.14.1 (Engine lock)
+      npm 11+
+      Python 3.11+
+      Docker Desktop (Linux Containers)
+    📦 Environment Files (.env)
+      server/.env (JWT, MongoDB, Redis, AI_CORE_URL)
+      client/.env (VITE_API_URL=/api/v1)
+      server/AI_Core/.env (GROQ_API_KEY, OLLAMA_HOST)
+    🗄️ Database & Services
+      docker-compose up -d mongodb redis
+      Mongo Replica Set Initialization
+      Compound Index Auto-Sync
+    🧪 Health & Verification
+      npm test --workspace=server
+      pytest server/AI_Core
+      GET /health ➔ Status 200 OK
+```
+
+## Developer Environment Provisioning ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 1: HOST ENVIRONMENT AUDIT                                      │
+│    $ node --version (>= 24.14.1 required) • $ python --version (3.11+) │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟡 STEP 2: DOCKER CONTAINER ORCHESTRATION                              │
+│    $ docker-compose up -d mongodb redis                               │
+│    ├─► MongoDB 7.0 listening on localhost:27017                       │
+│    └─► Redis 7.0 listening on localhost:6379                          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟣 STEP 3: CONFIGURE SECRET TOKENS & ENVIRONMENT VARIABLES             │
+│    ├─► Generate cryptographically secure JWT_SECRET (openssl rand -hex)│
+│    ├─► Configure server/.env: DATABASE_URL, REDIS_URL, AI_CORE_URL     │
+│    └─► Configure server/AI_Core/.env: GROQ_API_KEY, MODEL_CATALOG      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔷 STEP 4: INSTALL DEPENDENCIES & LAUNCH DEV SERVERS                   │
+│    ├─► Server: cd server && npm install && npm run dev (Port 3000)     │
+│    ├─► AI Core: cd server/AI_Core && pip install -r requirements.txt   │
+│    │            uvicorn api_service:app (Port 8001)                    │
+│    └─► Client: cd client && npm install && npm run dev (Port 5173) 🟢  │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 8. 2026 Enterprise Features Setup & Verification
+
+### 8.1 Automated RAG Phase 2 Chunking Backfill
+If you are initializing an existing database with uploaded PDF/TXT statement files, run the automated chunking backfill:
+
+```bash
+cd server
+npm run backfill:chunks
+```
+
+### 8.2 Inspecting Dead Letter Queue (DLQ)
+Verify Redis connection and DLQ capacity:
+
+```bash
+redis-cli ping # Expect: PONG
+redis-cli LLEN bull:finwise-dlq:failed # Expect: 0 (clean state)
+```
+
+### 8.3 Verifying Full-Stack Connectivity
+Run the diagnostic probe script to verify all four layers (API, MongoDB, Redis, AI Core) simultaneously:
+
+```bash
+cd server
+npx ts-node src/scripts/diagnoseSystem.ts
+```

@@ -46,6 +46,7 @@ export interface IOrganization {
   currency: string; // ISO 4217 currency code (e.g., "USD", "EUR"), uppercase, exactly 3 chars
   locale: string; // BCP 47 locale string (e.g., "en-US") for formatting numbers and dates
   timezone: string; // IANA timezone identifier (e.g., "America/New_York") for date display
+  taskWebhookToken?: string; // Secret token for inbound task creation/completion webhooks
   createdAt: Date; // When the organization was created (auto-managed by Mongoose timestamps)
   updatedAt: Date; // When the organization was last modified (auto-managed by Mongoose timestamps)
 }
@@ -104,9 +105,14 @@ const organizationSchema = new Schema<IOrganizationDocument>(
     // IANA timezone identifier (e.g., "Asia/Kolkata", "America/New_York").
     // Used to display dates and times in the user's local context.
     timezone: { type: String, required: true, trim: true, maxlength: 80, default: "UTC" },
+
+    // Secret token for inbound task creation/completion webhooks
+    taskWebhookToken: { type: String, trim: true, maxlength: 128 },
   },
   { timestamps: true } // Automatically adds createdAt and updatedAt Date fields
 );
+
+organizationSchema.index({ taskWebhookToken: 1 }, { unique: true, sparse: true });
 
 /**
  * Compound Index: createdByUserId + createdAt (descending)

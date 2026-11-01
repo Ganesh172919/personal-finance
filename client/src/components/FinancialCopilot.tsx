@@ -2,6 +2,70 @@
  * @fileoverview FinancialCopilot — floating AI chat widget (FAB + expandable panel) that
  * provides page-context-aware financial assistance across the entire application.
  *
+ * ============================================================================
+ * MINDMAP FLOW: FINANCIAL COPILOT FLOATING CHAT & ROUTE CONTEXT
+ * ============================================================================
+ * - Financial Copilot Widget
+ *     ├── 1. Route-Aware Suggestion Engine (PAGE_CONTEXTS)
+ *     │   ├── /dashboard -> Health check, focus areas, monthly summary
+ *     │   ├── /transactions -> High expense detection, duplicates, category leakage
+ *     │   ├── /analytics -> Trends, predictive forecasting, cash flow ratios
+ *     │   ├── /goals-debts -> Debt payoff schedules, goal tracking, avalanche/snowball
+ *     │   ├── /portfolio -> Asset allocation, rebalancing, performance
+ *     │   └── /finance -> Runway projection, burn velocity, envelope checks
+ *     ├── 2. UI View State Machine
+ *     │   ├── Collapsed: Floating Action Button (FAB) bottom-right with Sparkles
+ *     │   ├── Expanded: 380px drawer overlay with Spring Physics (damping 25, stiffness 350)
+ *     │   └── Minimized: Docked header bar to preserve screen real estate
+ *     ├── 3. Conversational Message Pipeline
+ *     │   ├── User Message Ingestion (Input form & 1-click suggestion chips)
+ *     │   ├── Optimistic Local Message Append
+ *     │   ├── React Query Mutation Dispatch (`processAICommand` with narrative: false)
+ *     │   └── Animated Typing Indicator (Loader2 spinner & bouncing dots)
+ *     └── 4. Markdown & Artifact Rendering
+ *         ├── ReactMarkdown with remarkGfm (GFM tables, bold numbers, links)
+ *         └── ScrollArea with auto-scroll lock to latest response
+ *
+ * ============================================================================
+ * ASCII FLOW: COPILOT ROUTE DETECTION & INTERACTION LIFECYCLE
+ * ============================================================================
+ *           [ User Navigates App (wouter useLocation: /transactions) ]
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Resolve Context Suggestions:           |
+ *                 | PAGE_CONTEXTS["/transactions"]         |
+ *                 +--------------------+-------------------+
+ *                                      |
+ *                         User Clicks Floating FAB
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Open 380px Spring Modal                |
+ *                 | Display Contextual Suggestion Chips:   |
+ *                 | ["Find largest expenses", "Duplicates"]|
+ *                 +--------------------+-------------------+
+ *                                      |
+ *                         Click Chip or Submit Input
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Optimistic Append: User Message        |
+ *                 | Activate Typing Indicator              |
+ *                 +--------------------+-------------------+
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Dispatch processAICommand({ query })   |
+ *                 +--------------------+-------------------+
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Receive Response from AI Core          |
+ *                 | Render Rich Markdown with ReactMarkdown|
+ *                 | Auto-scroll to Bottom of ScrollArea    |
+ *                 +----------------------------------------+
+ *
  * WHAT IT DOES
  *  - Renders a floating action button (bottom-right) that opens a 380px-wide chat panel.
  *  - On open, displays contextual suggestions based on the current route (dashboard,
@@ -18,11 +82,11 @@
  * ARCHITECTURE NOTES
  *  - Complementary to `AiCommandBar` — the copilot is always-available via FAB, while
  *    the command bar is embedded in specific pages.
- *  - Messages are ephemeral (not persisted) — cleared when the panel closes.
+ *  - A bounded session cache is scoped by signed-in user and active workspace.
  *  - The panel uses `position: fixed` with `z-index: 50` to overlay all content.
  *  - Spring animation (damping 25, stiffness 350) for smooth open/close transitions.
  */
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useSyncExternalStore } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles,
@@ -32,6 +96,7 @@ import {
   Lightbulb,
   MessageSquare,
   Loader2,
+  RotateCcw,
 } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -40,6 +105,10 @@ import { ScrollArea } from "@/components/ui/ScrollArea";
 import { processAICommand } from "@/lib/api/ai";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useAuth } from "@/hooks/useAuth";
+import { useAppConfig } from "@/hooks/useAppConfig";
+import { getActiveOrgId, subscribeActiveOrgId } from "@/lib/orgContext";
+import { splitAnswerAndPlan } from "@/lib/chatResponse";
 
 // ─── Page Context Suggestions ───────────────────────────
 
@@ -141,13 +210,51 @@ interface CopilotMessage {
   timestamp: Date;
 }
 
+function loadStoredMessages(storageKey: string): CopilotMessage[] {
+  try {
+    const raw = sessionStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((m: unknown): m is CopilotMessage => Boolean(m && typeof m === "object"
+      && typeof (m as CopilotMessage).id === "string"
+      && ["user", "assistant"].includes((m as CopilotMessage).role)
+      && typeof (m as CopilotMessage).content === "string"))
+      .slice(-40).map(m => ({ ...m, content: m.content.slice(0, 24000), timestamp: new Date(m.timestamp) }));
+  } catch {
+    return [];
+  }
+}
+
 // ─── Main Component ─────────────────────────────────────
 
 export function FinancialCopilot() {
+  const { user } = useAuth();
+  const config = useAppConfig({ enabled: Boolean(user) });
+  const activeOrgId = useSyncExternalStore(subscribeActiveOrgId, getActiveOrgId, () => null);
+  const orgId = config.data?.org?.id;
+  if (!user?.id || !orgId || (activeOrgId && activeOrgId !== orgId)) return null;
+  const storageKey = `finwise_copilot_messages_v2:${user.id}:${orgId}`;
+  // Remount on identity changes so drafts and late responses cannot cross scopes.
+  return <ScopedFinancialCopilot key={storageKey} storageKey={storageKey} />;
+}
+
+function CopilotResponse({ content }: { content: string }) {
+  const parts = splitAnswerAndPlan(content);
+  return <div className="prose prose-sm dark:prose-invert max-w-none break-words [&>*]:text-foreground [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_p]:my-1 [&_ul]:my-1 [&_li]:text-xs [&_p]:text-sm">
+    <ReactMarkdown remarkPlugins={[remarkGfm]}>{parts.answer}</ReactMarkdown>
+    {parts.plan ? <details className="mt-3 rounded-md border border-border p-2">
+      <summary className="cursor-pointer text-xs font-medium">View financial plan</summary>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{parts.plan}</ReactMarkdown>
+    </details> : null}
+  </div>;
+}
+
+function ScopedFinancialCopilot({ storageKey }: { storageKey: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<CopilotMessage[]>([]);
+  const [messages, setMessages] = useState<CopilotMessage[]>(() => loadStoredMessages(storageKey));
   const [location] = useLocation();
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -165,7 +272,21 @@ export function FinancialCopilot() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify(messages.slice(-40)));
+    } catch {
+      // Ignore sessionStorage errors
+    }
+  }, [messages, storageKey]);
+
+  const handleClearMessages = () => {
+    setMessages([]);
+    try {
+      sessionStorage.removeItem(storageKey);
+    } catch {
+      // Ignore
+    }
+  };
 
   const askMutation = useMutation({
     mutationFn: async (question: string) => {
@@ -216,7 +337,7 @@ export function FinancialCopilot() {
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
       e.preventDefault();
       handleSend();
     }
@@ -234,7 +355,7 @@ export function FinancialCopilot() {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             onClick={() => setIsOpen(true)}
-            className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-2xl border border-border/70 bg-gradient-to-br from-primary to-chart-3 text-primary-foreground shadow-xl shadow-black/25 transition-shadow hover:shadow-2xl hover:shadow-black/35 lg:bottom-8 lg:right-8"
+            className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom,0px))] right-6 z-50 flex h-14 w-14 items-center justify-center rounded-2xl border border-border/70 bg-gradient-to-br from-primary to-chart-3 text-primary-foreground shadow-xl shadow-black/25 transition-shadow hover:shadow-2xl hover:shadow-black/35 lg:bottom-8 lg:right-8"
             aria-label="Open AI Copilot"
             data-testid="copilot-fab"
           >
@@ -251,8 +372,8 @@ export function FinancialCopilot() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             transition={{ type: "spring", damping: 25, stiffness: 350 }}
-            className="fixed bottom-6 right-6 z-50 flex w-[380px] max-w-[calc(100vw-48px)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl lg:bottom-8 lg:right-8"
-            style={{ maxHeight: isMinimized ? "56px" : "520px" }}
+            className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom,0px))] right-6 z-50 flex w-[380px] max-w-[calc(100vw-48px)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl lg:bottom-8 lg:right-8"
+            style={{ maxHeight: isMinimized ? "56px" : "min(520px, calc(100dvh - 128px))" }}
             data-testid="copilot-panel"
           >
             {/* Header */}
@@ -272,6 +393,21 @@ export function FinancialCopilot() {
                 </div>
               </div>
               <div className="flex items-center gap-1">
+                {messages.length > 0 && !isMinimized && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleClearMessages();
+                    }}
+                    title="Clear conversation"
+                    aria-label="Clear conversation"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -281,6 +417,7 @@ export function FinancialCopilot() {
                     setIsMinimized(!isMinimized);
                   }}
                   data-testid="copilot-minimize"
+                  aria-label={isMinimized ? "Expand AI Copilot" : "Minimize AI Copilot"}
                 >
                   <ChevronDown
                     className={`w-4 h-4 transition-transform ${isMinimized ? "rotate-180" : ""}`}
@@ -296,6 +433,7 @@ export function FinancialCopilot() {
                     setIsMinimized(false);
                   }}
                   data-testid="copilot-close"
+                  aria-label="Close AI Copilot"
                 >
                   <X className="w-4 h-4" />
                 </Button>
@@ -360,17 +498,29 @@ export function FinancialCopilot() {
                             }`}
                           >
                             {msg.role === "assistant" ? (
-                              <div className="prose prose-sm dark:prose-invert max-w-none [&>*]:text-foreground [&_p]:my-1 [&_ul]:my-1 [&_li]:text-xs [&_p]:text-sm">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                  {msg.content}
-                                </ReactMarkdown>
-                              </div>
+                              <CopilotResponse content={msg.content} />
                             ) : (
                               <p>{msg.content}</p>
                             )}
                           </div>
                         </motion.div>
                       ))
+                    )}
+
+                    {/* Quick follow-up suggestions */}
+                    {!askMutation.isPending && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
+                      <div className="pt-1 flex flex-wrap gap-1.5 justify-start">
+                        {["Tell me more", "What should I do next?", "Summarize key numbers"].map((quickQ, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            className="text-[11px] px-2.5 py-1 rounded-full bg-primary/10 hover:bg-primary/20 text-primary transition-colors cursor-pointer border border-primary/20"
+                            onClick={() => handleSend(quickQ)}
+                          >
+                            {quickQ}
+                          </button>
+                        ))}
+                      </div>
                     )}
 
                     {/* Loading indicator */}
@@ -401,16 +551,19 @@ export function FinancialCopilot() {
                     <input
                       ref={inputRef}
                       type="text"
+                      aria-label="Question for AI Copilot"
+                      maxLength={4000}
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={handleKeyDown}
                       placeholder="Ask about your finances..."
-                      className="flex-1 bg-muted/50 rounded-xl px-3.5 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus:bg-muted transition-colors"
+                      className="min-w-0 flex-1 bg-muted/50 rounded-xl px-3.5 py-2 text-sm outline-none placeholder:text-muted-foreground/50 focus:bg-muted transition-colors"
                       disabled={askMutation.isPending}
                       data-testid="copilot-input"
                     />
                     <Button
                       type="submit"
+                      aria-label="Send question to AI Copilot"
                       size="icon"
                       disabled={!input.trim() || askMutation.isPending}
                       className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-chart-3 text-primary-foreground shadow-sm hover:from-white hover:to-chart-2"

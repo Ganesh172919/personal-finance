@@ -24,6 +24,77 @@ State fields are grouped into:
 - **Output fields** -- populated by the synthesis node (final_output,
   workflow_trace, fallback_used, llm_route)
 
+MINDMAP FLOW
+------------
+::
+
+    AgentState & Domain Models
+    ├── 1. AgentState Schema (TypedDict)
+    │   ├── Inputs: user_input, user_profile, conversation_history, session_summary
+    │   ├── Context: finance_context (retrieved RAG chunks & evidence)
+    │   ├── Graph Controls: next_agent, phase, retry_count, error
+    │   ├── Specialist Analysis Accumulators:
+    │   │   ├── income_analysis
+    │   │   ├── budget_plan
+    │   │   ├── investment_advice
+    │   │   ├── debt_optimization
+    │   │   └── financial_education
+    │   ├── Subtask DAG Tracking: subtasks, decomposition_plan
+    │   ├── Checkpoint Identity: session_id, recovered_from_checkpoint
+    │   └── Final Outputs: final_output, workflow_trace, llm_route, fallback_used
+    ├── 2. Lifecycle Enums
+    │   ├── WorkflowPhase: ROUTING -> PLANNING -> EXECUTION -> VERIFICATION -> SYNTHESIS -> COMPLETE
+    │   ├── SubtaskStatus: PENDING -> IN_PROGRESS -> COMPLETED / FAILED
+    │   └── AnalysisType: COMPREHENSIVE, INCOME, BUDGET, INVESTMENT, DEBT, EDUCATION
+    └── 3. Pydantic Domain Entities
+        ├── FinancialGoal: target, timeline, priority, current_amount
+        ├── UserProfile: income, expenses, debts, investments, goals, risk_tolerance
+        └── FinancialPlan: structured milestones, recommendations, metrics
+
+ASCII FLOW
+----------
+::
+
+    +---------------------------------------------------------------+
+    |                        Workflow Initiation                    |
+    |  AgentState initialized with user_input, profile, and context |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                  Phase 1: ROUTING & PLANNING                  |
+    |  - phase = WorkflowPhase.ROUTING                              |
+    |  - State populated: next_agent, analysis_type                 |
+    |  - Subtask decomposition appended: state["subtasks"]          |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                  Phase 2: SPECIALIST EXECUTION                |
+    |  - phase = WorkflowPhase.EXECUTION                            |
+    |  - Parallel / Sequential specialist nodes populate:           |
+    |    * state["income_analysis"]                                 |
+    |    * state["budget_plan"]                                     |
+    |    * state["investment_advice"]                               |
+    |    * state["debt_optimization"]                               |
+    |  - state["workflow_trace"] records latency & status per node  |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                  Phase 3: VERIFICATION                        |
+    |  - phase = WorkflowPhase.VERIFICATION                         |
+    |  - Sanity validation checks cross-agent arithmetic            |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                  Phase 4: SYNTHESIS & COMPLETE                |
+    |  - phase = WorkflowPhase.SYNTHESIS -> COMPLETE                |
+    |  - state["final_output"] populated with unified plan & MD     |
+    |  - state["llm_route"] and telemetry attached                  |
+    +---------------------------------------------------------------+
+
 Enums
 -----
 - ``WorkflowPhase`` -- labels for each phase of the workflow (routing,
@@ -97,6 +168,11 @@ class AgentState(TypedDict):
     recovered_from_checkpoint: bool           # True if resumed from a checkpoint
     llm_route: Optional[Dict[str, Any]]       # LLM provider/model/key routing metadata
 
+    # --- Sub-agent architecture fields ---
+    sub_agent_results: Optional[Dict[str, Any]]    # Results keyed by subtask_id from sub-agent pool
+    complexity_score: Optional[float]               # 0.0-1.0, used for routing to decomposition
+    decomposition_plan: Optional[Dict[str, Any]]    # Full decomposition plan from task_decomposer
+
 
 class WorkflowPhase(str, Enum):
     """Phases in the enhanced workflow.
@@ -131,10 +207,11 @@ class SubtaskStatus(str, Enum):
 
 
 class AnalysisType(str, Enum):
-    """The six types of financial analysis the system can perform.
+    """The types of financial analysis the system can perform.
 
     Used by the master agent's routing logic to determine which specialist
-    agent(s) should handle a request.
+    agent(s) should handle a request.  The ``DECOMPOSE`` type triggers the
+    sub-agent architecture for complex multi-domain requests.
     """
 
     INCOME_EXPENSE = "income_expense"      # Cash flow analysis
@@ -143,6 +220,55 @@ class AnalysisType(str, Enum):
     DEBT_OPTIMIZATION = "debt_optimization"  # Debt repayment strategy
     FINANCIAL_EDUCATION = "financial_education"  # General financial knowledge
     COMPREHENSIVE = "comprehensive"        # All of the above
+    DECOMPOSE = "decompose"              # Complex request -- decompose into subtasks
+
+
+class SubtaskDefinition(BaseModel):
+    """A single decomposed subtask produced by the TaskDecomposerAgent.
+
+    Each subtask represents a discrete unit of work that can be assigned
+    to a specialist agent.  Subtasks may declare dependencies on other
+    subtasks, enabling topological ordering for parallel execution.
+
+    Attributes
+    ----------
+    id : str
+        Unique identifier for the subtask (e.g. "subtask_001").
+    description : str
+        Human-readable description of what the subtask should accomplish.
+    assigned_agent : str
+        Name of the specialist agent responsible for this subtask
+        (e.g. "budget_planner", "investment_advisor").
+    priority : int
+        Execution priority from 1 (highest) to 5 (lowest).
+    dependencies : list[str]
+        IDs of subtasks that must complete before this one can start.
+    status : str
+        Current lifecycle status (pending, in_progress, completed, failed, skipped).
+    result : dict, optional
+        The output produced by the assigned agent after execution.
+    """
+
+    id: str
+    description: str
+    assigned_agent: str
+    priority: int = Field(ge=1, le=5)
+    dependencies: List[str] = []
+    status: str = SubtaskStatus.PENDING.value
+    result: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": "subtask_001",
+                "description": "Create a monthly budget plan based on income and expenses",
+                "assigned_agent": "budget_planner",
+                "priority": 1,
+                "dependencies": [],
+                "status": "pending",
+            }
+        }
+    )
 
 
 class FinancialGoal(BaseModel):

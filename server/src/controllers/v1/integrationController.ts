@@ -31,6 +31,7 @@ import IntegrationSyncRunModel from "../../models/integrationSyncRunModel";
 import { HttpError } from "../../middleware/httpError";
 import { enqueueIntegrationSync, listIntegrationsForOrg } from "../../services/integrations";
 import { getConnectorOrThrow } from "../../connectors/registry";
+import { getConnectorHealthSummary } from "../../services/connectorHealth";
 
 const roleRank: Record<"member" | "admin" | "owner", number> = {
   member: 1,
@@ -279,4 +280,15 @@ export const getIntegrationHistory = async (req: Request, res: Response) => {
     })),
     request_id: req.requestId,
   });
+};
+
+/**
+ * GET /api/v1/integrations/health-summary
+ * Returns health summary for all integration connectors in the organization.
+ */
+export const getConnectorHealthSummaryEndpoint = async (req: Request, res: Response) => {
+  const orgId = requireOrgContext(req);
+
+  const summary = await getConnectorHealthSummary(orgId);
+  return res.json({ connectors: summary, request_id: req.requestId });
 };

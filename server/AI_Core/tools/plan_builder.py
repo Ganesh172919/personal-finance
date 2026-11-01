@@ -19,6 +19,71 @@ Key functions
   buckets (7 days, 30 days, 12 months) based on the user's financial
   metrics.
 
+MINDMAP FLOW
+------------
+::
+
+    PlanBuilder Tool (Deterministic Core)
+    ├── 1. Inputs Normalization (PlanInputs)
+    │   ├── UserProfile (income, expenses, debts, goals)
+    │   ├── Income & Expense Analysis results
+    │   ├── Budget Planner allocations
+    │   ├── Investment Advisor recommendations
+    │   └── Debt Optimizer payoff schedules
+    ├── 2. Key Metrics Calculation (_build_metrics)
+    │   ├── Monthly Income, Expenses & Net Savings
+    │   ├── Savings Rate Percentage
+    │   ├── Emergency Fund Target & Runway Months
+    │   └── Debt-to-Income (DTI) Ratio
+    ├── 3. Action Items Generator (_build_actions)
+    │   ├── Immediate Horizon (next_7_days): e.g. Stop high-cost bleeding, verify subscriptions
+    │   ├── Short-Term Horizon (next_30_days): e.g. Establish budget limits, set up automated SIP
+    │   ├── Long-Term Horizon (next_12_months): e.g. Reach 6-month runway, eliminate credit debt
+    │   └── Idempotent Action IDs (SHA-256 hash of bucket + title)
+    ├── 4. Data Quality & Warnings Engine
+    │   ├── Missing Data Warnings (e.g. no transactions detected)
+    │   └── Solvency & Runway Deficit Warnings
+    └── 5. Deterministic Markdown Rendering (render_plan_markdown)
+        ├── Multi-Currency Formatting (INR / USD / EUR)
+        ├── Structured Markdown Tables & Bullet Points
+        └── Zero Hallucinated Digits Guarantee
+
+ASCII FLOW
+----------
+::
+
+    +---------------------------------------------------------------+
+    |             Input: PlanInputs (Aggregated Analyses)           |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                      _build_metrics()                         |
+    |  - Extract income, expenses, cash flow                        |
+    |  - Calculate DTI, savings rate, emergency runway months       |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                      _build_actions()                         |
+    |  - Bucket 1: next_7_days   (Immediate triage actions)         |
+    |  - Bucket 2: next_30_days  (Tactical adjustments)             |
+    |  - Bucket 3: next_12_months(Strategic milestones)             |
+    |  - Hash action IDs idempotently: SHA256(bucket + title)[:12]  |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |               Assemble Pydantic Plan Model                    |
+    |  - executive_summary, key_metrics, actions, assumptions       |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |           render_plan_markdown(plan, currency_code)           |
+    |  - Generate formatted, zero-hallucination Markdown text       |
+    +---------------------------------------------------------------+
+
 Design decisions
 ----------------
 - The plan is **always** generated, even when the LLM is unavailable.
@@ -36,6 +101,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from contracts.plan import ActionBuckets, ActionItem, KeyMetrics, Plan
+from utils.agent_helpers import get_currency_code
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -67,22 +133,11 @@ def _pick_first_float(*values: Any) -> Optional[float]:
     return None
 
 
-def _normalize_percent(value: Optional[float]) -> Optional[float]:
-    if value is None:
-        return None
-    if 0 < value <= 1:
-        return value * 100
-    return value
-
-
 def _normalize_currency_code(value: Any) -> str:
-    raw = str(value or "").strip().upper()
-    if len(raw) == 3 and raw.isalpha():
-        return raw
-    return "USD"
+    return get_currency_code({"currency": value})
 
 
-def _format_currency(value: Optional[float], currency_code: str = "USD") -> str:
+def _format_currency(value: Optional[float], currency_code: str = "INR") -> str:
     if value is None:
         return "-"
     normalized = _normalize_currency_code(currency_code)
@@ -141,7 +196,7 @@ def build_plan(inputs: PlanInputs) -> Plan:
         )
     )
     key_metrics.savings_rate = _round_or_none(
-        _normalize_percent(_pick_first_float((income_summary or {}).get("savings_rate")))
+        _pick_first_float((income_summary or {}).get("savings_rate"))
     )
 
     if key_metrics.monthly_net_cash_flow is None and monthly_income is not None and monthly_expenses is not None:
@@ -161,7 +216,7 @@ def build_plan(inputs: PlanInputs) -> Plan:
         if isinstance(current, dict):
             key_metrics.total_debt = _round_or_none(_pick_first_float(current.get("total_debt")))
             key_metrics.debt_to_income = _round_or_none(
-                _normalize_percent(_pick_first_float(current.get("debt_to_income_ratio")))
+                _pick_first_float(current.get("debt_to_income_ratio"))
             )
     else:
         debts = user_profile.get("debts") if isinstance(user_profile.get("debts"), list) else []
@@ -393,7 +448,7 @@ def _build_actions(
     return buckets
 
 
-def render_plan_markdown(plan: Plan, currency_code: str = "USD") -> str:
+def render_plan_markdown(plan: Plan, currency_code: str = "INR") -> str:
     km = plan.key_metrics
 
     lines: List[str] = []

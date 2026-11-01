@@ -5,6 +5,57 @@
  * It catches and processes various types of errors, returning appropriate HTTP
  * responses with standardized error formats.
  *
+ * ============================================================================
+ * MINDMAP FLOW: CENTRALIZED ERROR TRIAGE & RESPONSE FORMATTING
+ * ============================================================================
+ * - Global Error Handling Pipeline
+ *     ├── 1. Header Guardrail
+ *     │   └── res.headersSent check (drops processing if streaming already began)
+ *     ├── 2. Error Classifier Hierarchy
+ *     │   ├── HttpError: Domain status code, structured business error code, details
+ *     │   ├── ZodError (400): Schema validation failure, flattened field errors
+ *     │   ├── Mongoose ValidationError (400): Database constraint violation
+ *     │   ├── Mongoose CastError (400): Invalid MongoDB ObjectId formatting
+ *     │   └── Unknown Error (500): Unhandled exception caught, sanitized client message
+ *     ├── 3. Correlation & Diagnostic Envelope
+ *     │   ├── Request ID correlation (req.requestId injected into payload)
+ *     │   └── Unified format: { success: false, message, code, details, requestId }
+ *     └── 4. Structured Pino Logging
+ *         ├── High-severity logger.error with stack trace on 500s
+ *         └── Warning-level logger.warn on 4xx validation issues
+ *
+ * ============================================================================
+ * ASCII FLOW: EXCEPTION DISPATCH & STATUS RESOLUTION
+ * ============================================================================
+ *                    [ Exception Thrown in Route / Middleware ]
+ *                                       |
+ *                                       v
+ *                     +-----------------------------------+
+ *                     | Are headers already sent?         |
+ *                     +-----------------+-----------------+
+ *                                  /         \
+ *                           Yes   /           \ No
+ *                                v             v
+ *                       [ Abort Early ]  +--------------------------+
+ *                                        | Triage Error Type        |
+ *                                        +-------------+------------+
+ *                                                      |
+ *        +----------------+----------------+-----------+-----------+----------------+
+ *        |                |                |                       |                |
+ *        v                v                v                       v                v
+ *   [ HttpError ]    [ ZodError ]    [ DB Validation ]      [ CastError ]     [ Unknown Error ]
+ *   Custom Status    Status: 400     Status: 400            Status: 400       Status: 500
+ *   Code: err.code   err.flatten()   DB_VALIDATION_ERROR    INVALID_ID        INTERNAL_ERROR
+ *        |                |                |                       |                |
+ *        +----------------+----------------+-----------+-----------+----------------+
+ *                                                      |
+ *                                                      v
+ *                                     +----------------------------------+
+ *                                     | Attach requestId to payload      |
+ *                                     | Emit Structured Pino Log         |
+ *                                     | sendErrorResponse(res, status)   |
+ *                                     +----------------------------------+
+ *
  * KEY FEATURES:
  * - Centralized error handling for all routes
  * - Standardized error response format

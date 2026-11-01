@@ -23,7 +23,7 @@ export type UsageLedgerResponse = SdkUsageLedgerResponse;
 /** Fetch the usage ledger for a billing period (defaults to current period). */
 export async function getUsageLedger(periodKey?: string): Promise<UsageLedgerResponse> {
   const query = periodKey ? `?period_key=${encodeURIComponent(periodKey)}` : "";
-  return apiClient(`/v1/usage/ledger${query}`);
+  return apiClient(`/usage/ledger${query}`);
 }
 
 

@@ -88,26 +88,23 @@ class DataProcessor:
             
             if period == "monthly":
                 grouped = expenses_df.groupby([expenses_df['date'].dt.to_period('M'), 'category'])['amount'].sum().unstack(fill_value=0)
-                # === FIX: Str Period keys + flatten to dict of dicts ===
-                trends = {}
-                for period_obj in grouped.index:
-                    str_period = str(period_obj)  # '2025-11'
-                    period_row = grouped.loc[period_obj]
-                    trends[str_period] = period_row.to_dict()  # Series → dict
-                    # Ensure inner keys/values are str/float
-                    trends[str_period] = {str(cat): float(val) for cat, val in trends[str_period].items()}
+                raw_dict = grouped.to_dict(orient="index")
+                trends = {
+                    str(p): {str(cat): float(val) for cat, val in row.items()}
+                    for p, row in raw_dict.items()
+                }
+                total_spending = float(expenses_df['amount'].sum())
+                monthly_totals = grouped.sum(axis=1)
+                avg_monthly_spending = float(monthly_totals.mean()) if len(monthly_totals) > 0 else 0.0
+                top_raw = grouped.sum(axis=0).nlargest(5)
+                top_categories = {str(cat): float(val) for cat, val in top_raw.items()}
             else:
                 grouped = expenses_df.groupby('category')['amount'].sum()
-                trends = grouped.to_dict()
-                trends = {str(cat): float(val) for cat, val in trends.items()}
-            
-            # Summary (floats only)
-            total_spending = float(expenses_df['amount'].sum())
-            monthly_groups = expenses_df.groupby(expenses_df['date'].dt.to_period('M'))['amount'].sum()
-            avg_monthly_spending = float(monthly_groups.mean()) if len(monthly_groups) > 0 else 0.0
-            
-            top_raw = expenses_df.groupby('category')['amount'].sum().nlargest(5)
-            top_categories = {str(cat): float(val) for cat, val in top_raw.items()}
+                trends = {str(cat): float(val) for cat, val in grouped.to_dict().items()}
+                total_spending = float(expenses_df['amount'].sum())
+                avg_monthly_spending = total_spending
+                top_raw = grouped.nlargest(5)
+                top_categories = {str(cat): float(val) for cat, val in top_raw.items()}
             
             return {
                 "trends": trends,
@@ -143,18 +140,17 @@ class DataProcessor:
             return []
         
         try:
-            df = pd.DataFrame(transactions)
-            amounts = df['amount'].abs()
-            
-            mean = float(amounts.mean())
-            std = float(amounts.std())
+            amounts = [abs(float(t.get('amount', 0))) for t in transactions]
+            n = len(amounts)
+            mean = sum(amounts) / n
+            variance = sum((x - mean) ** 2 for x in amounts) / (n - 1) if n > 1 else 0.0
+            std = variance ** 0.5
             
             anomalies = []
             for transaction in transactions:
-                amt = abs(float(transaction['amount']))
+                amt = abs(float(transaction.get('amount', 0)))
                 z_score = (amt - mean) / std if std > 0 else 0.0
                 if z_score > threshold:
-                    # Flat dict, str/float only
                     anomalies.append({
                         "description": str(transaction.get('description', '')),
                         "amount": float(amt),

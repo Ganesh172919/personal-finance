@@ -46,6 +46,8 @@ import {
   getBudgetHealth,
   approveTransactionEndpoint,
   bulkApproveEndpoint,
+  bulkDeleteEndpoint,
+  bulkCategorizeEndpoint,
   alwaysCategorizeEndpoint,
 } from "../controllers/financialDataController";
 import { validate } from "../middleware/validate";
@@ -66,6 +68,13 @@ import {
   updateGoalBodySchema,
   updateTransactionBodySchema
 } from "../schemas/financialDataSchemas";
+import {
+  commandCenterQuerySchema,
+  budgetHealthQuerySchema,
+  bulkApproveBodySchema,
+  bulkDeleteBodySchema,
+  bulkCategorizeBodySchema,
+} from "../schemas/v1/commandCenterSchemas";
 import { asyncRoute } from "../utils/asyncRoute";
 
 const router = Router();
@@ -87,12 +96,14 @@ router.patch(
 router.delete("/transactions/:id", validate({ params: transactionIdParamSchema }), asyncRoute(deleteTransaction));
 
 // ── Command Center & Budget Health ──────────────────────
-router.get("/command-center", asyncRoute(getCommandCenter));
-router.get("/budget-health", asyncRoute(getBudgetHealth));
+router.get("/command-center", validate({ query: commandCenterQuerySchema }), asyncRoute(getCommandCenter));
+router.get("/budget-health", validate({ query: budgetHealthQuerySchema }), asyncRoute(getBudgetHealth));
 
 // ── Transaction Review Actions ──────────────────────────
 router.post("/transactions/:id/approve", validate({ params: transactionIdParamSchema }), asyncRoute(approveTransactionEndpoint));
-router.post("/transactions/bulk-approve", asyncRoute(bulkApproveEndpoint));
+router.post("/transactions/bulk-approve", validate({ body: bulkApproveBodySchema }), asyncRoute(bulkApproveEndpoint));
+router.post("/transactions/bulk-delete", validate({ body: bulkDeleteBodySchema }), asyncRoute(bulkDeleteEndpoint));
+router.post("/transactions/bulk-categorize", validate({ body: bulkCategorizeBodySchema }), asyncRoute(bulkCategorizeEndpoint));
 router.post("/transactions/:id/always-categorize", validate({ params: transactionIdParamSchema }), asyncRoute(alwaysCategorizeEndpoint));
 
 router.post("/goals", validate({ body: createGoalBodySchema }), asyncRoute(createGoal));

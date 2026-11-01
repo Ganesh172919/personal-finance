@@ -20,6 +20,10 @@ If you want API request conventions, read `docs/MEGA_API_PLAYBOOK.md`.
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## 1) What the Client Is
 
 The client is a React 18 + TypeScript SPA built with Vite.
@@ -690,3 +694,336 @@ Accessibility checklist:
 - Icons used as buttons have accessible names.
 - Dialogs trap focus.
 - Notifications are announced (toast role).
+
+## Documentation mind map
+
+```text
+FinWise Frontend UI Atlas (Mega)
+|
++-- Scope
+|   +-- Purpose: explain the subject covered by this file
+|   +-- Source: docs/MEGA_FRONTEND_UI_ATLAS.md
+|   +-- Inputs: prerequisites, linked references, and implementation facts
+|   +-- Audience: readers who need to understand, use, or maintain this area
+|
++-- Main path
+|   +-- Establish constraints and entry points
+|   +-- Trace components, decisions, and dependencies
+|   +-- Check outputs, risks, and verification evidence
+|
++-- Maintenance
+    +-- Recheck links and examples after changes
+    +-- Record assumptions, limits, and known drift
+    +-- Keep this map aligned with documented behavior
+```
+
+## Documentation ASCII flow
+
+```text
+[Open FinWise Frontend UI Atlas (Mega)]
+        |
+        v
+[Define the scope and required inputs]
+        |
+        v
+[Follow the documented sequence and decision points]
+        |
+        +--> [Missing context or exception?] --yes--> [Read linked reference]
+        |                                               |
+        +---------------------------no-----------------+
+                                                        v
+[Check outputs, risks, and verification evidence]
+        |
+        v
+[Record the change and refresh this document]
+``````mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0284c7', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0369a1', 'lineColor': '#8b5cf6', 'secondaryColor': '#10b981', 'tertiaryColor': '#f43f5e'}}}%%
+mindmap
+  root((🖥️ FinanceOS UI Architecture))
+    🎛️ 5-Surface Cockpit
+      Command Center (Intent search & action dispatch)
+      Transaction Review Queue (Approval & bulk triage)
+      Budget Health Gauge (SVG reactive visualization)
+      Portfolio Allocation (Asset balance & yield)
+      AI Reasoning Drawer (Streaming multi-agent trace)
+    📦 State Management (Zustand)
+      chatStore (Messages, streaming state, tokens)
+      authStore (JWT session, active orgId, permissions)
+      filterStore (Date ranges, account filters)
+      transactionStore (Optimistic state updates)
+    ⚡ Realtime & Streams
+      useAIStream (Server-Sent Events event consumer)
+      useSocket (WebSocket notification listener)
+      useDebounce (Input throttling for search queries)
+    🎨 Design System Tokens
+      Slate/Dark Mode (Tailwind CSS 3.4)
+      Glassmorphism (Backdrop blur, slate borders)
+      Micro-Animations (Framer Motion transitions)
+```
+
+## System Architecture & Component ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 👤 USER INTERACTION: Query entered into CommandCenter / ChatDrawer     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📦 CLIENT STORE LAYER: Zustand chatStore Action Dispatched              │
+│    ├─► Optimistic UI: Append user message to active thread             │
+│    ├─► Set isStreaming: true and initialize empty assistant token buffer│
+│    └─► Construct AbortController for cancelable requests               │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🌊 SSE STREAMING CONSUMER: useAIStream Hook Dispatched                 │
+│    ├─► Dial: GET /api/v1/ai/process/stream?query=...                   │
+│    ├─► Read chunk chunks via TextDecoder('utf-8')                     │
+│    ├── Event: "token" ──► Append characters to assistant message      │
+│    ├── Event: "thought" ──► Update internal agent reasoning step      │
+│    ├── Event: "citation" ──► Bind RAG citation [docId:chunkIndex]      │
+│    └── Event: "done" ──► Complete stream, play audio chime 🟢          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🎨 REACTIVE VIEW RENDER: React 18 Virtual DOM Reconciliation          │
+│    ├── BudgetHealthGauge SVG recalculates arcs in real time            │
+│    └── TransactionReviewQueue badge updates count                      │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## High-Performance SSE Streaming Consumer (`client/src/hooks/useAIStream.ts`)
+
+```typescript
+import { useState, useCallback, useRef } from "react";
+import { useChatStore } from "../stores/chatStore";
+
+export function useAIStream() {
+  const [isStreaming, setIsStreaming] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const appendToken = useChatStore((s) => s.appendToken);
+  const setThought = useChatStore((s) => s.setThought);
+
+  const startStream = useCallback(async (query: string, orgId: string) => {
+    setIsStreaming(true);
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const response = await fetch(`/api/v1/ai/process/stream?query=${encodeURIComponent(query)}`, {
+        headers: { "X-Org-Id": orgId },
+        signal: abortControllerRef.current.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`STREAM_ERROR: Received HTTP ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("event: token")) {
+            const data = line.split("data: ")[1];
+            if (data) appendToken(JSON.parse(data).text);
+          } else if (line.startsWith("event: thought")) {
+            const data = line.split("data: ")[1];
+            if (data) setThought(JSON.parse(data).step);
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        console.error("AI Stream interrupted:", err);
+      }
+    } finally {
+      setIsStreaming(false);
+    }
+  }, [appendToken, setThought]);
+
+  const abortStream = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  }, []);
+
+  return { startStream, abortStream, isStreaming };
+}
+```
+
+
+---
+
+## 16) Latest Operational Cockpit Components (2026 Additions)
+
+### 16.1 BudgetHealthCard (`client/src/components/BudgetHealthCard.tsx`)
+Renders the animated circular SVG health gauge with 4 score breakdown bars and proactive burn-rate alert chips.
+
+```tsx
+import React from 'react';
+import { motion } from 'framer-motion';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { AlertTriangle, TrendingUp, ShieldCheck } from 'lucide-react';
+
+interface BudgetHealthCardProps {
+  score: number; // 0-100
+  breakdown: {
+    budgetAdherence: number; // 0-40
+    reviewCleanliness: number; // 0-20
+    goalProgress: number; // 0-20
+    debtManagement: number; // 0-20
+  };
+  burnRateAlerts: Array<{
+    categoryId: string;
+    categoryName: string;
+    burnRate: number;
+    recommendedCap: number;
+  }>;
+}
+
+export const BudgetHealthCard: React.FC<BudgetHealthCardProps> = ({ score, breakdown, burnRateAlerts }) => {
+  const strokeDashoffset = 283 - (283 * score) / 100;
+  
+  return (
+    <Card className="bg-slate-900 border-slate-800 text-white">
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <ShieldCheck className="h-5 w-5 text-emerald-400" /> Financial Health Score
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-center py-2">
+          <div className="relative w-32 h-32">
+            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="45" className="text-slate-800" strokeWidth="8" stroke="currentColor" fill="transparent" />
+              <motion.circle
+                cx="50" cy="50" r="45"
+                className="text-emerald-500" strokeWidth="8"
+                strokeDasharray="283"
+                initial={{ strokeDashoffset: 283 }}
+                animate={{ strokeDashoffset }}
+                transition={{ duration: 1.2, ease: "easeOut" }}
+                strokeLinecap="round" stroke="currentColor" fill="transparent"
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-3xl font-bold">{score}</span>
+              <span className="text-xs text-slate-400">/ 100</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 4 Score Breakdown Bars */}
+        <div className="space-y-2 text-xs">
+          <div>
+            <div className="flex justify-between text-slate-400 mb-1">
+              <span>Budget Adherence</span>
+              <span>{breakdown.budgetAdherence} / 40</span>
+            </div>
+            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+              <div className="bg-emerald-500 h-full" style={{ width: `${(breakdown.budgetAdherence / 40) * 100}%` }} />
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+```
+
+---
+
+### 16.2 TransactionReviewQueue Component (`client/src/components/TransactionReviewQueue.tsx`)
+Interactive review queue displaying low-confidence transactions ($< 0.70$) with bulk selection, one-click approval, and rule promotion.
+
+```tsx
+// One-click approval mutation
+const approveMutation = useMutation({
+  mutationFn: (txId: string) => api.post(`/api/v1/transactions/${txId}/approve`),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['review-queue'] });
+    queryClient.invalidateQueries({ queryKey: ['command-center'] });
+  }
+});
+
+// Always categorize like this (promote to CategoryRule)
+const ruleMutation = useMutation({
+  mutationFn: ({ txId, categoryId }: { txId: string; categoryId: string }) =>
+    api.post(`/api/v1/transactions/${txId}/always-categorize`, { categoryId, matchType: 'exact' }),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['review-queue'] });
+    queryClient.invalidateQueries({ queryKey: ['category-rules'] });
+  }
+});
+```
+
+---
+
+### 16.3 ConversationInsightsPanel Component (`client/src/components/ConversationInsightsPanel.tsx`)
+
+Renders structured financial takeaways, extracted action items with priority tags, and conversation sentiment vitals in the chat interface:
+
+```tsx
+// client/src/components/ConversationInsightsPanel.tsx
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Sparkles, CheckCircle, AlertTriangle } from 'lucide-react';
+import { api } from '@/lib/api';
+
+interface InsightsData {
+  summary: string;
+  actionItems: Array<{ description: string; priority: 'HIGH' | 'MEDIUM' | 'LOW'; status: string }>;
+  financialVitals: { sentiment: string; riskScore: number; detectedIntent: string };
+}
+
+export const ConversationInsightsPanel: React.FC<{ sessionId: string }> = ({ sessionId }) => {
+  const { data, isLoading } = useQuery<InsightsData>({
+    queryKey: ['chat-insights', sessionId],
+    queryFn: async () => {
+      const res = await api.get(`/api/v1/chat/sessions/${sessionId}/insights`);
+      return res.data.data;
+    },
+    enabled: Boolean(sessionId),
+    staleTime: 1000 * 60 * 2 // Coalesced with 2-minute server TTL
+  });
+
+  if (isLoading || !data) return null;
+
+  return (
+    <Card className="border-slate-800 bg-slate-900/60 backdrop-blur-md">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium flex items-center gap-2 text-indigo-400">
+          <Sparkles className="h-4 w-4" />
+          Financial Takeaways & Action Items
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-xs">
+        <p className="text-slate-300 leading-relaxed">{data.summary}</p>
+        <div className="space-y-1.5">
+          {data.actionItems.map((item, idx) => (
+            <div key={idx} className="flex items-center justify-between p-2 rounded bg-slate-800/50">
+              <span className="text-slate-200">{item.description}</span>
+              <Badge variant={item.priority === 'HIGH' ? 'destructive' : 'secondary'}>
+                {item.priority}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+```

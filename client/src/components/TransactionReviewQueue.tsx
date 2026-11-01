@@ -17,6 +17,69 @@
  * Fetches from GET /api/financial-data/transactions?needs_review=true
  * Actions use POST approve/bulk-approve/always-categorize endpoints.
  *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * TransactionReviewQueue Component
+ * ├── 1. Query State & Filtering
+ * │   ├── Fetch transactions where needs_review == true
+ * │   └── Filter tabs: All, Uncategorized, Duplicate, Merchant Match, Recurring
+ * ├── 2. Bulk Selection State (selectedIds: Set<string>)
+ * │   ├── Select all visible transactions toggle
+ * │   └── Floating bulk action bar (Bulk Approve, Bulk Category Rule)
+ * ├── 3. Individual Review Item Card
+ * │   ├── Merchant, Date, and Organization Currency Formatted Amount
+ * │   ├── Flag Chips with urgency color styling
+ * │   ├── AI Category Confidence Badge (Green >0.7, Amber 0.4-0.7, Red <0.4)
+ * │   └── Action Buttons: Approve, Always Categorize, Split/Edit
+ * └── 4. Mutations & UI Transitions (AnimatePresence)
+ *     ├── Slide-out removal animation on approval
+ *     ├── Rule generation toast on "Always Categorize"
+ *     └── Empty Queue Celebration Graphic when 0 items remain
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +---------------------------------------------------------------+
+ *   |               Review Queue Mounts in FinanceOS                |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |    GET /api/financial-data/transactions?needs_review=true     |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |                   Filter by Flag Tabs                         |
+ *   |    [ All (12) ]  [ Uncategorized (8) ]  [ Duplicates (4) ]    |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |                Render Pending Transaction Cards               |
+ *   |  - Confidence Score + Merchant Suggestion + Amount            |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                    [User Approval / Action Clicked]
+ *                       /            |             \
+ *                      /             |              \
+ *                     v              v               v
+ *              [One-Click]     [Always Like]    [Bulk Approve]
+ *              Approve         Create Rule      Select multiple
+ *                     |              |               |
+ *                     v              v               v
+ *              POST /approve   POST /category-  POST /bulk-
+ *                              rules            approve
+ *                     \              |               /
+ *                      \             |              /
+ *                       v            v             v
+ *   +---------------------------------------------------------------+
+ *   | Animate Slide-out & Invalidate Query Cache (Instant UI Update)|
+ *   +---------------------------------------------------------------+
+ * ```
+ *
  * @module components/TransactionReviewQueue
  */
 
@@ -89,7 +152,7 @@ export default function TransactionReviewQueue() {
   const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
 
   // Fetch transactions needing review
-  const { data, isLoading, refetch } = useQuery<TransactionsResponse>({
+  const { data, isLoading, refetch: _refetch } = useQuery<TransactionsResponse>({
     queryKey: ["/api/financial-data/transactions", { needs_review: true, review_flag: activeFilter }],
     queryFn: () =>
       getTransactions({
@@ -185,6 +248,7 @@ export default function TransactionReviewQueue() {
       {/* ── Filter Tabs ─────────────────────────────────── */}
       <div className="flex flex-wrap gap-2">
         <Badge
+          data-testid="filter-chip-all"
           className={`cursor-pointer select-none transition-colors ${
             activeFilter === null
               ? "bg-primary text-primary-foreground"
@@ -200,6 +264,7 @@ export default function TransactionReviewQueue() {
         {ALL_FLAGS.map((flag) => (
           <Badge
             key={flag}
+            data-testid={`filter-chip-${flag}`}
             className={`cursor-pointer select-none transition-colors border ${
               activeFilter === flag
                 ? FLAG_LABELS[flag].color
@@ -219,6 +284,7 @@ export default function TransactionReviewQueue() {
       {transactions.length > 0 && (
         <div className="flex items-center gap-3 py-2 px-3 rounded-lg bg-muted/10 border border-border/30">
           <Checkbox
+            data-testid="checkbox-select-all"
             checked={selectedIds.size === transactions.length && transactions.length > 0}
             onCheckedChange={selectAll}
             aria-label="Select all transactions"
@@ -231,6 +297,7 @@ export default function TransactionReviewQueue() {
           {selectedIds.size > 0 && (
             <Button
               size="sm"
+              data-testid="btn-bulk-approve"
               onClick={handleBulkApprove}
               disabled={bulkApproveMutation.isPending}
               className="text-xs"
@@ -267,10 +334,11 @@ export default function TransactionReviewQueue() {
               exit={{ opacity: 0, x: 40, scale: 0.95, transition: { duration: 0.3 } }}
               transition={{ duration: 0.3 }}
             >
-              <Card className="p-4 bg-gradient-to-r from-card to-card/80 border-border/50 hover:border-border/80 transition-colors">
+              <Card data-testid={`card-review-tx-${tx.id}`} className="p-4 bg-gradient-to-r from-card to-card/80 border-border/50 hover:border-border/80 transition-colors">
                 <div className="flex items-start gap-3">
                   {/* Checkbox */}
                   <Checkbox
+                    data-testid={`checkbox-tx-${tx.id}`}
                     checked={selectedIds.has(tx.id)}
                     onCheckedChange={() => toggleSelect(tx.id)}
                     className="mt-1"
@@ -321,6 +389,7 @@ export default function TransactionReviewQueue() {
                     <Button
                       size="sm"
                       variant="outline"
+                      data-testid={`btn-approve-${tx.id}`}
                       onClick={() => approveMutation.mutate(tx.id)}
                       disabled={approveMutation.isPending}
                       className="text-xs h-8"
@@ -331,6 +400,7 @@ export default function TransactionReviewQueue() {
                       <Button
                         size="sm"
                         variant="outline"
+                        data-testid={`btn-always-categorize-${tx.id}`}
                         onClick={() => alwaysCategorizeMutation.mutate(tx.id)}
                         disabled={alwaysCategorizeMutation.isPending}
                         className="text-xs h-8 text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
@@ -353,6 +423,7 @@ export default function TransactionReviewQueue() {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5 }}
           className="text-center py-12"
+          data-testid="empty-review-queue"
         >
           <div className="text-5xl mb-4">🎉</div>
           <h3 className="text-lg font-semibold text-foreground mb-1">

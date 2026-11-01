@@ -30,12 +30,12 @@ export type ApiKeyListItem = ListApiKeysResponse["api_keys"][number];
 
 /** List all API keys for the active organisation. */
 export async function listApiKeys(): Promise<ListApiKeysResponse> {
-  return apiClient("/v1/api-keys");
+  return apiClient("/api-keys");
 }
 
 /** Create a new API key. The response includes the full token (shown only once). */
 export async function createApiKey(body: CreateApiKeyRequest): Promise<CreateApiKeyResponse> {
-  return apiClient("/v1/api-keys", {
+  return apiClient("/api-keys", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -43,7 +43,7 @@ export async function createApiKey(body: CreateApiKeyRequest): Promise<CreateApi
 
 /** Revoke (soft-delete) an API key, making it immediately unusable. */
 export async function revokeApiKey(id: string): Promise<RevokeApiKeyResponse> {
-  return apiClient(`/v1/api-keys/${id}/revoke`, { method: "POST" });
+  return apiClient(`/api-keys/${id}/revoke`, { method: "POST" });
 }
 
 

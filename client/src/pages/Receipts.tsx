@@ -30,8 +30,10 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
+import { Badge } from "@/components/ui/Badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/Sheet";
+import { ReceiptOcrDialog } from "@/components/ReceiptOcrDialog";
 import { useToast } from "@/hooks/useToast";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import { buildApiUrl } from "@/lib/apiBase";
@@ -105,7 +107,7 @@ export default function ReceiptsPage() {
     const extracted = (receipt.corrections || receipt.extracted || {}) as any;
     setForm({
       vendor: String(extracted.vendor || "").trim(),
-      date: String(extracted.date || "").trim(),
+      date: String(extracted.date || "").trim() || new Date().toISOString().slice(0, 10),
       total: toNumberOr(extracted.total, 0),
       tax: extracted.tax === null || extracted.tax === undefined ? undefined : toNumberOr(extracted.tax, 0),
       currency: String(extracted.currency || currency).trim() || currency,
@@ -156,41 +158,68 @@ export default function ReceiptsPage() {
   return (
     <div className="flex-1 p-6 overflow-auto" data-testid="receipts-page">
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Receipts</h1>
-          <p className="text-sm text-muted-foreground">Review, correct, and confirm OCR results.</p>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">Receipts</h1>
+            <p className="text-sm text-muted-foreground">Review, correct, and confirm OCR results.</p>
+          </div>
+          <ReceiptOcrDialog
+            currencyHint={currency}
+            onConfirmed={async () => {
+              await queryClient.invalidateQueries({ queryKey: ["/api/receipts"] });
+              await queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+            }}
+          />
         </div>
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
           <TabsList>
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="parsed">Parsed</TabsTrigger>
-            <TabsTrigger value="confirmed">Confirmed</TabsTrigger>
+            <TabsTrigger value="all" data-testid="tab-receipts-all">All</TabsTrigger>
+            <TabsTrigger value="parsed" data-testid="tab-receipts-parsed">Parsed</TabsTrigger>
+            <TabsTrigger value="confirmed" data-testid="tab-receipts-confirmed">Confirmed</TabsTrigger>
           </TabsList>
           <TabsContent value={tab}>
-            <Card className="p-4">
+            <Card className="p-4" data-testid="receipts-list-card">
               {configQuery.isLoading ? (
-                <div className="text-sm text-muted-foreground">Loading…</div>
+                <div className="text-sm text-muted-foreground" data-testid="receipts-loading">Loading…</div>
               ) : listQuery.isLoading ? (
-                <div className="text-sm text-muted-foreground">Loading receipts…</div>
+                <div className="text-sm text-muted-foreground" data-testid="receipts-loading">Loading receipts…</div>
               ) : listQuery.error ? (
-                <div className="text-sm text-muted-foreground">
+                <div className="text-sm text-muted-foreground" data-testid="receipts-error">
                   {formatError(listQuery.error, "Failed to load receipts.")}
                 </div>
               ) : receipts.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No receipts found.</div>
+                <div className="text-sm text-muted-foreground" data-testid="receipts-empty">No receipts found.</div>
               ) : (
                 <div className="space-y-2">
                   {receipts.map((r) => {
                     const base = (r.corrections || r.extracted || {}) as any;
+                    const isConfirmed = r.status === "confirmed";
                     return (
                       <div
                         key={r.id}
-                        className="rounded-md border border-border p-3 flex items-start justify-between gap-3 cursor-pointer hover:bg-accent/30"
+                        data-testid={`receipt-item-${r.id}`}
+                        className="rounded-md border border-border p-3 flex items-start justify-between gap-3 cursor-pointer hover:bg-accent/30 transition-colors"
                         onClick={() => setSelectedId(r.id)}
                       >
                         <div className="min-w-0">
-                          <div className="text-xs text-muted-foreground">{r.status}</div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge
+                              data-testid={`badge-status-${r.id}`}
+                              className={`text-[10px] font-mono border ${
+                                isConfirmed
+                                  ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                  : "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                              }`}
+                            >
+                              {r.status}
+                            </Badge>
+                            {base.category_suggestion && (
+                              <span className="text-xs text-muted-foreground">
+                                • {base.category_suggestion}
+                              </span>
+                            )}
+                          </div>
                           <div className="font-medium text-foreground truncate">{String(base.vendor || "Unknown vendor")}</div>
                           <div className="text-xs text-muted-foreground">
                             {String(base.date || "—")} • Total: {base.total ?? "—"} {String(base.currency || "")}
@@ -204,11 +233,23 @@ export default function ReceiptsPage() {
               )}
 
               <div className="flex items-center justify-between mt-4">
-                <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="btn-prev-receipts-page"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >
                   Prev
                 </Button>
-                <div className="text-xs text-muted-foreground">Page {page}</div>
-                <Button variant="outline" size="sm" onClick={() => setPage((p) => p + 1)} disabled={page >= (listQuery.data?.pagination.totalPages || 1)}>
+                <div className="text-xs text-muted-foreground" data-testid="receipts-page-indicator">Page {page}</div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="btn-next-receipts-page"
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={page >= (listQuery.data?.pagination.totalPages || 1)}
+                >
                   Next
                 </Button>
               </div>
@@ -218,7 +259,7 @@ export default function ReceiptsPage() {
       </motion.div>
 
       <Sheet open={Boolean(selectedId)} onOpenChange={(open) => !open && setSelectedId(null)}>
-        <SheetContent side="right" className="sm:max-w-xl w-full">
+        <SheetContent side="right" className="sm:max-w-xl w-full" data-testid="receipt-detail-sheet">
           <SheetHeader>
             <SheetTitle>Receipt</SheetTitle>
             <SheetDescription>Review extracted fields and confirm.</SheetDescription>
@@ -234,13 +275,27 @@ export default function ReceiptsPage() {
                 </div>
               ) : null}
 
-              <div className="rounded-md border border-border p-3 text-sm">
-                <div className="text-muted-foreground">Status: {receipt.status}</div>
-                <div className="text-muted-foreground">Created: {formatDateTime(receipt.createdAt)}</div>
+              <div className="rounded-md border border-border p-3 text-sm flex items-center justify-between">
+                <div>
+                  <div className="text-muted-foreground">Created: {formatDateTime(receipt.createdAt)}</div>
+                </div>
+                <Badge
+                  data-testid="sheet-status-badge"
+                  className={`text-[10px] font-mono border ${
+                    receipt.status === "confirmed"
+                      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                      : "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                  }`}
+                >
+                  {receipt.status}
+                </Badge>
               </div>
 
               {receipt.status === "confirmed" ? (
-                <div className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                <div
+                  data-testid="notice-already-confirmed"
+                  className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground"
+                >
                   This receipt is already confirmed and cannot be deleted.
                 </div>
               ) : null}
@@ -249,16 +304,29 @@ export default function ReceiptsPage() {
                 <div className="text-sm font-semibold text-foreground">Confirm fields</div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <Label>Vendor</Label>
-                    <Input value={form.vendor} onChange={(e) => setForm((p) => ({ ...p, vendor: e.target.value }))} />
-                  </div>
-                  <div>
-                    <Label>Date</Label>
-                    <Input value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} placeholder="YYYY-MM-DD" />
-                  </div>
-                  <div>
-                    <Label>Total</Label>
+                    <Label htmlFor="sheet-vendor">Vendor</Label>
                     <Input
+                      id="sheet-vendor"
+                      data-testid="input-sheet-vendor"
+                      value={form.vendor}
+                      onChange={(e) => setForm((p) => ({ ...p, vendor: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="sheet-date">Date</Label>
+                    <Input
+                      id="sheet-date"
+                      data-testid="input-sheet-date"
+                      value={form.date}
+                      onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))}
+                      placeholder="YYYY-MM-DD"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="sheet-total">Total</Label>
+                    <Input
+                      id="sheet-total"
+                      data-testid="input-sheet-total"
                       value={form.total}
                       onChange={(e) => setForm((p) => ({ ...p, total: toNumberOr(e.target.value, 0) }))}
                       type="number"
@@ -267,8 +335,10 @@ export default function ReceiptsPage() {
                     />
                   </div>
                   <div>
-                    <Label>Tax</Label>
+                    <Label htmlFor="sheet-tax">Tax</Label>
                     <Input
+                      id="sheet-tax"
+                      data-testid="input-sheet-tax"
                       value={form.tax ?? ""}
                       onChange={(e) =>
                         setForm((p) => ({ ...p, tax: e.target.value === "" ? undefined : toNumberOr(e.target.value, 0) }))
@@ -279,16 +349,31 @@ export default function ReceiptsPage() {
                     />
                   </div>
                   <div>
-                    <Label>Currency</Label>
-                    <Input value={form.currency || ""} onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))} />
+                    <Label htmlFor="sheet-currency">Currency</Label>
+                    <Input
+                      id="sheet-currency"
+                      data-testid="input-sheet-currency"
+                      value={form.currency || ""}
+                      onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))}
+                    />
                   </div>
                   <div>
-                    <Label>Category</Label>
-                    <Input value={form.category} onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))} />
+                    <Label htmlFor="sheet-category">Category</Label>
+                    <Input
+                      id="sheet-category"
+                      data-testid="input-sheet-category"
+                      value={form.category}
+                      onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}
+                    />
                   </div>
                   <div className="md:col-span-2">
-                    <Label>Description</Label>
-                    <Input value={form.description || ""} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
+                    <Label htmlFor="sheet-description">Description</Label>
+                    <Input
+                      id="sheet-description"
+                      data-testid="input-sheet-description"
+                      value={form.description || ""}
+                      onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+                    />
                   </div>
                 </div>
 
@@ -296,6 +381,7 @@ export default function ReceiptsPage() {
                   {receipt.status === "parsed" ? (
                     <Button
                       variant="destructive"
+                      data-testid="btn-delete-receipt"
                       onClick={() => selectedId && deleteMutation.mutate(selectedId)}
                       disabled={deleteMutation.isPending}
                       title="Delete receipt (only allowed before confirmation)"
@@ -306,6 +392,7 @@ export default function ReceiptsPage() {
                   ) : null}
 
                   <Button
+                    data-testid="btn-confirm-receipt"
                     onClick={() =>
                       selectedId &&
                       confirmMutation.mutate({

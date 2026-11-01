@@ -45,27 +45,27 @@ export const getBlogs = async (params?: {
   isFeatured?: boolean;
   search?: string;
 }) => {
-  return await apiGet<ListBlogsResponse>('/api/v1/blogs', params);
+  return await apiGet<ListBlogsResponse>('/api/blogs', params);
 };
 
 export const getFeaturedBlogs = async (limit: number = 5) => {
-  return await apiGet<ListBlogsResponse>('/api/v1/blogs/featured', { limit });
+  return await apiGet<ListBlogsResponse>('/api/blogs/featured', { limit });
 };
 
 export const getBlogBySlug = async (slug: string) => {
-  return await apiGet<GetBlogResponse>(`/api/v1/blogs/${slug}`);
+  return await apiGet<GetBlogResponse>(`/api/blogs/${slug}`);
 };
 
 export const getBlogCategories = async () => {
-    return await apiGet<{categories: {category: string, count: number}[]}>('/api/v1/blogs/categories');
+    return await apiGet<{categories: {category: string, count: number}[]}>('/api/blogs/categories');
 }
 
 export const toggleBlogLike = async (id: string) => {
-  return await apiPost<{likes: number}>(`/api/v1/blogs/${id}/like`, {});
+  return await apiPost<{likes: number}>(`/api/blogs/${id}/like`, {});
 };
 
 export const createBlog = async (data: Partial<IBlogPost>) => {
-    return await apiPost<{post: IBlogPost}>('/api/v1/blogs', data);
+    return await apiPost<{post: IBlogPost}>('/api/blogs', data);
 }
 
 // --- Growth Stories ---
@@ -80,25 +80,25 @@ export const getGrowthStories = async (params?: {
   isFeatured?: boolean;
   search?: string;
 }) => {
-  return await apiGet<ListGrowthStoriesResponse>('/api/v1/growth-stories', params);
+  return await apiGet<ListGrowthStoriesResponse>('/api/growth-stories', params);
 };
 
 export const getFeaturedGrowthStories = async (limit: number = 2) => {
-  return await apiGet<{stories: IGrowthStory[]}>('/api/v1/growth-stories/featured', { limit });
+  return await apiGet<{stories: IGrowthStory[]}>('/api/growth-stories/featured', { limit });
 };
 
 export const getGrowthStoryBySlug = async (slug: string) => {
-  return await apiGet<GetGrowthStoryResponse>(`/api/v1/growth-stories/${slug}`);
+  return await apiGet<GetGrowthStoryResponse>(`/api/growth-stories/${slug}`);
 };
 
 export const getGrowthStoryCategories = async () => {
-    return await apiGet<{categories: {category: string, count: number}[]}>('/api/v1/growth-stories/categories');
+    return await apiGet<{categories: {category: string, count: number}[]}>('/api/growth-stories/categories');
 }
 
 export const toggleGrowthStoryLike = async (id: string) => {
-  return await apiPost<{likes: number}>(`/api/v1/growth-stories/${id}/like`, {});
+  return await apiPost<{likes: number}>(`/api/growth-stories/${id}/like`, {});
 };
 
 export const createGrowthStory = async (data: Partial<IGrowthStory>) => {
-    return await apiPost<{story: IGrowthStory}>('/api/v1/growth-stories', data);
+    return await apiPost<{story: IGrowthStory}>('/api/growth-stories', data);
 }

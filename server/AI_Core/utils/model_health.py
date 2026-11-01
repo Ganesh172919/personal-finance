@@ -1,12 +1,87 @@
-"""
+r"""
 Per-model health tracking for routing and observability.
+
+================================================================================
+MINDMAP FLOW: MODEL HEALTH TRACKING & CIRCUIT BREAKER ENGINE
+================================================================================
+- Model Health & Circuit Breaker Engine
+    ├── 1. Telemetry Capture
+    │   ├── Total Requests & Success Count
+    │   ├── Latency Tracking (Rolling Average in ms)
+    │   └── Consecutive Failure Counter
+    ├── 2. Granular Error Categorization & Dynamic Cooldowns
+    │   ├── HTTP 429 Rate Limit -> 60s Cooldown
+    │   ├── HTTP 403 Forbidden / Auth -> 1,800s (30m) Cooldown
+    │   ├── HTTP 404 Model Not Found -> 900s (15m) Cooldown
+    │   ├── HTTP 5xx Server Error -> 45s Cooldown
+    │   └── Other Errors -> Increment generic error counter
+    ├── 3. Circuit Breaker State Machine
+    │   ├── HEALTHY: Success rate >= 70%, no active cooldown/trip
+    │   ├── DEGRADED: Success rate < 70% (min 5 requests)
+    │   ├── COOLDOWN: Active temporary cooldown_until timestamp
+    │   └── CIRCUIT_OPEN: >= 4 consecutive failures (300s recovery window)
+    ├── 4. Composite Health Scoring Formula
+    │   ├── Cooldown Penalty: Fixed -1000.0 (Instant eviction from top ranks)
+    │   ├── Circuit Open Penalty: Fixed -500.0
+    │   └── Dynamic Score: (SuccessRate * 0.65) + (LatencyScore * 0.35) - Penalty
+    │       ├── LatencyScore = 1.0 / (1.0 + LatencySec)
+    │       └── Penalty = min(0.8, consecutive_failures * 0.1)
+    └── 5. Thread Safety & Singleton Management
+        ├── Re-entrant Lock (threading.RLock)
+        └── Global Registry (_tracker instance & stats export)
+
+================================================================================
+ASCII FLOW: MODEL HEALTH STATE TRANSITIONS & SCORING PIPELINE
+================================================================================
+                     +---------------------------+
+                     |    LLM Request Execution  |
+                     +-------------+-------------+
+                                   |
+                     +-------------+-------------+
+                     | Success or Failure Event? |
+                     +-------------+-------------+
+                            /             \
+                   Success /               \ Failure
+                          v                 v
+           +-----------------------+   +------------------------------+
+           | record_success()      |   | record_failure(status_code)  |
+           | - total_requests++    |   | - total_requests++           |
+           | - successful_reqs++   |   | - consecutive_failures++     |
+           | - consecutive_fails=0 |   | - status_code routing:       |
+           | - clear circuit/cool  |   |   * 429 -> cool 60s          |
+           | - update avg_latency  |   |   * 403 -> cool 1800s        |
+           +-----------+-----------+   |   * 404 -> cool 900s         |
+                       |               |   * 5xx -> cool 45s          |
+                       |               |   * >=4 fails -> TRIP CIRCUIT|
+                       |               +--------------+---------------+
+                       |                              |
+                       +--------------+---------------+
+                                      |
+                                      v
+                      +-------------------------------+
+                      |      get_status(model_id)     |
+                      +---------------+---------------+
+                                      |
+         +----------------------------+----------------------------+
+         |                            |                            |
+  [ cooldown_until > now ]    [ circuit_opened ]         [ success_rate < 70% ]
+         |                            |                            |
+         v                            v                            v
+   STATUS: COOLDOWN          STATUS: CIRCUIT_OPEN          STATUS: DEGRADED
+   (Score: -1000.0)            (Score: -500.0)             (Score: Dynamic)
+         |                            |                            |
+         +----------------------------+----------------------------+
+                                      | Otherwise
+                                      v
+                               STATUS: HEALTHY
+                   Score = (SR * 0.65) + (LatScore * 0.35) - Penalty
 """
 
 from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, Optional
 

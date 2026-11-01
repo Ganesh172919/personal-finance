@@ -86,6 +86,7 @@ export interface ProcessAICommandResponse {
     label?: string;
     snippet?: string;
     entity_id?: string;
+    page_number?: number;
   }>;
   confidence?: {
     score?: number;

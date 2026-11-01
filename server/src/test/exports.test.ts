@@ -45,7 +45,7 @@ describe("exports API", () => {
 
   it("blocks exports on free plan", async () => {
     const response = await request(app)
-      .post("/api/v1/exports")
+      .post("/api/exports")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({ type: "transactions_csv", params: {} })
@@ -76,7 +76,7 @@ describe("exports API", () => {
       .expect(201);
 
     const created = await request(app)
-      .post("/api/v1/exports")
+      .post("/api/exports")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({ type: "transactions_csv", params: {} })
@@ -86,13 +86,62 @@ describe("exports API", () => {
     const exportId = created.body.export.id as string;
 
     const download = await request(app)
-      .get(`/api/v1/exports/${exportId}/download`)
+      .get(`/api/exports/${exportId}/download`)
       .set("Cookie", [cookie, csrfCookie])
       .expect(200);
 
     expect(String(download.headers["content-type"] || "")).toContain("text/csv");
     expect(download.text).toContain("Salary");
     expect(download.text).toContain("Monthly salary");
+  });
+
+  it("supports custom column selection in transactions CSV export", async () => {
+    await EntitlementModel.create({
+      orgId,
+      userId,
+      plan: "pro",
+      status: "active",
+    });
+
+    await request(app)
+      .post("/api/transactions")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({
+        amount: 85.5,
+        category: "Groceries",
+        description: "Whole Foods Market",
+        date: "2026-02-10",
+        type: "expense",
+      })
+      .expect(201);
+
+    const created = await request(app)
+      .post("/api/exports")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({
+        type: "transactions_csv",
+        params: {
+          columns: ["date", "category", "amount", "description"],
+        },
+      })
+      .expect(201);
+
+    expect(created.body.export.status).toBe("succeeded");
+    const exportId = created.body.export.id as string;
+
+    const download = await request(app)
+      .get(`/api/exports/${exportId}/download`)
+      .set("Cookie", [cookie, csrfCookie])
+      .expect(200);
+
+    const lines = download.text.trim().split("\n");
+    expect(lines[0]?.trim()).toBe("date,category,amount,description");
+    expect(lines[1]).toContain("Groceries");
+    expect(lines[1]).toContain("-85.5");
+    expect(lines[1]).toContain("Whole Foods Market");
+    expect(lines[0]).not.toContain("source_agent_output_id");
   });
 
   it("creates and downloads a monthly summary PDF export", async () => {
@@ -117,7 +166,7 @@ describe("exports API", () => {
       .expect(201);
 
     const created = await request(app)
-      .post("/api/v1/exports")
+      .post("/api/exports")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({ type: "monthly_summary_pdf", params: { period_key: "2026-02" } })
@@ -127,7 +176,7 @@ describe("exports API", () => {
     const exportId = created.body.export.id as string;
 
     const download = await request(app)
-      .get(`/api/v1/exports/${exportId}/download`)
+      .get(`/api/exports/${exportId}/download`)
       .set("Cookie", [cookie, csrfCookie])
       .buffer(true)
       .parse(binaryParser)

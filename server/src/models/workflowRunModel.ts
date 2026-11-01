@@ -2,10 +2,17 @@ import { Schema, model, Document, Types } from "mongoose";
 
 export type WorkflowRunStatus = "queued" | "running" | "succeeded" | "failed";
 
+export interface IWorkflowRunSkippedAction {
+  index: number;
+  action_type: string;
+  reason: string;
+}
+
 export interface IWorkflowRunResult {
   tasks_created: string[];
   exports_created?: string[];
   notifications_sent?: Array<{ channel: string; to: string; mode: string }>;
+  actions_skipped?: IWorkflowRunSkippedAction[];
 }
 
 export interface IWorkflowRun {
@@ -15,6 +22,7 @@ export interface IWorkflowRun {
   status: WorkflowRunStatus;
   idempotencyKey?: string;
   requestId?: string;
+  triggerContext?: Record<string, unknown>;
   startedAt?: Date;
   finishedAt?: Date;
   result?: IWorkflowRunResult;
@@ -35,6 +43,7 @@ const workflowRunSchema = new Schema<IWorkflowRunDocument>(
     status: { type: String, enum: ["queued", "running", "succeeded", "failed"], default: "queued", index: true },
     idempotencyKey: { type: String, trim: true, maxlength: 128 },
     requestId: { type: String, trim: true, maxlength: 128 },
+    triggerContext: { type: Schema.Types.Mixed, default: {} },
     startedAt: { type: Date },
     finishedAt: { type: Date },
     result: { type: Schema.Types.Mixed, default: {} },

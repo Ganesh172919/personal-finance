@@ -112,24 +112,24 @@ export interface TopMerchantsResponse {
 /** Fetch daily spending totals for heatmap visualisation. */
 export async function getSpendingHeatmap(daysBack?: number): Promise<SpendingHeatmapResponse> {
   const query = typeof daysBack === "number" ? `?days_back=${daysBack}` : "";
-  return apiClient(`/v1/analytics/spending-heatmap${query}`);
+  return apiClient(`/analytics/spending-heatmap${query}`);
 }
 
 /** Fetch monthly spending breakdown by category. */
 export async function getCategoryTrends(months?: number): Promise<CategoryTrendsResponse> {
   const query = typeof months === "number" ? `?months=${months}` : "";
-  return apiClient(`/v1/analytics/category-trends${query}`);
+  return apiClient(`/analytics/category-trends${query}`);
 }
 
 /** Fetch monthly income vs. expense summary with savings rate. */
 export async function getIncomeExpenseSummary(months?: number): Promise<IncomeExpenseResponse> {
   const query = typeof months === "number" ? `?months=${months}` : "";
-  return apiClient(`/v1/analytics/income-expense${query}`);
+  return apiClient(`/analytics/income-expense${query}`);
 }
 
 /** Fetch current balances across all accounts with net-worth summary. */
 export async function getAccountBalances(): Promise<AccountBalancesResponse> {
-  return apiClient("/v1/analytics/account-balances");
+  return apiClient("/analytics/account-balances");
 }
 
 /** Fetch highest-spend merchants, ranked by total spend. */
@@ -138,5 +138,5 @@ export async function getTopMerchants(params?: { limit?: number; months?: number
   if (params?.limit) search.set("limit", String(params.limit));
   if (params?.months) search.set("months", String(params.months));
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
-  return apiClient(`/v1/analytics/top-merchants${suffix}`);
+  return apiClient(`/analytics/top-merchants${suffix}`);
 }

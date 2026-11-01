@@ -29,12 +29,30 @@ export type LogoutResponse = AnyRecord & { request_id?: string };
 
 export type BillingCheckoutRequest = AnyRecord & {
   plan_tier?: string;
+  billing_cycle?: "monthly" | "annual";
   seats?: number;
   success_url?: string;
   cancel_url?: string;
 };
 export type BillingCheckoutResponse = AnyRecord & { url?: string; request_id?: string };
 export type BillingPortalResponse = AnyRecord & { url?: string; request_id?: string };
+
+export type PurchaseCreditsRequest = {
+  pack_id: "ai_pack_250" | "ocr_pack_100" | "scenarios_pack_100" | "flex_bundle";
+};
+
+export type PurchaseCreditsResponse = {
+  success: boolean;
+  pack: {
+    id: string;
+    name: string;
+    price_usd: number;
+    credits: Record<string, number>;
+  };
+  period_key: string;
+  purchase_id: string;
+  request_id?: string;
+};
 
 export type PlanLimit = AnyRecord & { key?: string; value?: number | null };
 export type PlansResponse = AnyRecord & { plans?: AnyRecord[]; request_id?: string };
@@ -150,11 +168,20 @@ export type TaskKind = "cashflow" | "budget" | "debt" | "invest" | "goal" | "edu
 export type WorkflowTriggerManual = AnyRecord & { type: "manual" };
 export type WorkflowTriggerCron = AnyRecord & { type: "cron"; cron: string };
 export type WorkflowTriggerEvent = AnyRecord & { type: "event"; event_type: string };
+export type WorkflowTriggerWebhook = AnyRecord & { type: "webhook"; webhook_token?: string };
 export type WorkflowTrigger =
   | WorkflowTriggerManual
   | WorkflowTriggerCron
   | WorkflowTriggerEvent
+  | WorkflowTriggerWebhook
   | (AnyRecord & { type: string });
+
+export type WorkflowConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "contains";
+export type WorkflowActionCondition = {
+  field: string;
+  operator: WorkflowConditionOperator;
+  value: string | number | boolean;
+};
 
 export type WorkflowActionCreateTask = AnyRecord & {
   type: "create_task";
@@ -166,27 +193,32 @@ export type WorkflowActionCreateTask = AnyRecord & {
   expected_impact?: string;
   kind?: TaskKind;
   due_days?: number;
+  condition?: WorkflowActionCondition;
 };
 export type WorkflowActionSendNotification = AnyRecord & {
   type: "send_notification";
   channel: string;
   subject: string;
   message: string;
+  condition?: WorkflowActionCondition;
 };
 export type WorkflowActionExportReportMonthly = AnyRecord & {
   type: "export_report";
   export_type: "monthly_summary_pdf";
   params?: AnyRecord & { period_key?: string };
+  condition?: WorkflowActionCondition;
 };
 export type WorkflowActionExportReportCsv = AnyRecord & {
   type: "export_report";
   export_type: "transactions_csv";
   params?: AnyRecord;
+  condition?: WorkflowActionCondition;
 };
 export type WorkflowActionExportReportOther = AnyRecord & {
   type: "export_report";
   export_type: string;
   params?: AnyRecord;
+  condition?: WorkflowActionCondition;
 };
 export type WorkflowAction =
   | WorkflowActionCreateTask

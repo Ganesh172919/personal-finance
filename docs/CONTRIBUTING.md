@@ -4,6 +4,10 @@
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## Getting Started
 
 1. **Fork** the repository (or create a branch if you have write access)
@@ -19,11 +23,11 @@
 
 ```
 main                    ← Production-ready code
-├── develop             ← Integration branch (optional)
-├── feature/xyz         ← New features
-├── fix/xyz             ← Bug fixes
-├── refactor/xyz        ← Code refactoring
-└── docs/xyz            ← Documentation updates
+├──  develop             ← Integration branch (optional)
+├──  feature/xyz         ← New features
+├──  fix/xyz             ← Bug fixes
+├──  refactor/xyz        ← Code refactoring
+└──  docs/xyz            ← Documentation updates
 ```
 
 **Branch naming**: Use descriptive names like `feature/add-budget-reports`, `fix/receipt-ocr-timeout`, `refactor/transaction-service`.
@@ -198,3 +202,104 @@ Be respectful, constructive, and collaborative. All contributors are expected to
 ---
 
 _See also_: [SETUP.md](./SETUP.md) · [ARCHITECTURE.md](./ARCHITECTURE.md) · [FRONTEND.md](./FRONTEND.md)
+
+## Contribution Process & Standards Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#10b981', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#059669', 'lineColor': '#6366f1', 'secondaryColor': '#0284c7', 'tertiaryColor': '#ec4899'}}}%%
+mindmap
+  root((🤝 FinWise Contribution Guide))
+    🌱 Branching & Issue Setup
+      Branch naming: feat/issue-name, fix/bug-name
+      Conventional commits: feat:, fix:, docs:, refactor:
+      Atomic PRs with linked GitHub issue
+    🛡️ Architecture Invariants
+      Multi-Tenant orgId scoping on all DB models
+      Zod validation schema on every incoming endpoint
+      Error envelopes match standard HttpError format
+      Deterministic fallback for AI features
+    🧪 Test Requirements
+      Server: Vitest + mongodb-memory-server
+      AI Core: Pytest + Mock provider failovers
+      Client: Vitest + Testing Library
+      Target coverage: >=80%
+    🚀 Review & Promotion
+      Pre-push: npm run check && ruff check .
+      Automated CI matrix passes (100% green)
+      Squash-and-merge to main branch
+```
+
+## Feature Contribution & Pull Request ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 1: ISSUE SELECTION & WORKSPACE PREPARATION                     │
+│    Fork repository, create branch: git checkout -b feat/ai-budget-tool │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 💻 STEP 2: FULL-STACK IMPLEMENTATION                                   │
+│    ├─► Server: Model ➔ Zod Schema ➔ Service ➔ Controller ➔ Route       │
+│    ├─► AI Core: Implement tool in financial_calculators.py             │
+│    ├─► Client: React component + Zustand store integration             │
+│    └─► Docs: Update relevant guides in docs/ and documentation/        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧪 STEP 3: LOCAL TESTING & LINTING PASS                                │
+│    ├─► $ npm test --workspace=server ──► Vitest integration passes 🟢  │
+│    ├─► $ cd server/AI_Core && pytest ──► All agent tests green 🟢      │
+│    ├─► $ npm run check ──► TypeScript compiler passes without errors 🟢│
+│    └─► $ ruff check . ──► Python lint clean 🟢                         │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🚀 STEP 4: PULL REQUEST CREATION & CI VALIDATION                       │
+│    ├─► Push branch & open PR with clear description & issue link       │
+│    ├─► Automated GitHub Actions CI executes full test matrix           │
+│    └─► Maintainer code review ➔ Approved ➔ Squash merged to main 🟢     │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+## Contributor Git Workflow & Verification Script (`package.json`)
+
+```bash
+# 1. Clone repository and install root dependencies
+git clone https://github.com/your-username/personal-finance.git
+cd personal-finance
+npm install
+
+# 2. Create isolated feature branch following conventional standards
+git checkout -b feat/ai-portfolio-rebalance
+
+# 3. Execute full local verification pass before creating Pull Request
+npm run lint          # ESLint & TypeScript style checks across client and server
+npm test              # Vitest test suite execution
+npm run typecheck     # Verify zero TypeScript compiler errors (tsc --noEmit)
+
+# 4. Commit changes with Conventional Commit message
+git commit -m "feat(ai): integrate portfolio rebalance subagent with Kahn DAG execution"
+
+# 5. Push branch and open Pull Request
+git push origin feat/ai-portfolio-rebalance
+```
+
+---
+
+## 2026 Pre-Submission Invariant Checklist
+
+Before opening a Pull Request for new features or bugfixes, contributors must certify:
+
+| Invariant | Scope | Verification Rule |
+| :--- | :--- | :--- |
+| **OrgScopePlugin Invariant** | Server Models | All new Mongoose schemas include `orgId: { type: String, required: true, index: true }`. |
+| **Number Safety Invariant** | AI Core Agents | All monetary recommendations satisfy $\sum \Delta B = 0$ and emit zero mutated digits. |
+| **Monotonic Revision Invariant**| Real-Time SSE | Streaming state emitters must include monotonically increasing revision counters. |
+| **DLQ Scrubbing Invariant** | Worker Jobs | All failing BullMQ job payloads must pass through `scrubPayloadForDLQ()` before persisting to Redis. |
+| **Node 24 LTS Invariant** | Runtime | All code must execute cleanly under Node `>=24.14.1 <25` and npm `>=11.0.0`. |

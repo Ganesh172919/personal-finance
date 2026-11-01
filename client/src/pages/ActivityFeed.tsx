@@ -10,13 +10,13 @@
  * - Calls getActivityFeed() from the collaboration API with optional
  *   event_type filter and cursor-based pagination.
  * - Auto-refreshes every 30 seconds via React Query refetchInterval.
- * - Supports manual "Load more" for older entries.
+ * - Supports client-side text filtering and manual "Load more" for older entries.
  *
  * Serves as the organization-level audit trail, complementing the
  * per-user Dashboard activity widget.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
@@ -32,10 +32,13 @@ import {
   Filter,
   Clock,
   ChevronDown,
+  Search,
+  RefreshCw,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Input } from "@/components/ui/Input";
 import { getActivityFeed, type ActivityItem } from "@/lib/api/v1/collaboration";
 
 // ─── Icon Mapping ───────────────────────────────────────
@@ -92,6 +95,7 @@ const EVENT_FILTERS = [
 
 export default function ActivityFeedPage() {
   const [filterKey, setFilterKey] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [allActivities, setAllActivities] = useState<ActivityItem[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -107,15 +111,22 @@ export default function ActivityFeedPage() {
     refetchInterval: 30_000,
   });
 
-  // Reset accumulated activities when filter changes or initial data changes
   const baseActivities = feedQuery.data?.activities ?? [];
-  const activities = allActivities.length > 0 ? allActivities : baseActivities;
-  const hasMore = cursor ? true : (feedQuery.data?.has_more ?? false);
+  const rawActivities = allActivities.length > 0 ? allActivities : baseActivities;
+  const hasMore = Boolean(cursor || feedQuery.data?.has_more);
 
-  // Sync cursor from initial load
-  if (feedQuery.data?.next_cursor && !cursor && allActivities.length === 0) {
-    setCursor(feedQuery.data.next_cursor);
-  }
+  // Sync cursor from initial load safely via effect
+  useEffect(() => {
+    if (feedQuery.data?.next_cursor && allActivities.length === 0) {
+      setCursor(feedQuery.data.next_cursor);
+    }
+  }, [feedQuery.data?.next_cursor, allActivities.length]);
+
+  const handleFilterChange = (key: string) => {
+    setFilterKey(key);
+    setAllActivities([]);
+    setCursor(undefined);
+  };
 
   const handleLoadMore = async () => {
     if (!cursor || isLoadingMore) return;
@@ -126,7 +137,7 @@ export default function ActivityFeedPage() {
         event_type: filterKey !== "all" ? filterKey : undefined,
         before: cursor,
       });
-      const newActivities = [...activities, ...(nextPage.activities || [])];
+      const newActivities = [...rawActivities, ...(nextPage.activities || [])];
       setAllActivities(newActivities);
       setCursor(nextPage.next_cursor || undefined);
     } finally {
@@ -134,10 +145,22 @@ export default function ActivityFeedPage() {
     }
   };
 
+  // Filter by search query (actor name, description, event type)
+  const filteredActivities = useMemo(() => {
+    if (!searchQuery.trim()) return rawActivities;
+    const q = searchQuery.toLowerCase();
+    return rawActivities.filter((item) => {
+      const name = (item.actor?.name || "").toLowerCase();
+      const desc = (item.description || "").toLowerCase();
+      const type = (item.event_type || "").toLowerCase();
+      return name.includes(q) || desc.includes(q) || type.includes(q);
+    });
+  }, [rawActivities, searchQuery]);
+
   // Group by day
   const grouped = useMemo(() => {
     const groups = new Map<string, ActivityItem[]>();
-    for (const item of activities) {
+    for (const item of filteredActivities) {
       const dateKey = new Date(item.created_at).toLocaleDateString("en-US", {
         year: "numeric",
         month: "long",
@@ -147,10 +170,10 @@ export default function ActivityFeedPage() {
       groups.get(dateKey)!.push(item);
     }
     return Array.from(groups.entries());
-  }, [activities]);
+  }, [filteredActivities]);
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 overflow-auto" data-testid="activity-feed-page">
       {/* Header */}
       <div className="px-6 lg:px-8 py-6 border-b border-border">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -166,50 +189,89 @@ export default function ActivityFeedPage() {
               Activity Feed
             </motion.h1>
             <p className="text-sm text-muted-foreground mt-1">
-              See what's happening across your organization
+              Audit trail and chronological event timeline across your organization
             </p>
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Clock className="w-3.5 h-3.5" />
-            Auto-refreshes every 30s
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => feedQuery.refetch()}
+              disabled={feedQuery.isFetching}
+              className="text-xs h-8"
+              data-testid="button-refresh-activities"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${feedQuery.isFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Clock className="w-3.5 h-3.5" />
+              Auto-refreshes every 30s
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="px-6 lg:px-8 py-6">
-        {/* Filter chips */}
-        <div className="flex items-center gap-1.5 flex-wrap mb-6">
-          <Filter className="w-3.5 h-3.5 text-muted-foreground mr-1" />
-          {EVENT_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFilterKey(f.key)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                filterKey === f.key
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground bg-muted/50"
-              }`}
-              data-testid={`activity-filter-${f.key}`}
-            >
-              {f.label}
-            </button>
-          ))}
+      <div className="px-6 lg:px-8 py-6 space-y-6">
+        {/* Search & Filter Toolbar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {/* Filter chips */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Filter className="w-3.5 h-3.5 text-muted-foreground mr-1" />
+            {EVENT_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => handleFilterChange(f.key)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                  filterKey === f.key
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground bg-muted/50"
+                }`}
+                data-testid={`activity-filter-${f.key}`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Search box */}
+          <div className="w-full sm:w-64">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search events or actors..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8 text-xs h-8"
+                data-testid="input-search-activities"
+              />
+            </div>
+          </div>
         </div>
 
-        {/* Feed */}
+        {/* Feed Content */}
         {feedQuery.isLoading ? (
           <div className="flex flex-col items-center justify-center h-48 gap-3">
             <div className="w-8 h-8 rounded-full border-3 border-primary border-t-transparent animate-spin" />
             <p className="text-sm text-muted-foreground">Loading activity…</p>
           </div>
-        ) : activities.length === 0 ? (
+        ) : filteredActivities.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center h-48 gap-3">
               <Activity className="w-10 h-10 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">No activity yet</p>
-              <p className="text-xs text-muted-foreground/60">
-                Activity from transactions, budgets, goals, and more will appear here.
+              <p className="text-sm font-medium text-foreground">
+                {searchQuery ? "No matching activity found" : "No activity yet"}
               </p>
+              <p className="text-xs text-muted-foreground/60 text-center max-w-sm">
+                {searchQuery
+                  ? "Try adjusting your search terms or filter selection."
+                  : "Activity from transactions, budgets, goals, and more will appear here."}
+              </p>
+              {searchQuery && (
+                <Button variant="outline" size="sm" onClick={() => setSearchQuery("")} className="text-xs mt-1">
+                  Clear Search
+                </Button>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -226,7 +288,7 @@ export default function ActivityFeedPage() {
                   {/* Timeline line */}
                   <div className="absolute left-[18px] top-0 bottom-0 w-px bg-border" />
 
-                  <div className="space-y-0.5">
+                  <div className="space-y-1">
                     {items.map((item, idx) => {
                       const IconComp = ICON_MAP[item.icon] || Activity;
                       const accent = ACCENT_MAP[item.icon] || ACCENT_MAP.activity;
@@ -238,16 +300,19 @@ export default function ActivityFeedPage() {
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: Math.min(idx * 0.03, 0.3) }}
                           className="relative flex gap-3 py-2.5 pl-0.5 group"
+                          data-testid={`activity-item-${item.id}`}
                         >
                           {/* Icon */}
-                          <div className={`relative z-10 flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${accent} ring-4 ring-background`}>
+                          <div
+                            className={`relative z-10 flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${accent} ring-4 ring-background`}
+                          >
                             <IconComp className="w-4 h-4" />
                           </div>
 
                           {/* Content */}
                           <div className="flex-1 min-w-0 pt-0.5">
                             <p className="text-sm text-foreground leading-snug">
-                              <span className="font-semibold">{item.actor.name}</span>{" "}
+                              <span className="font-semibold">{item.actor?.name || "System"}</span>{" "}
                               <span className="text-muted-foreground">{item.description}</span>
                             </p>
                             <div className="flex items-center gap-2 mt-1">
@@ -270,7 +335,14 @@ export default function ActivityFeedPage() {
             {/* Load more */}
             {hasMore && (
               <div className="text-center pt-2">
-                <Button variant="outline" size="sm" className="text-xs" onClick={handleLoadMore} disabled={isLoadingMore}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  onClick={handleLoadMore}
+                  disabled={isLoadingMore}
+                  data-testid="button-load-more"
+                >
                   <ChevronDown className="w-3.5 h-3.5 mr-1" />
                   {isLoadingMore ? "Loading..." : "Load more"}
                 </Button>

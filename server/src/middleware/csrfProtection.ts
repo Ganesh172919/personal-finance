@@ -18,7 +18,7 @@
  *
  * EXEMPTIONS:
  * - Safe HTTP methods (GET, HEAD, OPTIONS) are always allowed (they don't change state)
- * - Webhook endpoints are exempt (they use signature verification instead)
+ * - Webhook endpoints are exempt (they use signature verification or secret tokens instead)
  * - Usage event endpoints are exempt (they use internal token authentication)
  *
  * @module middleware/csrfProtection
@@ -45,12 +45,13 @@ export const csrfProtection: RequestHandler = (req, res, next) => {
   }
 
   // Skip CSRF for webhook and usage event endpoints
-  // Webhooks use signature verification; usage events use internal tokens
+  // Webhooks use signature verification or secret tokens; usage events use internal tokens
   const path = String(req.originalUrl || req.url || "");
   if (
-    path.startsWith("/api/v1/billing/webhook") ||  // Stripe webhook (has signature verification)
-    path.startsWith("/api/usage-events") ||         // Usage tracking (internal token)
-    path.startsWith("/api/v1/usage-events")         // Usage tracking (internal token)
+    path.startsWith("/api/billing/webhook") ||  // Stripe webhook (has signature verification)
+    path.startsWith("/api/workflows/webhook") || // Inbound workflow webhook (has secret token in path)
+    path.startsWith("/api/tasks/webhook") ||     // Inbound task webhook (has secret token in path)
+    path.startsWith("/api/usage-events")        // Usage tracking (internal token)
   ) {
     return next();
   }

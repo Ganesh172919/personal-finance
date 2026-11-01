@@ -6,16 +6,16 @@
  * global state or functionality to the component tree.
  *
  * PROVIDER NESTING ORDER (outermost to innermost):
- * 1. QueryClientProvider — React Query server state management
- * 2. ThemeProvider — Dark/light theme switching
- * 3. AuthProvider — Authentication state and methods
+ * 1. ThemeProvider — Dark/light theme switching
+ * 2. AuthProvider — Authentication state and methods
+ * 3. ScopedDataProvider — Private query cache per account and workspace
  * 4. RealtimeAppEffects — SSE event listeners and keyboard shortcuts
  * 5. TooltipProvider — Tooltip configuration (Radix UI)
  *
  * WHY THIS ORDER?
- * - QueryClientProvider must be outermost (other providers may use queries)
  * - ThemeProvider affects CSS variables (must be before components render)
- * - AuthProvider depends on queries (must be inside QueryClientProvider)
+ * - Authentication resolves before the private query cache is selected
+ * - Account/workspace changes retire old queries and remount private screens
  * - RealtimeAppEffects depends on auth (needs user context)
  * - TooltipProvider is innermost (just wraps children with tooltip config)
  *
@@ -29,7 +29,6 @@
  */
 
 import type { ReactNode } from "react";
-import { QueryClientProvider } from "@tanstack/react-query"; // Server state management
 
 import { FeatureLimitDialog } from "@/components/FeatureLimitDialog"; // Feature limit dialog
 import { ThemeProvider } from "@/components/ThemeProvider";           // Theme management
@@ -40,7 +39,7 @@ import { AuthProvider } from "@/context/AuthContext";                  // Authen
 import { SkipToContent } from "@/hooks/useAccessibility";             // Accessibility skip link
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";  // Global keyboard shortcuts
 import { useRealtimeEvents } from "@/hooks/useRealtimeEvents";        // SSE event listeners
-import { queryClient } from "@/lib/queryClient";                      // React Query client instance
+import { ScopedDataProvider } from "./ScopedDataProvider";
 
 /**
  * Wrapper component that activates app-wide side effects.
@@ -68,9 +67,9 @@ function RealtimeAppEffects({ children }: { children: ReactNode }) {
  */
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <ScopedDataProvider>
           <RealtimeAppEffects>
             <TooltipProvider>
               {/* Global components (rendered once, outside router) */}
@@ -81,8 +80,8 @@ export function AppProviders({ children }: { children: ReactNode }) {
               {children}
             </TooltipProvider>
           </RealtimeAppEffects>
-        </AuthProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+        </ScopedDataProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

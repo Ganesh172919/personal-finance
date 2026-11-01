@@ -52,6 +52,10 @@ export interface TransactionPayload {
   description: string;
   type: TransactionType;
   date?: string;
+  splits?: Array<{
+    category: string;
+    amount: number;
+  }>;
 }
 
 export interface TransactionsQuery {
@@ -251,6 +255,30 @@ export const getDashboardSummary = async (): Promise<DashboardSummaryResponse> =
   return apiClient("/dashboard/summary");
 };
 
+export interface PortfolioHoldingPayout {
+  holding_name: string;
+  total_amount: number;
+  payout_count: number;
+  invested_amount: number;
+  yield_on_cost_pct: number;
+}
+
+export interface PortfolioDividendsSummary {
+  total_received: number;
+  ttm_received: number;
+  portfolio_yield_pct: number;
+  monthly_average: number;
+  payouts_by_holding: PortfolioHoldingPayout[];
+  monthly_progression: Array<{ month: string; amount: number }>;
+  recent_payouts: Array<{
+    id: string;
+    description: string;
+    amount: number;
+    date: string;
+    category: string;
+  }>;
+}
+
 export interface PortfolioSummaryResponse {
   generated_at: string;
   summary: {
@@ -270,6 +298,7 @@ export interface PortfolioSummaryResponse {
     weight_percentage: number;
   }>;
   performance: Array<{ month: string; invested: number; cumulative: number }>;
+  dividends?: PortfolioDividendsSummary;
   assumptions: string[];
 }
 
@@ -318,15 +347,39 @@ export interface CommandCenterSignal {
   action_href?: string;
 }
 
+export interface ConsolidatedNetting {
+  liquid_assets: number;
+  investment_assets: number;
+  total_assets: number;
+  credit_liabilities: number;
+  profile_debts: number;
+  total_liabilities: number;
+  net_liquid_cash: number;
+  net_worth: number;
+  netting_status: "surplus" | "balanced" | "deficit";
+  net_runway_days: number | null;
+  account_breakdown?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    balance: number;
+    currency: string;
+  }>;
+}
+
 export interface CommandCenterResponse {
   generated_at: string;
   time_of_day: "morning" | "afternoon" | "evening";
   cash_runway: {
+    balance_available?: boolean;
     liquid_balance: number;
+    net_liquid_balance?: number;
     avg_daily_expense: number;
     days_remaining: number | null;
+    net_days_remaining?: number | null;
     currency: string;
   };
+  consolidated_netting?: ConsolidatedNetting;
   budget_burn: {
     period_key: string;
     total_planned: number;
@@ -397,10 +450,52 @@ export interface BurnRateAlert {
   message: string;
 }
 
+export interface PredictiveSpendingLimit {
+  category: string;
+  planned: number;
+  spent: number;
+  remaining: number;
+  days_remaining: number;
+  current_daily_spend: number;
+  safe_daily_spend: number;
+  projected_eom: number;
+  overshoot_risk: boolean;
+  overshoot_amount: number;
+  recommended_cap: number;
+  daily_reduction_required: number;
+  status: "safe" | "caution" | "critical";
+}
+
+export interface PredictiveLimitsSummary {
+  days_remaining: number;
+  total_safe_daily_spend: number;
+  categories_at_risk: number;
+  total_daily_reduction_required: number;
+}
+
+export interface ProactiveSavingsRecommendation {
+  id: string;
+  title: string;
+  category: string;
+  impact_monthly_savings: number;
+  score_impact_pts: number;
+  difficulty: "easy" | "moderate" | "strategic";
+  reasoning: string;
+  action_type: "create_task" | "adjust_budget" | "boost_goal";
+  suggested_task_title: string;
+}
+
+export interface SavingsPotentialSummary {
+  total_monthly_savings: number;
+  potential_score_improvement: number;
+  recommended_actions_count: number;
+}
+
 export interface BudgetHealthResponse {
   generated_at: string;
   period_key: string;
   health_score: {
+    data_available?: boolean;
     total: number;
     budget_adherence: number;
     review_cleanliness: number;
@@ -408,6 +503,10 @@ export interface BudgetHealthResponse {
     debt_management: number;
   };
   burn_rate_alerts: BurnRateAlert[];
+  predictive_spending_limits?: PredictiveSpendingLimit[];
+  predictive_limits_summary?: PredictiveLimitsSummary;
+  proactive_savings_recommendations?: ProactiveSavingsRecommendation[];
+  savings_potential_summary?: SavingsPotentialSummary;
   pace_comparison: {
     current_week_avg_daily: number;
     last_week_avg_daily: number;
@@ -436,6 +535,25 @@ export const bulkApproveTransactions = async (transactionIds: string[]): Promise
   return apiClient("/transactions/bulk-approve", {
     method: "POST",
     body: JSON.stringify({ transaction_ids: transactionIds }),
+  });
+};
+
+export const bulkDeleteTransactions = async (
+  transactionIds: string[]
+): Promise<{ message: string; deleted_count: number }> => {
+  return apiClient("/transactions/bulk-delete", {
+    method: "POST",
+    body: JSON.stringify({ transaction_ids: transactionIds }),
+  });
+};
+
+export const bulkCategorizeTransactions = async (
+  transactionIds: string[],
+  category: string
+): Promise<{ message: string; modified_count: number; category: string }> => {
+  return apiClient("/transactions/bulk-categorize", {
+    method: "POST",
+    body: JSON.stringify({ transaction_ids: transactionIds, category }),
   });
 };
 

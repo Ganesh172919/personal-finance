@@ -16,6 +16,7 @@
  * Controllers: blogController
  */
 import { Router } from "express";
+import passport from "passport";
 import { blogController } from "../controllers/blogController";
 import { optionalJwtAuth } from "../middleware/optionalJwtAuth";
 import { validate } from "../middleware/validate";
@@ -39,7 +40,7 @@ router.get("/:slug", validate({ params: blogSlugParamSchema }), asyncRoute(blogC
 // Protected routes
 router.post(
   "/",
-  optionalJwtAuth,
+  passport.authenticate("jwt", { session: false }),
   validate({ body: createBlogPostBodySchema }),
   asyncRoute(blogController.createPost),
 );

@@ -3,6 +3,14 @@ import { Schema, model, Document, Types } from "mongoose";
 export type TaskPriority = "low" | "medium" | "high";
 export type TaskStatus = "open" | "completed" | "dismissed";
 export type TaskKind = "cashflow" | "budget" | "debt" | "invest" | "goal" | "education" | "generic";
+export type TaskRecurrenceCadence = "none" | "daily" | "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
+
+export interface ITaskRecurrence {
+  cadence: TaskRecurrenceCadence;
+  nextDueDate?: Date;
+  parentTaskId?: string;
+  generation?: number;
+}
 
 export interface ITaskSource {
   agentOutputId?: Types.ObjectId;
@@ -48,6 +56,7 @@ export interface ITask {
   applyIdempotencyKey?: string;
   actionLinkId?: string;
   outcomeRefs?: string[];
+  recurrence?: ITaskRecurrence;
 }
 
 export interface ITaskDocument extends Omit<ITask, "_id">, Document<string> {
@@ -96,7 +105,17 @@ const taskSchema = new Schema<ITaskDocument>(
     applyErrorCode: { type: String, trim: true, maxlength: 80 },
     applyIdempotencyKey: { type: String, trim: true, maxlength: 128 },
     actionLinkId: { type: String, trim: true, maxlength: 128 },
-    outcomeRefs: { type: [String], default: [] }
+    outcomeRefs: { type: [String], default: [] },
+    recurrence: {
+      cadence: {
+        type: String,
+        enum: ["none", "daily", "weekly", "biweekly", "monthly", "quarterly", "yearly"],
+        default: "none",
+      },
+      nextDueDate: { type: Date },
+      parentTaskId: { type: String, trim: true },
+      generation: { type: Number, default: 1 },
+    },
   },
   { timestamps: true }
 );

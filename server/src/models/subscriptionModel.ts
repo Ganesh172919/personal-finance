@@ -8,6 +8,7 @@ export interface ISubscription {
   orgId: Types.ObjectId;
   provider: SubscriptionProvider;
   planTier: PlanTier;
+  billingCycle?: "monthly" | "annual";
   status: EntitlementStatus;
   seats?: number;
   stripeSubscriptionId?: string;
@@ -27,6 +28,7 @@ const subscriptionSchema = new Schema<ISubscriptionDocument>(
     orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, unique: true },
     provider: { type: String, enum: ["stub", "stripe"], required: true, default: "stub" },
     planTier: { type: String, enum: ["free", "pro", "team", "enterprise"], required: true, default: "free" },
+    billingCycle: { type: String, enum: ["monthly", "annual"], default: "monthly" },
     status: { type: String, enum: ["active", "trialing", "past_due", "canceled"], required: true, default: "active" },
     seats: { type: Number, min: 1 },
     stripeSubscriptionId: { type: String, trim: true },

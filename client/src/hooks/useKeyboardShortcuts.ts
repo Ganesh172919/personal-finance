@@ -27,10 +27,10 @@ import { useCommandBarStore } from "@/stores/commandBarStore";
  * Shortcuts:
  * - Ctrl/Cmd + K → Toggle AI command bar
  * - Ctrl/Cmd + / → Toggle AI command bar (alternative)
- * - Ctrl/Cmd + Shift + N → Navigate to new transaction (transactions page)
  * - Ctrl/Cmd + Shift + D → Navigate to dashboard
  * - Ctrl/Cmd + Shift + A → Navigate to analytics
  * - Ctrl/Cmd + Shift + T → Navigate to transactions
+ * - Ctrl/Cmd + Shift + N → Navigate to chat (new conversation)
  * - Ctrl/Cmd + Shift + F → Navigate to finance OS
  * - Ctrl/Cmd + Shift + C → Navigate to chat
  * - Escape → Close command bar
@@ -85,7 +85,7 @@ export function useKeyboardShortcuts() {
             break;
           case "n":
             e.preventDefault();
-            navigate("/transactions"); // Navigate to transactions for new entry
+            navigate("/chat"); // New conversation
             break;
           case "f":
             e.preventDefault();

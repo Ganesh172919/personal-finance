@@ -22,7 +22,7 @@
  * Routed at /register; linked from Login page and public marketing.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Brain, Gift, ShieldCheck, Sparkles } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -98,6 +98,7 @@ const highlights = [
 export default function Register() {
   const { toast } = useToast();
   const [location, navigate] = useLocation();
+  const [googleEnabled, setGoogleEnabled] = useState(false);
 
   useEffect(() => {
     const next = sanitizeNextPath(getSearchParam(location, "next"));
@@ -109,12 +110,29 @@ export default function Register() {
     }
   }, [location]);
 
+  // Check if Google OAuth is available on the server
+  useEffect(() => {
+    (async () => {
+      try {
+        const providers = await apiClient<{ email: boolean; google: boolean }>("/auth/providers", { method: "GET" });
+        setGoogleEnabled(Boolean(providers.google));
+      } catch {
+        setGoogleEnabled(false);
+      }
+    })();
+  }, []);
+
+  /** Redirect to Google OAuth flow (server-side Passport.js redirect) */
+  const handleGoogleSignIn = () => {
+    window.location.href = "/api/auth/google";
+  };
+
   const {
     register,
     handleSubmit,
     setValue,
     formState: { errors, isSubmitting },
-  } = useForm<z.infer<typeof registerSchema>>({
+  } = useForm<z.input<typeof registerSchema>, unknown, z.output<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
   });
 
@@ -276,6 +294,23 @@ export default function Register() {
                 <Button type="submit" className="mt-2 w-full" disabled={isSubmitting}>
                   {isSubmitting ? "Creating account..." : "Create account"}
                 </Button>
+
+                {/* Google OAuth sign-up button — only shown when Google provider is enabled */}
+                {googleEnabled ? (
+                  <>
+                    <div className="relative my-2">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+                      </div>
+                    </div>
+                    <Button variant="outline" className="w-full" type="button" onClick={handleGoogleSignIn}>
+                      Continue with Google
+                    </Button>
+                  </>
+                ) : null}
               </form>
 
               <div className="mt-4 rounded-2xl border border-border/70 bg-background/65 p-3 text-xs leading-5 text-muted-foreground">

@@ -39,9 +39,11 @@ import { buildChatMessageCacheKey, ttlMs } from "../services/aiCache";
 import { buildProcessRequest } from "../services/aiRequestBuilder";
 import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements";
 import { extractWorkspaceFileText, detectWorkspaceFileKind } from "../services/fileTextExtraction";
+import { buildAiFinanceGrounding } from "../services/financeGrounding";
 import { assertGridFsOwnership, deleteGridFsFile, uploadBufferToGridFs } from "../services/gridfs";
 import { getJournalContextForAi } from "../services/journalContext";
 import { ensureProfileWithMigration } from "../services/profileService";
+import { deleteWorkspaceFileChunks, ensureWorkspaceFileChunks } from "../services/retrievalService";
 import { fetchTransactionsForAi } from "../services/transactionService";
 
 const requireOrgId = (req: Request) => {
@@ -75,6 +77,7 @@ const buildWorkspaceFileDto = (doc: any, includeExtractedText = false) => ({
   status: String(doc.status || "uploaded"),
   extractedPreview: doc.extractedPreview ? String(doc.extractedPreview) : "",
   extractedText: includeExtractedText ? String(doc.extractedText || "") : undefined,
+  extractedPageCount: doc.extractedPageCount,
   extractionWarnings: Array.isArray(doc.extractionWarnings) ? doc.extractionWarnings.map((warning: unknown) => String(warning)) : [],
   lastAnalyzedAt: doc.lastAnalyzedAt,
   analysis: doc.analysis
@@ -82,6 +85,9 @@ const buildWorkspaceFileDto = (doc: any, includeExtractedText = false) => ({
         summary: String(doc.analysis.summary || ""),
         response: String(doc.analysis.response || ""),
         plan: doc.analysis.plan,
+        evidence: Array.isArray(doc.analysis.evidence) ? doc.analysis.evidence : [],
+        confidence:
+          doc.analysis.confidence && typeof doc.analysis.confidence === "object" ? doc.analysis.confidence : undefined,
         analysisType: doc.analysis.analysisType ? String(doc.analysis.analysisType) : undefined,
         agentsInvolved: Array.isArray(doc.analysis.agentsInvolved)
           ? doc.analysis.agentsInvolved.map((agent: unknown) => String(agent))
@@ -175,6 +181,7 @@ export const uploadWorkspaceFiles = async (req: Request, res: Response) => {
         text: "",
         preview: "",
         warnings: [] as string[],
+        pageCount: undefined as number | undefined,
       };
       let status: "uploaded" | "processed" | "error" = "uploaded";
 
@@ -190,6 +197,7 @@ export const uploadWorkspaceFiles = async (req: Request, res: Response) => {
           text: result.text,
           preview: result.preview,
           warnings: result.warnings,
+          pageCount: result.pageCount,
         };
         status = "processed";
       } catch (error) {
@@ -198,6 +206,7 @@ export const uploadWorkspaceFiles = async (req: Request, res: Response) => {
           text: "",
           preview: "",
           warnings: ["The file was uploaded, but text extraction failed for this format."],
+          pageCount: undefined,
         };
         status = "error";
       }
@@ -214,7 +223,21 @@ export const uploadWorkspaceFiles = async (req: Request, res: Response) => {
         status,
         extractedText: extracted.text,
         extractedPreview: extracted.preview,
+        extractedPageCount: extracted.pageCount,
         extractionWarnings: extracted.warnings,
+      });
+
+      await ensureWorkspaceFileChunks({
+        orgId,
+        userId: user._id,
+        workspaceFileId: doc._id,
+        fileId,
+        originalName: file.originalname,
+        sourceKind: detectWorkspaceFileKind(file.mimetype || "application/octet-stream", file.originalname),
+        extractedText: extracted.text,
+        pageCount: extracted.pageCount,
+      }).catch((error) => {
+        logger.warn({ error, workspaceFileId: doc._id, requestId: req.requestId }, "Workspace file indexing failed; analysis will retry");
       });
 
       return buildWorkspaceFileDto(doc, true);
@@ -314,11 +337,24 @@ export const analyzeWorkspaceFile = async (req: Request, res: Response) => {
     throw new HttpError(404, "NOT_FOUND", "File not found");
   }
 
-  const [profile, journalContext, orgSettings, txResult] = await Promise.all([
+  const analysisPrompt = buildFileAnalysisPrompt({
+    fileName: file.originalName,
+    mimeType: file.mimeType,
+    extractedText: String(file.extractedText || ""),
+    prompt,
+  });
+
+  const [profile, journalContext, orgSettings, txResult, grounding] = await Promise.all([
     ensureProfileWithMigration({ orgId, userId: user._id }),
     getJournalContextForAi({ orgId, userId: user._id }),
     getOrgAiSettings(orgId),
     fetchTransactionsForAi({ orgId, userId: user._id }),
+    buildAiFinanceGrounding({
+      orgId,
+      userId: user._id,
+      selectedWorkspaceFileIds: [file._id.toString()],
+      retrievalQuery: prompt?.trim() || "income expenses payments balances obligations risks",
+    }),
   ]);
 
   const profileUpdatedAt = profile.updatedAt ? new Date(profile.updatedAt).toISOString() : "unknown";
@@ -353,13 +389,9 @@ export const analyzeWorkspaceFile = async (req: Request, res: Response) => {
   }
 
   const { request: aiRequest } = buildProcessRequest({
-    userInput: buildFileAnalysisPrompt({
-      fileName: file.originalName,
-      mimeType: file.mimeType,
-      extractedText: String(file.extractedText || ""),
-      prompt,
-    }),
+    userInput: analysisPrompt,
     profile,
+    financeContext: grounding.finance_context,
     orgId: orgId.toString(),
     userId: user._id.toString(),
     orgSettings,
@@ -376,6 +408,8 @@ export const analyzeWorkspaceFile = async (req: Request, res: Response) => {
     summary: String(aiResponse.final_output || "").slice(0, 280),
     response: aiResponse.final_output,
     plan: normalizedPlan,
+    evidence: aiResponse.evidence || grounding.evidence,
+    confidence: aiResponse.confidence || grounding.confidence,
     analysisType: aiResponse.analysis_type,
     agentsInvolved: aiResponse.agents_involved,
     workflowTrace: aiResponse.workflow_trace || [],
@@ -476,7 +510,8 @@ export const deleteWorkspaceFile = async (req: Request, res: Response) => {
     purpose: "workspace_file",
   });
 
-  await WorkspaceFileModel.deleteOne({ _id: file._id });
+  await deleteWorkspaceFileChunks({ orgId, userId: user._id, workspaceFileId: file._id });
+  await WorkspaceFileModel.deleteOne({ _id: file._id, orgId, userId: user._id });
   await deleteGridFsFile(file.fileId.toString()).catch((error) => {
     logger.warn({ error }, `[requestId=${req.requestId}] Failed to delete workspace GridFS file`);
   });

@@ -272,4 +272,39 @@ describe("tasks API", () => {
       source: { origin: "task_completion" },
     });
   }, 15000);
+
+  it("creates a single task directly via POST /api/tasks", async () => {
+    const res = await request(app)
+      .post("/api/tasks")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({
+        title: "Automate emergency fund savings",
+        why: "Disciplined automated saving guarantees goal completion.",
+        steps: ["Log in to net banking", "Create monthly recurring transfer", "Mark task complete"],
+        priority: "high",
+        expected_impact: "Guarantees $500 monthly progress.",
+        kind: "goal",
+        bucket: 30,
+        due_days: 14,
+      })
+      .expect(201);
+
+    expect(res.body.task).toMatchObject({
+      title: "Automate emergency fund savings",
+      why: "Disciplined automated saving guarantees goal completion.",
+      priority: "high",
+      kind: "goal",
+      bucket: 30,
+      status: "open",
+    });
+    expect(res.body.task.steps).toHaveLength(3);
+
+    const listRes = await request(app)
+      .get("/api/tasks?status=open")
+      .set("Cookie", [cookie, csrfCookie])
+      .expect(200);
+
+    expect(listRes.body.tasks.some((t: any) => t.title === "Automate emergency fund savings")).toBe(true);
+  });
 });
