@@ -12,8 +12,14 @@ import { fireAndForget } from "./deadLetterQueue";
 
 const REFERRAL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const REFERRAL_CODE_LENGTH = 10;
+// Duration in calendar months for which referral promotional rewards remain valid.
+// Dictates the number of forward billing cycles receiving bonus credit grants.
+// Ensures consistent multi-month reward vesting for referrers and referees.
 export const REFERRAL_REWARD_MONTHS = 3;
 
+// Allocation of complimentary credit units granted for successful referrals.
+// Provides bonus AI calls, API requests, workflow runs, and marketplace installs.
+// Distributed equally to both referring and referred organizations.
 export const REFERRAL_REWARD_UNITS: Partial<Record<CreditFeature, number>> = {
   monthly_ai_calls: 120,
   api_requests: 5000,
@@ -21,8 +27,14 @@ export const REFERRAL_REWARD_UNITS: Partial<Record<CreditFeature, number>> = {
   marketplace_installs: 1,
 };
 
+// Cleanses arbitrary referral code strings into uppercase trimmed representations.
+// Normalizes letter cases to ensure consistent code lookups and comparisons.
+// Eliminates leading and trailing whitespace introduced during input entry.
 const normalizeReferralCode = (raw: string) => raw.trim().toUpperCase();
 
+// Validates referral code formatting against required alphanumeric constraints.
+// Enforces length boundaries between 6 and 16 capital letters and digits.
+// Throws a bad request error when the provided referral string is invalid.
 const assertReferralCodeFormat = (code: string) => {
   const normalized = normalizeReferralCode(code);
   if (!/^[A-Z0-9]{6,16}$/.test(normalized)) {
@@ -31,6 +43,9 @@ const assertReferralCodeFormat = (code: string) => {
   return normalized;
 };
 
+// Generates a cryptographically random referral code from an unambiguous alphabet.
+// Avoids visually ambiguous characters like '0', 'O', '1', and 'I' for readability.
+// Returns a 10-character alphanumeric string suitable for user sharing.
 const generateReferralCode = () => {
   const bytes = crypto.randomBytes(REFERRAL_CODE_LENGTH);
   const chars: string[] = [];
@@ -41,6 +56,9 @@ const generateReferralCode = () => {
   return chars.join("");
 };
 
+// Retrieves or provisions a unique promotional referral code for an organization.
+// Retries generation upon hash collisions and handles race conditions idempotently.
+// Returns the active referral code document linked to the organization.
 export const getOrCreateReferralCodeForOrg = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -74,6 +92,9 @@ export const getOrCreateReferralCodeForOrg = async (params: {
   throw new Error("Unable to generate unique referral code");
 };
 
+// Aggregates referral performance metrics and inbound referral origins for an org.
+// Counts successful outbound redemptions and checks whether the org was referred.
+// Delivers summary counts and referrer attribution data for dashboard display.
 export const getReferralStatsForOrg = async (params: { orgId: mongoose.Types.ObjectId }) => {
   const [redemptions, referredBy] = await Promise.all([
     ReferralRedemptionModel.countDocuments({ referrerOrgId: params.orgId }),
@@ -91,6 +112,9 @@ export const getReferralStatsForOrg = async (params: { orgId: mongoose.Types.Obj
   };
 };
 
+// Redeems a referral code, establishing attribution and granting promotional credits.
+// Validates code authenticity, prevents self-referrals, and guards against double claims.
+// Distributes multi-period bonus credit grants to both referrer and referee orgs.
 export const redeemReferralCodeForOrg = async (params: {
   referredOrgId: mongoose.Types.ObjectId;
   referredUserId: mongoose.Types.ObjectId;
@@ -192,6 +216,9 @@ export const redeemReferralCodeForOrg = async (params: {
   };
 };
 
+// Applies a pending onboarding referral code associated with a newly registered user.
+// Redeems credits for the newly created personal organization and clears pending tags.
+// Cleans up invalid or expired codes asynchronously to keep user profiles pristine.
 export const applyPendingReferralForUser = async (params: {
   userId: mongoose.Types.ObjectId;
   orgId: mongoose.Types.ObjectId;

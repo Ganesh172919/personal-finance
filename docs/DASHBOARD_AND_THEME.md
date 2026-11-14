@@ -350,3 +350,10 @@ The dashboard routes have been unified under the canonical `/api/v1` prefix:
 | **Bulk Approval** | `POST /api/v1/transactions/bulk-approve` | `transactionReview.ts` | Bulk approval (up to 200 transactions) |
 | **Rule Promotion** | `POST /api/v1/transactions/:id/always-categorize` | `transactionReview.ts` | Promotes merchant to `CategoryRule` |
 | **Session Insights** | `GET /api/v1/chat/sessions/:id/insights` | `conversationInsightsCache.ts` | Coalesced action items and vitals |
+
+| **AI System Status** | `GET /api/v1/ai/status` | `aiController.ts` | Active model, KeyPool metrics, tokens |
+| **Canary Invariants** | `GET /api/v1/ai/canary/status` | `aiCanaryController.ts` | 5 mathematical invariant evaluation proofs |
+| **Financial Calendar** | `GET /api/v1/calendar-reminders` | `calendarReminderController.ts` | Due dates, alert offsets, status toggles |
+| **iCal Live Stream** | `GET /api/v1/calendar-reminders/export.ics` | `calendarReminderController.ts` | Standard RFC 5545 .ics calendar export |
+| **Merchant Clusters** | `GET /api/financial-data/merchant-clusters` | `financialDataController.ts` | 64-D vector centroid grouped entities |
+| **Journal Batch Sync**| `POST /api/financial-journal/entries/batch-sync`| `financialJournalController.ts` | Offline draft synchronization & vectoring |

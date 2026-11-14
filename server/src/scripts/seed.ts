@@ -2,10 +2,14 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import FinancialProfileModel from "../models/financialProfileModel";
 import AgentOutputModel from "../models/agentOutputModel";
+import { withOrgScopeBypass } from "../utils/orgScopePlugin";
 import TransactionModel from "../models/transactionModel";
 
 dotenv.config();
 
+// Database seeding script populating initial sample financial profile and transactions.
+// Connects to MongoDB, clears prior test entities, and inserts mock goals, debts, and ledger items.
+// Provides realistic sample data for local developer onboarding and feature demonstrations.
 async function seedProfile() {
   try {
     await mongoose.connect(process.env.MONGO_URI!);
@@ -16,7 +20,9 @@ async function seedProfile() {
 
     // Check and delete existing profile if needed
     await FinancialProfileModel.deleteOne({ userId });
-    await AgentOutputModel.deleteMany({ userId });
+    await withOrgScopeBypass("seed: reset one user's agent outputs", async () => {
+      await AgentOutputModel.deleteMany({ userId });
+    });
     await TransactionModel.deleteMany({ userId });
 
     // Create financial profile for your existing user
@@ -122,4 +128,7 @@ async function seedProfile() {
   }
 }
 
+// Script invocation executing profile seeding sequence.
+// Runs asynchronous data insertion routine.
+// Handles completion status and process exit.
 seedProfile();

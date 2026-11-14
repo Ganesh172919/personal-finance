@@ -71,6 +71,9 @@ import WorkspaceFileModel from "../models/workspaceFileModel";
 import { assertGridFsOwnership, findGridFsFileById, openGridFsDownloadStream } from "../services/gridfs";
 import { renderPdfFromTextRequest } from "../services/pdfRequestServer";
 
+// Validates tenant organization presence and returns a typed MongoDB ObjectId.
+// Confirms that the organization identifier satisfies MongoDB hex string requirements.
+// Aborts execution with an unauthorized HTTP error when tenant context is missing.
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -79,6 +82,9 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+// Enforces user session context on requests targeting PDF document rendering.
+// Confirms caller authentication before allocating PDF rendering compute resources.
+// Throws an unauthorized HTTP error when authenticated user records are missing.
 const requireUser = (req: Request) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -87,6 +93,9 @@ const requireUser = (req: Request) => {
   return user;
 };
 
+// Formats PDF rendering completion metadata into standardized API output schemas.
+// Maps generated file keys, file names, content types, byte sizes, and download URLs.
+// Binds request tracking identifiers to ensure client observability across tasks.
 const buildRenderedPdfResponse = (params: {
   fileId: mongoose.Types.ObjectId;
   filename: string;
@@ -104,6 +113,9 @@ const buildRenderedPdfResponse = (params: {
   request_id: params.requestId,
 });
 
+// Converts user-submitted raw prompt text directly into a formatted PDF document.
+// Streams rendered vector PDF layouts into GridFS under the caller tenant context.
+// Responds with download links and file metadata ready for immediate retrieval.
 export const renderPdfFromPromptText = async (req: Request, res: Response) => {
   const user = requireUser(req);
   const orgId = requireOrgId(req);
@@ -142,6 +154,9 @@ export const renderPdfFromPromptText = async (req: Request, res: Response) => {
   );
 };
 
+// Compiles extracted text from an existing workspace file into a professional PDF.
+// Verifies tenant ownership of the source file and ensures extracted text is present.
+// Persists generated PDF artifacts to GridFS and returns structured download paths.
 export const renderPdfFromWorkspaceTextFile = async (req: Request, res: Response) => {
   const user = requireUser(req);
   const orgId = requireOrgId(req);
@@ -191,6 +206,9 @@ export const renderPdfFromWorkspaceTextFile = async (req: Request, res: Response
   );
 };
 
+// Delivers compiled PDF files directly from GridFS storage to the client browser.
+// Asserts file ownership and configures binary streaming attachment headers.
+// Pipes GridFS download streams directly into the HTTP response stream.
 export const downloadRenderedPdf = async (req: Request, res: Response) => {
   const user = requireUser(req);
   const orgId = requireOrgId(req);

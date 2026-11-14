@@ -1,7 +1,10 @@
 # FinWise Server — Express 5 API Gateway & Task Worker
 
 > **Production-Grade Multi-Tenant API Gateway, Job Scheduler & Business Logic Engine**  
-> *Express 5 Routing, Mongoose 8 Tenant Isolation (`orgScopePlugin`), Redis 7 Distributed Caching, BullMQ Async Workers, and OpenTelemetry Tracing*  
+> *Express 5 Routing, Mongoose 8 Tenant Isolation (`orgScopePlugin`), optional Redis caching, MongoDB-backed workers, and OpenTelemetry Tracing*
+
+> [!IMPORTANT]
+> This guide has historical examples. The live worker is `src/worker/worker.ts`, which claims MongoDB job records; `bullmq` is not a runtime dependency. Use `PYTHON_API_URL`, not `AI_CORE_URL`.
 > **API Gateway Port:** `http://localhost:3000` · **Python AI Core Target:** `http://localhost:8001` · **MongoDB:** `:27017` · **Redis:** `:6379`
 
 ---
@@ -35,7 +38,7 @@ mindmap
       EventBus Redis Fanout Pub/Sub
       Idempotency Locking (Redlock)
     Asynchronous Worker
-      BullMQ Job Processor
+      MongoDB Job Processor
       Dead Letter Queue (DLQ) Quarantine
       Cron Schedulers Agenda
     Persistence
@@ -70,7 +73,7 @@ mindmap
                                         │                                 │
                                         ▼ Database Write                  ▼ Asynchronous Job
 ┌───────────────────────────────────────────────┐ ┌───────────────────────────────────────────────┐
-│ 💾 MONGOOSE 8 ORM (Port 27017)                │ │ ⚙️ BULLMQ & REDIS 7 WORKER (Port 6379)        │
+│ 💾 MONGOOSE 8 ORM (Port 27017)                │ │ ⚙️ MONGODB BACKGROUND WORKER                  │
 │    TransactionModel.create({ ...data, orgId })│ │    queue.add('process-statement', { orgId })  │
 │    - orgScopePlugin automatically filters     │ │    - Distributed Mutex Lock                   │
 │    - Compound index: { orgId: 1, date: -1 }   │ │    - Automatic Dead Letter Queue on error     │
@@ -113,24 +116,19 @@ export async function createSampleHandler(req: Request, res: Response, next: Nex
 }
 ```
 
-### 3.2 Dispatching Background Tasks via BullMQ
+### 3.2 Dispatching Background Tasks to the MongoDB Worker
 
 ```typescript
-import { Queue } from 'bullmq';
-import { redis } from '../config/redis.js';
+import WorkflowRunModel from "../models/workflowRunModel";
 
-export const statementQueue = new Queue('statement-processing', { connection: redis });
-
-export async function enqueueStatementJob(orgId: string, fileId: string) {
-  await statementQueue.add(
-    'extract-transactions',
-    { orgId, fileId },
-    {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 2000 },
-      removeOnComplete: true,
-    }
-  );
+export async function queueWorkflowRun(orgId: string, workflowId: string, userId: string, requestId: string) {
+  return WorkflowRunModel.create({
+    orgId,
+    workflowId,
+    triggeredByUserId: userId,
+    requestId,
+    status: "queued",
+  });
 }
 ```
 
@@ -143,9 +141,9 @@ export async function enqueueStatementJob(orgId: string, fileId: string) {
 
 The backend gateway and background worker deliver enterprise financial operations:
 1. **RAG Phase 2 Bounded Window Ingestion & BM25 Retrieval (`server/src/services/retrievalService.ts`)**: 1,800-character bounded chunks with 260-character sliding overlap and physical page preservation (``), indexed into `WorkspaceKnowledgeChunkModel`.
-2. **Automated BullMQ Newsletter Engine (`server/src/services/newsletterScheduler.ts`, `server/src/services/newsletterService.ts`)**: Timezone-aware 60-second cron runner delivering responsive weekly financial digests with spending analytics, 7-day bill horizons, and health score snapshots.
+2. **Automated newsletter scheduler (`server/src/services/newsletterScheduler.ts`, `server/src/services/newsletterService.ts`)**: Timezone-aware 60-second scheduler delivering responsive weekly financial digests with spending analytics, 7-day bill horizons, and health score snapshots.
 3. **Server-Side PDFKit Vector Compiler (`server/src/services/pdfRequestServer.ts`)**: Compiles high-fidelity PDF financial statements directly into MongoDB GridFS (`fs.files`, `fs.chunks`) without intermediate temporary disk files.
-4. **Dead Letter Queue (DLQ) & Job Resilience (`server/src/services/deadLetterQueue.ts`, `server/src/services/jobRecovery.ts`)**: Traps silent fire-and-forget failures, stores stack traces in Redis ring buffer `bull:finwise-dlq`, and recovers orphaned background jobs.
+4. **Failure records & job recovery (`server/src/services/deadLetterQueue.ts`, `server/src/services/jobRecovery.ts`)**: Keeps a bounded in-process diagnostic record for fire-and-forget failures and recovers orphaned MongoDB job records.
 5. **MongoDB Compound Index Health Audit (`server/src/services/transactionIndexes.ts`)**: Verifies on startup that essential compound B-tree indexes (`{ orgId: 1, date: -1 }`) are active to prevent unindexed collection scans.
 6. **Conversation Insights TTL Cache & Coalescing Engine (`server/src/services/conversationInsightsCache.ts`)**: Multi-tenant MongoDB snapshot cache with TTL invalidation (120s normal, 15s degraded) and in-process duplicate request coalescing.
 7. **Composite Financial Health Score Engine (`server/src/services/healthScoreService.ts`)**: Tracks historical health scores across 4 pillars with trend categorization (improving, stable, declining).
@@ -153,7 +151,7 @@ The backend gateway and background worker deliver enterprise financial operation
 ---
 ## 5. Local Execution & Testing Commands
 
-> **Verification Status:** **49 test suites / 193 tests passed** (Vitest + Supertest) · TypeScript strict (0 errors) · Node.js `>=24.14.1 <25`.
+> **Verification Status (4 November 2026):** **74 test files / 318 tests passed** (Vitest + Supertest) · TypeScript strict (0 errors) · Node.js `>=24.14.1 <25`.
 
 ```bash
 # 1. Install server dependencies
@@ -171,3 +169,49 @@ npm test
 # 5. Typecheck & lint verification
 npm run check
 ```
+
+---
+
+## Latest Gateway & Worker Innovations (2026 Enterprise Release)
+
+### 1. Machine Learning Merchant Embedding & Clustering Service (`merchantEmbeddingClustering.ts`)
+- Dense 64-dimensional L2-normalized vector space: Sector Taxonomies (dims 0–11), Brand Anchors (dims 12–27), and FastText subword character n-gram FNV-1a hashing (dims 28–63).
+- Hierarchical agglomerative centroid-based clustering groups messy descriptions into canonical entities when cosine similarity satisfies $C_{\text{sim}} \ge 0.70$.
+- Exposes `GET /api/transactions/merchant-clusters` and `POST /api/transactions/merchant-clusters/apply`.
+
+### 2. Multi-Modal Grounded RAG 64-D Vector Indexing (`retrievalService.ts`)
+- Form-feed aware chunking (1,800 characters target / 260 characters overlap) preserving physical PDF statement pages (`\f`).
+- Deterministic 64-D vector generation stored in MongoDB `workspaceKnowledgeChunks` collection.
+- Hybrid dense semantic + BM25 lexical ranking ($G = 0.55 \cdot S_{\text{cosine}} + 0.45 \cdot R_{\text{lexical\_norm}}$) enforcing grounding threshold $G \ge 0.70$.
+
+### 3. Authenticated Bank-Feed Import Simulator (`financialDataRoutes.ts`)
+- Ingests user-authenticated Plaid/Teller-style test payloads via `POST /api/transactions/bank-feed`. It is not a public provider callback and does not implement HMAC verification.
+- Enforces strict deduplication via sparse compound index `{ orgId: 1, externalId: 1 }`.
+- Evaluates algorithmic confidence scores ($0.10 \le C \le 1.00$) and routes unclassified items ($C < 0.70$) to review queue.
+
+### 4. Visual Workflow Webhooks & Delayed Timers (`workflows.ts`)
+- Inbound webhook trigger ingress via `POST /api/workflows/webhook/:token` authenticated by 48-character cryptographic token.
+- Multi-step delay timer execution (1 second to 30 days) with `WorkflowRun.delays_executed` logging.
+- Conditional branch filtering with runtime template variable interpolation (`{{field}}`).
+
+### 5. Multi-Channel Scheduled Exports (`scheduledExportService.ts`)
+- Recurring transaction ledger and statement exports dispatched to Email, Webhook Push, or Cloud Storage (AWS S3 & Google Cloud Storage GCS).
+- Integrates SHA-256 cryptographic checksum calculation (`X-FinWise-Checksum`) on generated report buffers.
+
+### 6. Subscription Dunning Recovery & Multi-Currency Billing (`dunningService.ts`, `currencyFx.ts`)
+- Automated dunning retry workflows recovering failed subscription payments with 7-day grace period enforcement.
+- ISO 4217 multi-currency billing localization across 7 currencies with JPY integer rounding.
+
+### 7. Continuous Production AI Canary Invariant Validation Engine (`aiCanaryService.ts`, `aiCanaryController.ts`)
+- Dual-layer invariant validation: Primary invocation to Python FastAPI microservice (`POST /canary/validate`) with automatic local TypeScript decimal math fallback.
+- Enforces 5 mathematical identities: Number safety ($D_{\text{cand}} \subseteq D_{\text{ref}} \cup D_{\text{allowlist}}$), zero-sum budget conservation ($\sum \Delta B_i = 0$), balance sheet identity, cash flow identity, and debt amortization.
+- Canonical routes: `GET /api/v1/ai/canary/status`, `POST /api/v1/ai/canary/validate`.
+
+### 8. Financial Calendar RFC 5545 iCal Streaming Feed & Reminders (`calendarReminderController.ts`)
+- Streams standardized RFC 5545 `VCALENDAR` feeds via `GET /api/v1/calendar-reminders/export.ics` authenticated by cryptographic tokens.
+- Supports creation, update, and cadence tracking for bill reminders, debt payoff milestones, and tax filings in `CalendarReminderModel`.
+
+### 9. Offline-First Financial Journal Batch Synchronization (`financialJournalController.ts`, `journalEmbeddingService.ts`)
+- Ingests bulk offline drafts via `POST /api/financial-journal/entries/batch-sync`.
+- Guarantees zero duplicate entries via compound unique index `{ orgId: 1, userId: 1, clientKey: 1 }`.
+- Projects notes into 64-dimensional semantic embedding space for conceptual vector search.

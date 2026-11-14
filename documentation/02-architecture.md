@@ -897,14 +897,120 @@ Transactions Page
 | Server controllers (v1) | 32 |
 | Server middleware | 13 |
 | Server models (Mongoose) | 49 |
-| Server services | 49 |
+| Server services | 60+ |
 | Server schemas (Zod) | 13+ |
-| AI agents | 6 |
+| AI agents | 10 |
 | AI tools | 3 modules |
 | Vision processors | 7 files |
 | Background job types | 3 |
 | Plugin system files | 5 |
 | Realtime modules | 2 |
+
+---
+
+## 11. Advanced Architectural Innovations (Latest 2026 Architecture)
+
+### 11.1 Machine Learning Merchant Embedding & Clustering Architecture
+
+The platform incorporates an embedded machine-learning pipeline (`merchantEmbeddingClustering.ts`) that transforms unstructured bank statement strings into dense 64-dimensional vector spaces without external API calls:
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#10b981', 'lineColor': '#34d399', 'secondaryColor': '#064e3b', 'tertiaryColor': '#047857'}}}%%
+mindmap
+  root((🧠 ML Clustering Subsystem))
+    Vector Space 64 Dimensions
+      Taxonomy Projections Dims 0-11
+      Brand Anchors Dims 12-27
+      Subword Char N-Grams Dims 28-63
+      L2 Unit Normalization ||v|| = 1.0
+    Clustering Engine
+      Centroid-Based Cosine Clustering
+      Linkage Distance Threshold 0.70
+      Dynamic Centroid Updating
+    Resolution & Rules
+      Canonical Merchant Name Mapping
+      Predicted Category Inference
+      1-Click Batch Promotion to CategoryRule
+```
+
+#### Vector Invariant & Cosine Formula
+Every merchant vector is normalized such that:
+$$\|\vec{v}\|_2 = \sqrt{\sum_{i=0}^{63} v_i^2} = 1.0 \pm 10^{-5}$$
+The pairwise cosine similarity between description $\vec{a}$ and centroid $\vec{c}$ simplifies to the inner product:
+$$\cos(\vec{a}, \vec{c}) = \sum_{i=0}^{63} a_i \cdot c_i \in [0, 1]$$
+
+---
+
+### 11.2 Multi-Modal Grounded RAG & Vector Indexing Subsystem
+
+The RAG engine (`retrievalService.ts`) indexes documents across text, tables, receipts, and structured data into 64-D dense embeddings stored in `workspaceKnowledgeChunks`:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📚 MULTI-MODAL RAG INDEXING & RETRIEVAL PIPELINE                                                │
+├─────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                 │
+│  [Uploaded PDF / CSV / Image] ──► Form-Feed Preserving Parser (\f)                              │
+│                                           │                                                     │
+│                                           ▼                                                     │
+│                           [Bounded Window Chunker]                                              │
+│                           - 1800 ch Target / 260 ch Overlap                                     │
+│                           - Preserves table markdown headers across chunks                      │
+│                           - Extracts financial entities (merchants, amounts, dates, currencies) │
+│                                           │                                                     │
+│                                           ▼                                                     │
+│                           [64-D Vector Embedding Generator]                                     │
+│                           - Financial concepts + structure density + FNV-1a subword hashes      │
+│                           - Strictly L2-normalized vector stored in MongoDB                     │
+│                                           │                                                     │
+│  [User Chat Query] ──► Query Vector ──────┼─────────────────────────────────────────────┐       │
+│                                           ▼                                             ▼       │
+│                        [Dense Semantic Cosine Sim]                  [Lexical BM25 Scoring]      │
+│                                           \                                            /        │
+│                                            ▼                                          ▼         │
+│                           [Hybrid Grounding Evaluator]                                          │
+│                           G = 0.55 * CosineSim + 0.45 * LexicalNormalized                       │
+│                           - If G >= 0.70 ──► Tag isGrounded = true                              │
+│                           - Render [docId:chunkIndex] clickable source citation                 │
+│                                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 11.3 Visual Workflow Node Graph Canvas & Delayed Execution
+
+The workflow subsystem supports visual node graph construction, delayed timer actions, and secure token-based inbound webhooks:
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0f766e', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#14b8a6', 'lineColor': '#2dd4bf', 'secondaryColor': '#115e59', 'tertiaryColor': '#134e4a'}}}%%
+mindmap
+  root((⚙️ Visual Workflow Engine))
+    Canvas Graph Nodes
+      Trigger Node (Webhook, Cron, Event, Manual)
+      Sequential Action Nodes (Task, Email, Export, Delay)
+      Condition Pills & Step Order Badges
+    Delayed Timers
+      Duration 1s to 30d
+      Asynchronous Promise Delay / BullMQ Hold
+      Logged in WorkflowRun.delays_executed
+    Branch Evaluation
+      Operators: eq, neq, gt, gte, lt, lte, contains
+      Evaluates context JSON paths
+      Template variable interpolation: {{field}}
+```
+
+---
+
+### 11.4 Global Multi-Currency FX Engine Architecture
+
+FinWise provides standardized multi-currency conversions across 7 global currencies (`USD`, `EUR`, `GBP`, `INR`, `CAD`, `AUD`, `JPY`):
+- **Base Currency**: `USD`
+- **Exchange Rates**: Standardized deterministic conversion matrix (`server/src/utils/currencyFx.ts` and `client/src/lib/currencyFx.ts`)
+- **Localization**: JPY amounts format with zero decimal places; all other currencies format with standard two decimal places.
+- **Cross-Border Tax Modeling**: Computes Dividend Withholding Tax (WHT) and Double Tax Treaty (DTAA) relief across foreign investment holdings.
+
+---
 
 ## System Architecture Mindmap
 

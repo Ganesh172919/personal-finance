@@ -634,3 +634,66 @@ Asynchronous background jobs (such as PDF generation, automated newsletter dispa
   }
   ```
 - **Replay Lifecycle**: Administrative operator inspects the quarantined payload at `/api/v1/dlq`, remediates underlying data or system issues, and triggers a replay via `POST /api/v1/dlq/retry/:jobId` which atomically pops from DLQ and requeues into the source queue.
+
+---
+
+## Latest Mongoose 8 Models & Indexes (2026 Architecture)
+
+### 1. `WorkspaceKnowledgeChunkModel` (64-D Vector Embeddings)
+- **Collection**: `workspaceknowledgechunks`
+- **Fields**: `orgId`, `userId`, `workspaceFileId`, `fileId`, `chunkIndex`, `text`, `pageNumber`, `modality` (`"text" | "table" | "image_ocr" | "structured_data"`), `embedding` (`[Number]` - 64 floats), `extractedEntities` (`merchants`, `amounts`, `dates`, `currencies`), `contentHash`.
+- **Compound Index**: `{ orgId: 1, userId: 1, workspaceFileId: 1, chunkIndex: 1 }` (unique).
+
+### 2. `DunningModel` (Payment Recovery & Grace Periods)
+- **Collection**: `dunningrecords`
+- **Fields**: `orgId`, `userId`, `subscriptionId`, `amount`, `currency`, `status` (`"active" | "recovered" | "exhausted"`), `currentAttempt`, `maxAttempts` (default: 3), `gracePeriodExpiresAt` (now + 7 days), `nextRetryAt`, `lastFailureReason`, `retryHistory`.
+- **Compound Index**: `{ orgId: 1, status: 1, nextRetryAt: 1 }`.
+
+### 3. `WorkflowModel` & `WorkflowRunModel` (Visual Canvas & Delays)
+- **Collection**: `workflows` and `workflowruns`
+- **Fields**: `webhook_token` (sparse unique index), `actions[].condition` (`{ field, operator, value }`), `actions[].delayMs` (1s to 30d), `delays_executed`, `actions_skipped`.
+
+### 4. `ScheduledExportModel` (Multi-Channel Destinations)
+- **Collection**: `scheduledexports`
+- **Fields**: `destination` (`"email" | "webhook" | "cloud_storage"`), `destinationConfig` (`webhookUrl`, `authHeader`, `cloudProvider`, `bucketName`, `bucketRegion`, `bucketPrefix`, `customFilename`), `lastDeliveryDetails`.
+
+### 5. `TaskModel` (Recurring Cadence & Lineage)
+- **Collection**: `tasks`
+- **Fields**: `recurrence.cadence` (`"none" | "daily" | "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly"`), `recurrence.nextDueDate`, `recurrence.parentTaskId`, `recurrence.generation`.
+
+### 6. `JournalEntryModel` (Offline Sync & 64-D Embeddings)
+- **Collection**: `journalentries`
+- **Fields**: `clientDraftId` (sparse unique index `{ orgId: 1, userId: 1, clientDraftId: 1 }`), `title`, `tags`, `sentiment`, `embedding` (64 floats), `syncStatus`.
+
+
+### 7. `CalendarReminderModel` (RFC 5545 Live iCal Subscriptions)
+- **Collection**: `calendarreminders`
+- **Fields**: `orgId` (ObjectId), `userId` (ObjectId), `title` (String), `amount` (Number), `category` (String), `dueDate` (Date), `cadence` (`"once" | "monthly" | "quarterly" | "yearly"`), `sourceKind` (`"bill" | "debt" | "tax" | "custom"`), `externalUid` (String), `alarmMinutesBefore` (Number, default: 1440).
+- **Compound Indexes**: `{ orgId: 1, userId: 1, dueDate: 1 }`, `{ orgId: 1, externalUid: 1 }` (unique, sparse).
+
+
+### 8. `FollowThroughPreferenceModel` (Adaptive Personalization & Feedback Engine)
+- **Collection**: `followthroughpreferences`
+- **Fields**: `orgId` (ObjectId), `userId` (ObjectId), `focusDomains` (Map of domain weights: task, goal, budget, reminder, recurring, debt, account), `riskTolerance` (`"conservative" | "moderate" | "aggressive"`), `preferredCadence` (`"daily" | "weekly" | "biweekly"`), `feedbackHistory` (Array of feedback entries: `signalId`, `domain`, `action` (`"upvote" | "dismiss" | "complete"`), `reason`, `createdAt`).
+- **Compound Index**: `{ orgId: 1, userId: 1 }` (unique).
+
+### 9. `DeadLetterJobModel` (Failed Background Task Recovery)
+- **Collection**: `dead_letter_jobs`
+- **Fields**: `orgId` (ObjectId), `queueName` (String: `exports`, `newsletter`, `ai_batch`, `integrations`), `jobId` (String), `payload` (Record), `error` (`message`: String, `stack`: String), `attemptsMade` (Number), `failedAt` (Date), `replayedAt` (Date, optional), `replayedBy` (ObjectId, optional).
+- **Compound Indexes**: `{ orgId: 1, queueName: 1, failedAt: -1 }`, `{ failedAt: 1 }`.
+
+### 10. `LeaderLockModel` (Distributed HA Lease Coordination)
+- **Collection**: `leader_locks`
+- **Fields**: `name` (String, e.g. `newsletter_scheduler`, `domain_event_poller`), `holder` (String: hostname:pid:uuid), `expiresAt` (Date, TTL lease boundary).
+- **Indexes**: `{ name: 1 }` (unique), `{ expiresAt: 1 }` (TTL index).
+
+---
+
+**Evidence:**
+- `server/src/models/followThroughPreferenceModel.ts`
+- `server/src/models/workspaceKnowledgeChunkModel.ts`
+- `server/src/models/journalEntryModel.ts`
+- `server/src/models/workflowModel.ts`
+- `server/src/models/calendarReminderModel.ts`
+- `server/src/models/deadLetterJobModel.ts`
+- `server/src/models/leaderLockModel.ts`

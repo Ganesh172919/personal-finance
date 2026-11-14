@@ -26,18 +26,48 @@ Design decisions
 """
 
 import logging
+from datetime import date
 from typing import Any, Dict, List
 
 import pandas as pd
+from dateutil.parser import parse as parse_date
 
 logger = logging.getLogger(__name__)
 
+
+# Parses raw date input string into standardized calendar date object.
+# Enforces minimum string length to ensure completeness of date string.
+# Returns date instance preserving exact calendar day of transaction.
+def parse_recorded_date(value: Any) -> date:
+    """Preserve the calendar day recorded on the transaction."""
+    raw_date = str(value)
+    if len(raw_date) < 10:
+        raise ValueError("Incomplete transaction date")
+    return parse_date(raw_date).date()
+
+
+# Converts transaction date into formatted year and month string token.
+# Handles parsing exceptions gracefully returning None on malformed input.
+# Returns string formatted as YYYY-MM representing recording month.
+def _recorded_month(value: Any) -> str | None:
+    try:
+        return parse_recorded_date(value).strftime("%Y-%m")
+    except (ValueError, OverflowError):
+        return None
+
+
+# Collection of static utility functions for processing transaction data.
+# Provides transaction categorisation, trend analysis, and ratio calculations.
+# Implements statistical anomaly detection without maintaining instance state.
 class DataProcessor:
     """Data processing utilities for financial data.
 
     All methods are static -- no instance state is needed.
     """
     
+    # Classifies raw transaction dictionaries into standard financial categories.
+    # Evaluates explicit transaction type tags before falling back to keywords.
+    # Returns dictionary partitioning records into income, expenses, and investments.
     @staticmethod
     def categorize_transactions(transactions: List[Dict]) -> Dict[str, List[Dict]]:
         """Categorize transactions by type and category"""
@@ -71,6 +101,9 @@ class DataProcessor:
         
         return categorized
     
+    # Analyzes historical spending patterns over monthly or custom periods.
+    # Aggregates expenses by category using pandas dataframe manipulations.
+    # Returns JSON-safe summary containing category trends and averages.
     @staticmethod
     def analyze_spending_trends(transactions: List[Dict], period: str = "monthly") -> Dict[str, Any]:
         """Analyze spending trends over time (JSON-safe: str keys, flat dicts)"""
@@ -78,33 +111,31 @@ class DataProcessor:
             return {"trends": {}, "summary": {"total_spending": 0.0, "average_monthly_spending": 0.0, "top_categories": {}}}
         
         try:
-            df = pd.DataFrame(transactions)
-            df['date'] = pd.to_datetime(df['date'])
+            df = pd.DataFrame.from_records(transactions, columns=['date', 'amount', 'category'])
             df['amount'] = pd.to_numeric(df['amount'])
             
             # Filter expenses (negative amounts)
             expenses_df = df[df['amount'] < 0].copy()
             expenses_df['amount'] = expenses_df['amount'].abs()
+            total_spending = float(expenses_df['amount'].sum())
+            category_totals = expenses_df.groupby('category')['amount'].sum()
             
             if period == "monthly":
-                grouped = expenses_df.groupby([expenses_df['date'].dt.to_period('M'), 'category'])['amount'].sum().unstack(fill_value=0)
+                recorded_months = expenses_df['date'].map(_recorded_month)
+                grouped = expenses_df.groupby([recorded_months, 'category'])['amount'].sum().unstack(fill_value=0)
                 raw_dict = grouped.to_dict(orient="index")
                 trends = {
                     str(p): {str(cat): float(val) for cat, val in row.items()}
                     for p, row in raw_dict.items()
                 }
-                total_spending = float(expenses_df['amount'].sum())
                 monthly_totals = grouped.sum(axis=1)
-                avg_monthly_spending = float(monthly_totals.mean()) if len(monthly_totals) > 0 else 0.0
-                top_raw = grouped.sum(axis=0).nlargest(5)
-                top_categories = {str(cat): float(val) for cat, val in top_raw.items()}
+                avg_monthly_spending = None if recorded_months.isna().any() else (
+                    float(monthly_totals.mean()) if len(monthly_totals) > 0 else 0.0
+                )
             else:
-                grouped = expenses_df.groupby('category')['amount'].sum()
-                trends = {str(cat): float(val) for cat, val in grouped.to_dict().items()}
-                total_spending = float(expenses_df['amount'].sum())
+                trends = {str(cat): float(val) for cat, val in category_totals.to_dict().items()}
                 avg_monthly_spending = total_spending
-                top_raw = grouped.nlargest(5)
-                top_categories = {str(cat): float(val) for cat, val in top_raw.items()}
+            top_categories = {str(cat): float(val) for cat, val in category_totals.nlargest(5).items()}
             
             return {
                 "trends": trends,
@@ -118,6 +149,9 @@ class DataProcessor:
             logger.error(f"Error in analyze_spending_trends: {str(e)}")
             return {"trends": {}, "summary": {"total_spending": 0.0, "average_monthly_spending": 0.0, "top_categories": {}}}
     
+    # Computes core personal finance health metrics from raw balances.
+    # Calculates savings rate, debt-to-income, net worth, and runway.
+    # Returns dictionary of key performance ratios rounded for clarity.
     @staticmethod
     def calculate_financial_ratios(income: float, expenses: float, debts: List[Dict], assets: float) -> Dict[str, float]:
         """Calculate key financial ratios"""
@@ -133,6 +167,9 @@ class DataProcessor:
         
         return ratios
     
+    # Identifies statistical spending anomalies using z-score thresholding.
+    # Calculates mean and standard deviation across transaction amounts.
+    # Returns list of flagged anomalous transaction items exceeding threshold.
     @staticmethod
     def detect_anomalies(transactions: List[Dict], threshold: float = 2.0) -> List[Dict]:
         """Detect anomalous transactions using statistical methods (flat dicts)"""

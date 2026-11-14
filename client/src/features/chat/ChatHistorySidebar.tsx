@@ -36,10 +36,16 @@ import { useChatStore } from "@/stores/chatStore";
 import type { IChatSession } from "@/types/chat.types";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
+// Property configuration contract for the chat conversation history sidebar.
+// Provides callback hooks triggered when the user selects a distinct session.
+// Enables parent navigation shells to synchronize pane states or mobile views.
 interface ChatHistorySidebarProps {
   onSessionSelect?: (sessionId: string) => void;
 }
 
+// Sidebar navigation component presenting past conversations organized by date.
+// Offers fast search filtering, thread creation, inline renaming, and deletion.
+// Displays localized message timestamps, message counts, and active thread highlights.
 export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps) {
   const {
     sessions,
@@ -96,7 +102,12 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
 
   const handleDelete = async (sessionId: string) => {
     if (!window.confirm("Delete this conversation?")) return;
+    const wasOpen = useChatStore.getState().currentSessionId === sessionId;
     await deleteSession(sessionId);
+    // Leave the deleted thread's URL so a reload does not show "Conversation unavailable".
+    if (wasOpen && !useChatStore.getState().sessions.some((session) => session.id === sessionId)) {
+      navigate("/chat", { replace: true });
+    }
   };
 
   const filteredSessions = sessions.filter((session) =>
@@ -143,7 +154,9 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      {/* Radix renders the viewport child as display:table, which lets long titles widen rows
+          past the sidebar and defeats truncation; force block layout so titles ellipsize. */}
+      <ScrollArea className="flex-1 [&_[data-radix-scroll-area-viewport]>div]:!block">
         <div className="px-2 pb-4">
           {isLoadingSessions ? (
             <div className="flex items-center justify-center py-8">
@@ -266,6 +279,9 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
   );
 }
 
+// Buckets conversation sessions into chronological time intervals.
+// Categorizes sessions across Today, Yesterday, Last 7 Days, and Older buckets.
+// Produces an ordered grouping structure for intuitive sidebar browsing.
 function groupSessionsByDate(sessions: IChatSession[]): Record<string, IChatSession[]> {
   const groups: Record<string, IChatSession[]> = {};
   const now = new Date();

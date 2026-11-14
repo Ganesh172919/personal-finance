@@ -271,43 +271,105 @@ mindmap
 > **Developer Guide: Building & Extending on This Project**  
 > For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
 
-## Production Implementation Blueprint: Interactive Citation Pill Component (`client/src/components/CitationPill.tsx`)
+## Production Implementation Blueprint: Grounded Chat Document Card (`client/src/features/chat/ChatDocumentCard.tsx`)
 
 ```typescript
-import React from "react";
-import { ExternalLink, FileText } from "lucide-react";
+import { Link } from "wouter";
+import type { IChatAttachment, IChatMessageMetadata } from "@/types/chat.types";
+import { buildApiUrl } from "@/lib/apiBase";
+import { evidenceFilePath, isWorkspaceFileId } from "@/lib/fileReferences";
 
-interface CitationPillProps {
-  citationIndex: number;
-  filename: string;
-  pageNumber: number;
-  groundingScore: number;
-  onClick: () => void;
-}
+const FORMAT_DISPLAY_NAMES: Record<string, string> = {
+  executive_brief: "Executive Brief",
+  tax_prep_summary: "Tax Prep Summary",
+  cash_flow_audit: "Cash Flow Audit",
+  debt_payoff_schedule: "Debt Amortization",
+  net_worth_statement: "Net Worth Statement",
+  standard: "Financial Report",
+};
 
-export const CitationPill: React.FC<CitationPillProps> = ({
-  citationIndex,
-  filename,
-  pageNumber,
-  groundingScore,
-  onClick,
-}) => {
-  const isHighConfidence = groundingScore >= 0.70;
+/**
+ * Renders verified chat-generated and cited documents with format labels,
+ * physical page badges, direct PDF downloads, and 1-click Copilot handoff.
+ */
+export function ChatDocumentCard({
+  document,
+  returnTo,
+  onUseDocument,
+  disabled,
+}: {
+  document: NonNullable<IChatMessageMetadata["generatedDocuments"]>[number];
+  returnTo?: string;
+  onUseDocument?: (file: IChatAttachment) => void;
+  disabled?: boolean;
+}) {
+  const path = evidenceFilePath({ type: "file", entity_id: document.workspaceFileId }, returnTo);
+  if (!path || !isWorkspaceFileId(document.fileId)) return null;
+
+  const formatLabel = document.format ? (FORMAT_DISPLAY_NAMES[document.format] || document.format) : undefined;
 
   return (
-    <button
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 my-1 mx-1 text-xs font-medium rounded-full transition-colors border ${
-        isHighConfidence
-          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
-          : "bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20"
-      }`}
-      title={`Grounding confidence: ${(groundingScore * 100).toFixed(1)}%`}
+    <section
+      data-testid={`card-chat-doc-${document.fileId}`}
+      aria-label={`Created document: ${document.title}`}
+      className="mt-3 w-full rounded-md border border-border bg-background p-3"
     >
-      <FileText className="w-3 h-3" />
-      <span>[{citationIndex}] {filename} (p. {pageNumber})</span>
-      <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-    </button>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="break-words text-sm font-semibold">{document.title}</h3>
+        <div className="flex items-center gap-1.5">
+          {formatLabel ? (
+            <span
+              data-testid={`badge-doc-format-${document.fileId}`}
+              className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary"
+            >
+              {formatLabel}
+            </span>
+          ) : null}
+          {document.pageCount && document.pageCount > 1 ? (
+            <span
+              data-testid={`badge-doc-pages-${document.fileId}`}
+              className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
+            >
+              {document.pageCount} pages
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <p className="mt-1 break-all text-xs text-muted-foreground">
+        {document.filename} · PDF · {Math.max(1, Math.ceil(document.sizeBytes / 1024))} KB
+      </p>
+      <div className="mt-3 flex flex-wrap gap-3 text-sm">
+        <a
+          data-testid={`btn-download-pdf-${document.fileId}`}
+          className="text-primary underline underline-offset-4"
+          href={buildApiUrl(`/files/rendered/${document.fileId}/download`)}
+          download={document.filename}
+        >
+          Download PDF
+        </a>
+        <Link className="text-primary underline underline-offset-4" href={path}>
+          Open file
+        </Link>
+        {onUseDocument ? (
+          <button
+            type="button"
+            data-testid={`btn-use-doc-${document.fileId}`}
+            className="text-primary underline underline-offset-4 disabled:opacity-50"
+            disabled={disabled}
+            onClick={() =>
+              onUseDocument({
+                fileId: document.fileId,
+                filename: document.filename,
+                contentType: "application/pdf",
+                sizeBytes: document.sizeBytes,
+              })
+            }
+          >
+            Ask about this PDF
+          </button>
+        ) : null}
+      </div>
+    </section>
   );
-};
+}
 ```

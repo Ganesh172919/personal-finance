@@ -19,6 +19,9 @@
  */
 import { z } from "zod";
 
+// Validates request payloads creating an automatic transaction categorization rule.
+// Enforces match pattern text, matching algorithm type, target category, and priority.
+// Assigns defaults for match algorithms and target fields if omitted in the payload.
 export const createCategoryRuleBodySchema = z.object({
   pattern: z.string().trim().min(1).max(200),
   matchType: z.enum(["contains", "starts_with", "exact", "regex"]).default("contains"),
@@ -28,10 +31,16 @@ export const createCategoryRuleBodySchema = z.object({
   priority: z.number().int().min(0).max(1000).optional(),
 });
 
+// Validates partial update payloads modifying an existing auto-categorization rule.
+// Makes creation fields optional and accepts a boolean flag to toggle enabled status.
+// Facilitates updating pattern expressions or enabling and disabling rules in place.
 export const updateCategoryRuleBodySchema = createCategoryRuleBodySchema.partial().extend({
   enabled: z.boolean().optional(),
 });
 
+// Validates route parameters referencing an auto-categorization rule by ID.
+// Enforces standard 24-character hexadecimal MongoDB ObjectId string syntax.
+// Protects categorization rule route endpoints against malformed parameter inputs.
 export const categoryRuleIdParamSchema = z.object({
   id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid id"),
 });

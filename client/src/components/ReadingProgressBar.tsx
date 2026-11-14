@@ -20,6 +20,9 @@
  */
 import { useEffect, useState } from 'react';
 
+// Fixed top reading progress bar tracking scroll progress across long-form documents.
+// Listens to passive window scroll events to calculate fractional page completion.
+// Smoothly animates width fills across educational articles and narrative stories.
 export function ReadingProgressBar() {
   const [progress, setProgress] = useState(0);
 

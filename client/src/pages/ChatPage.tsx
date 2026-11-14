@@ -47,6 +47,9 @@ import { ChatContainer, ChatHistorySidebar } from "@/features/chat";
 import { useAuth } from "@/hooks/useAuth";
 import { useChatStore } from "@/stores/chatStore";
 
+// Array of AI financial copilot capability highlights rendered in the chat header.
+// Details multi-agent reasoning, autopilot actions, and provider visibility features.
+// Provides users with visual cues regarding supported conversational capabilities.
 /** Capability highlights shown in the header (hidden on small screens) */
 const capabilityHighlights = [
   {
@@ -66,6 +69,9 @@ const capabilityHighlights = [
   },
 ];
 
+// Full-screen conversational AI financial strategist chat interface page.
+// Orchestrates session history sidebars, active streaming chat, and insight panels.
+// Supports mobile drawer navigation, new session generation, and model status dialogs.
 export default function ChatPage() {
   const params = useParams();
   const sessionId = params.sessionId as string | undefined;
@@ -91,11 +97,6 @@ export default function ChatPage() {
 
   return (
     <div className="relative flex h-dvh flex-col bg-background">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-8 top-0 h-72 w-72 rounded-full bg-white/6 blur-3xl" />
-        <div className="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-chart-2/10 blur-3xl" />
-      </div>
-
       <header className="relative border-b border-border/70 bg-background/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1600px] flex-col gap-1.5 px-4 py-2 lg:px-5">
           <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">

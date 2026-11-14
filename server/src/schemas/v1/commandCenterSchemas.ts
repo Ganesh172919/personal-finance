@@ -15,10 +15,19 @@
  */
 import { z } from "zod";
 
+// Validates query parameters for fetching unified command center dashboard data.
+// Enforces an empty object payload in strict mode to disallow unexpected query keys.
+// Ensures clean endpoint consumption across real-time command center widgets.
 export const commandCenterQuerySchema = z.object({}).strict();
 
+// Validates query parameters for fetching organizational budget health diagnostics.
+// Enforces strict schema evaluation rejecting extraneous or unknown parameters.
+// Ensures clean input validation prior to evaluating budget health score metrics.
 export const budgetHealthQuerySchema = z.object({}).strict();
 
+// Validates request payloads executing bulk approval on pending review transactions.
+// Enforces an array of valid MongoDB ObjectId strings bounded between 1 and 200 items.
+// Rejects unexpected properties using strict object schema validation.
 export const bulkApproveBodySchema = z
   .object({
     transaction_ids: z
@@ -28,6 +37,9 @@ export const bulkApproveBodySchema = z
   })
   .strict();
 
+// Validates request payloads executing bulk deletion across multiple ledger transactions.
+// Enforces an array of between 1 and 200 valid 24-character hexadecimal ObjectIds.
+// Protects bulk deletion endpoints against malformed or unbounded identifier lists.
 export const bulkDeleteBodySchema = z
   .object({
     transaction_ids: z
@@ -37,6 +49,9 @@ export const bulkDeleteBodySchema = z
   })
   .strict();
 
+// Validates request payloads applying category reassignment across multiple transactions.
+// Accepts an array of up to 200 transaction ObjectIds and an authoritative target category.
+// Enforces strict length bounds on category strings to keep ledger records sanitized.
 export const bulkCategorizeBodySchema = z
   .object({
     transaction_ids: z

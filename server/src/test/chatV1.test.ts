@@ -25,6 +25,10 @@ vi.mock("../services/aiCoreClient", async () => {
         inputTokens: 0, outputTokens: 0, tokenCount: 0, fallbackUsed: false, cacheHit: true,
       }],
       fallback_used: false,
+      active_provider: "groq",
+      active_model: "openai/gpt-oss-20b",
+      active_key_id: "internal-key-reference",
+      recovered_failures: [{ provider: "gemini", key_id: "internal-key-reference", reason: "access_denied" }],
       llm_call_count: 0,
       request_id: requestId,
       usage: {
@@ -51,6 +55,7 @@ vi.mock("../services/aiCoreClient", async () => {
 import { createApp } from "../app";
 import { configurePassport } from "../config/passport";
 import { processAiCoreRequest } from "../services/aiCoreClient";
+import { AiCoreOverloadedError } from "../services/aiCoreResilience";
 import AutopilotRunModel from "../models/autopilotRunModel";
 import { createAuthedUser } from "./authHelpers";
 import { clearTestDb, startTestDb, stopTestDb } from "./testDb";
@@ -59,6 +64,8 @@ import { parseChatDocumentRequest } from "../services/chatDocuments";
 import * as fileTextExtraction from "../services/fileTextExtraction";
 import FinancialProfileModel from "../models/financialProfileModel";
 import TaskModel from "../models/taskModel";
+import TransactionModel from "../models/transactionModel";
+import { ensurePersonalOrgForUser } from "../services/orgService";
 import UsageEventModel from "../models/usageEventModel";
 import { recordFeatureUsage } from "../services/entitlements";
 import { Types } from "mongoose";
@@ -89,6 +96,130 @@ describe("chat v1 API", () => {
     csrfCookie = (csrf.headers["set-cookie"]?.[0] || "").split(";")[0] || "";
     csrfToken = String(csrf.body.csrf_token || "");
     expect(csrfToken.length).toBeGreaterThan(10);
+  });
+
+  it("answers a current-month spending question from the caller’s ledger without AI Core", async () => {
+    vi.mocked(processAiCoreRequest).mockClear();
+    const userId = new Types.ObjectId(ownerUserId);
+    const { orgId } = await ensurePersonalOrgForUser(userId);
+    const other = await createAuthedUser();
+    const otherOrg = await ensurePersonalOrgForUser(other.user._id);
+    const now = new Date();
+    const previousMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+    await TransactionModel.create([
+      { orgId, userId, date: now, type: "expense", amount: -5, category: "Food & Dining", description: "Lunch" },
+      { orgId, userId, date: now, type: "expense", amount: -2, category: "Transport", description: "Bus" },
+      { orgId, userId, date: previousMonth, type: "expense", amount: -100, category: "Transport", description: "Previous month" },
+      { orgId: otherOrg.orgId, userId: other.user._id, date: now, type: "expense", amount: -100, category: "Other", description: "Separate workspace" },
+    ]);
+    const headers = [cookie, csrfCookie];
+    const created = await request(app).post("/api/chat/sessions")
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken).send({}).expect(201);
+    const url = `/api/chat/sessions/${created.body.id}/messages`;
+    const response = await request(app).post(url)
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken)
+      .send({ content: "How much did I spend this month, and which category had the most spending?" }).expect(200);
+    expect(response.body.assistantMessage.content).toContain("You spent **$7.00**");
+    expect(response.body.assistantMessage.content).toContain("Food & Dining");
+    expect(response.body.assistantMessage.metadata.llmCallCount).toBe(0);
+    const previous = await request(app).post(url)
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken)
+      .send({ content: "What was my total spending last month?" }).expect(200);
+    expect(previous.body.assistantMessage.content).toContain("You spent **$100.00**");
+    expect(previous.body.assistantMessage.content).toContain("Transport");
+    const followUp = await request(app).post(url)
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken)
+      .send({ content: "And this month?" }).expect(200);
+    expect(followUp.body.assistantMessage.content).toContain("You spent **$7.00**");
+    const chained = await request(app).post(url)
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken)
+      .send({ content: "What about last month?" }).expect(200);
+    expect(chained.body.assistantMessage.content).toContain("You spent **$100.00**");
+    expect(chained.body.assistantMessage.metadata.llmCallCount).toBe(0);
+    expect(processAiCoreRequest).not.toHaveBeenCalled();
+
+    const newer = await request(app).post(url).set("Cookie", headers).set("X-CSRF-Token", csrfToken)
+      .send({ content: "What is an emergency fund?" }).expect(200);
+    expect(newer.body.assistantMessage.metadata.analysisType).not.toBe("monthly_spending");
+    vi.mocked(processAiCoreRequest).mockClear();
+    const regenerated = await request(app).post(url)
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken)
+      .send({ content: "What about last month?", options: { regenerate_of: chained.body.assistantMessage.metadata.agentOutputId, bypass_cache: true } })
+      .expect(200);
+    expect(regenerated.body.assistantMessage.content).toContain("You spent **$100.00**");
+    expect(processAiCoreRequest).not.toHaveBeenCalled();
+  });
+
+  it("surfaces AI overload as retryable without storing an orphan question", async () => {
+    const created = await request(app).post("/api/chat/sessions")
+      .set("Cookie", [cookie, csrfCookie]).set("X-CSRF-Token", csrfToken).send({}).expect(201);
+    vi.mocked(processAiCoreRequest).mockRejectedValueOnce(new AiCoreOverloadedError(3));
+    const url = `/api/chat/sessions/${created.body.id}/messages`;
+    const response = await request(app).post(url)
+      .set("Cookie", [cookie, csrfCookie]).set("X-CSRF-Token", csrfToken)
+      .send({ content: "How is my budget?" }).expect(503);
+    expect(response.headers["retry-after"]).toBe("3");
+    const history = await request(app).get(url).set("Cookie", cookie).expect(200);
+    expect(history.body.messages).toHaveLength(0);
+  });
+
+  it("keeps ledger questions available after AI quota is exhausted and reports quota details for model requests", async () => {
+    const userId = new Types.ObjectId(ownerUserId);
+    const { orgId } = await ensurePersonalOrgForUser(userId);
+    await recordFeatureUsage({ orgId, userId, feature: "monthly_ai_calls", units: 100_000 });
+    const headers = [cookie, csrfCookie];
+    const created = await request(app).post("/api/chat/sessions")
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken).send({}).expect(201);
+    const url = `/api/chat/sessions/${created.body.id}/messages`;
+    const ask = (content: string) => request(app).post(url)
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken).send({ content });
+    vi.mocked(processAiCoreRequest).mockClear();
+    const limited = await ask("Explain the difference between an emergency fund and a sinking fund.").expect(402);
+    expect(limited.body.details).toMatchObject({ feature: "monthly_ai_calls", limit: expect.any(Number), used: expect.any(Number) });
+    await ask("How much did I spend this month?").expect(200);
+    const followUp = await ask("And last month?").expect(200);
+    expect(followUp.body.assistantMessage.metadata).toMatchObject({ analysisType: "monthly_spending", llmCallCount: 0 });
+    expect(processAiCoreRequest).not.toHaveBeenCalled();
+  });
+
+  it("regenerates an answer without storing a second user question", async () => {
+    const created = await request(app).post("/api/chat/sessions")
+      .set("Cookie", [cookie, csrfCookie]).set("X-CSRF-Token", csrfToken).send({}).expect(201);
+    const url = `/api/chat/sessions/${created.body.id}/messages`;
+    const first = await request(app).post(url)
+      .set("Cookie", [cookie, csrfCookie]).set("X-CSRF-Token", csrfToken)
+      .send({ content: "How is my budget?" }).expect(200);
+    const outputId = first.body.assistantMessage.metadata.agentOutputId;
+    expect(outputId).toBeTruthy();
+    const second = await request(app).post(url)
+      .set("Cookie", [cookie, csrfCookie]).set("X-CSRF-Token", csrfToken)
+      .send({ content: "How is my budget?", options: { regenerate_of: outputId, bypass_cache: true } }).expect(200);
+    expect(second.body.userMessage.id).toBe(first.body.userMessage.id);
+    expect(second.body.assistantMessage.id).not.toBe(first.body.assistantMessage.id);
+    const history = await request(app).get(url).set("Cookie", cookie).expect(200);
+    expect(history.body.messages.filter((message: any) => message.role === "user")).toHaveLength(1);
+    expect(history.body.messages.filter((message: any) => message.role === "assistant")).toHaveLength(2);
+    await request(app).post(url).set("Cookie", [cookie, csrfCookie]).set("X-CSRF-Token", csrfToken)
+      .send({ content: "Changed prompt", options: { regenerate_of: outputId } }).expect(404);
+  });
+
+  it("keeps safe provider recovery details after reloading a conversation", async () => {
+    const created = await request(app).post("/api/chat/sessions")
+      .set("Cookie", [cookie, csrfCookie]).set("X-CSRF-Token", csrfToken).send({}).expect(201);
+    const url = `/api/chat/sessions/${created.body.id}/messages`;
+    const sent = await request(app).post(url)
+      .set("Cookie", [cookie, csrfCookie]).set("X-CSRF-Token", csrfToken)
+      .send({ content: "What is an emergency fund?" }).expect(200);
+    const history = await request(app).get(url).set("Cookie", cookie).expect(200);
+    for (const message of [sent.body.assistantMessage, history.body.messages.at(-1)]) {
+      expect(message.metadata).toMatchObject({
+        activeProvider: "groq",
+        activeModel: "openai/gpt-oss-20b",
+        recoveredFailureCount: 1,
+        fallbackUsed: false,
+      });
+      expect(JSON.stringify(message.metadata)).not.toContain("internal-key-reference");
+    }
   });
 
   it("creates a real PDF from chat, persists its card, and enforces file ownership", async () => {

@@ -32,6 +32,9 @@ import numpy as np
 from .errors import VisionDependencyError
 
 
+# Decodes raw image payload bytes into a BGR format NumPy array.
+# Verifies OpenCV availability and validates that decoded bytes form an image.
+# Raises VisionDependencyError or ValueError if processing fails.
 def decode_image(image_bytes: bytes) -> np.ndarray:
     """Decode raw image bytes into a BGR numpy array using OpenCV."""
     try:
@@ -48,6 +51,9 @@ def decode_image(image_bytes: bytes) -> np.ndarray:
     return img
 
 
+# Enhances image contrast and removes noise to improve OCR detection rates.
+# Applies grayscale conversion, non-local denoising, and Otsu binarization.
+# Converts binary output back to three-channel BGR for OCR engine compatibility.
 def preprocess_for_ocr(img: np.ndarray) -> np.ndarray:
     """Light preprocessing to improve OCR robustness on receipts/photos."""
     try:

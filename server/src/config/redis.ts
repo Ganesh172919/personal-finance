@@ -6,7 +6,7 @@
  * - Rate limiting (express-rate-limit store)
  * - Session storage
  * - API response caching
- * - BullMQ job queue backing store
+ * - Optional cache backing store
  *
  * KEY DESIGN DECISIONS:
  * 1. **Lazy Connection**: Redis is not connected until first use. If REDIS_URL is not
@@ -24,7 +24,7 @@
  * - Redis is optional in development but recommended for production
  * - The retry strategy uses exponential backoff (200ms, 400ms, 600ms... up to 2s)
  * - After 5 failed retries, the client stops retrying (returns null from retryStrategy)
- * - cacheDelPattern uses KEYS command which is O(N) - use sparingly in production
+ * - cacheDelPattern uses incremental SCAN + UNLINK, never the blocking KEYS command
  *
  * @module config/redis
  */
@@ -37,24 +37,8 @@ import { logger } from "./logger";     // Application logger
 // Singleton Redis client instance (null until first use or if REDIS_URL is not set)
 let _redis: Redis | null = null;
 
-/**
- * Get or create a lazily-connected Redis client.
- *
- * This function implements the singleton pattern with lazy initialization.
- * The Redis client is created on first call and reused for subsequent calls.
- * Returns `null` when REDIS_URL is not configured — callers must handle gracefully.
- *
- * LAZY CONNECTION:
- * `lazyConnect: true` means the client won't actually connect until the first
- * command is sent. This allows the app to start even if Redis is temporarily down.
- *
- * AUTO-PIPELINING:
- * `enableAutoPipelining: true` batches consecutive Redis commands into a single
- * round-trip. For example, if you call cacheGet() 5 times in a row, ioredis
- * will batch them into one network request instead of 5.
- *
- * @returns {Redis | null} Redis client instance, or null if REDIS_URL is not configured
- */
+// Returns the singleton Redis client instance, lazily instantiating it on first invocation.
+// Gracefully returns null if the REDIS_URL environment variable is not configured.
 export const getRedis = (): Redis | null => {
   // Return existing client if already created (singleton pattern)
   if (_redis) return _redis;
@@ -97,19 +81,8 @@ export const getRedis = (): Redis | null => {
 // These helpers provide a simple key-value cache interface with TTL support.
 // All functions gracefully degrade when Redis is unavailable (return null or no-op).
 
-/**
- * Get a cached value by key.
- *
- * Uses JSON deserialization to reconstruct the original value.
- * Returns `null` on cache miss OR if Redis is unavailable.
- *
- * TYPE PARAMETER:
- * <T> allows the caller to specify the expected return type, e.g.:
- *   const user = await cacheGet<User>("user:123");
- *
- * @param key - The cache key to look up
- * @returns The cached value (deserialized from JSON), or null on miss
- */
+// Fetches a cached JSON-serialized value from Redis by its unique string key.
+// Returns deserialized data or null on cache misses, network errors, or unconfigured Redis.
 export async function cacheGet<T>(key: string): Promise<T | null> {
   const r = getRedis();
   if (!r) return null; // Redis not configured - graceful degradation
@@ -121,20 +94,8 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   }
 }
 
-/**
- * Set a cached value with a TTL (time-to-live) in seconds.
- *
- * Uses JSON serialization to store the value.
- * Silently no-ops if Redis is unavailable (non-fatal).
- *
- * PRODUCTION INSIGHT:
- * The "EX" flag sets the key to expire after N seconds. This prevents
- * stale data from persisting indefinitely and manages memory usage.
- *
- * @param key - The cache key to set
- * @param value - The value to cache (will be JSON-serialized)
- * @param ttlSeconds - Time-to-live in seconds (key auto-deletes after this)
- */
+// Serializes and stores a key-value pair in Redis with an explicit time-to-live expiration.
+// Silently suppresses network exceptions to allow uninterrupted application execution.
 export async function cacheSet(
   key: string,
   value: unknown,
@@ -150,11 +111,8 @@ export async function cacheSet(
   }
 }
 
-/**
- * Delete a cached key.
- *
- * @param key - The cache key to delete
- */
+// Deletes a specific cache entry from Redis matching the provided key string.
+// No-ops gracefully without throwing errors if Redis is offline or disconnected.
 export async function cacheDel(key: string): Promise<void> {
   const r = getRedis();
   if (!r) return;
@@ -165,34 +123,40 @@ export async function cacheDel(key: string): Promise<void> {
   }
 }
 
-/**
- * Delete all keys matching a glob pattern.
- *
- * WARNING: Uses the Redis KEYS command which is O(N) where N is the total
- * number of keys in the database. In production with large keyspaces,
- * prefer SCAN-based deletion or use Redis namespaces with TTLs instead.
- *
- * @param pattern - Redis glob pattern (e.g., "cache:user:*")
- */
-export async function cacheDelPattern(pattern: string): Promise<void> {
+// Invalidates all cached Redis keys matching a glob pattern. Uses incremental SCAN +
+// UNLINK (never the blocking KEYS command) so a large keyspace cannot stall Redis.
+// Returns the number of keys removed (0 when Redis is unavailable).
+export async function cacheDelPattern(pattern: string): Promise<number> {
   const r = getRedis();
-  if (!r) return;
-  try {
-    const keys = await r.keys(pattern);
-    if (keys.length > 0) {
-      await r.del(...keys); // Spread operator to pass keys as separate arguments
-    }
-  } catch {
-    // non-fatal
-  }
+  if (!r) return 0;
+  return scanDelete(r, pattern);
 }
 
-/**
- * Gracefully close the Redis connection.
- *
- * Called during server shutdown (in server.ts) to ensure clean resource cleanup.
- * Uses QUIT command which waits for pending commands to complete before closing.
- */
+// SCAN + UNLINK loop; exported so it can be exercised against any ioredis-compatible client.
+export async function scanDelete(
+  client: Pick<Redis, "scan" | "unlink">,
+  pattern: string,
+  count = 200,
+): Promise<number> {
+  let removed = 0;
+  try {
+    let cursor = "0";
+    do {
+      const [next, keys] = await client.scan(cursor, "MATCH", pattern, "COUNT", count);
+      cursor = String(next);
+      if (keys.length > 0) {
+        removed += await client.unlink(...keys);
+      }
+    } while (cursor !== "0");
+  } catch (err) {
+    // non-fatal: stale cache entries still expire via their TTL
+    logger.warn({ err: (err as Error)?.message, pattern, event: "redis_scan_delete_failed" }, "cacheDelPattern failed");
+  }
+  return removed;
+}
+
+// Gracefully terminates the active Redis connection pool during application shutdown.
+// Awaits in-flight commands and resets the client singleton handle to null.
 export async function closeRedis(): Promise<void> {
   if (_redis) {
     try {
@@ -230,7 +194,7 @@ export async function closeRedis(): Promise<void> {
  * ─────────────────────────────
  * redis.ts → used by rate limiters (express-rate-limit)
  * redis.ts → used by cache helpers in services (aiCache, responseCache)
- * redis.ts → used by BullMQ job queue (via modules/queue/jobQueue.ts)
+ * redis.ts → used by optional response and application caches
  * redis.ts → closed by server.ts during graceful shutdown
  * ══════════════════════════════════════════════════════════════════════
  */

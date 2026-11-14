@@ -42,8 +42,14 @@ import type { NotificationItem } from "@/lib/api/v1/notifications";
 
 // ─── Helpers ────────────────────────────────────────────
 
+// Categorization intervals bucketing user notification alerts by recency.
+// Partitions incoming messages across today, this week, and earlier records.
+// Organizes notification feeds into clean, chronologically clustered sections.
 type TimeGroup = "today" | "this_week" | "older";
 
+// Determines the chronological time group category for a notification timestamp.
+// Evaluates calendar date boundaries relative to the user's current day and week.
+// Returns today, this_week, or older category identifiers for timeline bucketing.
 function getTimeGroup(dateStr: string): TimeGroup {
   const date = new Date(dateStr);
   const now = new Date();
@@ -56,6 +62,9 @@ function getTimeGroup(dateStr: string): TimeGroup {
   return "older";
 }
 
+// Formats an ISO date string into a concise human-readable relative time offset.
+// Produces clean interval descriptions such as just now, minutes, or hours ago.
+// Converts dates past one week into abbreviated month and day notations.
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60_000);
@@ -68,12 +77,18 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+// Presentation label dictionary translating time group keys into section headers.
+// Maps internal temporal buckets to localized strings like Today, This Week, and Earlier.
+// Used as section divider titles across scrollable notification drawer feeds.
 const GROUP_LABELS: Record<TimeGroup, string> = {
   today: "Today",
   this_week: "This Week",
   older: "Earlier",
 };
 
+// Selects appropriate Lucide iconography based on notification topic and metadata.
+// Maps categories such as AI insights, budgets, alerts, and billing to distinct icons.
+// Supplies visual cues for quick recognition within the notification drawer.
 function getNotificationIcon(notification: NotificationItem) {
   const title = (notification.title || "").toLowerCase();
   const meta = notification.metadata as Record<string, unknown> | undefined;
@@ -87,6 +102,9 @@ function getNotificationIcon(notification: NotificationItem) {
   return <Info className="w-4 h-4" />;
 }
 
+// Computes theme-aware background and accent color classes for notification icons.
+// Differentiates critical warnings, intelligence alerts, and budget milestones.
+// Applies subtle translucent background badges and matching icon foreground colors.
 function getNotificationAccent(notification: NotificationItem): string {
   const title = (notification.title || "").toLowerCase();
   const meta = notification.metadata as Record<string, unknown> | undefined;
@@ -105,10 +123,16 @@ function getNotificationAccent(notification: NotificationItem): string {
 
 // ─── Filter Tabs ────────────────────────────────────────
 
+// Navigation tab filter states for segmenting notification drawer entries.
+// Supports displaying all notifications or isolating unread versus read items.
+// Drives reactive filtering of the user notification collection.
 type FilterTab = "all" | "unread" | "read";
 
 // ─── Main Component ─────────────────────────────────────
 
+// Slide-in drawer component managing real-time notifications and alerts.
+// Organizes items into chronological buckets with mark-all-read capabilities.
+// Features smooth spring animations and tabbed filtering for unread messages.
 export function NotificationCenter({
   isOpen,
   onClose,
@@ -291,6 +315,9 @@ export function NotificationCenter({
 
 // ─── Notification Row ───────────────────────────────────
 
+// Renders an individual notification entry row within the notification drawer.
+// Displays contextual category icons, formatted message prose, and relative timestamps.
+// Embeds hover-activated actions to mark individual messages as read.
 function NotificationRow({
   notification,
   onMarkRead,
@@ -367,6 +394,9 @@ function NotificationRow({
 
 // ─── Bell Button (to embed in Sidebar) ──────────────────
 
+// Interactive header bell icon button indicating unread notification counts.
+// Renders an animated pulse badge when unread notifications are present.
+// Toggles the slide-over notification drawer when triggered by user clicks.
 export function NotificationBell({
   onClick,
   unreadCount,

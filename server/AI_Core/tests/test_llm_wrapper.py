@@ -34,7 +34,7 @@ def test_explicit_provider_does_not_receive_another_providers_model(monkeypatch)
     monkeypatch.setenv("LLM_MODEL", "gemini-3.5-flash-lite")
     llm = create_llm("master", provider="groq")
     assert llm.preferred_provider == "groq"
-    assert llm.preferred_model_id == "groq/llama-3.3-70b-versatile"
+    assert llm.preferred_model_id == "groq/openai/gpt-oss-20b"
 
 
 def test_provider_override_without_model_uses_its_default(monkeypatch):

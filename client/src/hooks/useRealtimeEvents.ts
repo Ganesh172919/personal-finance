@@ -95,6 +95,9 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "./useAuth";
 
+// Defines the wire format structure for incoming Server-Sent Event messages.
+// Unpacks event types, aggregate category descriptors, and JSON payload attributes.
+// Standardizes real-time domain event messages received from the server event stream.
 /** Shape of an SSE message from the server */
 type SSEMessage = {
   type: string;                          // Event type (e.g., "TransactionCreated")
@@ -102,6 +105,9 @@ type SSEMessage = {
   payload?: Record<string, unknown>;     // Event payload data
 };
 
+// Mapping dictionary associating specific domain event types with dependent query keys.
+// Maps granular event triggers like TransactionCreated directly to affected endpoints.
+// Dictates targeted TanStack Query cache invalidation without requiring full page refetches.
 /**
  * Maps specific event types to query keys that should be invalidated.
  *
@@ -176,6 +182,9 @@ const EVENT_INVALIDATION_MAP: Record<string, string[][]> = {
   ScenarioEvaluated: [["analytics"], ["/api/dashboard/summary"], ["activity-feed"]],
 };
 
+// Broad fallback invalidation map organized by top-level domain aggregate classification.
+// Invalidates associated query caches when specific event-level mappings are not matched.
+// Prevents stale data displays across transactions, receipts, tasks, and budgets.
 /**
  * Maps aggregate types to query keys that should be invalidated.
  * This provides broader invalidation when specific event type mapping isn't available.
@@ -205,6 +214,9 @@ const AGGREGATE_INVALIDATION_MAP: Record<string, string[][]> = {
   goal: [["/api/financial-profiles/me"], ["/api/dashboard/summary"], ["goals"]],
 };
 
+// Compiles and deduplicates all TanStack Query cache keys affected by an incoming event.
+// Evaluates both granular event-type and broad aggregate-type invalidation matrices.
+// Guarantees each affected query key is submitted only once per event dispatch.
 /**
  * Builds the list of query keys to invalidate for a given SSE event.
  *
@@ -246,6 +258,9 @@ const buildInvalidationKeys = (event: SSEMessage) => {
   return keys;
 };
 
+// Custom React hook maintaining a persistent Server-Sent Events listener connection.
+// Listens to domain events on /api/events/stream and invalidates stale query caches.
+// Implements exponential reconnection backoff to automatically recover from dropped connections.
 /**
  * Hook that establishes an SSE connection for real-time event handling.
  *

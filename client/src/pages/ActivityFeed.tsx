@@ -43,6 +43,9 @@ import { getActivityFeed, type ActivityItem } from "@/lib/api/v1/collaboration";
 
 // ─── Icon Mapping ───────────────────────────────────────
 
+// Icon mapping dictionary associating event categories with Lucide icons.
+// Maps receipts, budgets, goals, workflows, and team events to distinct graphics.
+// Used to render visually distinguishable icon badges along the activity timeline.
 const ICON_MAP: Record<string, any> = {
   receipt: Receipt,
   wallet: Wallet,
@@ -55,6 +58,9 @@ const ICON_MAP: Record<string, any> = {
   activity: Activity,
 };
 
+// Color accent mapping matching event categories to Tailwind color palettes.
+// Assigns distinct text colors and translucent background hues per event type.
+// Powers visual categorization tags and icon container backgrounds.
 const ACCENT_MAP: Record<string, string> = {
   receipt: "text-emerald-500 bg-emerald-500/10",
   wallet: "text-blue-500 bg-blue-500/10",
@@ -67,6 +73,9 @@ const ACCENT_MAP: Record<string, string> = {
   activity: "text-primary bg-primary/10",
 };
 
+// Formats an ISO date string into a compact human-readable elapsed time span.
+// Converts timestamps into minutes, hours, or days ago based on elapsed duration.
+// Falls back to short month and day calendar formatting for events older than a week.
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60_000);
@@ -81,6 +90,9 @@ function timeAgo(dateStr: string): string {
 
 // ─── Filter Chips ───────────────────────────────────────
 
+// Filter configuration list defining event category tabs on the activity feed.
+// Powers category filter chips enabling users to isolate specific event streams.
+// Maps user-friendly display labels to corresponding backend event type strings.
 const EVENT_FILTERS = [
   { key: "all", label: "All" },
   { key: "transaction", label: "Transactions" },
@@ -93,6 +105,9 @@ const EVENT_FILTERS = [
 
 // ─── Page Component ─────────────────────────────────────
 
+// Chronological activity timeline page displaying organization audit events.
+// Supports event category filtering, client-side search, and cursor pagination.
+// Automatically polls for recent updates and groups events by calendar date.
 export default function ActivityFeedPage() {
   const [filterKey, setFilterKey] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");

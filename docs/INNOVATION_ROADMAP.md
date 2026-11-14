@@ -323,3 +323,14 @@ export function runMonteCarloSimulation(params: MonteCarloParams): SimulationSum
   };
 }
 ```
+
+---
+
+## 3. Shipped 2026 Enterprise Innovation Capabilities
+
+The following advanced capabilities have officially transitioned from roadmap to production:
+1. **RAG Phase 2 Multi-Modal Grounded Retrieval (`retrievalService.ts`)**: Bounded 1,800-character windows preserving PDF page parity (`\f`) and markdown table header rows.
+2. **Cross-Silo Unified Context Engine (`unifiedContextRetrievalService.ts`)**: Reciprocal Rank Fusion ($k = 60$) unifying memory facts, document chunks, and ledger transactions with query-intent source weighting ($w_s = 1.35$) and 90-day transaction recency decay.
+3. **Continuous Production AI Canary Invariant Validation Engine (`aiCanaryService.ts`, `canary_validator.py`)**: Dual-layer auditing across 5 mathematical identities (Number safety, Zero-sum budget, Balance Sheet, Cash Flow, Debt Amortization).
+4. **64-D Machine Learning Merchant Embedding Clustering (`merchantEmbeddingClustering.ts`)**: L2-normalized vector space with agglomerative centroid cosine clustering ($C_{\text{sim}} \ge 0.70$) and 1-click batch categorization rules.
+5. **Financial Calendar Live RFC 5545 iCal Feed (`calendarReminderController.ts`, `FinancialCalendar.tsx`)**: Automated recurring bill cadence detection and live streaming calendar subscriptions.

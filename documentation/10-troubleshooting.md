@@ -386,6 +386,68 @@ if (require.main === module) {
 
 ---
 
+---
+
+#### Issue 14: Bank Feed Webhook Duplicate Ingestion (`externalId` Collision)
+- **Symptom**: External webhook receives HTTP 200 with `meta.isDuplicate: true`, but no new ledger row appears in Transactions.
+- **Root Cause**: The transaction payload contained an `externalId` that matches an already-indexed transaction in the same organization. FinWise enforces idempotency to prevent duplicate debits.
+- **Remedy**:
+  1. Inspect the existing record:
+     ```bash
+     mongosh personal-finance --eval 'db.transactions.findOne({ orgId: "org_123", externalId: "tx_plaid_994827104" })'
+     ```
+  2. If the external bank modified the transaction amount or status (e.g. from pending to posted), issue a `PATCH /api/transactions/:id` instead of a re-insert.
+
+---
+
+#### Issue 15: 64-D Vector Search Grounding Score Drop ($G < 0.70$)
+- **Symptom**: Chat Copilot responds with disclaimer: *"I found related files, but the evidence did not pass our strict grounding confidence threshold ($G \ge 0.70$)."*
+- **Root Cause**: The query terms did not align semantically with the 64-D financial clusters or the document chunk did not contain the exact numeric values.
+- **Remedy**:
+  1. Check document modality and ensure table headers were preserved during upload.
+  2. Run the retrieval backfill tool to re-chunk the document using `multi_modal_vector_v2`:
+     ```powershell
+     npm --prefix server run backfill:retrieval -- --org-id <orgId>
+     ```
+
+---
+
+#### Issue 16: Offline Journal Stroke Sync Conflict (`clientDraftId` Collision)
+- **Symptom**: Notes page displays toast: *"1 note skipped as duplicate during sync"*.
+- **Root Cause**: A draft was previously synced before network disconnection, and the client attempted to resubmit the identical `clientDraftId`.
+- **Remedy**: This is normal idempotent behavior. To force a new version, edit the draft content in the canvas to trigger a new `clientDraftId` generation.
+
+---
+
+#### Issue 17: Scheduled Cloud Storage S3/GCS Upload `AccessDenied`
+- **Symptom**: Scheduled report delivery logs error: `S3ServiceException: Access Denied (403)` when writing to bucket.
+- **Root Cause**: IAM role or API credentials lack `s3:PutObject` permission for the configured bucket and prefix.
+- **Remedy**: Verify IAM policy has:
+  ```json
+  {
+    "Effect": "Allow",
+    "Action": ["s3:PutObject"],
+    "Resource": "arn:aws:s3:::finwise-enterprise-exports/*"
+  }
+  ```
+
+---
+
+#### Issue 18: Provider KeyPool Exhaustion & Circuit Breaker `OPEN` State
+- **Symptom**: AI queries return fallback responses; logs report: `[KeyPool] All keys for provider 'gemini' are exhausted or on cooldown`.
+- **Root Cause**: All configured API keys hit rate limits within the same 60-second window, or 5 consecutive upstream timeouts tripped the circuit breaker to `OPEN`.
+- **Remedy**:
+  1. Inspect key status via `GET /api/v1/ai-core/status`.
+  2. Supply additional numbered keys in `server/AI_Core/.env`:
+     ```env
+     GEMINI_API_KEY_1=AIzaSy...
+     GEMINI_API_KEY_2=AIzaSy...
+     GEMINI_API_KEY_3=AIzaSy...
+     ```
+  3. The circuit breaker resets to `HALF-OPEN` automatically after 300 seconds (5 minutes).
+
+---
+
 ## 7. Incident Response & Troubleshooting Mindmap
 
 ```mermaid

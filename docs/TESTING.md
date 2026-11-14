@@ -389,3 +389,31 @@ def test_number_safety_invariant_holds():
     invalid_candidate = "Based on our review, you have $900.00 in surplus. Put $500.00 into debt."
     assert master_agent._numbers_are_subset(invalid_candidate, ref_markdown) is False
 ```
+
+---
+
+## 3. 2026 Machine Learning & Vector Search Tests
+
+```bash
+# Execute 64-D Merchant Vector Embedding & Clustering Suite:
+npm run test:unit src/test/merchantEmbeddingClustering.test.ts
+
+# Execute Multi-Modal Grounded RAG Ingestion & Verification Suite:
+npm run test:unit src/test/retrievalMultiModal.test.ts
+
+# Execute Offline Journal Synchronization & Semantic Search Suite:
+npm run test:unit src/test/journalOfflineSyncAndSemanticSearch.test.ts
+```
+
+---
+
+## 4. Continuous Production AI Canary Invariant Test Harness
+
+To execute the 175-probe automated invariant suite in AI Core:
+
+```bash
+cd server/AI_Core
+python -m evals.runner
+```
+
+**Target Pass Rate**: Exactly 100% (175/175 probes). Any violation of Number Safety or Zero-Sum Rebalancing strictly halts the build.

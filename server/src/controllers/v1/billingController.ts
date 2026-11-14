@@ -23,15 +23,15 @@ import PDFDocument from "pdfkit";
 
 import type { IUserDocument } from "../../models/userModel";
 import InvoiceModel from "../../models/invoiceModel";
-import SubscriptionModel from "../../models/subscriptionModel";
 import { HttpError } from "../../middleware/httpError";
 import { createCheckout, createPortal, handleStripeWebhook } from "../../services/billing";
-import { grantCredits } from "../../services/credits";
-import { recordAuditEvent } from "../../services/auditLog";
-import { cacheDel } from "../../config/redis";
+import { getEnv } from "../../config/env";
 import { convertUsdToCurrency, formatBillingCurrency, normalizeCurrency } from "../../utils/currencyFx";
 import { getDunningState, simulatePaymentFailure, triggerPaymentRetry } from "../../services/dunningService";
 
+// Defines available on-demand credit bundles for metered AI and simulation quotas.
+// Maps bundle identifiers to unit pricing, feature allocations, and descriptions.
+// Supplies product parameters for credit purchasing workflows and plan upgrades.
 export const CREDIT_PACK_DEFINITIONS = {
   ai_pack_250: {
     id: "ai_pack_250",
@@ -69,6 +69,9 @@ const roleRank: Record<"member" | "admin" | "owner", number> = {
   owner: 3,
 };
 
+// Validates that the requesting caller holds administrative status for billing actions.
+// Enforces tenant membership checks and verifies role hierarchy qualifications.
+// Throws an unauthorized or access denied exception when credentials fail checks.
 const requireOrgAdmin = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -79,6 +82,9 @@ const requireOrgAdmin = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Initiates a Stripe checkout session for subscription tier upgrade or purchase.
+// Validates plan tier parameters, billing cycles, and seat capacity allocations.
+// Returns checkout redirection URLs and session IDs for the frontend application.
 export const createCheckoutSession = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgAdmin(req);
@@ -114,6 +120,9 @@ export const createCheckoutSession = async (req: Request, res: Response) => {
   });
 };
 
+// Generates a customer billing portal URL for self-service subscription management.
+// Directs administrative users to Stripe-hosted portal interfaces to manage payment cards.
+// Returns the single-use customer portal access URL accompanied by request tracking.
 export const createBillingPortal = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const returnUrl = typeof (req.query as any)?.return_url === "string" ? String((req.query as any).return_url) : undefined;
@@ -126,6 +135,9 @@ export const createBillingPortal = async (req: Request, res: Response) => {
   });
 };
 
+// Ingests cryptographically signed webhook notifications dispatched by Stripe.
+// Verifies request signature headers against raw payload bytes to ensure authenticity.
+// Dispatches events to underlying billing handlers to update subscription records.
 export const stripeWebhook = async (req: Request, res: Response) => {
   const signature = String(req.header("stripe-signature") || "");
   const rawBody = (req as any).rawBody as Buffer | undefined;
@@ -142,107 +154,33 @@ export const stripeWebhook = async (req: Request, res: Response) => {
   res.json({ received: true, request_id: req.requestId });
 };
 
-export const purchaseCreditPack = async (req: Request, res: Response) => {
-  const user = req.user as IUserDocument;
-  const orgId = requireOrgAdmin(req);
+// Credit packs must not be granted before a verified, idempotent payment event.
+// No credit-pack checkout/webhook implementation exists yet, so fail closed.
+export const purchaseCreditPack = async (req: Request, _res: Response) => {
+  requireOrgAdmin(req);
   const body = req.body as { pack_id: keyof typeof CREDIT_PACK_DEFINITIONS };
-
-  const pack = CREDIT_PACK_DEFINITIONS[body.pack_id];
-  if (!pack) {
+  if (!CREDIT_PACK_DEFINITIONS[body.pack_id]) {
     throw new HttpError(400, "INVALID_PACK", "Invalid credit pack ID");
   }
-
-  const now = new Date();
-  const periodKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-  const purchaseId = `pack-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-  await grantCredits({
-    orgId,
-    periodKey,
-    unitsByFeature: pack.credits,
-    sourceType: "credit_pack_purchase",
-    sourceId: purchaseId,
-    createdByUserId: user._id,
-    metadata: {
-      pack_id: pack.id,
-      price_usd: pack.price_usd,
-      name: pack.name,
-    },
-  });
-
-  const entCacheKey = `ent:${orgId.toString()}:${periodKey}`;
-  await cacheDel(entCacheKey);
-
-  try {
-    await recordAuditEvent({
-      orgId,
-      actorType: "user",
-      actorUserId: user._id,
-      action: "billing_credit_pack_purchased",
-      targetType: "billing",
-      targetId: purchaseId,
-      requestId: req.requestId,
-      metadata: { pack_id: pack.id, price_usd: pack.price_usd },
-    });
-  } catch {
-    // Non-blocking audit record
-  }
-
-  return res.status(200).json({
-    success: true,
-    pack: {
-      id: pack.id,
-      name: pack.name,
-      price_usd: pack.price_usd,
-      credits: pack.credits,
-    },
-    period_key: periodKey,
-    purchase_id: purchaseId,
-    request_id: req.requestId,
-  });
+  throw new HttpError(503, "CREDIT_PACKS_UNAVAILABLE", "Credit pack purchases are not available");
 };
 
+// Queries historical billing invoices and payment receipts for the organization.
+// Extracts line item breakdowns, localized currency conversions, and payment statuses.
+// Delivers a chronological collection of invoice records for financial accounting.
 export const listInvoices = async (req: Request, res: Response) => {
-  const user = req.user as IUserDocument;
   if (!req.org?.orgId) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
   }
   const orgId = new mongoose.Types.ObjectId(req.org.orgId);
   const targetCurrency = normalizeCurrency((req.query.currency as string) || (req.org as any)?.currency || "USD");
 
-  let invoices = await InvoiceModel.find({ orgId }).sort({ issuedAt: -1 }).lean();
-
-  if (invoices.length === 0) {
-    const sub = await SubscriptionModel.findOne({ orgId }).lean();
-    const rawPlan = sub?.planTier || "pro";
-    if (rawPlan !== "free") {
-      const planTier = (rawPlan === "team" ? "team" : rawPlan === "enterprise" ? "enterprise" : "pro") as "pro" | "team" | "enterprise";
-      const cycle = (sub?.billingCycle || "monthly") as "monthly" | "annual";
-      const now = new Date();
-      const amount = planTier === "team" ? (cycle === "annual" ? 468 : 49) : (cycle === "annual" ? 180 : 19);
-      const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}-INIT`;
-      await InvoiceModel.create({
-        orgId,
-        userId: user._id,
-        invoiceNumber,
-        planTier,
-        billingCycle: cycle,
-        amountUsd: amount,
-        taxUsd: 0,
-        totalUsd: amount,
-        currency: targetCurrency,
-        amountLocalized: convertUsdToCurrency(amount, targetCurrency),
-        taxLocalized: 0,
-        totalLocalized: convertUsdToCurrency(amount, targetCurrency),
-        status: "paid",
-        paymentMethod: "Card ending in 4242",
-        periodStart: sub?.currentPeriodStart || new Date(now.getTime() - 15 * 86400000),
-        periodEnd: sub?.currentPeriodEnd || new Date(now.getTime() + 15 * 86400000),
-        issuedAt: sub?.currentPeriodStart || now,
-      });
-      invoices = await InvoiceModel.find({ orgId }).sort({ issuedAt: -1 }).lean();
-    }
-  }
+  // A read must never fabricate a paid invoice. Legacy/test records have no
+  // verified Stripe provenance and must not be presented as receipts in prod.
+  const filter = getEnv().NODE_ENV === "production"
+    ? { orgId, "metadata.payment_verified": true, "metadata.stripe_invoice_id": { $exists: true } }
+    : { orgId };
+  const invoices = await InvoiceModel.find(filter).sort({ issuedAt: -1 }).lean();
 
   return res.json({
     currency: targetCurrency,
@@ -274,6 +212,9 @@ export const listInvoices = async (req: Request, res: Response) => {
   });
 };
 
+// Renders and streams formatted PDF invoices for organization billing records.
+// Populates itemized charges, tenant organization details, and currency symbols.
+// Pipes the dynamically generated binary PDF directly to the client HTTP stream.
 export const downloadInvoicePdf = async (req: Request, res: Response) => {
   if (!req.org?.orgId) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -282,10 +223,12 @@ export const downloadInvoicePdf = async (req: Request, res: Response) => {
   const { id } = req.params;
 
   const invoice = await InvoiceModel.findOne({ _id: id, orgId }).lean();
-  if (!invoice) {
+  if (!invoice || (getEnv().NODE_ENV === "production" &&
+    !(invoice.metadata?.payment_verified === true && typeof invoice.metadata?.stripe_invoice_id === "string"))) {
     throw new HttpError(404, "INVOICE_NOT_FOUND", "Invoice not found");
   }
 
+  const verified = invoice.metadata?.payment_verified === true;
   const invoiceCurrency = normalizeCurrency(invoice.currency || "USD");
   const formattedSubtotal = formatBillingCurrency(invoice.amountUsd, invoiceCurrency);
   const formattedTax = formatBillingCurrency(invoice.taxUsd, invoiceCurrency);
@@ -299,11 +242,12 @@ export const downloadInvoicePdf = async (req: Request, res: Response) => {
   doc.pipe(res);
 
   // Document Styling & Content
-  doc.fontSize(22).fillColor("#0f172a").text("FinWise Inc.", 50, 50);
-  doc.fontSize(10).fillColor("#64748b").text("AI-Powered Personal Finance & Wealth OS", 50, 78);
-  doc.text("billing@finwise.dev • www.finwise.dev", 50, 92);
+  doc.fontSize(22).fillColor("#0f172a").text("FinWise billing", 50, 50);
+  doc.fontSize(10).fillColor("#64748b").text("Subscription record", 50, 78);
 
-  doc.fontSize(18).fillColor("#0284c7").text("TAX INVOICE / RECEIPT", 320, 50, { align: "right" });
+  doc.fontSize(14).fillColor("#0284c7").text(
+    verified ? "PAYMENT RECORD" : "TEST RECORD - NOT PROOF OF PAYMENT", 260, 50, { align: "right" }
+  );
   doc.fontSize(10).fillColor("#64748b").text(`Invoice #: ${invoice.invoiceNumber}`, 320, 78, { align: "right" });
   doc.text(`Date of Issue: ${new Date(invoice.issuedAt).toLocaleDateString()}`, 320, 92, { align: "right" });
 
@@ -313,7 +257,7 @@ export const downloadInvoicePdf = async (req: Request, res: Response) => {
   doc.fontSize(11).fillColor("#0f172a").text("Billed To:", 50, 135);
   doc.fontSize(10).fillColor("#334155").text(`Organization ID: ${invoice.orgId.toString()}`, 50, 150);
   doc.text(`Payment Method: ${invoice.paymentMethod}`, 50, 165);
-  doc.text(`Status: PAID`, 50, 180);
+  doc.text(`Status: ${verified ? invoice.status.toUpperCase() : "UNVERIFIED TEST RECORD"}`, 50, 180);
 
   doc.fontSize(11).fillColor("#0f172a").text("Coverage Period:", 320, 135, { align: "right" });
   doc.fontSize(10).fillColor("#334155").text(
@@ -348,17 +292,18 @@ export const downloadInvoicePdf = async (req: Request, res: Response) => {
   doc.fontSize(10).fillColor("#64748b").text("Subtotal:", 350, totalsTop);
   doc.fillColor("#0f172a").text(formattedSubtotal, 450, totalsTop, { align: "right", width: 85 });
 
-  doc.fillColor("#64748b").text("Tax (0%):", 350, totalsTop + 16);
+  doc.fillColor("#64748b").text("Recorded tax:", 350, totalsTop + 16);
   doc.fillColor("#0f172a").text(formattedTax, 450, totalsTop + 16, { align: "right", width: 85 });
 
   doc.strokeColor("#cbd5e1").lineWidth(1).moveTo(350, totalsTop + 34).lineTo(545, totalsTop + 34).stroke();
 
-  doc.fontSize(12).fillColor("#0f172a").text("Total Paid:", 350, totalsTop + 42);
+  doc.fontSize(12).fillColor("#0f172a").text("Recorded total:", 350, totalsTop + 42);
   doc.fontSize(12).fillColor("#16a34a").text(`${formattedTotal} ${invoiceCurrency}`, 450, totalsTop + 42, { align: "right", width: 85 });
 
   // Footer
   doc.fontSize(9).fillColor("#94a3b8").text(
-    "Thank you for choosing FinWise to build your long-term wealth! For any billing questions, contact support@finwise.dev.",
+    verified ? "Payment status reflects the recorded provider event; contact support for billing questions." :
+      "Test record only. No payment was collected and this is not a tax invoice or receipt.",
     50,
     700,
     { align: "center", width: 495 }
@@ -367,6 +312,9 @@ export const downloadInvoicePdf = async (req: Request, res: Response) => {
   doc.end();
 };
 
+// Inspects delinquency status, past-due invoices, and retry attempts for accounts.
+// Evaluates active dunning state to notify administrators of pending account lockouts.
+// Delivers payment recovery schedules and outstanding debt balances for the tenant.
 export const getDunningStatus = async (req: Request, res: Response) => {
   if (!req.org?.orgId) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -379,6 +327,9 @@ export const getDunningStatus = async (req: Request, res: Response) => {
   });
 };
 
+// Triggers an immediate payment collection retry attempt against failed invoices.
+// Interfaces with dunning recovery mechanisms to attempt processing delinquent dues.
+// Returns the real-time outcome of the automated payment collection operation.
 export const retryDunningPayment = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgAdmin(req);
@@ -389,6 +340,9 @@ export const retryDunningPayment = async (req: Request, res: Response) => {
   });
 };
 
+// Simulates a failed invoice payment event to test automated dunning recovery workflows.
+// Triggers retry schedule increments, administrative alerts, and warning states.
+// Provides a testing mechanism to verify payment recovery lifecycle behaviors safely.
 export const simulateDunningPaymentFailure = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgAdmin(req);

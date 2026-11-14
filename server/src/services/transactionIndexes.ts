@@ -1,6 +1,9 @@
 import TransactionModel from "../models/transactionModel";
 
 /** Replace the legacy sparse compound index without removing any records. */
+// Builds the unique compound index on orgId and externalId using a partial filter.
+// Ensures imported transactions remain uniquely identified within organizations.
+// Safely identifies and drops legacy sparse indexes without disrupting running queries.
 export async function ensureTransactionExternalIdIndex(): Promise<void> {
   await TransactionModel.collection.createIndex({ orgId: 1, externalId: 1 }, {
     name: "org_external_id_unique",

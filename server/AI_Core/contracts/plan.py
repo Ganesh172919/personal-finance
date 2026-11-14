@@ -27,6 +27,9 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
+# Headline quantitative financial metrics schema for user summaries.
+# Encapsulates cash flow, savings rate, debt ratio, runway, and liabilities.
+# Normalizes key financial vitals across diverse specialist analytical models.
 class KeyMetrics(BaseModel):
     """Headline financial metrics extracted from the user's profile and analysis."""
     monthly_net_cash_flow: Optional[float] = None
@@ -36,6 +39,9 @@ class KeyMetrics(BaseModel):
     total_debt: Optional[float] = None
 
 
+# Structured recommendation model representing a discrete client action.
+# Defines step-by-step instructions, urgency levels, and projected financial impact.
+# Associates action items with execution categories and prospective due dates.
 class ActionItem(BaseModel):
     title: str
     why: str
@@ -47,12 +53,18 @@ class ActionItem(BaseModel):
     id: Optional[str] = None
 
 
+# Grouping contract organizing recommended action items by time horizons.
+# Partitions tasks into immediate 7-day, intermediate 30-day, and 12-month buckets.
+# Establishes clear temporal prioritization for personal finance execution.
 class ActionBuckets(BaseModel):
     next_7_days: List[ActionItem] = Field(default_factory=list)
     next_30_days: List[ActionItem] = Field(default_factory=list)
     next_12_months: List[ActionItem] = Field(default_factory=list)
 
 
+# Top-level structured financial plan model emitted by the master agent.
+# Combines executive summary narratives, core metrics, and phased action buckets.
+# Documents analytical assumptions and data completeness warnings explicitly.
 class Plan(BaseModel):
     executive_summary: str
     key_metrics: KeyMetrics = Field(default_factory=KeyMetrics)

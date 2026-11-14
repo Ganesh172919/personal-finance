@@ -134,6 +134,9 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+# Enumerates operational lifecycle states for pooled provider API keys.
+# Distinguishes healthy, degraded, cooling down, and circuit-broken states.
+# Governs key eligibility and filtering during provider selection.
 class KeyStatus(Enum):
     """Status of an API key in the pool.
 
@@ -151,6 +154,9 @@ class KeyStatus(Enum):
     DISABLED = "disabled"
 
 
+# Encapsulates comprehensive health and failure metrics for individual API key.
+# Tracks request counts, latency statistics, and error code classifications.
+# Manages circuit breaker consecutive failure counters and cooldown deadlines.
 @dataclass
 class KeyHealth:
     """Health metrics for a single API key.
@@ -183,6 +189,9 @@ class KeyHealth:
     circuit_opened_at: Optional[float] = None  # Timestamp when circuit opened
     cooldown_until: Optional[float] = None     # Timestamp when cooldown expires
 
+    # Computes percentage success rate of requests served by this key.
+    # Evaluates ratio of successful requests against total request attempts.
+    # Returns percentage float from 0 to 100 defaulting to 100 when unused.
     @property
     def success_rate(self) -> float:
         """Success rate as a percentage (0-100)."""
@@ -190,6 +199,9 @@ class KeyHealth:
             return 100.0
         return (self.successful_requests / self.total_requests) * 100
 
+    # Calculates mean response latency in milliseconds for successful requests.
+    # Divides cumulative latency duration by total successful invocations.
+    # Returns average latency in milliseconds or 0.0 when no successes exist.
     @property
     def avg_latency_ms(self) -> float:
         """Average latency in milliseconds."""
@@ -197,6 +209,9 @@ class KeyHealth:
             return 0.0
         return self.total_latency_ms / self.successful_requests
 
+    # Calculates percentage of total requests that resulted in 429 rate limits.
+    # Evaluates frequency of rate-limiting encounters for health weighting.
+    # Returns percentage float representing rate limit encounter frequency.
     @property
     def error_rate_429(self) -> float:
         """Rate limit error rate as percentage."""
@@ -204,6 +219,9 @@ class KeyHealth:
             return 0.0
         return (self.errors_429 / self.total_requests) * 100
 
+    # Serializes key health metrics into dictionary structure for diagnostics.
+    # Normalizes success rates, latency averages, and error counters by type.
+    # Returns formatted dictionary representation of key health status.
     def to_dict(self) -> Dict[str, Any]:
         """Export health metrics as dictionary."""
         return {
@@ -227,6 +245,9 @@ class KeyHealth:
         }
 
 
+# Represents individual API key container holding credentials and health state.
+# Stores provider name, round-robin index, and sensitivity-redacted fingerprint.
+# Couples raw credential token with dynamic KeyHealth performance tracking.
 @dataclass
 class KeyEntry:
     """A single API key entry in the pool."""
@@ -238,6 +259,9 @@ class KeyEntry:
     enabled: bool = True
     health: KeyHealth = field(default_factory=KeyHealth)
 
+    # Evaluates dynamic KeyStatus based on active cooldowns and health metrics.
+    # Checks manual disabled flags, cooldown expirations, and open circuits.
+    # Returns current KeyStatus enum indicating operational eligibility.
     def get_status(self, config: "KeyPoolConfig") -> KeyStatus:
         """Determine current status based on health metrics."""
         if not self.enabled:
@@ -262,6 +286,9 @@ class KeyEntry:
 
         return KeyStatus.HEALTHY
 
+    # Exports public key metadata safely omitting sensitive credential tokens.
+    # Injects truncated SHA-256 fingerprint hash for credential identification.
+    # Returns dictionary suitable for diagnostic logging and status endpoints.
     def to_safe_dict(self) -> Dict[str, Any]:
         """Export key entry without exposing the actual key."""
         fingerprint = hashlib.sha256(self.key.encode("utf-8")).hexdigest()[:12]
@@ -274,6 +301,9 @@ class KeyEntry:
         }
 
 
+# Configuration model governing key rotation, circuit breakers, and cooldowns.
+# Defines error-specific cooldown durations, recovery windows, and thresholds.
+# Configures weight parameters utilized during health-weighted key scoring.
 @dataclass
 class KeyPoolConfig:
     """Configuration for key pool behavior.
@@ -306,6 +336,9 @@ class KeyPoolConfig:
     weight_recency: float = 0.3       # How much time-since-last-use matters
 
 
+# Thread-safe multi-key pool managing API credentials for a single provider.
+# Implements automated discovery, round-robin and health-weighted rotation.
+# Protects system resilience through circuit breaking and cooldown isolation.
 class KeyPool:
     """Multi-key pool for a single provider with health tracking and rotation.
 
@@ -319,6 +352,9 @@ class KeyPool:
     4. ``get_stats()`` returns a diagnostic snapshot.
     """
 
+    # Initializes KeyPool instance with provider name and pool configuration.
+    # Sets up reentrant thread lock, key entry list, and round-robin pointer.
+    # Prepares container structures for environment discovery and rotation.
     def __init__(
         self,
         provider: str,
@@ -331,6 +367,9 @@ class KeyPool:
         self._round_robin_index = 0
         self._initialized = False
 
+    # Discovers API keys from environment variables matching provider prefixes.
+    # Supports comma-delimited arrays, JSON lists, numbered vars, and single keys.
+    # Returns deduplicated list of key identifier and token string tuples.
     def _discover_keys(self) -> List[Tuple[str, str]]:
         """Discover API keys from environment variables.
 
@@ -352,6 +391,7 @@ class KeyPool:
 
         # Map provider names to their environment variable prefixes.
         env_prefixes = {
+            "gnani": "GNANI_REASONING_API_KEY",
             "openrouter": "OPENROUTER_API_KEY",
             "gemini": "GEMINI_API_KEY",
             "groq": "GROQ_API_KEY",
@@ -401,6 +441,9 @@ class KeyPool:
 
         return discovered
 
+    # Populates key pool by discovering environment keys under thread safety lock.
+    # Wraps discovered keys into KeyEntry models with clean initial health stats.
+    # Returns integer count of discovered and loaded API keys in pool.
     def initialize(self) -> int:
         """
         Initialize the key pool by discovering keys from environment.
@@ -440,6 +483,9 @@ class KeyPool:
 
             return len(self._keys)
 
+    # Selects best available API key according to configured rotation strategy.
+    # Filters out cooled-down keys and tests half-open circuits when necessary.
+    # Returns eligible KeyEntry instance ready for invocation or None if empty.
     def get_healthy_key(self) -> Optional[KeyEntry]:
         """Get the next healthy key based on the configured rotation strategy.
 
@@ -491,6 +537,9 @@ class KeyPool:
             else:
                 return self._select_round_robin(healthy_keys)
 
+    # Selects next key entry using cyclic round-robin distribution algorithm.
+    # Increments internal index pointer wrapping around at end of key list.
+    # Returns selected KeyEntry instance ensuring uniform traffic distribution.
     def _select_round_robin(self, keys: List[KeyEntry]) -> KeyEntry:
         """Select the next key using round-robin (simplest strategy).
 
@@ -512,6 +561,9 @@ class KeyPool:
         self._round_robin_index = indices[0] + 1
         return next(k for k in keys if k.index == indices[0])
 
+    # Selects key entry possessing minimum count of total executed requests.
+    # Promotes balanced utilization across all available credentials in pool.
+    # Returns KeyEntry instance with lowest recorded cumulative request count.
     def _select_least_used(self, keys: List[KeyEntry]) -> KeyEntry:
         """Select the key with the fewest total requests.
 
@@ -520,6 +572,9 @@ class KeyPool:
         """
         return min(keys, key=lambda k: k.health.total_requests)
 
+    # Selects key entry maximizing weighted combination of health indicators.
+    # Balances success rate percentage, inverse latency, and idle recency.
+    # Returns KeyEntry instance with highest composite performance score.
     def _select_health_weighted(self, keys: List[KeyEntry]) -> KeyEntry:
         """Select the key with the highest weighted health score.
 
@@ -553,6 +608,9 @@ class KeyPool:
 
         return max(keys, key=score)
 
+    # Records successful request completion updating health metrics for key.
+    # Increments success counts, accumulates latency, and resets error counter.
+    # Closes circuit breaker if key was recovering in half-open test state.
     def record_success(
         self,
         key_id: str,
@@ -585,6 +643,9 @@ class KeyPool:
                 )
                 key.health.circuit_opened_at = None
 
+    # Records request failure updating error metrics and cooldown timers.
+    # Applies status-specific cooldown durations for 429, 403, and 5xx errors.
+    # Opens circuit breaker if consecutive failures exceed defined threshold.
     def record_failure(
         self,
         key_id: str,
@@ -619,7 +680,7 @@ class KeyPool:
                     key_id,
                     self.config.cooldown_429_seconds,
                 )
-            elif status_code == 403:
+            elif status_code in {401, 402, 403}:
                 # Access denied -- long cooldown (key may be revoked).
                 key.health.errors_403 += 1
                 key.health.cooldown_until = now + self.config.cooldown_403_seconds
@@ -650,6 +711,9 @@ class KeyPool:
                         key.health.consecutive_failures,
                     )
 
+    # Locates key entry in pool matching specified unique key identifier string.
+    # Iterates over loaded KeyEntry instances comparing key_id attributes.
+    # Returns matching KeyEntry instance or None if identifier is not found.
     def _find_key(self, key_id: str) -> Optional[KeyEntry]:
         """Find a key by ID."""
         for key in self._keys:
@@ -657,6 +721,9 @@ class KeyPool:
                 return key
         return None
 
+    # Retrieves complete list of all key entries registered in this pool.
+    # Ensures pool initialization before returning clone of key collection.
+    # Returns list of KeyEntry instances for monitoring and administrative status.
     def get_all_keys(self) -> List[KeyEntry]:
         """Get all keys in the pool (for status/monitoring)."""
         with self._lock:
@@ -664,6 +731,9 @@ class KeyPool:
                 self.initialize()
             return list(self._keys)
 
+    # Assembles comprehensive health and diagnostic statistics for key pool.
+    # Tallies key counts by status, aggregate requests, and overall success rate.
+    # Returns diagnostic summary dictionary containing sanitized key metrics.
     def get_stats(self) -> Dict[str, Any]:
         """Get pool statistics."""
         with self._lock:
@@ -705,6 +775,9 @@ class KeyPool:
                 ],
             }
 
+    # Resets health metrics and failure counters across all keys in pool.
+    # Re-initializes KeyHealth dataclass instances and resets round-robin index.
+    # Restores pristine state for testing environments and diagnostic cycles.
     def reset_all(self) -> None:
         """Reset all key health metrics (for testing)."""
         with self._lock:
@@ -718,6 +791,9 @@ _key_pools: Dict[str, KeyPool] = {}
 _pools_lock = threading.Lock()
 
 
+# Factory returning thread-safe singleton KeyPool instance for provider.
+# Lazily instantiates and initializes KeyPool under registry mutex lock.
+# Returns shared KeyPool instance for provider managing key lifecycle.
 def get_key_pool(provider: str, config: Optional[KeyPoolConfig] = None) -> KeyPool:
     """
     Get or create a key pool for a provider.
@@ -732,12 +808,18 @@ def get_key_pool(provider: str, config: Optional[KeyPoolConfig] = None) -> KeyPo
         return _key_pools[provider]
 
 
+# Returns dictionary snapshot of all initialized provider KeyPool instances.
+# Acquires lock to safely copy mapping of provider names to KeyPool objects.
+# Returns dictionary containing all active provider key pool singletons.
 def get_all_key_pools() -> Dict[str, KeyPool]:
     """Get all initialized key pools."""
     with _pools_lock:
         return dict(_key_pools)
 
 
+# Clears all initialized KeyPool singletons from global registry.
+# Thread-safely empties key pool dictionary for isolated test execution.
+# Ensures subsequent calls create freshly discovered provider pools.
 def reset_all_key_pools() -> None:
     """Reset all key pools (for testing)."""
     with _pools_lock:

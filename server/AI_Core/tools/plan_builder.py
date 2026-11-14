@@ -97,13 +97,18 @@ Design decisions
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List, Optional
 
 from contracts.plan import ActionBuckets, ActionItem, KeyMetrics, Plan
 from utils.agent_helpers import get_currency_code
 
 
+# Safely parses arbitrary object value into a floating point number.
+# Handles null values, booleans, and non-finite floats returning None.
+# Returns validated finite float or None if parsing was unsuccessful.
 def _safe_float(value: Any) -> Optional[float]:
     """Safely convert a value to float, returning None on failure."""
     try:
@@ -111,11 +116,15 @@ def _safe_float(value: Any) -> Optional[float]:
             return None
         if isinstance(value, bool):
             return None
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else None
     except (TypeError, ValueError):
         return None
 
 
+# Rounds floating point number to requested decimal places if present.
+# Safely catches type and value errors returning None on invalid inputs.
+# Returns rounded float value or None if initial input was None.
 def _round_or_none(value: Optional[float], digits: int = 2) -> Optional[float]:
     if value is None:
         return None
@@ -125,6 +134,9 @@ def _round_or_none(value: Optional[float], digits: int = 2) -> Optional[float]:
         return None
 
 
+# Iterates through argument list and returns the first valid float found.
+# Utilizes safe float parser to validate each candidate argument value.
+# Returns first successfully parsed float number or None if all fail.
 def _pick_first_float(*values: Any) -> Optional[float]:
     for value in values:
         parsed = _safe_float(value)
@@ -133,23 +145,41 @@ def _pick_first_float(*values: Any) -> Optional[float]:
     return None
 
 
+# Standardizes arbitrary currency code strings into standard 3-letter codes.
+# Delegates normalization to helper resolving locale and symbol conventions.
+# Returns uppercase ISO standard currency code string representation.
 def _normalize_currency_code(value: Any) -> str:
     return get_currency_code({"currency": value})
 
 
+# Formats numerical currency amounts using round-half-up decimal arithmetic.
+# Aligns rounding behavior with frontend Intl localization specifications.
+# Returns formatted string with currency prefix and comma-separated digits.
 def _format_currency(value: Optional[float], currency_code: str = "INR") -> str:
     if value is None:
         return "-"
     normalized = _normalize_currency_code(currency_code)
-    return f"{normalized} {value:,.0f}"
+    # Round half away from zero (like the client's Intl formatting); Python's
+    # format() rounds half-to-even, so 3454.5 would show as 3,454 here but 3,455 in the UI.
+    amount = Decimal(str(value))
+    if not amount.is_finite():
+        return "-"
+    rounded = amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP) + 0  # "+ 0" drops a negative zero
+    return f"{normalized} {rounded:,}"
 
 
+# Formats floating point number into localized single-decimal percentage string.
+# Returns dash placeholder when supplied value is None or unassigned.
+# Returns string representation appended with percent character symbol.
 def _format_percent(value: Optional[float]) -> str:
     if value is None:
         return "-"
     return f"{value:.1f}%"
 
 
+# Data container holding user profile and specialist agent analysis results.
+# Encapsulates optional outputs from income, budget, investment, and debt tools.
+# Provides immutable dataclass input structure consumed by build_plan.
 @dataclass(frozen=True)
 class PlanInputs:
     user_profile: Optional[Dict[str, Any]]
@@ -160,6 +190,9 @@ class PlanInputs:
     financial_education: Optional[Dict[str, Any]] = None
 
 
+# Assembles comprehensive financial plan model using deterministic logic.
+# Computes core key metrics, checks data completeness, and builds actions.
+# Returns structured Plan object containing executive summary and metrics.
 def build_plan(inputs: PlanInputs) -> Plan:
     warnings: List[str] = []
     assumptions: List[str] = [
@@ -189,18 +222,40 @@ def build_plan(inputs: PlanInputs) -> Plan:
     if inputs.income_analysis and not inputs.income_analysis.get("error"):
         income_summary = inputs.income_analysis.get("summary_metrics") if isinstance(inputs.income_analysis, dict) else None
 
-    key_metrics.monthly_net_cash_flow = _round_or_none(
-        _pick_first_float(
-            (income_summary or {}).get("net_cash_flow"),
-            (income_summary or {}).get("monthly_net_flow"),
-        )
+    # A specialist's net_cash_flow is the entire recorded transaction window,
+    # which can span a year. Only explicitly monthly values belong here.
+    summary = income_summary if isinstance(income_summary, dict) else {}
+    recorded_monthly_flow = _pick_first_float(
+        summary.get("average_monthly_net_cash_flow"), summary.get("monthly_net_flow")
     )
+    key_metrics.monthly_net_cash_flow = _round_or_none(recorded_monthly_flow)
     key_metrics.savings_rate = _round_or_none(
         _pick_first_float((income_summary or {}).get("savings_rate"))
     )
 
-    if key_metrics.monthly_net_cash_flow is None and monthly_income is not None and monthly_expenses is not None:
+    # Unset profile fields arrive as 0; "0 income - 0 expenses" is missing data, not a
+    # real USD 0 cash flow, so only derive it when at least one side was provided.
+    profile_monthly_known = (
+        monthly_income is not None
+        and monthly_expenses is not None
+        and monthly_income >= 0
+        and monthly_expenses >= 0
+        and (monthly_income > 0 or monthly_expenses > 0)
+    )
+    if profile_monthly_known:
         key_metrics.monthly_net_cash_flow = _round_or_none(monthly_income - monthly_expenses)
+        key_metrics.savings_rate = (
+            _round_or_none((monthly_income - monthly_expenses) / monthly_income * 100)
+            if monthly_income > 0 else None
+        )
+        assumptions.append("Monthly cash flow uses saved profile income and expenses, rather than recorded transaction totals.")
+    elif recorded_monthly_flow is not None:
+        assumptions.append("Monthly cash flow is a recorded transaction average across the calendar months spanned; coverage may be incomplete.")
+
+    if isinstance(inputs.income_analysis, dict):
+        for warning in inputs.income_analysis.get("data_warnings") or []:
+            if isinstance(warning, str) and warning not in warnings:
+                warnings.append(warning)
 
     if (
         key_metrics.savings_rate is None
@@ -284,6 +339,9 @@ def build_plan(inputs: PlanInputs) -> Plan:
     )
 
 
+# Generates prioritized action items divided into 7-day, 30-day, and 1-year buckets.
+# Assigns deterministic SHA256 hashed identifiers for idempotent action tracking.
+# Returns ActionBuckets instance populated with categorized recommendations.
 def _build_actions(
     *,
     key_metrics: KeyMetrics,
@@ -448,6 +506,9 @@ def _build_actions(
     return buckets
 
 
+# Formats structured Plan object into readable GitHub-flavored markdown document.
+# Builds executive summary, metric summary table, actions, and warnings sections.
+# Returns clean markdown text string guaranteed to contain zero hallucinated data.
 def render_plan_markdown(plan: Plan, currency_code: str = "INR") -> str:
     km = plan.key_metrics
 
@@ -490,6 +551,9 @@ def render_plan_markdown(plan: Plan, currency_code: str = "INR") -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+# Formats single action bucket section containing list of ActionItem models.
+# Formats action title, priority, rationale, step bullets, and expected impact.
+# Returns list of markdown string lines representing formatted action bucket.
 def _render_action_bucket(title: str, items: List[ActionItem]) -> List[str]:
     if not items:
         return [f"**{title}**", "- (no actions generated)", ""]

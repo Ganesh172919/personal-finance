@@ -28,9 +28,9 @@
 
 import { motion } from "framer-motion";
 import Papa from "papaparse";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, ReceiptText, ScanLine, Upload, Split, Repeat, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, ReceiptText, ScanLine, Upload, Split, Repeat, Trash2, ChevronDown, ChevronUp, Globe, Building2, Radio, CheckCircle2 } from "lucide-react";
 
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { InlineLoader } from "@/components/feedback/InlineLoader";
@@ -64,9 +64,35 @@ import {
   listAccounts,
   TransactionType,
   updateTransaction,
+  getMerchantClusters,
+  applyMerchantCluster,
+  ingestBankFeed,
 } from "@/lib/apiClient";
+import {
+  SUPPORTED_CURRENCIES,
+  convertUsdToCurrency,
+  CURRENCY_SYMBOLS,
+  FX_RATES_TO_USD,
+  type SupportedCurrency,
+} from "@/lib/currencyFx";
 import { ITransaction } from "@/types";
 
+// Recovers original USD transaction amount from converted display amounts.
+// Prevents currency conversion drift when submitting transaction edits.
+// Throws descriptive error if original amount cannot be reliably resolved.
+const ledgerAmount = (amount: number, rawAmount?: number, displayCurrency?: string) => {
+  const original = rawAmount ?? (!displayCurrency || displayCurrency === "USD" ? amount : Number.NaN);
+  if (!Number.isFinite(original)) throw new Error("Reload transactions to recover the original USD amount before editing.");
+  return original;
+};
+// Formats monetary values as standard US Dollar currency strings.
+// Employs Intl.NumberFormat for standard decimal and comma presentation.
+// Used for displaying ledger balances and batch transaction totals.
+const formatLedgerMoney = (amount: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+
+// Controlled form input state for creating or editing individual transactions.
+// Holds string amount for input manipulation before conversion to numeric ledger values.
+// Tracks category, description, transaction date, and cash movement direction.
 /** Transaction form state (amount is string for input control) */
 type TransactionForm = {
   amount: string;
@@ -76,6 +102,9 @@ type TransactionForm = {
   type: TransactionType;
 };
 
+// State structure managing transaction CSV file uploads and column associations.
+// Holds raw parsed CSV file rows, detected column headers, and target account ID.
+// Maps external bank statement columns to internal transaction fields.
 type CsvState = {
   file: File | null;
   fileName: string;
@@ -92,6 +121,9 @@ type CsvState = {
   };
 };
 
+// Filter criteria for filtering transaction review queues.
+// Categorizes transactions needing attention, duplicates, missing merchants, and splits.
+// Used in triage tabs to systematically clean up imported transaction feeds.
 type ReviewFilter =
   | "all"
   | "needs_attention"
@@ -101,6 +133,48 @@ type ReviewFilter =
   | "split_candidate"
   | "recurring_candidate";
 
+
+// Simulated mock bank feed presets for testing transaction import workflows.
+// Emulates payroll deposits, retail purchases, rideshares, and grocery receipts.
+// Useful for demonstration and integration testing of the bank sync engine.
+const BANK_FEED_PRESETS = [
+  {
+    id: "payroll",
+    label: "Direct Deposit Payroll ($2,500.00)",
+    name: "Acme Corp Direct Deposit Payroll",
+    amount: -2500.0,
+    category: ["Income", "Salary"],
+    pending: false,
+  },
+  {
+    id: "amazon",
+    label: "Amazon Retail Order ($84.99)",
+    name: "AMZN Mktp US*3B982 Seattle WA",
+    amount: 84.99,
+    category: ["Shopping", "General Merchandise"],
+    pending: false,
+  },
+  {
+    id: "uber",
+    label: "Uber Transportation ($26.50)",
+    name: "Uber *Trip 9821 San Francisco CA",
+    amount: 26.50,
+    category: ["Transportation", "Ride Share"],
+    pending: false,
+  },
+  {
+    id: "wholefoods",
+    label: "Whole Foods Market ($112.40)",
+    name: "Whole Foods Market #10244 Austin TX",
+    amount: 112.40,
+    category: ["Groceries", "Food"],
+    pending: false,
+  },
+];
+
+// Initial blank state for the transaction creation and editing form.
+// Resets input controls with empty strings and default expense movement type.
+// Clears modal state between consecutive transaction entries.
 const EMPTY_FORM: TransactionForm = {
   amount: "",
   category: "",
@@ -109,6 +183,9 @@ const EMPTY_FORM: TransactionForm = {
   type: "expense",
 };
 
+// Default unpopulated state for CSV statement import dialog.
+// Initializes empty file references, raw rows, and blank column mappings.
+// Restores clean upload state when users dismiss or reset the import dialog.
 const EMPTY_CSV: CsvState = {
   file: null,
   fileName: "",
@@ -118,6 +195,9 @@ const EMPTY_CSV: CsvState = {
   mapping: { amount: "", category: "", description: "", date: "", type: "", merchant: "" },
 };
 
+// Matches CSV headers against candidate aliases using case-insensitive comparison.
+// Inspects file header lists to automatically detect amount, date, and vendor columns.
+// Returns the first matched raw column label or empty string if no candidate matches.
 const pickFirstMatchingColumn = (columns: string[], candidates: string[]) => {
   const normalized = columns.map(col => ({ col, key: col.trim().toLowerCase() }));
   for (const candidate of candidates) {
@@ -128,6 +208,9 @@ const pickFirstMatchingColumn = (columns: string[], candidates: string[]) => {
   return "";
 };
 
+// Maps review filter enum keys to user-friendly badge labels.
+// Clarifies why specific transactions were flagged during automated audit checks.
+// Used in triage queue table badges and filter dropdown selections.
 const reviewFlagLabel: Record<Exclude<ReviewFilter, "all" | "needs_attention">, string> = {
   uncategorized: "Uncategorized",
   suspected_duplicate: "Suspected duplicate",
@@ -136,6 +219,9 @@ const reviewFlagLabel: Record<Exclude<ReviewFilter, "all" | "needs_attention">, 
   recurring_candidate: "Recurring candidate",
 };
 
+// Standard preset financial spending and income categories for quick selection.
+// Covers essential living categories, discretionary expenses, and revenue streams.
+// Populates category dropdown options during manual transaction entry and editing.
 const COMMON_CATEGORIES = [
   "Food & Dining",
   "Groceries",
@@ -151,16 +237,22 @@ const COMMON_CATEGORIES = [
   "Income",
 ];
 
+// Converts transaction query and mutation errors into informative display strings.
+// Appends server request identifiers when ApiError structures are present.
+// Provides a fallback message if the incoming error object contains no description.
 const formatError = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
+// Primary financial ledger page for managing transactions and review queues.
+// Supports multi-currency display, CSV statement uploads, and duplicate detection.
+// Coordinates batch category tagging, merchant matching, and transaction split workflows.
 export default function Transactions() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { formatMoney, formatDate, currency } = useOrgFormatters();
+  const { formatDate, currency } = useOrgFormatters();
 
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
@@ -170,13 +262,22 @@ export default function Transactions() {
   const [toFilter, setToFilter] = useState("");
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all");
 
+  // Multi-Currency Normalization State (Batch 30)
+  const [selectedCurrency, setSelectedCurrency] = useState<SupportedCurrency>("USD");
+  const activeSymbol = CURRENCY_SYMBOLS[selectedCurrency] || "$";
+  const activeFxRate = FX_RATES_TO_USD[selectedCurrency] ?? 1.0;
+
+  // Bank Feed Simulator State
+  const [bankFeedOpen, setBankFeedOpen] = useState(false);
+  const [selectedPresetId, setSelectedPresetId] = useState("payroll");
+
   const accountsQuery = useQuery({
     queryKey: ["v1/finance/accounts"],
     queryFn: listAccounts,
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["/api/transactions", page, limit, typeFilter, categoryFilter, fromFilter, toFilter],
+    queryKey: ["/api/transactions", page, limit, typeFilter, categoryFilter, fromFilter, toFilter, reviewFilter, selectedCurrency],
     queryFn: () =>
       getTransactions({
         page,
@@ -185,12 +286,76 @@ export default function Transactions() {
         category: categoryFilter.trim() || undefined,
         from: fromFilter || undefined,
         to: toFilter || undefined,
+        // Review state is filtered server-side so pagination totals match the filtered list.
+        needs_review: reviewFilter === "needs_attention" ? true : undefined,
+        review_flag: reviewFilter !== "all" && reviewFilter !== "needs_attention" ? reviewFilter : undefined,
+        currency: selectedCurrency !== "USD" ? selectedCurrency : undefined,
       }),
+  });
+
+  // Merchant Clusters Query (Batch 30)
+  const merchantClustersQuery = useQuery({
+    queryKey: ["merchant-clusters", selectedCurrency],
+    queryFn: () => getMerchantClusters({ currency: selectedCurrency !== "USD" ? selectedCurrency : undefined }),
+  });
+
+  const applyClusterMutation = useMutation({
+    mutationFn: applyMerchantCluster,
+    onSuccess: async (res) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["merchant-clusters"] }),
+      ]);
+      toast({
+        title: "Merchant normalized",
+        description: `Normalized ${res.updated_count} transaction(s) to ${res.normalized_name} (${res.category}).`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Normalization failed",
+        description: formatError(error, "Failed to apply merchant cluster."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const bankFeedMutation = useMutation({
+    mutationFn: ingestBankFeed,
+    onSuccess: async (res) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["merchant-clusters"] }),
+      ]);
+      setBankFeedOpen(false);
+      toast({
+        title: "Bank feed ingested",
+        description: `Processed ${res.processed} transaction(s): ${res.inserted} inserted, ${res.duplicates_skipped} duplicates skipped.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Bank feed ingestion failed",
+        description: formatError(error, "Failed to ingest the bank-feed simulation."),
+        variant: "destructive",
+      });
+    },
   });
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<TransactionForm>(EMPTY_FORM);
+  const formCardRef = useRef<HTMLDivElement | null>(null);
+
+  // The form renders below the currency/filter panels, so opening it from the header
+  // (or from Edit on a row far down the list) left it off-screen, especially on mobile.
+  useEffect(() => {
+    if (!isFormOpen) return;
+    const card = formCardRef.current;
+    if (!card) return;
+    card.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    card.querySelector<HTMLInputElement>("#transaction-amount")?.focus({ preventScroll: true });
+  }, [isFormOpen, editingId]);
 
   const createMutation = useMutation({
     mutationFn: createTransaction,
@@ -215,8 +380,9 @@ export default function Transactions() {
         amount: payload.amount ? Number(payload.amount) : undefined,
         splits: payload.splits,
       }),
-    onSuccess: async () => {
+    onSuccess: async (_result, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      if (variables.payload.splits !== undefined) return;
       setForm(EMPTY_FORM);
       setEditingId(null);
       setIsFormOpen(false);
@@ -247,6 +413,7 @@ export default function Transactions() {
   // Split transaction state
   const [splitTargetTransaction, setSplitTargetTransaction] = useState<ITransaction | null>(null);
   const [splitRows, setSplitRows] = useState<Array<{ id: string; category: string; amount: string }>>([]);
+  const [splitSaveError, setSplitSaveError] = useState<string | null>(null);
   const [expandedSplitIds, setExpandedSplitIds] = useState<Set<string>>(new Set());
 
   // Recurring rule state
@@ -256,7 +423,24 @@ export default function Transactions() {
   const [ruleAmount, setRuleAmount] = useState("");
   const [ruleFrequency, setRuleFrequency] = useState<"monthly" | "biweekly" | "weekly" | "quarterly" | "annual">("monthly");
 
+  const originalTransaction = (tx: ITransaction, includeSplits = false): ITransaction | null => {
+    try {
+      const displayCurrency = tx.currency || data?.currency;
+      return { ...tx, amount: ledgerAmount(tx.amount, tx.raw_amount, displayCurrency),
+        splits: includeSplits ? tx.splits?.map(split => ({ ...split,
+          amount: ledgerAmount(split.amount, split.raw_amount, displayCurrency),
+        })) : tx.splits };
+    } catch (error) {
+      toast({ title: "Original amount unavailable", description: formatError(error, "Reload before editing this transaction."), variant: "destructive" });
+      return null;
+    }
+  };
+
   const openSplitDialog = (tx: ITransaction) => {
+    const original = originalTransaction(tx, true);
+    if (!original) return;
+    tx = original;
+    setSplitSaveError(null);
     setSplitTargetTransaction(tx);
     const total = Math.abs(tx.amount);
     if (tx.splits && tx.splits.length >= 2) {
@@ -316,8 +500,8 @@ export default function Transactions() {
     });
   };
 
-  const handleSaveSplits = () => {
-    if (!splitTargetTransaction) return;
+  const handleSaveSplits = async () => {
+    if (!splitTargetTransaction || updateMutation.isPending) return;
     const txId = splitTargetTransaction.id || splitTargetTransaction._id;
     if (!txId) return;
 
@@ -326,35 +510,31 @@ export default function Transactions() {
       amount: Number(r.amount),
     }));
 
-    updateMutation.mutate({
-      id: txId,
-      payload: {
-        splits: payloadSplits,
-      } as any,
-    });
-    toast({
-      title: "Transaction Split Saved",
-      description: `Split across ${payloadSplits.length} categories successfully.`,
-    });
-    setSplitTargetTransaction(null);
+    setSplitSaveError(null);
+    try {
+      await updateMutation.mutateAsync({ id: txId, payload: { splits: payloadSplits } });
+      toast({ title: "Transaction Split Saved", description: `Split across ${payloadSplits.length} categories successfully.` });
+      setSplitTargetTransaction(null);
+    } catch (error) {
+      setSplitSaveError(formatError(error, "Could not save the split. Your entries are kept; try again."));
+    }
   };
 
-  const handleClearSplits = (tx: ITransaction) => {
+  const handleClearSplits = async (tx: ITransaction) => {
     const txId = tx.id || tx._id;
-    if (!txId) return;
-    updateMutation.mutate({
-      id: txId,
-      payload: {
-        splits: [],
-      } as any,
-    });
-    toast({
-      title: "Splits Cleared",
-      description: "Restored to single unified category.",
-    });
+    if (!txId || updateMutation.isPending) return;
+    try {
+      await updateMutation.mutateAsync({ id: txId, payload: { splits: [] } });
+      toast({ title: "Splits Cleared", description: "Restored to single unified category." });
+    } catch {
+      // The shared update error handler reports the failure; retain the breakdown.
+    }
   };
 
   const openRecurringRuleDialog = (tx: ITransaction) => {
+    const original = originalTransaction(tx);
+    if (!original) return;
+    tx = original;
     setRecurringTargetTransaction(tx);
     setRuleName(tx.description || "Recurring Transaction");
     setRuleCategory(tx.category || "Uncategorized");
@@ -535,10 +715,20 @@ export default function Transactions() {
     reviewFilter !== "all",
   ].filter(Boolean).length;
 
-  const formatAmount = (amount: number, type: TransactionType) => {
-    const prefix = type === "income" ? "+" : "-";
-    return `${prefix}${formatMoney(Math.abs(amount))}`;
-  };
+  const isDataPreConverted = Boolean(data?.currency && data.currency === selectedCurrency);
+
+  const formatAmount = useCallback(
+    (amount: number, type?: TransactionType, isPreConverted = false) => {
+      const prefix = type ? (type === "income" ? "+" : "-") : amount < 0 ? "-" : amount > 0 ? "+" : "";
+      const absVal = Math.abs(amount);
+      const val = isPreConverted || isDataPreConverted || selectedCurrency === "USD" ? absVal : convertUsdToCurrency(absVal, selectedCurrency);
+      if (selectedCurrency === "JPY") {
+        return `${prefix}${activeSymbol}${Math.round(val).toLocaleString("en-US")}`;
+      }
+      return `${prefix}${activeSymbol}${val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    },
+    [selectedCurrency, activeSymbol, isDataPreConverted]
+  );
 
   const isLargeBatch = visibleTransactions.length > 30;
   const { visibleItems, totalHeight, containerRef } = useVirtualList<ITransaction>({
@@ -687,7 +877,7 @@ export default function Transactions() {
                 >
                   <span className="font-medium text-foreground truncate mr-2">{s.category}</span>
                   <span className="font-bold text-purple-600 dark:text-purple-400">
-                    {formatMoney(s.amount)}
+                    {formatAmount(s.amount).replace(/^\+/, "")}
                   </span>
                 </div>
               ))}
@@ -727,6 +917,9 @@ export default function Transactions() {
   };
 
   const startEdit = (transaction: ITransaction) => {
+    const original = originalTransaction(transaction);
+    if (!original) return;
+    transaction = original;
     setEditingId(transaction.id || transaction._id || null);
     setForm({
       amount: String(Math.abs(transaction.amount)),
@@ -928,12 +1121,22 @@ export default function Transactions() {
           description="Add income and expenses, import a CSV, or filter your transaction history."
           stats={[
             { label: "Visible entries", value: String(visibleTransactions.length) },
-            { label: "Visible income", value: formatMoney(visibleIncome) },
-            { label: "Visible outflow", value: formatMoney(visibleOutflow) },
+            { label: "Visible income", value: formatAmount(visibleIncome).replace(/^\+/, "") },
+            { label: "Visible outflow", value: formatAmount(visibleOutflow).replace(/^\+/, "") },
           ]}
           actions={
             <>
-              <ReceiptOcrDialog currencyHint={currency} />
+              <Button
+                variant="outline"
+                className="rounded-full"
+                onClick={() => setBankFeedOpen(true)}
+                data-testid="btn-open-bank-feed-modal"
+                title="Simulate incoming real-time bank connector webhook feed"
+              >
+                <Radio className="mr-2 h-4 w-4 text-emerald-500 animate-pulse" />
+                Bank Feed
+              </Button>
+              <ReceiptOcrDialog currencyHint={selectedCurrency !== "USD" ? selectedCurrency : currency} />
               <Dialog open={importOpen} onOpenChange={setImportOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline" className="rounded-full">
@@ -1218,7 +1421,158 @@ export default function Transactions() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="ledger">
+          <TabsContent value="ledger" className="space-y-6">
+
+        {/* ================================================================= */}
+        {/* MULTI-CURRENCY FX NORMALIZATION COCKPIT (Batch 30)                 */}
+        {/* ================================================================= */}
+        <Card className="surface-panel p-4 sm:p-5" data-testid="card-transactions-currency-normalization">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Globe className="h-5 w-5 text-primary" />
+                <h3 className="text-sm font-semibold tracking-wide uppercase text-foreground">
+                  Display currency
+                </h3>
+                <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30" data-testid="badge-transactions-fx-status">
+                  Fixed reference rates
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Use fixed reference rates for estimates. Transactions, edits and recurring rules use original USD ledger amounts.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-lg border border-border/60 bg-muted/40 p-1">
+                {SUPPORTED_CURRENCIES.map((curr) => (
+                  <button
+                    key={curr}
+                    type="button"
+                    onClick={() => setSelectedCurrency(curr)}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
+                      selectedCurrency === curr
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground hover:bg-background/60"
+                    }`}
+                    data-testid={`btn-transactions-currency-${curr}`}
+                  >
+                    {curr}
+                  </button>
+                ))}
+              </div>
+
+              <select
+                aria-label="Select reporting currency"
+                value={selectedCurrency}
+                onChange={(e) => setSelectedCurrency(e.target.value as SupportedCurrency)}
+                className="h-8 rounded-md border border-input bg-background px-2 py-1 text-xs font-medium focus:ring-1 focus:ring-primary"
+                data-testid="select-transactions-currency"
+              >
+                {SUPPORTED_CURRENCIES.map((curr) => (
+                  <option key={curr} value={curr}>
+                    {curr} ({CURRENCY_SYMBOLS[curr]})
+                  </option>
+                ))}
+              </select>
+
+              <Badge variant="outline" className="text-xs font-medium bg-accent/40" data-testid="badge-transactions-reporting-currency">
+                Active: {selectedCurrency} ({activeSymbol})
+              </Badge>
+
+              <Badge variant="outline" className="text-xs font-medium text-muted-foreground" data-testid="badge-transactions-fx-rate">
+                1 USD = {activeFxRate} {selectedCurrency}
+              </Badge>
+            </div>
+          </div>
+        </Card>
+
+        {/* ================================================================= */}
+        {/* AUTOMATED MERCHANT NORMALIZATION & CLUSTERING ENGINE (Batch 30)    */}
+        {/* ================================================================= */}
+        {merchantClustersQuery.data?.clusters && merchantClustersQuery.data.clusters.length > 0 && (
+          <Card className="surface-panel p-4 sm:p-5 border-amber-500/20 bg-amber-500/5 dark:bg-amber-950/10" data-testid="card-merchant-clustering-engine">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Building2 className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Review merchant names
+                  </h3>
+                  <Badge variant="outline" className="text-xs bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30" data-testid="badge-merchant-cluster-confidence">
+                    Suggested matches
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Check suggested names and categories before applying them to your transactions.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="text-xs bg-background/80" data-testid="badge-merchant-cluster-count">
+                  {merchantClustersQuery.data.clusters.length} Merchant Cluster{merchantClustersQuery.data.clusters.length === 1 ? "" : "s"}
+                </Badge>
+                <Badge variant="outline" className="text-xs bg-background/80" data-testid="badge-merchant-cluster-spend">
+                  Volume: {formatAmount(merchantClustersQuery.data.clusters.reduce((acc, c) => acc + c.total_spend, 0), undefined, true)}
+                </Badge>
+              </div>
+            </div>
+
+            <details>
+              <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                Review {merchantClustersQuery.data.clusters.length} suggested match{merchantClustersQuery.data.clusters.length === 1 ? "" : "es"}
+              </summary>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {merchantClustersQuery.data.clusters.map((cluster) => (
+                <div
+                  key={cluster.cluster_key}
+                  className="p-3 rounded-lg border border-border/60 bg-card/60 flex flex-col justify-between gap-2.5 hover:border-amber-500/30 transition-colors"
+                  data-testid={`merchant-cluster-${cluster.cluster_key}`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="font-semibold text-sm text-foreground">{cluster.normalized_name}</span>
+                      <Badge variant="outline" className="text-[11px] bg-primary/10 text-primary border-primary/20">
+                        {cluster.suggested_category}
+                      </Badge>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground mb-1.5" data-testid="text-merchant-variants">
+                      Variants: <span className="italic">{cluster.raw_descriptions.slice(0, 2).join(", ")}{cluster.raw_descriptions.length > 2 ? ` +${cluster.raw_descriptions.length - 2} more` : ""}</span>
+                    </p>
+
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{cluster.count} transaction{cluster.count === 1 ? "" : "s"}</span>
+                      <span>•</span>
+                      <span className="font-medium text-foreground">{formatAmount(cluster.total_spend, undefined, true)}</span>
+                    </div>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full text-xs h-7 border-amber-500/40 hover:bg-amber-500/10 text-foreground"
+                    onClick={() =>
+                      applyClusterMutation.mutate({
+                        cluster_key: cluster.cluster_key,
+                        normalized_name: cluster.normalized_name,
+                        category: cluster.suggested_category,
+                        transaction_ids: cluster.transaction_ids,
+                      })
+                    }
+                    disabled={applyClusterMutation.isPending}
+                    data-testid={`btn-apply-merchant-cluster-${cluster.cluster_key}`}
+                    title="Apply clean merchant name and suggested category to all matching transactions"
+                  >
+                    <CheckCircle2 className="h-3 w-3 mr-1 text-amber-600 dark:text-amber-400" />
+                    {applyClusterMutation.isPending ? "Normalizing..." : "Apply Normalization"}
+                  </Button>
+                </div>
+              ))}
+              </div>
+            </details>
+          </Card>
+        )}
 
         <Card className="surface-panel p-4">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1349,7 +1703,7 @@ export default function Transactions() {
         </Card>
 
         {isFormOpen && (
-          <Card className="surface-panel p-6">
+          <Card ref={formCardRef} className="surface-panel p-6 scroll-mt-4" data-testid="transaction-form-card">
             <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleSubmit}>
               <div>
                 <label htmlFor="transaction-type" className="text-sm font-medium">Type</label>
@@ -1365,11 +1719,11 @@ export default function Transactions() {
               </div>
 
               <div>
-                <label htmlFor="transaction-amount" className="text-sm font-medium">Amount</label>
+                <label htmlFor="transaction-amount" className="text-sm font-medium">Amount (USD)</label>
                 <input id="transaction-amount"
                   type="number"
-                  min="0"
-                  step="0.01"
+                  min={editingId ? 0 : 0.01}
+                  step={editingId ? "any" : "0.01"}
                   value={form.amount}
                   onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))}
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
@@ -1599,7 +1953,7 @@ export default function Transactions() {
 
         {/* Split Transaction Modal Dialog */}
         {splitTargetTransaction && (
-          <Dialog open={Boolean(splitTargetTransaction)} onOpenChange={(open) => !open && setSplitTargetTransaction(null)}>
+          <Dialog open={Boolean(splitTargetTransaction)} onOpenChange={(open) => { if (!open && !updateMutation.isPending) setSplitTargetTransaction(null); }}>
             <DialogContent className="max-w-md" data-testid="dialog-split-transaction">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
@@ -1607,7 +1961,7 @@ export default function Transactions() {
                   Split Transaction
                 </DialogTitle>
                 <DialogDescription>
-                  Allocate <span className="font-semibold text-foreground">{splitTargetTransaction.description}</span> ({formatMoney(splitTargetTotal)}) across multiple expense categories.
+                  Allocate <span className="font-semibold text-foreground">{splitTargetTransaction.description}</span> ({formatLedgerMoney(splitTargetTotal)}) across multiple expense categories. Split amounts are in USD, the ledger currency.
                 </DialogDescription>
               </DialogHeader>
 
@@ -1615,8 +1969,8 @@ export default function Transactions() {
                 {/* Allocation Balance Status Meter */}
                 <div className="p-3 rounded-lg border border-border/60 bg-accent/40 space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">Total: <strong className="text-foreground">{formatMoney(splitTargetTotal)}</strong></span>
-                    <span className="text-muted-foreground">Allocated: <strong className="text-foreground">{formatMoney(splitAllocatedSum)}</strong></span>
+                    <span className="text-muted-foreground">Total: <strong className="text-foreground">{formatLedgerMoney(splitTargetTotal)}</strong></span>
+                    <span className="text-muted-foreground">Allocated: <strong className="text-foreground">{formatLedgerMoney(splitAllocatedSum)}</strong></span>
                     <Badge
                       variant={isSplitBalanced ? "default" : splitRemaining > 0 ? "outline" : "destructive"}
                       className="text-[10px]"
@@ -1625,8 +1979,8 @@ export default function Transactions() {
                       {isSplitBalanced
                         ? "Balanced"
                         : splitRemaining > 0
-                        ? `${formatMoney(splitRemaining)} Left`
-                        : `${formatMoney(Math.abs(splitRemaining))} Over`}
+                        ? `${formatLedgerMoney(splitRemaining)} Left`
+                        : `${formatLedgerMoney(Math.abs(splitRemaining))} Over`}
                     </Badge>
                   </div>
                   <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
@@ -1640,7 +1994,7 @@ export default function Transactions() {
                 </div>
 
                 {/* Split Category Rows */}
-                <div className="space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
+                <fieldset disabled={updateMutation.isPending} className="space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
                   {splitRows.map((row, idx) => (
                     <div key={row.id} className="flex items-center gap-2" data-testid={`split-row-${idx}`}>
                       <div className="flex-1">
@@ -1656,8 +2010,10 @@ export default function Transactions() {
                           }}
                           className="w-full h-8 rounded-md border border-border bg-background px-2 text-xs"
                           data-testid={`select-split-category-${idx}`}
+                          aria-label={`Split ${idx + 1} category`}
                         >
                           <option value="">Select category...</option>
+                          {row.category && !COMMON_CATEGORIES.includes(row.category) ? <option value={row.category}>{row.category}</option> : null}
                           {COMMON_CATEGORIES.map((cat) => (
                             <option key={cat} value={cat}>
                               {cat}
@@ -1683,6 +2039,7 @@ export default function Transactions() {
                           }}
                           className="w-full h-8 rounded-md border border-border bg-background px-2 text-xs text-right font-medium"
                           data-testid={`input-split-amount-${idx}`}
+                          aria-label={`Split ${idx + 1} amount`}
                         />
                       </div>
 
@@ -1706,13 +2063,14 @@ export default function Transactions() {
                           onClick={() => removeSplitRow(row.id)}
                           className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
                           data-testid={`btn-remove-split-row-${idx}`}
+                          aria-label={`Remove split ${idx + 1}`}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       )}
                     </div>
                   ))}
-                </div>
+                </fieldset>
 
                 <div className="flex items-center justify-between pt-1">
                   <Button
@@ -1720,6 +2078,7 @@ export default function Transactions() {
                     variant="outline"
                     size="sm"
                     onClick={addSplitRow}
+                    disabled={updateMutation.isPending}
                     className="text-xs h-7"
                     data-testid="btn-add-split-row"
                   >
@@ -1731,11 +2090,13 @@ export default function Transactions() {
                   </span>
                 </div>
 
+                {splitSaveError ? <p role="alert" className="text-sm text-destructive">{splitSaveError}</p> : null}
                 <div className="flex justify-end gap-2 pt-3 border-t border-border/50">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => setSplitTargetTransaction(null)}
+                    disabled={updateMutation.isPending}
                     className="text-xs"
                   >
                     Cancel
@@ -1798,6 +2159,7 @@ export default function Transactions() {
                       data-testid="select-recurring-rule-category"
                     >
                       <option value="">Select category...</option>
+                      {ruleCategory && !COMMON_CATEGORIES.includes(ruleCategory) ? <option value={ruleCategory}>{ruleCategory}</option> : null}
                       {COMMON_CATEGORIES.map((cat) => (
                         <option key={cat} value={cat}>
                           {cat}
@@ -1808,12 +2170,12 @@ export default function Transactions() {
 
                   <div>
                     <label htmlFor="recurring-rule-amount" className="text-xs font-semibold text-foreground block mb-1">
-                      Expected Amount
+                      Expected Amount (USD)
                     </label>
                     <input
                       id="recurring-rule-amount"
                       type="number"
-                      step="0.01"
+                      step="any"
                       value={ruleAmount}
                       onChange={(e) => setRuleAmount(e.target.value)}
                       className="w-full h-8 rounded-md border border-border bg-background px-3 text-xs text-right font-medium"
@@ -1866,6 +2228,107 @@ export default function Transactions() {
           </Dialog>
         )}
       </motion.div>
-    </div>
+
+      {/* ================================================================= */}
+      {/* AUTHENTICATED BANK-FEED SIMULATOR MODAL (Batch 30) */}
+      {/* ================================================================= */}
+      <Dialog open={bankFeedOpen} onOpenChange={setBankFeedOpen}>
+        <DialogContent className="max-w-xl" data-testid="dialog-bank-feed-simulation">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Radio className="h-5 w-5 text-emerald-500 animate-pulse" />
+              Bank Feed Import Simulator
+            </DialogTitle>
+            <DialogDescription>
+              Test the authenticated import format using Plaid/Teller-style payloads. A production provider connector still needs its own signed callback endpoint and credential setup.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5 block">
+                Select Bank Ingestion Event Preset
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {BANK_FEED_PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSelectedPresetId(p.id)}
+                    className={`p-2.5 rounded-lg border text-left text-xs font-medium transition-all ${
+                      selectedPresetId === p.id
+                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold shadow-sm"
+                        : "border-border/60 hover:bg-accent/60 text-muted-foreground"
+                    }`}
+                    data-testid={`preset-bank-feed-${p.id}`}
+                  >
+                    <div>{p.label}</div>
+                    <div className="text-[11px] opacity-75 truncate">{p.name}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">
+                Simulated Import Payload Preview (JSON)
+              </label>
+              <pre className="p-3 rounded-md bg-muted/60 text-foreground border border-border/50 text-[11px] font-mono overflow-x-auto max-h-40">
+                {JSON.stringify(
+                  {
+                    webhook_type: "TRANSACTIONS",
+                    webhook_code: "SYNC_UPDATES_AVAILABLE",
+                    transactions: [
+                      {
+                        transaction_id: `bank-feed-${selectedPresetId}-9982`,
+                        amount: BANK_FEED_PRESETS.find((p) => p.id === selectedPresetId)?.amount,
+                        name: BANK_FEED_PRESETS.find((p) => p.id === selectedPresetId)?.name,
+                        category: BANK_FEED_PRESETS.find((p) => p.id === selectedPresetId)?.category,
+                        pending: false,
+                        date: new Date().toISOString(),
+                      },
+                    ],
+                  },
+                  null,
+                  2
+                )}
+              </pre>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setBankFeedOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                onClick={() => {
+                  const preset = BANK_FEED_PRESETS.find((p) => p.id === selectedPresetId);
+                  if (!preset) return;
+                  bankFeedMutation.mutate({
+                    webhook_type: "TRANSACTIONS",
+                    webhook_code: "SYNC_UPDATES_AVAILABLE",
+                    transactions: [
+                      {
+                        transaction_id: `bank-feed-${preset.id}-${Date.now()}`,
+                        amount: preset.amount,
+                        date: new Date().toISOString(),
+                        name: preset.name,
+                        category: preset.category,
+                        pending: preset.pending,
+                      },
+                    ],
+                  });
+                }}
+                disabled={bankFeedMutation.isPending}
+                data-testid="btn-simulate-bank-feed"
+              >
+                {bankFeedMutation.isPending ? "Ingesting..." : "Simulate Bank Feed Ingestion"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+</div>
   );
 }

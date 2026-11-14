@@ -6,7 +6,12 @@ import SubscriptionModel from "../models/subscriptionModel";
 import InvoiceModel from "../models/invoiceModel";
 import { cacheDel } from "../config/redis";
 import { recordAuditEvent } from "./auditLog";
+import { getEnv } from "../config/env";
+import { HttpError } from "../middleware/httpError";
 
+// Encapsulates current dunning lifecycle status and grace period diagnostics.
+// Tracks payment retry attempts, scheduled retry timestamps, and failure causes.
+// Delivers chronological payment retry histories for subscription management views.
 export interface DunningStateResult {
   in_dunning: boolean;
   status: "active" | "recovered" | "exhausted" | "none";
@@ -25,6 +30,9 @@ export interface DunningStateResult {
   }>;
 }
 
+// Resolves active dunning recovery status and remaining grace period days for an org.
+// Evaluates both persisted dunning records and entitlement past-due indicators.
+// Returns normalized dunning diagnostic telemetry and structured retry history.
 export const getDunningState = async (orgId: mongoose.Types.ObjectId): Promise<DunningStateResult> => {
   const dunning = await DunningModel.findOne({ orgId }).lean();
   const entitlement = await EntitlementModel.findOne({ orgId }).lean();
@@ -55,11 +63,17 @@ export const getDunningState = async (orgId: mongoose.Types.ObjectId): Promise<D
   };
 };
 
+// Simulates a payment collection failure to test dunning grace period workflows.
+// Transitions entitlements and subscriptions to past-due and initializes dunning records.
+// Invalidates cached Redis entitlements and emits structured security audit events.
 export const simulatePaymentFailure = async (
   orgId: mongoose.Types.ObjectId,
   userId: mongoose.Types.ObjectId,
   reason: string = "card_declined"
 ) => {
+  if (getEnv().NODE_ENV === "production") {
+    throw new HttpError(404, "NOT_FOUND", "Payment simulation is unavailable");
+  }
   const now = new Date();
   const gracePeriodExpiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7-day grace period
   const nextRetryAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24-hour next retry
@@ -131,10 +145,18 @@ export const simulatePaymentFailure = async (
   return getDunningState(orgId);
 };
 
+// Simulates an immediate subscription payment retry and account recovery cycle.
+// Restores entitlements and subscriptions to active status with generated invoices.
+// Updates dunning records to recovered and invalidates cached tenant entitlement keys.
 export const triggerPaymentRetry = async (
   orgId: mongoose.Types.ObjectId,
   userId: mongoose.Types.ObjectId
 ) => {
+  // This local simulation never contacts a payment processor. It cannot restore
+  // paid entitlements or manufacture a receipt in a deployed environment.
+  if (getEnv().NODE_ENV === "production") {
+    throw new HttpError(503, "PAYMENT_RETRY_UNAVAILABLE", "Payment retry is unavailable without provider confirmation");
+  }
   const now = new Date();
   let dunning = await DunningModel.findOne({ orgId });
 
@@ -168,12 +190,12 @@ export const triggerPaymentRetry = async (
     amountUsd: amount,
     taxUsd: 0,
     totalUsd: amount,
-    status: "paid",
-    paymentMethod: "Card ending in 4242",
+    status: "void",
+    paymentMethod: "Test retry (no payment)",
     periodStart: now,
     periodEnd: new Date(now.getTime() + 30 * 86400000),
     issuedAt: now,
-    metadata: { dunning_recovered: true },
+    metadata: { dunning_recovered: true, test_record: true, payment_verified: false },
   });
 
   // 3. Mark Dunning as recovered

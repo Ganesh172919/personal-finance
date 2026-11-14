@@ -376,7 +376,7 @@ curl -v https://api.finwise.app/api/v1/auth/google
 
 **Step 2 — Callback:**
 
-Google redirects back to `/api/v1/auth/google/callback?code=...&state=...`. The server exchanges the code, creates or finds the user, sets JWT cookies, and redirects to the client app.
+Google redirects back to `/api/auth/google/callback?code=...&state=...` (the registered redirect URI; `/api/v1/auth/google/callback` is also mounted). The server verifies the signed state cookie + PKCE, requires a verified Google email, creates or links the user, sets the JWT and CSRF cookies, and redirects to the client app. Failures redirect to `CLIENT_URL/login?error=<code>`.
 
 ### 2.8 Get Profile
 
@@ -2604,3 +2604,363 @@ export function validate(schema: AnyZodObject) {
   };
 }
 ```
+
+---
+
+## 4. Advanced & Enterprise Route Additions (Latest 2026 API Contracts)
+
+### 4.1 Inbound Bank Connector Webhook Feed
+
+#### `POST /api/transactions/bank-feed`
+Ingests real-time transaction webhooks from external financial institutions or Plaid/Tink aggregators. Enforces `externalId` deduplication and routes unclassified charges to the review queue.
+
+- **Authentication:** HMAC-SHA256 Signature header (`x-finwise-signature`) or JWT Bearer.
+- **Request Headers:**
+  - `Content-Type: application/json`
+  - `x-org-id: <org_id>`
+  - `x-finwise-signature: <sha256_hex_digest>`
+- **Request Body:**
+  ```json
+  {
+    "accountId": "65f019a2b7c4d1234567890a",
+    "externalId": "tx_plaid_994827104",
+    "amount": -54.20,
+    "currency": "USD",
+    "description": "WHOLEFDS SOHO 10294 NY",
+    "date": "2026-10-31T14:22:00.000Z",
+    "category": "Groceries",
+    "merchant": "Whole Foods Market",
+    "pending": false
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "6724a1b9c3e4f1a2b3c4d5e6",
+      "externalId": "tx_plaid_994827104",
+      "amount": -54.20,
+      "description": "WHOLEFDS SOHO 10294 NY",
+      "category": "Groceries",
+      "needsReview": false,
+      "confidence": 0.95
+    },
+    "meta": {
+      "isDuplicate": false,
+      "ruleApplied": "rule_wholefoods_default"
+    }
+  }
+  ```
+
+---
+
+### 4.2 Machine Learning Merchant Embedding Clustering
+
+#### `GET /api/transactions/merchant-clusters`
+Generates 64-dimensional L2-normalized vector embeddings for all unreviewed or unmapped merchant transactions, clustering them via agglomerative cosine similarity ($C_{\text{sim}} \ge 0.70$).
+
+- **Query Parameters:**
+  - `days_back` (optional, default: 90): Number of lookback days for clustering.
+  - `min_cluster_size` (optional, default: 2): Minimum transactions required to form a cluster.
+  - `threshold` (optional, default: 0.70): Cosine similarity linkage threshold.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "clusters": [
+        {
+          "cluster_id": "cluster_amazon_retail",
+          "canonical_name": "Amazon",
+          "prototype_category": "Shopping",
+          "semantic_similarity": 0.942,
+          "confidence": 0.98,
+          "transaction_count": 8,
+          "total_spend": 342.50,
+          "raw_variants": [
+            "AMZN MKTP US*2A41B",
+            "Amazon.com*MB92 SEATTLE WA",
+            "Amazon Prime Video"
+          ],
+          "transaction_ids": ["6724a1b9c3e4...", "6724a2c0d4f5..."]
+        }
+      ],
+      "total_unmapped_transactions": 24,
+      "clusters_formed": 4
+    }
+  }
+  ```
+
+#### `POST /api/transactions/merchant-clusters/apply`
+Applies canonical normalization, category assignment, and optionally synthesizes a permanent `CategoryRule` for all transactions within a cluster.
+
+- **Request Body:**
+  ```json
+  {
+    "cluster_id": "cluster_amazon_retail",
+    "canonical_name": "Amazon",
+    "category": "Shopping",
+    "transaction_ids": ["6724a1b9c3e4...", "6724a2c0d4f5..."],
+    "create_permanent_rule": true
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "updated_transactions_count": 8,
+      "rule_created": {
+        "_id": "6724b9a1c2d3e4f5a6b7c8d9",
+        "name": "Auto-Rule: Amazon",
+        "pattern": "amazon",
+        "category": "Shopping"
+      }
+    }
+  }
+  ```
+
+---
+
+### 4.3 External Workflow Inbound Webhook
+
+#### `POST /api/workflows/webhook/:token`
+Executes an automated multi-step workflow from third-party systems (CI/CD, Stripe, Zapier, custom scripts) authenticated via a cryptographic 48-character webhook token.
+
+- **URL Parameter:** `token` (48-character hex string)
+- **Request Body:** Arbitrary JSON trigger payload context:
+  ```json
+  {
+    "event": "large_invoice_received",
+    "vendor": "Google Cloud Platform",
+    "amount": 2400.00,
+    "department": "Engineering"
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "workflow_id": "6724c0d1e2f3a4b5c6d7e8f9",
+      "run_id": "run_994821039",
+      "status": "succeeded",
+      "actions_executed": 2,
+      "actions_skipped": [
+        {
+          "index": 1,
+          "action_type": "send_notification",
+          "reason": "Condition evaluated to false: department eq Marketing"
+        }
+      ],
+      "delays_executed": []
+    }
+  }
+  ```
+
+---
+
+### 4.4 Financial Journal Offline Sync & 64-D Semantic Vector Search
+
+#### `POST /api/financial-journal/entries/batch-sync`
+Idempotently synchronizes batches of offline stylus or keyboard drafts created while disconnected from the network.
+
+- **Request Body:**
+  ```json
+  {
+    "notes": [
+      {
+        "clientDraftId": "draft_1730000000_abc123",
+        "title": "Emergency Fund Strategy Note",
+        "content": "Need to boost our HYSA cushion to 6 months expenses. #savings #emergency",
+        "createdAt": "2026-10-31T09:15:00.000Z"
+      }
+    ]
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "syncedCount": 1,
+      "duplicatesSkipped": 0,
+      "entries": [
+        {
+          "_id": "6724d1a2b3c4d5e6f7a8b9c0",
+          "clientDraftId": "draft_1730000000_abc123",
+          "title": "Emergency Fund Strategy Note",
+          "tags": ["savings", "emergency"],
+          "sentiment": "optimistic",
+          "embeddingDimensions": 64
+        }
+      ]
+    }
+  }
+  ```
+
+#### `GET /api/financial-journal/semantic-search`
+Performs dense 64-D cosine similarity search across journal entries, returning ranked results with concept match scores.
+
+- **Query Parameters:**
+  - `query` (required): Search inquiry (e.g. `emergency reserve planning`)
+  - `threshold` (optional, default: 0.65): Minimum cosine similarity score.
+  - `tag` (optional): Filter by concept tag (`savings`, `budget`, `debt`, `investing`, etc.).
+  - `limit` (optional, default: 10): Maximum results to return.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "results": [
+        {
+          "_id": "6724d1a2b3c4d5e6f7a8b9c0",
+          "title": "Emergency Fund Strategy Note",
+          "snippet": "Need to boost our HYSA cushion to 6 months...",
+          "similarity_score": 0.892,
+          "tags": ["savings", "emergency"],
+          "sentiment": "optimistic"
+        }
+      ],
+      "query_embedding_dimension": 64
+    }
+  }
+  ```
+
+---
+
+### 4.5 Scheduled Reports Multi-Destination Delivery
+
+#### `POST /api/v1/exports/scheduled`
+Configures automated recurring transaction ledger and financial statement deliveries to Email, Webhook Push, or Cloud Storage (AWS S3 / Google Cloud Storage GCS).
+
+- **Request Body (Cloud Storage Example):**
+  ```json
+  {
+    "frequency": "monthly",
+    "exportType": "csv",
+    "destination": "cloud_storage",
+    "destinationConfig": {
+      "cloudProvider": "s3",
+      "bucketName": "finwise-enterprise-exports",
+      "bucketRegion": "us-east-1",
+      "bucketPrefix": "monthly_ledgers",
+      "customFilename": "q3_ledger_report.csv"
+    }
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "6724e1f2a3b4c5d6e7f8a9b0",
+      "frequency": "monthly",
+      "destination": "cloud_storage",
+      "status": "active",
+      "nextRunAt": "2026-11-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+#### `POST /api/v1/exports/scheduled/:id/deliver-now`
+Triggers immediate generation and dispatch of a scheduled report to its configured destination with SHA-256 cryptographic checksum calculation.
+
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "deliveryId": "del_8839210",
+      "destination": "cloud_storage",
+      "cloudUri": "s3://finwise-enterprise-exports/monthly_ledgers/q3_ledger_report.csv",
+      "byteLength": 184920,
+      "sha256Checksum": "a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0"
+    }
+  }
+  ```
+
+---
+
+### 4.6 AI Core Resumable Sessions & Model Health
+
+#### `GET /api/v1/ai-core/status`
+Returns live operational health, active LLM key pool statistics, and provider circuit breaker states.
+
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "status": "healthy",
+      "active_provider": "gemini",
+      "key_pools": {
+        "gemini": { "total_keys": 4, "healthy_keys": 4, "cooldown_keys": 0, "circuit_state": "CLOSED" },
+        "groq": { "total_keys": 2, "healthy_keys": 2, "cooldown_keys": 0, "circuit_state": "CLOSED" }
+      },
+      "p95_latency_ms": 1120,
+      "error_rate_percent": 0.2
+    }
+  }
+  ```
+
+#### `POST /api/v1/ai-core/ai/sessions/:sessionId/resume`
+Resumes an in-flight or paused LangGraph workflow from its latest persisted SQLite checkpoint.
+
+- **Request Body:**
+  ```json
+  {
+    "user_feedback": "Approved. Proceed with debt avalanche payoff plan."
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "session_id": "sess_994821039",
+      "recovered_from_phase": "VERIFICATION",
+      "current_phase": "SYNTHESIS",
+      "status": "COMPLETED",
+      "plan_output": { ... }
+    }
+  }
+  ```
+
+
+---
+
+## 9. Latest Enterprise Subsystems & Endpoints (2026 Release)
+
+### Cross-Silo Unified Context Engine
+- `GET /api/v1/search/unified-context`: Searches across User Memories, Workspace Documents, and Ledger Transactions with RRF ($k=60$).
+- `POST /api/v1/search/unified-context`: Assembles unified citations for LLM prompt injection.
+
+### Personalized Follow-Through
+- `GET /api/v1/follow-through/recommendations`: Prioritized multi-domain financial actions.
+- `POST /api/v1/follow-through/feedback`: Adaptively tunes domain weights via user feedback (upvote/dismiss/complete).
+- `GET /api/v1/follow-through/preferences`: Retrieves active domain focus weights and cadence.
+- `PUT /api/v1/follow-through/preferences`: Updates domain focus weights and risk tolerance.
+
+### Zero-Sum Budget Rebalancing
+- `POST /api/v1/finance/budgets/:periodKey/rebalance`: Rebalances categories while strictly preserving aggregate budget cap ($\sum \Delta B_i = 0$).
+
+### Multi-Modal Document QA & Authorship
+- `POST /api/files/qa`: Strict physical page cited document question-answering with zero hallucination tolerance.
+- `POST /api/files/search`: Searches workspace knowledge chunks by modality and semantic score.
+- `POST /api/files/authored-document`: Generates publication-grade PDF statements across 6 structured formats.
+
+### Financial Calendar Reminders
+- `GET /api/v1/calendar-reminders/export.ics`: Live RFC 5545 iCalendar feed.
+- `POST /api/v1/calendar-reminders/batch-complete`: Batch completes reminder obligations.
+- `POST /api/v1/calendar-reminders/clear-completed`: Clears completed reminder entries.
+
+### AI Canary Invariant Validation
+- `GET /api/v1/ai/canary/status`: Returns 5-invariant pass rates and recent violation logs.
+- `POST /api/v1/ai/canary/validate`: Real-time mathematical verification of numbers, budgets, balance sheet, cash flow, and debt amortization.
+- `POST /api/v1/ai/canary/run-probes`: On-demand provider audit probe runner.
+
+---
+
+**Evidence:** `server/src/routes/v1Routes.ts`, `server/src/routes/fileRoutes.ts`, `server/src/routes/financialJournalRoutes.ts`, `server/src/routes/financialDataRoutes.ts`

@@ -280,3 +280,110 @@ export async function installPlugin(orgId: string, pluginId: string, config: Rec
   logger.info({ orgId, pluginId, installId: installRecord._id }, "Plugin successfully registered and activated");
 }
 ```
+
+
+---
+
+## Interactive UI Plugins & Sidecar Integration Architecture
+
+FinWise supports interactive sidecar UI plugins and Model Context Protocol (MCP) tool bindings:
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4f46e5', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#4338ca', 'lineColor': '#06b6d4', 'secondaryColor': '#059669', 'tertiaryColor': '#f59e0b'}}}%%
+mindmap
+  root((🔌 FinWise UI & MCP Plugins))
+    🖥️ Sidecar UI Panels
+      Task & Workflow Automation Sidecars
+      Interactive Biomolecular & Science Viewers (Mol*)
+      Generative UI Rich Data Widgets
+      One-Click Chat Navigation Pills
+    🤖 MCP Tool Integration
+      Lazy-loaded Model Context Protocol tools
+      Sandboxed JSON-RPC client protocol
+      Tenant-scoped credentials and session isolation
+      Automated tool registry sync
+    🛡️ Runtime Security Isolation
+      Fail-closed permission checks
+      Strict CORS and origin boundaries
+      Asynchronous DNS-level SSRF filters
+      Cryptographic HMAC request validation
+```
+
+### Sidecar Viewer Integration Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 👤 USER INTENT: Requests visual analysis or interactive tool           │
+│    "Show me the interactive 3D model / automated workflow trace"       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ GATEWAY: Evaluates Plugin Permission & Generates Sidecar Token       │
+│    Verify organization entitlement • Inject session authorization      │
+└──────────────────┬─────────────────────────────────┬───────────────────┘
+                   │                                 │
+                   ▼                                 ▼
+┌──────────────────────────────────────┐  ┌──────────────────────────────┐
+│ 🧩 MCP TOOL SERVER                   │  │ 🖥️ SIDECAR WEBVIEW PANEL    │
+│  ├── Lazy tool schema resolution     │  │  ├── Isolated iframe sandbox │
+│  └── JSON-RPC sandboxed invocation   │  │  └── One-click UI pill link  │
+└──────────────────┬───────────────────┘  └──────────────┬───────────────┘
+                   │                                     │
+                   └──────────────────┬──────────────────┘
+                                      │
+                                      ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 FINISHED: Direct Interactive Exploration in Sidecar Panel          │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Production Implementation Blueprint: Secure Plugin Runtime Client (`server/src/modules/plugins/runtimeClient.ts`)
+
+```typescript
+import dns from "node:dns/promises";
+import net from "node:net";
+import { logger } from "../../config/logger";
+
+const BLOCKED_IP_PREFIXES = [
+  "0.", "10.", "127.", "169.254.", "172.16.", "172.17.", "172.18.", "172.19.",
+  "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.",
+  "172.27.", "172.28.", "172.29.", "172.30.", "172.31.", "192.168.", "::1", "fc00:", "fe80:"
+];
+
+/**
+ * Validates target plugin endpoint to prevent Server-Side Request Forgery (SSRF)
+ * by resolving hostnames against private, reserved, and loopback IP ranges.
+ */
+export async function validatePluginUrlSafety(targetUrl: string): Promise<boolean> {
+  try {
+    const parsed = new URL(targetUrl);
+    if (parsed.protocol !== "https:" && process.env.NODE_ENV === "production") {
+      logger.warn({ targetUrl }, "Rejected non-HTTPS plugin endpoint in production");
+      return false;
+    }
+
+    const hostname = parsed.hostname;
+    if (hostname === "localhost" && process.env.NODE_ENV === "production") {
+      return false;
+    }
+
+    const resolved = await dns.lookup(hostname, { all: true });
+    for (const addr of resolved) {
+      for (const prefix of BLOCKED_IP_PREFIXES) {
+        if (addr.address.startsWith(prefix)) {
+          logger.warn({ hostname, ip: addr.address }, "Blocked private/loopback IP address resolution");
+          return false;
+        }
+      }
+    }
+
+    return true;
+  } catch (err) {
+    logger.error({ err, targetUrl }, "DNS safety check failed for plugin URL");
+    return false;
+  }
+}
+```

@@ -92,6 +92,9 @@ from .request_metrics import (
     record_llm_usage,
 )
 
+# Exports the public API symbols for the AI Core utility module.
+# Includes helpers, rate limiters, model catalogs, and telemetry tools.
+# Defines accessible interfaces for external subpackages and services.
 __all__ = [
     # Helpers
     "setup_logging",

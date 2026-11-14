@@ -78,11 +78,32 @@ import {
   type TaskRecurrenceCadence,
   type TaskStatus,
   updateTaskStatus,
+  getFollowThroughRecommendations,
+  recordFollowThroughFeedback,
+  updateFollowThroughPreferences,
+  type FollowThroughDomain,
+  type FollowThroughAction,
+  type FollowThroughPreferences,
 } from "@/lib/apiClient";
 import { TaskApplyDialog } from "@/components/TaskApplyDialog";
 
+// Empty fallback array for task listing queries.
+// Avoids repeated object allocations during empty list states.
+// Guarantees memoization reference stability in task filtering hooks.
 const EMPTY_TASKS: Task[] = [];
 
+// Transforms a financial task item into a calendar reminder creation payload.
+// Extracts truncated task title, formatted date string, and actionable steps.
+// Bridges the task management domain with the financial calendar reminder system.
+const taskReminderPayload = (task: Task) => ({
+  title: `Action: ${task.title}`.slice(0, 200),
+  date: new Date(task.dueDate || Date.now()).toISOString().slice(0, 10),
+  description: (task.why || (Array.isArray(task.steps) ? task.steps.join(", ") : "")).slice(0, 500),
+});
+
+// Pre-configured financial task recommendations for rapid action item creation.
+// Covers emergency fund transfers, debt paydown, subscription audits, and rebalancing.
+// Includes default priorities, time horizons, step guides, and recurrence cadences.
 const TASK_PRESETS = [
   {
     title: "Schedule recurring transfer to emergency fund",
@@ -118,12 +139,18 @@ const TASK_PRESETS = [
   },
 ];
 
+// Formats task mutation and query error objects into human-readable messages.
+// Surfaces server request IDs when ApiError instances are encountered.
+// Falls back to safe provided strings when error instances lack descriptions.
 const formatError = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
+// Converts a date string or Date instance into localized date format text.
+// Returns an em dash placeholder when date values are missing or invalid.
+// Provides clean display formatting for task due dates in tables and cards.
 const formatDate = (value?: string | Date) => {
   if (!value) return "—";
   const d = new Date(value);
@@ -131,6 +158,9 @@ const formatDate = (value?: string | Date) => {
   return d.toLocaleDateString();
 };
 
+// Checks whether an open task has passed its designated completion deadline.
+// Validates date parseability and ensures closed or cancelled tasks are excluded.
+// Powers red badge styling and overdue notification indicators.
 const isTaskOverdue = (dueDate?: string | Date, status?: TaskStatus) => {
   if (!dueDate || status !== "open") return false;
   const d = new Date(dueDate);
@@ -138,6 +168,9 @@ const isTaskOverdue = (dueDate?: string | Date, status?: TaskStatus) => {
   return d.getTime() < Date.now();
 };
 
+// Formats selected financial tasks as CSV rows formatted for Linear issue import.
+// Maps internal task priorities, time horizons, and statuses to Linear equivalents.
+// Sanitizes quotes and joins formatted task rows with CSV header lines.
 export const formatForLinear = (tasksToExport: Task[]): string => {
   const headers = ["Title", "Description", "Priority", "Estimate", "Status"];
   const rows = tasksToExport.map((t) => {
@@ -158,6 +191,9 @@ export const formatForLinear = (tasksToExport: Task[]): string => {
   return [headers.join(","), ...rows].join("\n");
 };
 
+// Converts task lists into standard CSV format compatible with Todoist import.
+// Translates internal priority levels into Todoist 1-4 numeric scales.
+// Formats due dates into YYYY-MM-DD ISO date strings for automatic scheduling.
 export const formatForTodoist = (tasksToExport: Task[]): string => {
   const headers = ["CONTENT", "DESCRIPTION", "PRIORITY", "DATE"];
   const rows = tasksToExport.map((t) => {
@@ -171,6 +207,9 @@ export const formatForTodoist = (tasksToExport: Task[]): string => {
   return [headers.join(","), ...rows].join("\n");
 };
 
+// Exports selected tasks as CSV format tailored for Jira issue bulk creation.
+// Encodes multi-step action plans as Jira-formatted markdown bullet lists.
+// Maps priority strings and assigns default Task issue types.
 export const formatForJira = (tasksToExport: Task[]): string => {
   const headers = ["Summary", "Description", "Priority", "Due Date", "Issue Type"];
   const rows = tasksToExport.map((t) => {
@@ -189,6 +228,9 @@ export const formatForJira = (tasksToExport: Task[]): string => {
   return [headers.join(","), ...rows].join("\n");
 };
 
+// Financial action items and tasks workspace page with follow-through intelligence.
+// Supports task filtering, deadline tracking, recurrence schedules, and CSV export.
+// Bridges suggested AI insights with actionable task cards and calendar reminders.
 export default function TasksPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -197,11 +239,56 @@ export default function TasksPage() {
   const tasksEnabled = configQuery.data?.features.tasks_enabled;
 
   const [status, setStatus] = useState<TaskStatus>("open");
+  const [activeTab, setActiveTab] = useState<string>("open");
+  const [customFocusDomains, setCustomFocusDomains] = useState<Record<string, number>>({});
   const [search, setSearch] = useState("");
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [applyTask, setApplyTask] = useState<Task | null>(null);
+
+  const recommendationsQuery = useQuery({
+    queryKey: ["/api/follow-through/recommendations"],
+    queryFn: () => getFollowThroughRecommendations(15),
+    enabled: activeTab === "adaptive",
+  });
+
+  const feedbackMutation = useMutation({
+    mutationFn: (params: { signalId: string; domain: FollowThroughDomain; action: FollowThroughAction; reason?: string }) =>
+      recordFollowThroughFeedback(params),
+    onSuccess: (_, variables) => {
+      toast({
+        title: variables.action === "upvote" ? "Priority Boosted" : "Signal Dismissed",
+        description: variables.action === "upvote" ? "Future recommendations will prioritize this focus area." : "Hidden from recommendations.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/follow-through/recommendations"] });
+    },
+    onError: (err) => {
+      toast({
+        title: "Feedback Error",
+        description: formatError(err, "Failed to record feedback."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updatePreferencesMutation = useMutation({
+    mutationFn: (updates: Partial<FollowThroughPreferences>) => updateFollowThroughPreferences(updates),
+    onSuccess: () => {
+      toast({
+        title: "Preferences Saved",
+        description: "Focus domains and weights updated.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/follow-through/recommendations"] });
+    },
+    onError: (err) => {
+      toast({
+        title: "Error",
+        description: formatError(err, "Failed to update preferences."),
+        variant: "destructive",
+      });
+    },
+  });
 
   const tasksQuery = useQuery({
     queryKey: ["/api/tasks", status],
@@ -234,6 +321,8 @@ export default function TasksPage() {
   const updateStatusMutation = useMutation({
     mutationFn: (payload: { id: string; status: TaskStatus }) => updateTaskStatus(payload.id, payload.status),
     onSuccess: async (data, variables) => {
+      setSelectedTask(current => current?._id === variables.id
+        ? (data?.task || { ...current, status: variables.status }) : current);
       await queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/command-center"] });
       const nextTask = data?.next_task;
@@ -259,6 +348,7 @@ export default function TasksPage() {
     queryFn: () => getTaskById(String(selectedTask?._id)),
     enabled: Boolean(selectedTask?._id) && tasksEnabled === true,
   });
+  const inspectedTask = detailQuery.data?.task?._id === selectedTask?._id ? detailQuery.data?.task : selectedTask;
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newTask, setNewTask] = useState<{
@@ -392,12 +482,12 @@ export default function TasksPage() {
   const dispatchMutation = useMutation({
     mutationFn: async () => {
       const task_ids = tasksForSync.map((t) => t._id);
-      const headers = customAuthHeader.trim() ? { Authorization: customAuthHeader.trim() } : undefined;
+      const authorization = customAuthHeader.trim() || undefined;
       return dispatchTasksWebhook({
         target: webhookTarget,
         webhook_url: webhookUrl.trim(),
         task_ids,
-        headers,
+        authorization,
       });
     },
     onSuccess: (data) => {
@@ -458,13 +548,7 @@ export default function TasksPage() {
       const dueDate = task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
       await apiClient("/calendar-reminders", {
         method: "POST",
-        body: JSON.stringify({
-          title: `Action: ${task.title}`,
-          date: dueDate,
-          amount: 0,
-          category: "Task",
-          notes: task.why || (Array.isArray(task.steps) ? task.steps.join(", ") : ""),
-        }),
+        body: JSON.stringify(taskReminderPayload(task)),
       });
       await queryClient.invalidateQueries({ queryKey: ["calendar-reminders"] });
       toast({
@@ -572,16 +656,9 @@ export default function TasksPage() {
     try {
       await Promise.all(
         selected.map(t => {
-          const dueDate = t.dueDate ? new Date(t.dueDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
           return apiClient("/calendar-reminders", {
             method: "POST",
-            body: JSON.stringify({
-              title: `Action: ${t.title}`,
-              date: dueDate,
-              amount: 0,
-              category: "Task",
-              notes: t.why || (Array.isArray(t.steps) ? t.steps.join(", ") : ""),
-            }),
+            body: JSON.stringify(taskReminderPayload(t)),
           });
         })
       );
@@ -803,11 +880,23 @@ export default function TasksPage() {
         </div>
 
         {/* Task Tabs */}
-        <Tabs value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
-          <TabsList className="grid grid-cols-3 w-full max-w-md">
-            <TabsTrigger value="open">Open</TabsTrigger>
-            <TabsTrigger value="completed">Completed</TabsTrigger>
-            <TabsTrigger value="dismissed">Dismissed</TabsTrigger>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => {
+            setActiveTab(v);
+            if (v === "open" || v === "completed" || v === "dismissed") {
+              setStatus(v as TaskStatus);
+            }
+          }}
+        >
+          <TabsList className="grid grid-cols-4 w-full max-w-xl">
+            <TabsTrigger value="open" data-testid="tab-open">Open</TabsTrigger>
+            <TabsTrigger value="completed" data-testid="tab-completed">Completed</TabsTrigger>
+            <TabsTrigger value="dismissed" data-testid="tab-dismissed">Dismissed</TabsTrigger>
+            <TabsTrigger value="adaptive" data-testid="tab-adaptive-follow-through" className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>Follow-Through</span>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value={status}>
@@ -1191,23 +1280,230 @@ export default function TasksPage() {
               )}
             </Card>
           </TabsContent>
+
+          <TabsContent value="adaptive">
+            <Card className="p-6 space-y-6" data-testid="card-follow-through-cockpit">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-amber-500" />
+                    <h2 className="text-lg font-bold text-foreground">Personalized Follow-Through & Signal Ranking Engine</h2>
+                    <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
+                      AI Powered
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Multi-source activity signals (tasks, goals, debts, budgets, calendar reminders) prioritized by learned user preferences with exponential decay.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/follow-through/recommendations"] })}
+                    className="gap-1.5"
+                    data-testid="btn-refresh-recommendations"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Refresh Signals</span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* Preferences Strip */}
+              <div className="bg-muted/40 rounded-xl p-4 border border-border/50 space-y-3" data-testid="card-follow-through-preferences">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Focus Domain Multipliers & Preferences</span>
+                  <Badge variant="outline" className="text-xs" data-testid="badge-cadence">
+                    Cadence: {recommendationsQuery.data?.preferences.preferredCadence || "weekly"}
+                  </Badge>
+                </div>
+
+                {/* Focus multipliers */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {(["debt", "budget", "goal", "task", "reminder"] as const).map((dom) => {
+                    const currentWeight = (customFocusDomains[dom] ?? recommendationsQuery.data?.preferences.focusDomains[dom] ?? 1.0);
+                    const affinity = recommendationsQuery.data?.learnedAffinities[dom];
+                    return (
+                      <div key={dom} className="bg-background rounded-lg p-2 border border-border/40 text-xs">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium capitalize text-muted-foreground">{dom}</span>
+                          <span className="font-bold text-foreground">{currentWeight.toFixed(1)}x</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            className="px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-[10px]"
+                            onClick={() => {
+                              const next = Math.max(0.5, Number((currentWeight - 0.2).toFixed(1)));
+                              setCustomFocusDomains({ ...customFocusDomains, [dom]: next });
+                            }}
+                            data-testid={`btn-dec-focus-${dom}`}
+                          >
+                            -
+                          </button>
+                          <button
+                            type="button"
+                            className="px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-[10px]"
+                            onClick={() => {
+                              const next = Math.min(2.5, Number((currentWeight + 0.2).toFixed(1)));
+                              setCustomFocusDomains({ ...customFocusDomains, [dom]: next });
+                            }}
+                            data-testid={`btn-inc-focus-${dom}`}
+                          >
+                            +
+                          </button>
+                          {affinity !== undefined && (
+                            <span
+                              className={`ml-auto text-[10px] ${affinity > 0 ? "text-emerald-500 font-semibold" : affinity < 0 ? "text-rose-500" : "text-muted-foreground"}`}
+                              data-testid={`badge-affinity-${dom}`}
+                            >
+                              {affinity > 0 ? `+${affinity.toFixed(2)}` : affinity.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="text-[11px] text-muted-foreground">
+                    Total signals evaluated: <strong className="text-foreground" data-testid="metric-total-signals">{recommendationsQuery.data?.totalSignals || 0}</strong>
+                  </div>
+                  {Object.keys(customFocusDomains).length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="default"
+                      onClick={() => {
+                        updatePreferencesMutation.mutate({
+                          focusDomains: {
+                            ...(recommendationsQuery.data?.preferences.focusDomains || {}),
+                            ...customFocusDomains,
+                          },
+                        });
+                        setCustomFocusDomains({});
+                      }}
+                      disabled={updatePreferencesMutation.isPending}
+                      data-testid="btn-save-follow-through-prefs"
+                    >
+                      {updatePreferencesMutation.isPending ? "Saving…" : "Save Multipliers"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Recommendations Ranked List */}
+              {recommendationsQuery.isLoading ? (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  Evaluating multi-source signals and computing history-aware rankings…
+                </div>
+              ) : recommendationsQuery.error ? (
+                <div className="py-8 text-center text-sm text-destructive">
+                  {formatError(recommendationsQuery.error, "Failed to load personalized recommendations.")}
+                </div>
+              ) : (recommendationsQuery.data?.items || []).length === 0 ? (
+                <div className="py-12 text-center text-sm text-muted-foreground" data-testid="empty-recommendations">
+                  No active follow-through signals detected. All tasks, budgets, and goals are in balance.
+                </div>
+              ) : (
+                <div className="space-y-3" data-testid="list-follow-through-items">
+                  {recommendationsQuery.data?.items.map((item) => {
+                    const tierBadgeColor =
+                      item.priorityTier === "critical"
+                        ? "bg-rose-500/10 text-rose-600 border-rose-500/20"
+                        : item.priorityTier === "high"
+                        ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
+                        : "bg-blue-500/10 text-blue-600 border-blue-500/20";
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="p-4 rounded-xl border border-border/70 bg-card hover:border-border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
+                        data-testid={`card-follow-through-item-${item.id}`}
+                      >
+                        <div className="space-y-1.5 flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                              #{item.rank}
+                            </span>
+                            <Badge variant="outline" className="text-xs capitalize font-medium" data-testid={`badge-domain-${item.domain}`}>
+                              {item.domain}
+                            </Badge>
+                            <Badge className={`text-xs font-semibold ${tierBadgeColor}`} data-testid={`badge-tier-${item.priorityTier}`}>
+                              {item.priorityTier}
+                            </Badge>
+                            <span className="text-xs font-bold text-foreground bg-muted px-2 py-0.5 rounded-full" data-testid={`badge-priority-score-${item.id}`}>
+                              Score: {item.priorityScore.toFixed(1)}/100
+                            </span>
+                            {item.isOverdue && (
+                              <Badge variant="destructive" className="text-xs" data-testid={`badge-overdue-${item.id}`}>
+                                Overdue
+                              </Badge>
+                            )}
+                          </div>
+
+                          <h3 className="text-sm font-semibold text-foreground line-clamp-1">{item.title}</h3>
+                          <p className="text-xs text-muted-foreground line-clamp-2">{item.description}</p>
+
+                          <div className="flex items-center gap-4 text-[11px] text-muted-foreground pt-1">
+                            <span>Urgency: {(item.urgency * 100).toFixed(0)}%</span>
+                            <span>Impact: {(item.impact * 100).toFixed(0)}%</span>
+                            {item.dueDate && <span>Due: {item.dueDate}</span>}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                          <Link to={item.actionUrl}>
+                            <Button size="sm" variant="outline" className="text-xs gap-1" data-testid={`btn-action-${item.id}`}>
+                              Take Action
+                            </Button>
+                          </Link>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-xs gap-1 hover:text-emerald-500"
+                            onClick={() => feedbackMutation.mutate({ signalId: item.id, domain: item.domain, action: "upvote" })}
+                            data-testid={`btn-feedback-upvote-${item.id}`}
+                            title="Prioritize more like this"
+                          >
+                            👍 Prioritize
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-xs gap-1 hover:text-rose-500"
+                            onClick={() => feedbackMutation.mutate({ signalId: item.id, domain: item.domain, action: "dismiss" })}
+                            data-testid={`btn-feedback-dismiss-${item.id}`}
+                            title="Dismiss from follow-through"
+                          >
+                            ✕ Dismiss
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          </TabsContent>
         </Tabs>
       </motion.div>
 
       {/* Detail Sheet */}
-      <Sheet open={Boolean(selectedTask)} onOpenChange={(open) => !open && setSelectedTask(null)}>
+      <Sheet open={Boolean(inspectedTask)} onOpenChange={(open) => !open && setSelectedTask(null)}>
         <SheetContent side="right" className="sm:max-w-lg w-full" data-testid="task-detail-sheet">
           <SheetHeader>
-            <SheetTitle>{selectedTask?.title || "Task"}</SheetTitle>
-            <SheetDescription>{selectedTask?.why}</SheetDescription>
+            <SheetTitle>{inspectedTask?.title || "Task"}</SheetTitle>
+            <SheetDescription>{inspectedTask?.why}</SheetDescription>
           </SheetHeader>
 
           <div className="mt-4 space-y-4">
-            {selectedTask?.steps?.length ? (
+            {inspectedTask?.steps?.length ? (
               <div>
                 <div className="text-sm font-semibold text-foreground mb-2">Action Steps</div>
                 <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-                  {selectedTask.steps.map((step, idx) => (
+                  {inspectedTask.steps.map((step, idx) => (
                     <li key={idx}>{step}</li>
                   ))}
                 </ul>
@@ -1217,38 +1513,38 @@ export default function TasksPage() {
             <div className="rounded-lg border border-border p-3 text-sm space-y-1.5 bg-muted/20">
               <div className="text-muted-foreground flex justify-between">
                 <span>Due Date:</span>
-                <span className="font-medium text-foreground">{formatDate(selectedTask?.dueDate)}</span>
+                <span className="font-medium text-foreground">{formatDate(inspectedTask?.dueDate)}</span>
               </div>
               <div className="text-muted-foreground flex justify-between">
                 <span>Priority:</span>
-                <span className="font-medium uppercase text-foreground">{selectedTask?.priority}</span>
+                <span className="font-medium uppercase text-foreground">{inspectedTask?.priority}</span>
               </div>
               <div className="text-muted-foreground flex justify-between">
                 <span>Status:</span>
-                <span className="font-medium capitalize text-foreground">{selectedTask?.status}</span>
+                <span className="font-medium capitalize text-foreground">{inspectedTask?.status}</span>
               </div>
-              {selectedTask?.recurrence?.cadence && selectedTask.recurrence.cadence !== "none" && (
+              {inspectedTask?.recurrence?.cadence && inspectedTask.recurrence.cadence !== "none" && (
                 <div className="text-muted-foreground flex justify-between" data-testid="detail-recurrence">
                   <span>Recurrence:</span>
                   <span className="font-medium text-foreground capitalize">
-                    {selectedTask.recurrence.cadence}
-                    {selectedTask.recurrence.generation && selectedTask.recurrence.generation > 1
-                      ? ` (Cycle ${selectedTask.recurrence.generation})`
+                    {inspectedTask.recurrence.cadence}
+                    {inspectedTask.recurrence.generation && inspectedTask.recurrence.generation > 1
+                      ? ` (Cycle ${inspectedTask.recurrence.generation})`
                       : ""}
                   </span>
                 </div>
               )}
-              {selectedTask?.appliedAt ? (
+              {inspectedTask?.appliedAt ? (
                 <div className="text-muted-foreground flex justify-between">
                   <span>Applied Date:</span>
-                  <span className="font-medium text-foreground">{formatDate(selectedTask.appliedAt)}</span>
+                  <span className="font-medium text-foreground">{formatDate(inspectedTask.appliedAt)}</span>
                 </div>
               ) : null}
-              {selectedTask?.appliedSummary ? (
+              {inspectedTask?.appliedSummary ? (
                 <div className="text-muted-foreground pt-1 border-t border-border/60 text-xs">
-                  Summary: tx {selectedTask.appliedSummary.transactions.length} • goals{" "}
-                  {selectedTask.appliedSummary.goals.length} • debts {selectedTask.appliedSummary.debts.length} • profile{" "}
-                  {selectedTask.appliedSummary.profileUpdated ? "yes" : "no"}
+                  Summary: tx {inspectedTask.appliedSummary.transactions.length} • goals{" "}
+                  {inspectedTask.appliedSummary.goals.length} • debts {inspectedTask.appliedSummary.debts.length} • profile{" "}
+                  {inspectedTask.appliedSummary.profileUpdated ? "yes" : "no"}
                 </div>
               ) : null}
             </div>
@@ -1264,10 +1560,10 @@ export default function TasksPage() {
                   User Prompt: {detailQuery.data.source.agent_output.user_input_snippet}
                 </div>
               </div>
-            ) : selectedTask?.source?.requestId ? (
+            ) : inspectedTask?.source?.requestId ? (
               <div className="rounded-lg border border-border p-3 text-sm bg-muted/20">
                 <div className="font-medium text-foreground">Source</div>
-                <div className="text-muted-foreground text-xs mt-1">Request ID: {selectedTask.source.requestId}</div>
+                <div className="text-muted-foreground text-xs mt-1">Request ID: {inspectedTask.source.requestId}</div>
               </div>
             ) : null}
 
@@ -1275,15 +1571,15 @@ export default function TasksPage() {
               <Button
                 variant="outline"
                 className="flex-1"
-                onClick={() => selectedTask && setApplyTask(selectedTask)}
+                onClick={() => inspectedTask && setApplyTask(inspectedTask)}
               >
                 Apply outcomes
               </Button>
               <Button
                 variant="default"
                 className="flex-1"
-                onClick={() => selectedTask && updateStatusMutation.mutate({ id: selectedTask._id, status: "completed" })}
-                disabled={updateStatusMutation.isPending}
+                onClick={() => inspectedTask && updateStatusMutation.mutate({ id: inspectedTask._id, status: "completed" })}
+                disabled={updateStatusMutation.isPending || inspectedTask?.status === "completed"}
               >
                 Mark completed
               </Button>
@@ -1294,7 +1590,7 @@ export default function TasksPage() {
                 variant="secondary"
                 size="sm"
                 className="flex-1 text-xs"
-                onClick={() => selectedTask && syncTaskToCalendar(selectedTask)}
+                onClick={() => inspectedTask && syncTaskToCalendar(inspectedTask)}
                 data-testid="sheet-sync-calendar-btn"
               >
                 <Calendar className="w-3.5 h-3.5 mr-1.5" />
@@ -1304,7 +1600,7 @@ export default function TasksPage() {
                 variant="outline"
                 size="sm"
                 className="flex-1 text-xs"
-                onClick={() => selectedTask && exportTasksToIcs([selectedTask])}
+                onClick={() => inspectedTask && exportTasksToIcs([inspectedTask])}
                 data-testid="sheet-export-ics-btn"
               >
                 <Download className="w-3.5 h-3.5 mr-1.5" />

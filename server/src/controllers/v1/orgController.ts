@@ -34,7 +34,11 @@ import { getEnv } from "../../config/env";
 import { sendEmail } from "../../utils/sendEmail";
 import { recordAuditEvent } from "../../services/auditLog";
 import { assertSeatAvailable, requireTeamPlan } from "../../services/orgEntitlements";
+import { setLearningOptOutCached } from "../../services/aiLearningOptOut";
 
+// Normalizes arbitrary strings into valid URL-friendly organization slug identifiers.
+// Enforces lowercase characters, converts delimiters to hyphens, and trims extremities.
+// Restricts final slug output length to a maximum of 60 characters.
 // Slug normalization: lowercase, alphanumeric + hyphens only, max 60 chars
 const normalizeSlug = (value: string) =>
   value
@@ -44,6 +48,9 @@ const normalizeSlug = (value: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
 
+// Generates a collision-resistant unique slug string based on a candidate name.
+// Appends a random three-byte cryptographic hexadecimal suffix to the normalized base.
+// Guarantees slug uniqueness across organizations with similar or identical names.
 // Appends random hex suffix to guarantee uniqueness even if two orgs have the same name
 const buildUniqueSlug = (base: string) => {
   const normalized = normalizeSlug(base) || "org";
@@ -51,12 +58,18 @@ const buildUniqueSlug = (base: string) => {
   return `${normalized}-${suffix}`;
 };
 
+// Defines authority hierarchy ratings across organization membership tiers.
+// Allows numerical comparison between member, admin, and owner privilege levels.
+// Used by access control checks to prevent unauthorized configuration changes.
 const roleRank: Record<OrgRole, number> = {
   member: 1,
   admin: 2,
   owner: 3,
 };
 
+// Retrieves all organizations in which the authenticated user holds active membership.
+// Loads associated organization details including currencies, locales, and settings.
+// Returns active organization context along with the full list of accessible orgs.
 export const listMyOrgs = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
 
@@ -68,7 +81,7 @@ export const listMyOrgs = async (req: Request, res: Response) => {
   const orgIds = memberships.map((m) => m.orgId as unknown as mongoose.Types.ObjectId);
   const orgs = orgIds.length
     ? await OrganizationModel.find({ _id: { $in: orgIds } })
-        .select({ name: 1, slug: 1, type: 1, currency: 1, locale: 1, timezone: 1, createdAt: 1, updatedAt: 1 })
+        .select({ name: 1, slug: 1, type: 1, currency: 1, locale: 1, timezone: 1, aiLearningOptOut: 1, createdAt: 1, updatedAt: 1 })
         .lean()
     : [];
 
@@ -94,6 +107,7 @@ export const listMyOrgs = async (req: Request, res: Response) => {
           currency: String((org as any).currency || "USD"),
           locale: String((org as any).locale || "en-US"),
           timezone: String((org as any).timezone || "UTC"),
+          ai_learning_opt_out: Boolean((org as any).aiLearningOptOut),
           role: String((membership as any).role),
           is_default: Boolean((membership as any).isDefault),
         };
@@ -103,6 +117,9 @@ export const listMyOrgs = async (req: Request, res: Response) => {
   });
 };
 
+// Creates a new team organization and designates the authenticated creator as owner.
+// Verifies team plan subscription entitlements and generates a unique organization slug.
+// Persists the organization and initial owner membership before returning the entity.
 export const createOrg = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const body = req.body as { name: string; slug?: string };
@@ -156,6 +173,9 @@ export const createOrg = async (req: Request, res: Response) => {
   }
 };
 
+// Updates configuration settings such as currency, locale, and timezone for an organization.
+// Enforces administrative access controls and invalidates AI learning opt-out caches.
+// Emits audit log events recording all modified settings and returns the updated org.
 export const updateOrgSettings = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = String((req as any).params?.orgId || "");
@@ -163,7 +183,7 @@ export const updateOrgSettings = async (req: Request, res: Response) => {
     throw new HttpError(400, "INVALID_ORG_ID", "Invalid org id");
   }
 
-  const body = req.body as { currency?: string; locale?: string; timezone?: string };
+  const body = req.body as { currency?: string; locale?: string; timezone?: string; aiLearningOptOut?: boolean };
 
   const myMembership = await OrgMemberModel.findOne({
     orgId: new mongoose.Types.ObjectId(orgId),
@@ -185,17 +205,24 @@ export const updateOrgSettings = async (req: Request, res: Response) => {
   if (typeof body.timezone === "string" && body.timezone.trim()) {
     update.timezone = body.timezone.trim();
   }
+  if (typeof body.aiLearningOptOut === "boolean") {
+    update.aiLearningOptOut = body.aiLearningOptOut;
+  }
 
   if (Object.keys(update).length === 0) {
     throw new HttpError(400, "NO_CHANGES", "No settings provided");
   }
 
   const org = await OrganizationModel.findByIdAndUpdate(orgId, { $set: update }, { new: true })
-    .select({ _id: 1, name: 1, slug: 1, type: 1, currency: 1, locale: 1, timezone: 1 })
+    .select({ _id: 1, name: 1, slug: 1, type: 1, currency: 1, locale: 1, timezone: 1, aiLearningOptOut: 1 })
     .lean();
 
   if (!org?._id) {
     throw new HttpError(404, "ORG_NOT_FOUND", "Organization not found");
+  }
+
+  if (typeof body.aiLearningOptOut === "boolean") {
+    setLearningOptOutCached(orgId, body.aiLearningOptOut); // takes effect immediately on this process
   }
 
   await recordAuditEvent({
@@ -218,11 +245,15 @@ export const updateOrgSettings = async (req: Request, res: Response) => {
       currency: String((org as any).currency || "USD"),
       locale: String((org as any).locale || "en-US"),
       timezone: String((org as any).timezone || "UTC"),
+      ai_learning_opt_out: Boolean((org as any).aiLearningOptOut),
     },
     request_id: req.requestId,
   });
 };
 
+// Adds a new member to an organization or dispatches an email invite to unregistered users.
+// Prevents privilege escalation and verifies seat availability against plan limitations.
+// Dispatches invitation emails or creates direct memberships while logging audit traces.
 export const addOrgMember = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = String((req as any).params?.orgId || "");
@@ -241,6 +272,12 @@ export const addOrgMember = async (req: Request, res: Response) => {
 
   if (!myMembership || roleRank[myMembership.role as OrgRole] < roleRank.admin) {
     throw new HttpError(403, "ORG_ACCESS_DENIED", "Admin role required");
+  }
+
+  // Prevent privilege escalation: nobody can grant a role above their own
+  // (e.g. an admin inviting/adding someone as owner).
+  if (roleRank[desiredRole] > roleRank[myMembership.role as OrgRole]) {
+    throw new HttpError(403, "ORG_ROLE_ESCALATION", "Cannot grant a role higher than your own");
   }
 
   const org = await OrganizationModel.findById(orgId).select({ _id: 1, name: 1, slug: 1 }).lean();

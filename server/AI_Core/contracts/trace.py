@@ -62,6 +62,9 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+# Observability trace model capturing execution telemetry for a workflow node.
+# Records start and end timestamps, latency in milliseconds, and terminal status.
+# Captures token usage, LLM invocation counts, and cache hit indicators.
 class WorkflowTraceEntry(BaseModel):
     """A single trace entry recording when an agent started, ended, and its status."""
 

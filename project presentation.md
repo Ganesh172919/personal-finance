@@ -25,7 +25,8 @@ FINWISE MASTER SLIDE DECK
 ├── Slide 9: Quantitative Production Benchmarks, Latency SLAs & Regression Evals
 ├── Slide 10: Strategic Enterprise Roadmap & Long-Term Innovation Horizons
 ├── Slide 11: 2026 Enterprise Financial Operations & Resilient Pipelines
-└── Slide 12: Production Verification Matrix & Multi-Tier Test Pyramid
+├── Slide 12: Production Verification Matrix & Multi-Tier Test Pyramid
+└── Slide 13: 2026 Advanced Autonomous Intelligence Showcase
 ```
 
 ---
@@ -377,12 +378,12 @@ mindmap
 ├───────────────────────┬────────────┬─────────────┬──────────────────────────┤
 │ Test Tier             │ Test Suites│ Total Tests │ Primary Framework        │
 ├───────────────────────┼────────────┼─────────────┼──────────────────────────┤
-│ Client Frontend       │ 45 suites  │ 293 tests   │ Vitest + Testing Library │
-│ Server API & Gateway  │ 49 suites  │ 193 tests   │ Vitest + Supertest Mongo │
-│ AI Core Microservices │ 29 suites  │ 217 tests   │ Pytest + FastAPI Client  │
+│ Client Frontend       │ 51 suites  │ 408 tests   │ Vitest + Testing Library │
+│ Server API & Gateway  │ 67 suites  │ 271 tests   │ Vitest + Supertest Mongo │
+│ AI Core Microservices │ 29 suites  │ 316+ tests   │ Pytest + FastAPI Client  │
 │ Evaluation Harness    │ 6 suites   │ 175 evals   │ evals.runner Invariants  │
 ├───────────────────────┼────────────┼─────────────┼──────────────────────────┤
-│ TOTAL SYSTEM COVERAGE │ 129 suites │ 878 tests   │ Continuous CI Automation │
+│ TOTAL SYSTEM COVERAGE │ 147 suites │ 1,170+ tests   │ Continuous CI Automation │
 └───────────────────────┴────────────┴─────────────┴──────────────────────────┘
 ```
 
@@ -402,4 +403,143 @@ mindmap
       p50 < 18ms Classifier Routing
       p95 < 250ms API Response Envelope
       Sub-50ms Lexical BM25 Chunk Retrieval
+```
+
+---
+
+## Slide 13: 2026 Advanced Autonomous Intelligence Showcase
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#7c3aed', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#a78bfa', 'lineColor': '#c4b5fd', 'secondaryColor': '#5b21b6', 'tertiaryColor': '#4c1d95'}}}%%
+mindmap
+  root((🚀 2026 Intelligence Showcase))
+    ML Merchant Clustering
+      64-D Vector Space Dims 0-63
+      Agglomerative Centroid Cosine Linkage
+      1-Click Promotion to CategoryRule
+    Multi-Modal Grounded RAG
+      64-D Dense Embedding Indexing
+      Hybrid BM25 + Cosine Scoring (G >= 0.70)
+      Verifiable [docId:chunkIndex] Citations
+    Visual Workflow Node Canvas
+      Drag-and-Drop Sequential Action Nodes
+      Delay Timers 1s to 30d
+      Token Inbound Webhooks
+    Peer Benchmarks & Auto-Rebalance
+      Cohort IQR Spending Distribution
+      Zero-Sum Invariant sum(Delta B_i) = 0
+```
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                   2026 AUTONOMOUS PLATFORM HIGHLIGHTS                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 1. Machine Learning Merchant Normalization (merchantEmbeddingClustering.ts) │
+│    • 64-D L2-normalized vector space: Taxonomies + Brands + Subword N-Grams │
+│    • Cosine Centroid Clustering automatically links noisy statement variants│
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 2. Resumable AI Core Sessions & KeyPool (key_pool.py, session_manager.py)   │
+│    • 3-state circuit breakers (CLOSED -> OPEN -> HALF-OPEN) eliminate 429s  │
+│    • Multi-phase SQLite state checkpoints permit instant workflow recovery  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 3. Multi-Currency Global Engine (currencyFx.ts)                             │
+│    • Standardized ISO 4217 conversions across 7 currencies with JPY rounding│
+│    • Cross-border Dividend Withholding Tax (WHT) & DTAA treaty relief       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+## Slide 17: Cross-Silo Unified Context Engine & Reciprocal Rank Fusion
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0f766e', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#14b8a6', 'lineColor': '#2dd4bf', 'secondaryColor': '#115e59', 'tertiaryColor': '#134e4a'}}}%%
+mindmap
+  root((Unified Context Engine))
+    Silo Integration
+      User Memory Preferences
+      Workspace PDF Chunks
+      Ledger Bank Transactions
+    Reciprocal Rank Fusion
+      RRF Formula: sum( w_s / (k + rank_s) )
+      Intent Biasing (w_s = 1.35)
+      Exponential Recency Decay (90-day half life)
+    Prompt Synthesis
+      Verifiable Citations [mem], [doc], [txn]
+      Zero Hallucination Context Injection
+```
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    UNIFIED CONTEXT ENGINE SPECIFICATIONS                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ • Cross-Silo Fusion: Unifies memory records, PDFs, and ledger transactions  │
+│ • Mathematical Fusion: Reciprocal Rank Fusion with smoothing parameter k=60 │
+│ • Query-Intent Biasing: Dynamically boosts relevant data sources by +35%    │
+│ • Recency Decay: Prioritizes recent ledger transactions with 90-day decay   │
+│ • Production Endpoint: GET /api/v1/unified-context/query                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+## Slide 18: Adaptive Follow-Through & Activity Signal Reinforcement Ranking
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#10b981', 'lineColor': '#34d399', 'secondaryColor': '#064e3b', 'tertiaryColor': '#047857'}}}%%
+mindmap
+  root((Adaptive Follow-Through))
+    Multi-Source Signals
+      Tasks & Deadlines
+      Goal Pace Lag
+      Envelope Overspends
+      Calendar Reminders
+    Temporal Scoring
+      14-Day Half-Life Decay
+      Priority Score S in [0, 100]
+    Learned Preferences
+      Domain Affinity Tracking
+      Feedback Reinforcement
+```
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                 ADAPTIVE FOLLOW-THROUGH SPECIFICATIONS                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ • Temporal Half-Life Decay: w(t) = exp(-ln(2) * dt / 14)                    │
+│ • Domain Affinity Updates: Completed (+0.15), Dismissed (-0.10)             │
+│ • Deterministic Tiers: Critical (>=80), High (>=60), Medium (>=40), Low (<40)│
+│ • Production Endpoint: GET /api/v1/follow-through/recommendations           │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Slide 19: Semantic Document Q&A & Rich Layout Authorship Studio
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#60a5fa', 'lineColor': '#93c5fd', 'secondaryColor': '#1e40af', 'tertiaryColor': '#1e3a8a'}}}%%
+mindmap
+  root((Document Studio & Q&A))
+    Document Q&A
+      64-D Hybrid Grounding G >= 0.70
+      Strict Physical Page Citations
+      ChatDocumentCard.tsx Integration
+    Rich Studio Renderer
+      6 Financial PDFKit Layouts
+      Side-by-Side Metric KPI Cards
+      GridFS Streaming & Automatic Chunking
+```
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    DOCUMENT STUDIO & Q&A SPECIFICATIONS                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ • 6 Layout Formats: Executive Brief, Tax Summary, Cash Flow, Amortization...│
+│ • Physical Page Grounding: Preserves \f so page citations match PDF pages   │
+│ • SSRF Protection: Validates DNS and blocks all private/reserved IP blocks  │
+│ • Production Endpoint: POST /api/v1/files/document-qa                       │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```

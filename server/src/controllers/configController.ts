@@ -25,6 +25,9 @@ import type { IUserDocument } from "../models/userModel";
 import OrganizationModel from "../models/organizationModel";
 import { getResolvedEntitlements } from "../services/entitlements";
 
+// Aggregates client initialization settings, active feature flags, and tenant configuration.
+// Resolves real-time entitlement limits and consumption metrics when monetization is active.
+// Returns an assembled bootstrap payload enabling the frontend interface to hydrate state.
 export const getMyConfig = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const env = getEnv();

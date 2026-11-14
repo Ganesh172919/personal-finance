@@ -121,8 +121,11 @@ import { IUserDocument } from "../models/userModel";
 import OrganizationModel from "../models/organizationModel";
 import mongoose from "mongoose";
 import { processAiCoreRequest } from "../services/aiCoreClient";
+import { isAiCapacityError } from "../services/aiConcurrency";
+import { AiCoreOverloadedError } from "../services/aiCoreResilience";
 import { buildProcessRequest } from "../services/aiRequestBuilder";
 import { buildChatMessageCacheKey, ttlMs } from "../services/aiCache";
+import { extractLearningMeta } from "../services/aiLearningClient"; // Learning-loop attribution for AgentOutput
 import { buildDeterministicChatSummary } from "../services/chatSummary";
 import { ensureProfileWithMigration } from "../services/profileService";
 import { fetchTransactionsForAi } from "../services/transactionService";
@@ -130,7 +133,7 @@ import { getJournalContextForAi } from "../services/journalContext";
 import { normalizeAiPlan } from "../schemas/aiPlanSchema";
 import { toolCallSchema, type ToolCallInput } from "../schemas/v1/toolSchemas";
 import { recordAiCache, recordAiFallback } from "../observability/metrics";
-import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements";
+import { recordFeatureUsage, releaseReservationOnResponseEnd, reserveFeatureUsage } from "../services/entitlements";
 import { recordAuditEvent } from "../services/auditLog";
 import { publishDomainEvent } from "../services/domainEvents";
 import { buildAiFinanceGrounding } from "../services/financeGrounding";
@@ -138,11 +141,20 @@ import { HttpError } from "../middleware/httpError";
 import { logger } from "../config/logger";
 import { buildSavedActivityDocument, createChatDocument, parseChatDocumentRequest } from "../services/chatDocuments";
 import { getOrGenerateConversationInsights } from "../services/conversationInsightsCache";
+import { getMonthlyLedgerSummary, getMonthlySpendingFollowUp, getMonthlySpendingPeriod } from "../services/monthlyLedgerSummary";
+import { formatBillingCurrency } from "../utils/currencyFx";
+import { ensureUserTransactionsMigrated } from "../services/transactionMigration";
 
+// Normalizes request parameter values that may arrive as arrays into a single string.
+// Extracts the first element if an array is encountered or passes scalar values directly.
+// Ensures consistent scalar identifier handling across downstream controller logic.
 const getSingleParam = (value: string | string[] | undefined) =>
   Array.isArray(value) ? value[0] : value;
 
 // Extracts org context injected by orgContext middleware; throws 401 if missing
+// Extracts the active organization identifier from verified incoming request context.
+// Validates that the parsed organization ID constitutes a legitimate MongoDB ObjectId.
+// Throws an unauthorized HTTP exception if tenant organization context is absent.
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -151,6 +163,9 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+// Retrieves regional and financial formatting preferences for the tenant organization.
+// Reads configured currency units, localization tags, and timezone offsets from storage.
+// Provides fallback baseline defaults when specific settings have not been configured.
 const getOrgAiSettings = async (orgId: mongoose.Types.ObjectId) => {
   const org = await OrganizationModel.findById(orgId)
     .select({ currency: 1, locale: 1, timezone: 1 })
@@ -163,6 +178,9 @@ const getOrgAiSettings = async (orgId: mongoose.Types.ObjectId) => {
   };
 };
 
+// Formats raw workspace file documents into lightweight attachment descriptors.
+// Extracts file keys, human-readable file names, MIME content types, and byte sizes.
+// Prepares normalized metadata structures for inclusion in chat message records.
 const mapWorkspaceFileAttachment = (file: any) => ({
   workspaceFileId: String(file._id),
   fileId: String(file.fileId),
@@ -171,6 +189,9 @@ const mapWorkspaceFileAttachment = (file: any) => ({
   sizeBytes: Number(file.sizeBytes || 0),
 });
 
+// Compiles parsed text snippets and processing warnings from attached workspace files.
+// Limits individual document content lengths to prevent prompt context window exhaustion.
+// Generates structured text summaries formatted for direct consumption by the AI agent.
 const buildWorkspaceFileContext = (files: Array<any>) => {
   if (!files.length) return "";
 
@@ -197,6 +218,9 @@ const buildWorkspaceFileContext = (files: Array<any>) => {
 /**
  * Create a new chat session
  */
+// Initiates a new conversational session linked to the requesting user and tenant.
+// Sets default titles, timestamps, and zero message counters upon record creation.
+// Returns the newly initialized session model payload to the client interface.
 export async function createSession(req: Request, res: Response) {
   try {
     const user = req.user as IUserDocument;
@@ -233,6 +257,9 @@ export async function createSession(req: Request, res: Response) {
 /**
  * Get all chat sessions for the current user
  */
+// Fetches a paginated collection of active conversation sessions for the current user.
+// Applies pagination offsets and limits while sorting results by recent activity.
+// Returns an array of chat session descriptors along with overall pagination stats.
 export async function getSessions(req: Request, res: Response) {
   try {
     const user = req.user as IUserDocument;
@@ -289,6 +316,9 @@ export async function getSessions(req: Request, res: Response) {
 /**
  * Get a single chat session with its messages
  */
+// Loads specific chat session details by identifier for the authenticated user.
+// Validates session ID format and verifies ownership against tenant and user IDs.
+// Delivers the resolved conversation session record or returns a not found response.
 export async function getSession(req: Request, res: Response) {
   try {
     const user = req.user as IUserDocument;
@@ -335,6 +365,9 @@ export async function getSession(req: Request, res: Response) {
 /**
  * Delete a chat session and all its messages
  */
+// Removes a targeted conversation session alongside all associated chat messages.
+// Enforces tenant isolation and caller ownership checks prior to document deletion.
+// Purges related message records from storage to maintain relational data integrity.
 export async function deleteSession(req: Request, res: Response) {
   try {
     const user = req.user as IUserDocument;
@@ -374,6 +407,9 @@ export async function deleteSession(req: Request, res: Response) {
 /**
  * Rename a chat session
  */
+// Updates the display title of a specified conversation session in persistent storage.
+// Validates that the provided title text meets length and formatting criteria.
+// Returns the updated session metadata containing the refreshed conversation title.
 export async function renameSession(req: Request, res: Response) {
   try {
     const user = req.user as IUserDocument;
@@ -425,6 +461,9 @@ export async function renameSession(req: Request, res: Response) {
 /**
  * Get messages for a session with pagination
  */
+// Retrieves a chronological sequence of messages belonging to a specified chat session.
+// Enforces tenant ownership checks before querying stored user and agent messages.
+// Returns paginated message collections formatted with role and metadata properties.
 export async function getMessages(req: Request, res: Response) {
   try {
     const user = req.user as IUserDocument;
@@ -489,6 +528,9 @@ export async function getMessages(req: Request, res: Response) {
 /**
  * Send a message to a chat session (and get AI response)
  */
+// Handles incoming user chat queries, coordinates multi-modal context, and invokes AI.
+// Manages feature quota deductions, response caching, and agent tool execution runs.
+// Records user and assistant messages, updates rolling summaries, and emits events.
 export async function sendMessage(req: Request, res: Response) {
   try {
     const user = req.user as IUserDocument;
@@ -504,6 +546,10 @@ export async function sendMessage(req: Request, res: Response) {
     }
     const { content, options, fileIds } = req.body as any;
     const narrative = typeof options?.narrative === "boolean" ? options.narrative : false;
+    // Regenerate: skip the response cache so the user gets a fresh answer, and link the new
+    // output to the one it replaces (only when that output belongs to this user).
+    const regenerateOfRaw = typeof options?.regenerate_of === "string" ? options.regenerate_of : "";
+    const bypassCache = options?.bypass_cache === true || Boolean(regenerateOfRaw);
     const requestedFileIds = Array.isArray(fileIds)
       ? fileIds.filter((value: unknown) => typeof value === "string" && mongoose.Types.ObjectId.isValid(String(value)))
       : [];
@@ -516,14 +562,6 @@ export async function sendMessage(req: Request, res: Response) {
       return res.status(400).json({ message: "Invalid session ID" });
     }
 
-    await enforceFeatureLimit({
-      orgId,
-      userId: user._id,
-      feature: "monthly_ai_calls",
-      units: 1,
-      requestId,
-    });
-
     // Verify session belongs to user
     const session = await ChatSessionModel.findOne({
       _id: sessionId,
@@ -533,6 +571,27 @@ export async function sendMessage(req: Request, res: Response) {
 
     if (!session) {
       return res.status(404).json({ message: "Session not found" });
+    }
+
+    // A regenerated answer is another response to an existing question, not a
+    // second user turn. Require the target and its question to belong to this
+    // session; never accept a client-supplied message id as proof of ownership.
+    let originalUserMessage: IChatMessageDocument | null = null;
+    if (regenerateOfRaw) {
+      const target = await AgentOutputModel.exists({
+        _id: regenerateOfRaw, orgId, userId: user._id, sessionId: session._id.toString(),
+      });
+      const originalAnswer = target ? await ChatMessageModel.findOne({
+        orgId, sessionId: session._id, userId: user._id,
+        role: "assistant", "metadata.agentOutputId": regenerateOfRaw,
+      }) : null;
+      originalUserMessage = originalAnswer ? await ChatMessageModel.findOne({
+        orgId, sessionId: session._id, userId: user._id, role: "user",
+        createdAt: { $lte: originalAnswer.createdAt },
+      }).sort({ createdAt: -1, _id: -1 }) : null;
+      if (!originalUserMessage || originalUserMessage.content !== content.trim()) {
+        return res.status(404).json({ message: "Original question not found" });
+      }
     }
 
     const workspaceFiles = requestedFileIds.length
@@ -555,8 +614,14 @@ export async function sendMessage(req: Request, res: Response) {
       ? `${content.trim()}\n\nAttached workspace files:\n${attachmentContext}`
       : content.trim();
 
-    const historyDocs = await ChatMessageModel.find({ orgId, sessionId: session._id })
-      .sort({ createdAt: -1 })
+    const historyCutoff = originalUserMessage
+      ? { $or: [
+        { createdAt: { $lt: originalUserMessage.createdAt } },
+        { createdAt: originalUserMessage.createdAt, _id: { $lt: originalUserMessage._id } },
+      ] }
+      : {};
+    const historyDocs = await ChatMessageModel.find({ orgId, userId: user._id, sessionId: session._id, ...historyCutoff })
+      .sort({ createdAt: -1, _id: -1 })
       .limit(6)
       .lean();
 
@@ -567,8 +632,20 @@ export async function sendMessage(req: Request, res: Response) {
         content: String(message.content)
       }));
 
-    // Create user message
-    const userMessage = await ChatMessageModel.create({
+    const monthlySpendingQuestion = requestedFileIds.length || originalUserMessage?.metadata?.attachments?.length
+      ? null
+      : getMonthlySpendingPeriod(content) ?? getMonthlySpendingFollowUp(content, historyDocs.map(message => ({
+        role: message.role,
+        content: String(message.content),
+        hasAttachments: Boolean(message.metadata?.attachments?.length),
+      })));
+    const reservation = monthlySpendingQuestion ? undefined : await reserveFeatureUsage({
+      orgId, userId: user._id, feature: "monthly_ai_calls", units: 1, requestId,
+    });
+    if (reservation) releaseReservationOnResponseEnd(res, reservation);
+
+    // Only a new question creates a user turn; regeneration reuses the original.
+    const userMessage = originalUserMessage ?? await ChatMessageModel.create({
       orgId,
       sessionId: session._id,
       userId: user._id,
@@ -579,7 +656,9 @@ export async function sendMessage(req: Request, res: Response) {
 
     // Get the user's financial profile for AI context
     const documentRequest = parseChatDocumentRequest(content);
-    const financialProfile = documentRequest ? null : await ensureProfileWithMigration({ orgId, userId: user._id });
+    const financialProfile = documentRequest || monthlySpendingQuestion
+      ? null
+      : await ensureProfileWithMigration({ orgId, userId: user._id });
 
     let aiResponseContent = "I apologize, but I'm having trouble processing your request right now. Please try again.";
     let aiMetadata: any = {};
@@ -609,6 +688,29 @@ export async function sendMessage(req: Request, res: Response) {
         }
         aiMetadata.aiCoreDurationMs = 0;
         aiMetadata.workflowTrace = [{ agent: "PDF document renderer", startedAt, endedAt: new Date().toISOString(), status: "success" }];
+      } else if (monthlySpendingQuestion) {
+        const startedAt = new Date().toISOString();
+        const [summary, settings] = await Promise.all([
+          ensureUserTransactionsMigrated({ orgId, userId: user._id })
+            .then(() => getMonthlyLedgerSummary({ orgId, userId: user._id }, monthlySpendingQuestion)),
+          getOrgAiSettings(orgId),
+        ]);
+        const format = (amount: number) => formatBillingCurrency(amount, settings.currency);
+        const month = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(summary.month);
+        const period = monthlySpendingQuestion === "current" ? `${month} so far` : month;
+        const top = summary.topCategory;
+        const category = top?._id.replace(/[\\`*_{}\[\]()<>#!|]/g, "\\$&");
+        aiResponseContent = top
+          ? `You spent **${format(summary.totalSpent)}** in ${period}. Your highest spending category was **${category}** at **${format(top.amount)}**.`
+          : `You have no recorded expenses in ${period}.`;
+        aiMetadata = {
+          analysisType: "monthly_spending",
+          agentsInvolved: ["Monthly ledger summary"],
+          llmCallCount: 0,
+          fallbackUsed: false,
+          requestId,
+          workflowTrace: [{ agent: "Monthly ledger summary", startedAt, endedAt: new Date().toISOString(), status: "success" }],
+        };
       } else {
 
       const profileUpdatedAt = financialProfile?.updatedAt ? new Date(financialProfile.updatedAt).toISOString() : "unknown";
@@ -635,7 +737,7 @@ export async function sendMessage(req: Request, res: Response) {
       });
       aiCacheKey = cacheKey;
 
-      const cached = await AiResponseCacheModel.findOne({ cacheKey }).lean();
+      const cached = bypassCache ? null : await AiResponseCacheModel.findOne({ cacheKey }).lean();
       if (cached?.responseData && typeof cached.responseData === "object") {
         const cachedData = cached.responseData as any;
         aiResponseContent = String(cachedData.content || aiResponseContent);
@@ -722,9 +824,9 @@ export async function sendMessage(req: Request, res: Response) {
             workflowPhase: aiResponse.workflow_phase,
             activeProvider: aiResponse.active_provider,
             activeModel: aiResponse.active_model,
-            activeKeyId: aiResponse.active_key_id,
-            fallbackPath: aiResponse.fallback_path || [],
-            recoveredFailures: aiResponse.recovered_failures || [],
+            promptVersion: aiResponse.prompt_version,
+            routingVersion: aiResponse.routing_version,
+            recoveredFailureCount: aiResponse.recovered_failures?.length,
             recoveredFromCheckpoint: aiResponse.recovered_from_checkpoint || false,
           };
           if (aiResponse.fallback_used) {
@@ -748,9 +850,19 @@ export async function sendMessage(req: Request, res: Response) {
       }
       }
     } catch (aiError: any) {
-      logger.error({ error: aiError?.message ?? aiError }, `[requestId=${requestId}] ${documentRequest ? "Document creation error" : "AI service error"}`);
+      if (isAiCapacityError(aiError) || aiError instanceof AiCoreOverloadedError) {
+        // A shed request is not a successful answer; don't leave an orphaned
+        // question, consume quota, or turn a retryable 429/503 into a 200.
+        if (!originalUserMessage) {
+          await ChatMessageModel.deleteOne({ _id: userMessage._id, orgId, userId: user._id });
+        }
+        throw aiError;
+      }
+      logger.error({ error: aiError?.message ?? aiError }, `[requestId=${requestId}] ${documentRequest ? "Document creation error" : monthlySpendingQuestion ? "Ledger summary error" : "AI service error"}`);
       aiResponseContent = documentRequest
         ? "I couldn't create the PDF. Your request is saved in this conversation. Send it again to retry."
+        : monthlySpendingQuestion
+        ? "I couldn't read your ledger right now. Send the question again to retry."
         : "I'm currently experiencing some difficulties connecting to the AI service. Please try again in a moment.";
     }
 
@@ -860,11 +972,25 @@ export async function sendMessage(req: Request, res: Response) {
 
     // Persist assistant response as an agent output (enables feedback + task creation by id)
     try {
+      let regenerateOf: mongoose.Types.ObjectId | undefined;
+      if (regenerateOfRaw && mongoose.Types.ObjectId.isValid(regenerateOfRaw)) {
+        const previous = await AgentOutputModel.exists({ _id: regenerateOfRaw, orgId, userId: user._id });
+        if (previous) regenerateOf = new mongoose.Types.ObjectId(regenerateOfRaw);
+      }
       const agentOutput = await AgentOutputModel.create({
         orgId,
         userId: user._id,
         sessionId: session._id.toString(),
         userInput: content.trim(),
+        ...extractLearningMeta({
+          agent: aiMetadata?.agentsInvolved?.[0],
+          active_model: aiMetadata?.activeModel,
+          active_provider: aiMetadata?.activeProvider,
+          prompt_version: aiMetadata?.promptVersion,
+          routing_version: aiMetadata?.routingVersion,
+          cache_hit: typeof aiMetadata?.cacheHit === "boolean" ? aiMetadata.cacheHit : undefined,
+        }),
+        ...(regenerateOf ? { regenerateOf } : {}),
         agentType: String(aiMetadata?.agentsInvolved?.[0] || "master"),
         outputData: {
           response: aiResponseContent,
@@ -906,7 +1032,7 @@ export async function sendMessage(req: Request, res: Response) {
     const isFirstMessage = session.messageCount === 0;
     const updateData: any = {
       lastMessageAt: new Date(),
-      $inc: { messageCount: 2 },
+      $inc: { messageCount: originalUserMessage ? 1 : 2 },
       aiSessionId: aiMetadata?.sessionId || session.aiSessionId,
       aiSessionStatus: aiMetadata?.sessionStatus || session.aiSessionStatus,
       aiSessionPhase: aiMetadata?.workflowPhase || session.aiSessionPhase,
@@ -921,13 +1047,14 @@ export async function sendMessage(req: Request, res: Response) {
 
     const updatedSession = await ChatSessionModel.findByIdAndUpdate(session._id, updateData, { new: true });
 
-    const nextMessageCount = (updatedSession?.messageCount ?? session.messageCount + 2) as number;
-    const nextUserMessageCount = Math.floor(nextMessageCount / 2);
-    // Regenerate summary on first message and every 8 user messages thereafter
+    const nextMessageCount = (updatedSession?.messageCount ?? session.messageCount + (originalUserMessage ? 1 : 2)) as number;
+    const nextUserMessageCount = originalUserMessage ? -1 : Math.floor(nextMessageCount / 2);
+    // Regenerate summary on first message and every 8 new user messages thereafter.
     const shouldUpdateSummary =
+      Boolean(originalUserMessage) ||
       !session.summary ||
       session.summary.trim().length === 0 ||
-      nextUserMessageCount % 8 === 0;
+      (nextUserMessageCount > 0 && nextUserMessageCount % 8 === 0);
 
     if (shouldUpdateSummary) {
       const summaryDocs = await ChatMessageModel.find({ orgId, sessionId: session._id })
@@ -947,7 +1074,8 @@ export async function sendMessage(req: Request, res: Response) {
       });
     }
 
-    await recordFeatureUsage({
+    if (reservation) await recordFeatureUsage({
+      reservation,
       orgId,
       userId: user._id,
       feature: "monthly_ai_calls",
@@ -962,6 +1090,15 @@ export async function sendMessage(req: Request, res: Response) {
         session_id: session._id.toString(),
       },
     });
+
+    req.log?.info({
+      event: "chat.turn.completed",
+      agents: aiMetadata.agentsUsed,
+      llmCalls: aiMetadata.llmCallCount,
+      coreDurationMs: aiMetadata.aiCoreDurationMs,
+      cacheHit: aiMetadata.cacheHit === true,
+      fallback: aiMetadata.fallbackUsed === true,
+    }, "Finance chat turn completed");
 
     return res.json({
       userMessage: {
@@ -983,9 +1120,12 @@ export async function sendMessage(req: Request, res: Response) {
     });
   } catch (error) {
     if (error instanceof HttpError) {
+      const retryAfter = (error as HttpError & { retryAfterSeconds?: number }).retryAfterSeconds;
+      if (retryAfter && retryAfter > 0) res.setHeader("Retry-After", String(Math.ceil(retryAfter)));
       return res.status(error.statusCode).json({
         message: error.message,
         code: error.code,
+        details: error.details,
         request_id: req.requestId,
       });
     }
@@ -994,6 +1134,9 @@ export async function sendMessage(req: Request, res: Response) {
   }
 }
 
+// Synthesizes high-level financial themes across recent user conversation histories.
+// Aggregates rolling session summaries and invokes specialized analysis prompts.
+// Caches generated pulse reports and returns actionable recommendations to the user.
 export async function getConversationInsights(req: Request, res: Response) {
   try {
     const user = req.user as IUserDocument;
@@ -1118,9 +1261,11 @@ export async function getConversationInsights(req: Request, res: Response) {
       orgId, userId: user._id, request: aiRequest,
       refresh: req.query.refresh === "1",
       generate: async () => {
-        await enforceFeatureLimit({ orgId, userId: user._id, feature: "monthly_ai_calls", units: 1, requestId: req.requestId });
+        const reservation = await reserveFeatureUsage({ orgId, userId: user._id, feature: "monthly_ai_calls", units: 1, requestId: req.requestId });
+        releaseReservationOnResponseEnd(res, reservation);
         const aiResponse = await processAiCoreRequest(aiRequest, req.requestId, { userId: user._id.toString() });
         await recordFeatureUsage({
+          reservation,
           orgId, userId: user._id, feature: "monthly_ai_calls", units: 1, requestId: req.requestId,
           tokensIn: aiResponse.usage?.tokens_in, tokensOut: aiResponse.usage?.tokens_out,
           costUsd: aiResponse.usage?.cost_usd, modelName: aiResponse.usage?.models?.[0],

@@ -30,12 +30,8 @@ import { getEnv } from "../config/env";
 // Safe HTTP methods that don't modify state (no CSRF protection needed)
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
-/**
- * CSRF Protection Middleware
- *
- * Implements Double Submit Cookie pattern for CSRF prevention.
- * Only active when CSRF_ENABLED=true (defaults to true in production).
- */
+// Implements Double Submit Cookie cross-site request forgery protection for cookie-authenticated calls.
+// Validates matching tokens between cookie storage and custom request headers on mutating HTTP requests.
 export const csrfProtection: RequestHandler = (req, res, next) => {
   const env = getEnv();
 
@@ -48,7 +44,7 @@ export const csrfProtection: RequestHandler = (req, res, next) => {
   // Webhooks use signature verification or secret tokens; usage events use internal tokens
   const path = String(req.originalUrl || req.url || "");
   if (
-    path.startsWith("/api/billing/webhook") ||  // Stripe webhook (has signature verification)
+    (path.startsWith("/api/billing/webhook") || path.startsWith("/api/v1/billing/webhook")) || // Stripe webhook (has signature verification)
     path.startsWith("/api/workflows/webhook") || // Inbound workflow webhook (has secret token in path)
     path.startsWith("/api/tasks/webhook") ||     // Inbound task webhook (has secret token in path)
     path.startsWith("/api/usage-events")        // Usage tracking (internal token)

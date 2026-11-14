@@ -1,3 +1,6 @@
+// Models verifiable factual citations and source snippets extracted by agents.
+// References entity IDs, text excerpts, source types, and document page markers.
+// Equips UI citation cards with traceability links back to underlying records.
 export interface EvidenceItem {
   id?: string;
   type?: string;

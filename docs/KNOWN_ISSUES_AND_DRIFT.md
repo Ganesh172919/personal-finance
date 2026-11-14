@@ -1,5 +1,28 @@
 # FinWise Known Issues and Drift
 
+## Button and mobile review - 6 November 2026
+
+Resolved P1: changing display currency could overwrite original ledger amounts from Edit, Split and Recurring. These forms now use raw USD values; display rates are clearly fixed estimates. Split failures retain the draft and report failure instead of closing with a success toast. Resolved P1: approval disappeared on the next server read. Approval now covers a fingerprint of the reviewed ledger values, survives unchanged edits, reopens after material changes through any write path, and remains owner-scoped. Older approvals without a value fingerprint require reapproval rather than silently trusting changed data. Review actions refresh ledger and summary caches.
+
+Resolved P2: task detail could remain Open after completion; outcome drafts and retry keys reset on a profile refresh; effect fields lacked accessible names and cent precision. The detail uses current data, drafts initialize once per task opening, and fields have labels. Browser QA also found single/batch calendar sync sending rejected fields. Both now send the strict reminder contract (date/title/description). Merchant suggestions are collapsed to keep the ledger reachable on a phone. The dashboard and README state the practical product goal; acceptance criteria are in PRODUCT_GOAL_AND_ACCEPTANCE.md.
+
+Resolved P1: calendar cash estimates assumed USD 5,000, parsed dates as outflows and invented USD 50 for reminders without amounts. Estimates now require an explicit monthly opening balance, keep zero/negative/cents, include investments and exclude reminders without explicit USD amounts. Fixed reference FX rates are labelled. Twenty calendar checks and a real 390px estimate pass. Resolved P2: future goal deadlines incorrectly implied On Track; these now say In Progress. Starter questions are native buttons without invented personal amounts. Copy response now waits for the clipboard promise, disables duplicate writes and reports rejection; browser clipboard transport itself remains unverified. A local stale shell also demonstrated that production PWA upgrades need explicit staging verification.
+
+Resolved P2: the new singular one next step starter missed saved-activity routing and entered full planning. It now uses the existing read-only activity review, limits the answer to the first owned task, and leaves document/mutation requests on their existing paths. The complete AI tests/evaluations pass 442 checks after this repair.
+
+Final evidence: full client 451/54 after all repairs; full server 322/74 before the approval repair, then 4/4 approval regressions. AI Core passes 442 tests/evaluations. Client lint, targeted Ruff and client/server builds pass. Fresh live API smoke is 33/33; both npm production dependency audits report zero vulnerabilities. Dedicated development worker evidence proves CSV processing, signed cents, workspace isolation and continued processing after a failed job; production shutdown/drain remains unverified. All external integration and production runtime prerequisites below remain open.
+
+## Current release review - 5 November 2026
+
+Final rechecks: 42 focused client tests, 44 server configuration regressions, 11 AI transport checks, and a fresh 33/33 live API smoke pass. All six format buttons preserve draft notes; metric add/remove, Clear and blank-title validation passed in the browser. The final cited handoff includes both the attachment and an editable question; sending produced the exact EUR quotation with zero model calls. Structured evidence: output/browser/verification-20261105.json.
+
+This review supersedes older totals below. Fixed in this pass: invented document-template balances and tax figures; lost zero/negative cash flow and wrong currency; invented page numbers in Q&A; ignored chat attachment/question links; ambiguous multi-file source actions; mobile document navigation; transient sign-in failures treated as logout; missing strict credential limits on the canonical auth prefix.
+
+Verification: full client 431/52 and server 321/74; final targeted auth-limit 12 and document/auth UI checks; AI 436 tests/evaluations; 33 live API checks; client lint plus client/server builds. Overlapping targeted counts are not additional full-suite coverage. Browser evidence and exact limitations are in BROWSER_TEST_RESULTS.md.
+
+Open P1: production process/Compose/worker verification, final-domain OAuth/SMTP/Stripe/provider access, backup/restore and release review of the large incoming change set. Real bank-provider callbacks and S3/GCS export delivery remain unavailable. Open P2: approximately 673KB entry chunk, production cache upgrades and broader accessibility/capacity testing. A local test database process exited during resource-heavy QA; persisted fixtures were recovered and readiness restored. No claim of public deployment or every button being exercised is made.
+
+
 ## Prioritized release review - 31 October 2026
 
 This dated register supersedes conflicting historical observations below.

@@ -697,3 +697,21 @@ mindmap
 │    └─► Push to GitHub & Trigger CI/CD Automated Test Matrix 🟢         │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+
+---
+
+## 2026 Enterprise Development Guides
+
+### 1. Working with the Continuous AI Canary Engine
+- Local testing: Run `npm test -- server/src/test/aiCanary.test.ts` to verify the dual-layer validation pipeline.
+- Python tests: Run `pytest server/AI_Core/tests/test_canary_validator.py -v`.
+- Strict mode can be toggled via `CANARY_STRICT_MODE=true` in `server/.env`.
+
+### 2. Testing 64-D Merchant Clustering
+- Integration test: `npm test -- server/src/test/merchantEmbeddingClustering.test.ts`.
+- Simulates raw transaction statements and verifies centroid cosine linkage at $C_{\text{sim}} \ge 0.70$.
+
+### 3. Testing Cross-Silo Unified Context Retrieval (RRF $k=60$)
+- Integration test: `npm test -- server/src/test/unifiedContext.test.ts`.
+- Verifies reciprocal rank fusion across user memories, document chunks, and ledger transactions.

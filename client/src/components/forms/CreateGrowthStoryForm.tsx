@@ -41,11 +41,17 @@ import { GrowthStoryCategory, GrowthStoryDifficulty, IGrowthStory } from "@/type
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 
+// Property structure governing the growth story creation dialog.
+// Supplies the boolean visibility toggle and state change notification callbacks.
+// Facilitates modal lifecycle management when sharing transformation journeys.
 interface CreateGrowthStoryFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+// Multi-step modal form enabling users to submit financial transformation stories.
+// Captures background metrics, net worth growth, debt milestones, and strategies.
+// Submits sanitized story payloads to the API and refreshes the community feed.
 export function CreateGrowthStoryForm({ open, onOpenChange }: CreateGrowthStoryFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();

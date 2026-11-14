@@ -156,10 +156,10 @@ describe("Multi-Currency Billing & Automated Dunning Retry Workflows", () => {
     const restoredDunning = await DunningModel.findOne({ orgId }).lean();
     expect(restoredDunning?.status).toBe("recovered");
 
-    // Verify paid recovery invoice created
+    // The local simulation must not produce proof of a real payment.
     const invoice = await InvoiceModel.findOne({ orgId, invoiceNumber: retryRes.body.invoice_number }).lean();
     expect(invoice).toBeDefined();
-    expect(invoice?.status).toBe("paid");
+    expect(invoice?.status).toBe("void");
     expect(invoice?.amountUsd).toBe(19);
   });
 

@@ -18,6 +18,9 @@
  * @module services/errorReporting
  */
 
+// Defines the payload structure dispatched when reporting client exceptions.
+// Aggregates stack traces, runtime metadata, session IDs, and active breadcrumbs.
+// Transmitted to the server-side telemetry endpoint for diagnostic analysis.
 interface ErrorReport {
   message: string;
   stack?: string;
@@ -29,6 +32,9 @@ interface ErrorReport {
   breadcrumbs: Breadcrumb[];
 }
 
+// Represents a discrete user interaction or telemetry event recorded in session.
+// Captures category types such as navigation changes, clicks, and console events.
+// Attached to subsequent error reports to supply chronological reproduction context.
 interface Breadcrumb {
   type: "navigation" | "click" | "console" | "custom";
   message: string;
@@ -37,13 +43,22 @@ interface Breadcrumb {
 
 // ─── Session ID ─────────────────────────────────────────
 
+// Unique pseudo-random identifier generated per browser session lifetime.
+// Distinguishes independent user visits across client error report logs.
+// Constructed by combining timestamps with randomized base-36 substrings.
 const SESSION_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 // ─── Breadcrumb Buffer ──────────────────────────────────
 
+// Maximum quantity of breadcrumb interaction records retained in memory.
+// Prevents unbounded memory growth by restricting the rolling event buffer.
+// Oldest interaction breadcrumbs are evicted when buffer capacity is exceeded.
 const MAX_BREADCRUMBS = 30;
 const breadcrumbs: Breadcrumb[] = [];
 
+// Appends a new user interaction event into the rolling breadcrumb history.
+// Stamps each entry with the current ISO timestamp and event category type.
+// Maintains a bounded queue by discarding the oldest item when over capacity.
 function pushBreadcrumb(type: Breadcrumb["type"], message: string) {
   breadcrumbs.push({
     type,
@@ -57,6 +72,9 @@ function pushBreadcrumb(type: Breadcrumb["type"], message: string) {
 
 // ─── Report ─────────────────────────────────────────────
 
+// Gathers browser error context and transmits telemetry to the backend.
+// Outputs diagnostic traces to the local development console when active.
+// Issues a non-blocking keepalive POST request that ignores transient network failures.
 async function report(error: Error, componentStack?: string) {
   const payload: ErrorReport = {
     message: error.message,
@@ -94,6 +112,9 @@ async function report(error: Error, componentStack?: string) {
 
 // ─── Global listeners ───────────────────────────────────
 
+// Binds global browser error listeners and DOM event tracking handlers.
+// Intercepts unhandled promise rejections, window errors, clicks, and routing.
+// Populates chronological diagnostic trails leading up to unexpected exceptions.
 function install() {
   // Unhandled promise rejections
   window.addEventListener("unhandledrejection", (event) => {
@@ -134,6 +155,9 @@ function install() {
 
 // ─── Public API ─────────────────────────────────────────
 
+// Public client error monitoring API exposed for application consumption.
+// Packages initialization routines, error dispatchers, and breadcrumb loggers.
+// Enables modular integration with UI error boundaries and instrumentation.
 export const errorReporting = {
   install,
   report,

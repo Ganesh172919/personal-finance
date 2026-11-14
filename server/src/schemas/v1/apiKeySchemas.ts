@@ -14,6 +14,9 @@
  */
 import { z } from "zod";
 
+// Validates request payloads creating a new programmatic API key.
+// Enforces descriptive key names and non-empty arrays of authorization scopes.
+// Restricts granted scopes to recognized read and write permissions in strict mode.
 export const createApiKeyBodySchema = z
   .object({
     name: z.string().trim().min(2).max(120),

@@ -3,14 +3,23 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// Resolves absolute filename path for current ES module script.
+// Obtains filepath from import.meta.url metadata.
+// Supports relative path resolution when writing PDF artifacts to the docs directory.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Interface describing a structured content section in the SOP framework PDF document.
+// Encapsulates section header title and body text block.
+// Used for iterating and rendering PDF document sections consistently.
 interface SOPSection {
   title: string;
   content: string;
 }
 
+// Generates standard Statement of Purpose (SOP) submission guideline PDF document.
+// Uses PDFKit to stream formatted text, headings, and structure tips into a file.
+// Emits output artifact directly to docs directory for student application workflows.
 function createSOPFrameworkPdf(): void {
   const doc = new PDFDocument({ size: "A4", margin: 54 });
   const outputPath = path.join(__dirname, "../../../docs/SOP_Submission_Framework.pdf");
@@ -127,4 +136,7 @@ function createSOPFrameworkPdf(): void {
   });
 }
 
+// Script invocation generating the SOP Framework PDF file.
+// Executes PDF creation and streams bytes to the filesystem.
+// Handles completion logging and stream error reporting.
 createSOPFrameworkPdf();

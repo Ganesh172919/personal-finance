@@ -27,6 +27,9 @@ import { HttpError } from "../../middleware/httpError";
 import type { ToolCallInput } from "../../schemas/v1/toolSchemas";
 import { executeToolCall, simulateToolCall } from "../../services/toolExecutor";
 
+// Validates that organization context is attached to the current request.
+// Throws a 401 unauthorized error if the organization context is missing or invalid.
+// Returns the resolved organization ID parsed as a MongoDB ObjectId instance.
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -35,6 +38,9 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+// Extracts and normalizes the caller's organization membership role from request context.
+// Validates whether the role matches recognized tiers: member, admin, or owner.
+// Defaults safely to member level when unassigned or unrecognizable values are encountered.
 const requireOrgRole = (req: Request) => {
   const role = String((req as any).org?.role || "member") as "member" | "admin" | "owner";
   if (role !== "member" && role !== "admin" && role !== "owner") {
@@ -43,6 +49,9 @@ const requireOrgRole = (req: Request) => {
   return role;
 };
 
+// Simulates execution of an atomic tool call without persisting changes to the database.
+// Evaluates policy permissions, calculates potential side effects, and returns preview state.
+// Enables dry-run safety checks for AI autopilot and user confirmation flows.
 export const simulateTool = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);
@@ -60,6 +69,9 @@ export const simulateTool = async (req: Request, res: Response) => {
   return res.json(result);
 };
 
+// Commits the execution of an atomic financial tool call within the organization.
+// Evaluates actor role permissions, checks confirmation flags, and guarantees idempotency.
+// Persists mutation side-effects and returns tool outcome details and result payloads.
 export const executeTool = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);

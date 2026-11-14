@@ -1,4 +1,80 @@
-# Improvement implementation progress
+﻿# Improvement implementation progress
+
+## 10 November 2026 — Live chat, provider failover and recorded data
+
+The same educational prompt took 12.35 seconds and two provider attempts after
+the routing change, compared with 23.78 seconds and nine attempts in the baseline
+local run. Gemini 3.5 Flash-Lite denied access with the configured key. Groq GPT
+OSS 20B completed both runs. This is a single before/after comparison. The local
+AI Core environment keeps Gemini preferred, moves Groq ahead of OpenRouter and
+sets a 12-second per-attempt timeout and 28-second budget for bounded paths.
+
+General education uses the question alone and omits unrelated account evidence,
+plans and tool actions. Saved-activity questions still read the requesting user's
+records. Chat now persists the provider, model and recovery count without
+persisting provider key references. A separate live Groq reply used one call and
+retained provider/model details after reload. A regression covers the compound
+interest concept match. Spending trends preserve recorded local months across
+offsets, exclude investments and keep the monthly average unknown when expense
+dates are missing. The Growth Stories chart now plots the two reported net
+worth figures instead of generating intermediate points. Portfolio reporting
+options reach the API, and the task webhook client matches the validated request
+shape.
+
+The inbuilt browser covered live chat at 390 × 844, the saved-activity starter,
+PDF generation from saved records, a direct USD 3,000.00 quotation with zero
+LLM calls, exact-page navigation, and original PDF rendering. The normal click
+started a download that the browser canceled. The browser download API saved the
+file successfully. See [deployment checks](DEPLOYMENT_READINESS.md) for test
+results and remaining release risks.
+
+## 8 November 2026 — Recorded facts, source links and responsive navigation
+
+Current inbuilt-browser pass removes fabricated budget defaults, peer statistics,
+scenario baselines and debt impact promises. AI cash flow separates window totals
+from recorded monthly averages, retains currency/coverage and prefers saved
+profile facts. Zero expenses no longer imply 99.9 months of runway. Recommendations
+preserve cents, currency and selection, with missing/error states and keyboard rows.
+
+Browser journeys found and repaired a quoted PDF-title parser, seven-agent fan-out
+for a simple PDF expense question, PWA interception of API PDF navigation/downloads,
+and a tablet navigation gap. Corrected lookup uses one step (3 ms, zero LLM calls).
+Original PDF viewer, exact source page, return-to-chat and download passed on a
+clean local PWA install. See BUTTON_COVERAGE_20261108.md for scope and proof.
+
+Fresh final client 511/59, AI 470 and Ruff pass; client lint and both release builds
+pass; API smoke 33/33; both dependency audits report zero. Server full run 363/364
+exposed one title-format regression; repaired, then 22/22 chat/title checks and a
+new server build pass. It is not labelled a repeated all-green full server run.
+
+DATA_INTEGRITY_QA_20261108.md lists remaining billing/privacy/synthetic-simulation
+and installed-worker upgrade findings. Public deployment remains blocked. No
+production startup, real payments/provider inference/external delivery or
+destructive browser action is claimed. Existing records, secrets and unrelated
+uncommitted work are preserved.
+
+## 6 November 2026 - Trustworthy review and follow-through
+
+Followed the existing plan's capture -> understand -> act -> progress loop. Browser QA reproduced converted EUR edits writing the wrong USD amount, split-save success shown before the server response, completed task detail stuck on Open, failed calendar sync and approvals returning on reload. Focused repairs preserve original ledger values, retain failed drafts, refresh saved task state, use the strict reminder payload and bind approvals to reviewed values. Fingerprints also avoid repeated heuristic queries for unchanged approved records. Review mutations invalidate ledger and command-center views.
+
+Task outcome fields are named and accept cents; profile refresh keeps draft effects and retry identity. Merchant suggestions now use a native keyboard-accessible disclosure instead of ten cards above the ledger. Calendar estimates require an explicit opening balance and no longer infer costs from dates or invent USD 50 charges. Future deadlines do not imply goal progress is On Track. Chat starter cards are native buttons, and Copy awaits the clipboard result with visible failure handling. Organization dialogs now include accessible descriptions. Product copy and PRODUCT_GOAL_AND_ACCEPTANCE.md explain the user outcome without claiming production readiness or unimplemented integrations.
+
+Final client 451/54 passes after all repairs; server 322/74 before the review repair plus approval API 4/4 pass. Client lint and both release builds pass. A fresh local API smoke is 33/33, and both npm production dependency audits report zero vulnerabilities. Final inbuilt-browser evidence is recorded in BROWSER_TEST_RESULTS.md and DEPLOYMENT_READINESS.md. A separate development worker processed an owned CSV, excluded foreign data and recovered after a bad PDF job. No trained LoRA weights, production deployment or real financial/external actions are claimed.
+
+The final keyboard starter test found singular one next step wording entering the full planner. Added narrowly scoped suggestion routing and a one-task answer using existing owned snapshots. Graph bypass and ordinary/SSE tests cover the exact starter wording, with document and mutation exclusions. All 442 AI tests/evaluations and targeted Ruff pass after this last AI-only repair.
+
+## 5 November 2026 - Document correctness, chat handoff and auth recovery
+
+Final rechecks: 42 focused client tests, 44 server configuration regressions, 11 AI transport checks, and a fresh 33/33 live API smoke pass. All six format buttons preserve draft notes; metric add/remove, Clear and blank-title validation passed in the browser. The final cited handoff includes both the attachment and an editable question; sending produced the exact EUR quotation with zero model calls. Structured evidence: output/browser/verification-20261105.json.
+
+Reviewed the improvement plans and the newer audit/feature batch before editing. Regression tests first demonstrated fabricated profile figures, zero/negative-value loss and EUR amounts labelled as dollars on an invented page. Replaced profile examples with owned saved records and workspace currency; missing data remains unavailable. Format changes retain notes. Q&A quotes source text and preserves unknown pages, with an exact source action per passage. Document navigation wraps at phone widths.
+
+Browser testing found that Files-to-chat links ignored attachment and question parameters. Added authorized file lookup, loading/error/retry states, removable selection and unsent draft prefill. Late lookups cannot restore retired selections. A real EUR PDF and a chat-created goals/tasks PDF both passed download, quoted-answer and physical-page navigation checks with zero model calls.
+
+A rapid route sweep hit the unchanged general API limit. Auth now preserves an already verified identity on transient errors, and cold-start checks keep private content hidden with Retry. Browser outage/recovery was verified without another login. Canonical and compatibility auth routes now share the strict credential budget; its regression failed before the one-line mount correction.
+
+Full results: client 431 tests/52 files, server 321/74 before the final auth-prefix correction, then 12 targeted limiter checks and a server build. AI tests/evaluations: 436 passed after isolating pytest middleware settings from local dotenv secrets and adding explicit token-enforcement tests. Client lint/build and 33 live API checks pass. Local .env files gained only missing service-authentication/encryption values; existing secrets were retained. LoRA remains 18 training/6 evaluation samples, with no trained weights. The six-page PDF report is refreshed with current evidence and release limitations.
+
 
 > [!TIP]
 > **Developer Guide: Building & Extending on This Project**  
@@ -43,13 +119,31 @@ batch, without treating the larger product roadmap as completed.
 │  [Batch 22: Task Webhooks] ──► Third-party sync (Linear/Todoist/Jira) & token inbound webhooks   │
 │  [Batch 23: Sched Sync]    ──► Webhook push & cloud storage (S3/GCS) report delivery & SHA-256   │
 │  [Batch 24: Multi-Curr/Dun]──► Multi-currency localization (7 currencies) & dunning retry flow  │
-│                                                                                                 │
+│  [Batch 25: Analytics FX]  ──► Multi-currency FX conversion (7 currencies) & normalized report  │
+│  [Batch 26: Finance OS FX] ──► Multi-currency envelope FX conversion & localized forecasting    │
+│  [Batch 27: Portfolio FX]  ──► Multi-currency portfolio FX & dividend withholding tax (WHT)     │
+│  [Batch 28: Goals FX/Rule] ──► Multi-currency profile FX & dynamic savings transfer rules    │
+│  [Batch 29: Calendar FX]   ──► Multi-currency calendar FX, liquidity buffer & batch reminders│
+│  [Batch 30: Transact FX/Clust]──► Multi-currency ledger FX, merchant clustering & bank feed  │
+│  [Batch 31: Journal Offline/Vec]► Offline stroke sync & 64d vector semantic search engine    │
+│  [Batch 32: Workflows Canvas] ──► Delay timers & drag-and-drop visual node graph canvas       │
+│  [Batch 33: Newsletter Charts]──► 7-day velocity chart, category bars & health pillar meters  │
+│  [Batch 34: Multi-Modal RAG] ──► 64-D vector indexing, hybrid scoring (G>=0.70) & search UI   │
+│  [Batch 35: Live Account Stress] ──► Real-time linked account stress, Beta tuning & liquidation │
+│  [Batch 36: ML Merchant Clustering] ──► 64-D vector embeddings, cosine clustering & review UI  │
+│  [Batch 37: Peer Benchmarking & Auto-Rebalance] ──► Cohort IQR benchmarks & zero-sum envelope shifts │
+│  [Batch 38: SubAgent Task Cache] ──► Cross-session shared task caching & DAG execution state     │
+│  [Batch 39: Number Safety Canaries] ──► Continuous production invariant engine & canary cockpit  │
+│  [Batch 40: Unified Context Retrieval] ──► 3-silo RRF fusion, 64-D vectors, memory ranking & cockpit │
+│  [Batch 41: Document Q&A Evaluation] ──► Multi-modal OCR, page attribution & grounded Q&A cockpit   │
+│  [Batch 42: Document Authorship Studio] ──► 6 PDF formats, rich layout, KPI cards & studio cockpit  │
+│  [Batch 43: Adaptive Follow-Through Engine] ──► Multi-signal ranking, exponential decay & cockpit   │
 └───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
                                                 │
                                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 🛡️ VERIFIED QUALITY GATES: 49 Client Suites (357 tests) • 56 Server Suites (220 tests)           │
-│    Zero Regressions • Strict Multi-Tenant Scoping • Production-Ready Type Safety                │
+│ 🛡️ VERIFIED QUALITY GATES: 51 Client Suites (422 tests) • 72 Server Suites (307 tests)           │
+│    AI Core: 239 Pytest passed • 190 Evals passed • Zero Regressions • 215/215 OpenAPI routes      │
 └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -609,19 +703,536 @@ Executed 10 structured, production-grade improvement batches across client, serv
     - *Testing & Verification*:
       - Created `server/src/test/billingDunning.test.ts` (4/4 passed), verifying multi-currency invoice queries, PDF receipt localized currency rendering, dunning simulation, and payment retry recovery.
       - Expanded `client/src/pages/Billing.test.tsx` from 11 to 14 tests (14/14 passed), verifying currency selector conversions, past-due dunning grace period alert banner, retry payment mutation, and simulate failure button.
-      - Verified `server/src/test/openapiRoutesCoverage.test.ts` (1/1 passed, 192/192 routes registered and covered).
+      - Verified `server/src/test/openapiRoutesCoverage.test.ts` (1/1 passed, 193/193 routes registered and covered).
+
+25. **Batch 25 - Analytics Multi-Currency FX Localization & Normalized Reporting:**
+    - *Backend Analytics Validation & Conversion*:
+      - In `server/src/schemas/v1/analyticsDetailSchemas.ts`: Added optional `currency: z.enum(["USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY"]).optional()` to `spendingHeatmapQuerySchema`, `categoryTrendsQuerySchema`, `incomeExpenseQuerySchema`, `accountBalancesQuerySchema`, and `topMerchantsQuerySchema`. Added `multiCurrencySummaryQuerySchema`.
+      - In `server/src/controllers/v1/analyticsDetailController.ts`:
+        - Integrated deterministic FX rates (`USD`, `EUR`, `GBP`, `INR`, `CAD`, `AUD`, `JPY`) across all financial analytics endpoints.
+        - `getSpendingHeatmap`: Converts daily spending totals into requested target currency, returning `currency`, `fx_rate`, and `currency_symbol`.
+        - `getCategoryTrends`: Converts category amounts and monthly totals with JPY integer rounding support.
+        - `getIncomeExpenseSummary`: Converts monthly `income`, `expense`, and `net = income - expense` into target currency while preserving exact savings rate percentage ratios.
+        - `getAccountBalances`: Converts individual account balances, assets, liabilities, and normalized net worth when explicit reporting currency is requested, while preserving per-account original currency backward compatibility when omitted.
+        - `getTopMerchants`: Converts merchant total and average spend into target currency.
+        - Created `getMultiCurrencySummary` (`GET /api/analytics/multi-currency-summary`): Computes base USD net worth, converted target net worth, and a comprehensive 7-currency conversion table with localized assets, liabilities, and exchange rates.
+      - In `server/src/routes/v1/analyticsRoutes.ts`: Mounted `GET /analytics/multi-currency-summary`.
+    - *OpenAPI Contracts & Route Registry*:
+      - Regenerated OpenAPI paths (`npm run generate:openapi`), expanding registry from 192 to 193 registered endpoints with 100% contract coverage in `openapiRoutesCoverage.test.ts`.
+    - *Client API & UI Integration*:
+      - In `client/src/lib/api/v1/analytics.ts`: Updated `getSpendingHeatmap`, `getCategoryTrends`, `getIncomeExpenseSummary`, `getAccountBalances`, and `getTopMerchants` to accept optional `currency?: string`. Exported `getMultiCurrencySummary`, `MultiCurrencyRateItem`, and `MultiCurrencySummaryResponse`.
+      - In `client/src/pages/Analytics.tsx`:
+        - Added Currency Selector (`select-analytics-currency`) to header action bar with all 7 global currencies and symbols.
+        - Added **Multi-Currency FX Normalization Cockpit** (`card-currency-normalization`) featuring reporting currency badge (`badge-analytics-reporting-currency`), active FX exchange rate badge (`badge-analytics-fx-rate`, e.g. "1 USD = 0.92 EUR"), normalized net worth indicator (`text-normalized-net-worth`), and 7-currency quick switch button pills (`btn-currency-${curr.toLowerCase()}`).
+        - Updated all stat cards (`stat-total-income`, `stat-total-expenses`, `stat-net-worth`), spending velocity indicators (`metric-daily-burn-rate`, `metric-peak-day`, `metric-cash-runway`), day-of-week bars, and Recharts tooltips (`AnalyticsTooltip`) to dynamically format amounts according to the active reporting currency.
+    - *Testing & Verification*:
+      - Created `server/src/test/analyticsMultiCurrency.test.ts` (6/6 passed) validating EUR heatmap conversion, JPY integer rounding, GBP cash flow summaries, INR balance normalization, CAD merchant rankings, and 7-currency matrix generation.
+      - Expanded `client/src/pages/Analytics.test.tsx` from 10 to 13 tests (13/13 passed) validating normalization cockpit rendering, select dropdown currency switching, FX rate badges, and JPY integer formatting.
+      - Reverified `server/src/test/analyticsHeatmap.test.ts` (1/1 passed) and `server/src/test/analyticsBalances.test.ts` (1/1 passed) for 0 regressions.
+      - Reverified `server/src/test/openapiRoutesCoverage.test.ts` (1/1 passed, 193/193 routes verified).
 
 
+
+
+
+26. **Batch 26 - Finance OS Multi-Currency Envelope FX Conversion & Localized Cashflow Forecasting:**
+    - *Backend Schemas & Validation*:
+      - In `server/src/schemas/v1/financeSchemas.ts`: Added optional `currency: z.enum(["USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY"]).optional()` to `listBudgetAllocationsQuerySchema`.
+      - In `server/src/schemas/v1/financeIntelligenceSchemas.ts`: Created `budgetEnvelopesQuerySchema` (with optional `currency` enum) and extended `forecastQuerySchema` with optional `currency` enum.
+      - In `server/src/routes/v1Routes.ts`: Mounted query validation using `budgetEnvelopesQuerySchema` on `/finance/budgets/:periodKey/envelopes` and `forecastQuerySchema` on `/finance/forecast`.
+    - *Backend Service & Controllers*:
+      - In `server/src/utils/currencyFx.ts`: Exported `SUPPORTED_CURRENCIES` for universal reference across backend utilities.
+      - In `server/src/controllers/v1/financeBudgetsController.ts`:
+        - Updated `listBudgetAllocations`: Reads `req.query.currency`. When requested, converts allocation amounts using `convertUsdToCurrency` and includes `currency`, `fx_rate`, and `currency_symbol` in the response payload while maintaining 100% backward compatibility when omitted.
+      - In `server/src/services/financeIntelligence.ts`:
+        - `getBudgetEnvelopes`: Added multi-currency conversion support. Caches by currency (`env:${orgId}:${periodKey}:${targetCurrency}`), converts category envelope planned, spent, and remaining balances (with integer rounding for JPY), and returns localized totals and active FX rate metadata.
+        - `buildForecast`: Integrated target currency conversion across baseline monthly averages (`income_monthly_avg`, `expense_monthly_avg`, `net_monthly_avg`), recurring rules expected burn, top spending categories, multi-month projections (income, expense, net, cumulative net, projected cash balance), and liquidity account rollups.
+      - In `server/src/controllers/v1/financeIntelligenceController.ts`: Updated `getBudgetEnvelopesEndpoint` and `getForecastEndpoint` to extract and forward `currency` from `req.query`.
+    - *Client API & UI Integration*:
+      - In `client/src/lib/currencyFx.ts`: Exported `SUPPORTED_CURRENCIES: SupportedCurrency[] = ["USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY"]`.
+      - In `client/src/lib/api/v1/finance.ts`: Updated `listBudgetAllocations`, `getBudgetEnvelopes`, and `getForecast` to accept optional `currency` query parameters. Updated response types with optional `currency`, `fx_rate`, and `currency_symbol`.
+      - In `client/src/pages/FinanceOS.tsx`:
+        - Added `selectedReportingCurrency` state defaulting to organization base currency.
+        - Added **Multi-Currency Envelope FX Converter Toolbar** (`card-envelope-currency-normalization`) featuring:
+          - Quick currency switch button pills (`btn-budget-currency-USD`, `btn-budget-currency-EUR`, `btn-budget-currency-GBP`, `btn-budget-currency-INR`, `btn-budget-currency-CAD`, `btn-budget-currency-AUD`, `btn-budget-currency-JPY`)
+          - Currency selector dropdown (`select-budget-currency`)
+          - Active reporting currency badge (`badge-budget-reporting-currency`)
+          - Real-time exchange rate badge (`badge-envelope-fx-rate`, e.g. "1 USD = 0.92 EUR")
+        - Updated Budget Totals (`Total budgeted`), spent to date (`text-budget-spent`), and remaining balance (`text-budget-remaining`) to dynamically format and adhere to the selected reporting currency.
+        - Wired `selectedReportingCurrency` into `allocationsQuery`, `envelopesQuery`, and `forecastQuery`.
+    - *Testing & Verification*:
+      - Created `server/src/test/financeMultiCurrencyBudgets.test.ts`: 1/1 test passed (exit code 0), validating:
+        - Default base USD budget allocation queries without FX params.
+        - Converted budget allocations in EUR at rate 0.92 with `€` symbol.
+        - Converted budget allocations in JPY at rate 155 with rounded integers and `¥` symbol.
+        - Budget envelope reconciliation in GBP at rate 0.78 with planned, spent, and remaining balances.
+        - Cashflow forecast projections and liquidity balance rollups in INR at rate 83.5 with `₹` symbol.
+        - Strict tenant isolation preventing cross-organization leakage of budget data.
+      - Verified preexisting budget test suites:
+        - `server/src/test/financeBudgets.test.ts`: 2/2 passed.
+        - `server/src/test/budgetHealth.test.ts`: 3/3 passed.
+      - Expanded and verified client tests in `client/src/pages/FinanceOS.test.tsx`: 9/9 passed (exit code 0), testing:
+        - Currency normalization toolbar rendering.
+        - Currency switching via quick button pills and dropdown select.
+        - Active FX rate badge display (`1 USD = 0.92 EUR` and `1 USD = 155 JPY`).
+        - Localized spend and remaining envelope balance updates.
+      - Full quality gate verification:
+        - Client Vitest Suite: **49 files passed / 371 tests passed** (0 failures).
+        - Server Vitest Suite: **59 files passed / 231 tests passed** (0 failures).
+
+28. **Batch 28 - Goals and Debts Multi-Currency FX Normalization & Automated Dynamic Savings Transfer Rules Engine:**
+    - *Backend Schemas & Route Validation*:
+      - In `server/src/schemas/aiSchemas.ts`: Exported `getFinancialProfileQuerySchema` accepting optional `includeTransactions: z.enum(["true", "false"]).optional()`, `txLimit: z.coerce.number().min(1).max(200).optional()`, and `currency: z.enum(["USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY"]).optional()`.
+      - In `server/src/routes/aiRoutes.ts`: Mounted `validateQuery(getFinancialProfileQuerySchema)` on both `/financial-profiles/me` and `/financial-profiles/:userId` routes with OpenAPI schema registration.
+    - *Backend Controller Deterministic Conversion*:
+      - In `server/src/controllers/aiController.ts`:
+        - Updated `getFinancialProfile` to parse `currency` query parameter.
+        - Converted `annual_income`, `monthly_expenses`, and `savings` into the requested reporting currency using deterministic exchange rates (`convertUsdToCurrency`), applying integer rounding for `JPY`.
+        - Converted all `goals` records: `target`, `current`, keeping original values under `raw_target` and `raw_current`.
+        - Converted all `debts` records: `balance`, `minimum_payment`, keeping original values under `raw_balance` and `raw_minimum_payment`.
+        - Converted `transactions` array amounts and signed values when requested.
+        - Attached metadata: `currency`, `fx_rate`, and `currency_symbol`.
+        - Maintained 100% backward compatibility when `currency` query parameter is omitted.
+    - *Client Types & API Integration*:
+      - In `client/src/types/index.ts`: Added optional `currency?: string; fx_rate?: number; currency_symbol?: string;` fields to `IFinancialProfile`.
+    - *Client UI & Rules Engine Implementation*:
+      - In `client/src/pages/GoalsAndDebts.tsx`:
+        - Added **Global Multi-Currency FX Normalization Cockpit** (`card-goals-currency-normalization`):
+          - Quick toggle button pills for all 7 global currencies (`btn-goals-currency-USD`, `btn-goals-currency-EUR`, `btn-goals-currency-GBP`, `btn-goals-currency-INR`, `btn-goals-currency-CAD`, `btn-goals-currency-AUD`, `btn-goals-currency-JPY`).
+          - Native select dropdown (`select-goals-currency`).
+          - Active reporting currency badge (`badge-goals-reporting-currency`) displaying active symbol.
+          - Live exchange rate badge (`badge-goals-fx-rate`, e.g. "1 USD = 0.92 EUR", "1 USD = 155 JPY").
+          - Deterministic FX conversion status badge (`badge-goals-fx-status`).
+        - Updated `goals` and `debts` mapping to dynamically normalize with client-side FX conversion if viewing currency changes, with zero layout flash or unmounting.
+        - Updated `formatCurrency` with `useCallback` to format values using active currency symbol and JPY integer rounding.
+        - Added **Automated Dynamic Savings Transfer Simulator & Rules Engine** (`card-dynamic-savings-transfer`):
+          - 4 Rule models with interactive pill selection:
+            1. **Surplus Sweeper** (`btn-rule-surplus`): Configurable 10%–100% sweep of unallocated monthly cash flow surplus (`input-surplus-sweep-pct` with 25%, 50%, 75%, 100% quick buttons).
+            2. **Spare-Change Round-Up** (`btn-rule-roundup`): Automatic micro-savings rounding transactions to $1, $2, $5, or $10 increments (`select-roundup-increment`).
+            3. **Dynamic Debt Sweep** (`btn-rule-debt-sweep`): Channels freed-up debt payment capacity into principal reduction or priority wealth accumulation.
+            4. **Smart Windfall Auto-Router** (`btn-rule-windfall`): Pre-commits 70% of tax refunds and bonuses to prevent lifestyle inflation.
+          - Destination Goal selector (`select-savings-target-goal`): Directs dynamic sweeps into chosen goal with priority indicators.
+          - Real-Time Dynamic Metrics: Projected Annual Savings (`metric-projected-annual-savings`), Monthly Pacing Horizon (`metric-rule-horizon`), and Rule Velocity & Automated Impact (`metric-rule-impact`).
+          - One-Click Task Scheduling: `btn-schedule-savings-rule` dispatches a high-priority, actionable task directly into the Tasks workspace with specific execution steps and expected financial impact.
+    - *Testing & Verification*:
+      - Created `server/src/test/goalsAndDebtsMultiCurrency.test.ts`: **3/3 passed** (exit code 0), validating:
+        - EUR normalization with 0.92 conversion and euro metadata.
+        - JPY normalization with integer rounding across income, expenses, goals, and debts.
+        - Schema query validation rejecting invalid currency codes with HTTP 400.
+      - Re-verified `server/src/test/openapiRoutesCoverage.test.ts`: **1/1 passed** (193/193 registered endpoints covered).
+      - Expanded client test suite in `client/src/pages/GoalsAndDebts.test.tsx`: **16/16 passed** (exit code 0), verifying:
+        - Multi-Currency Cockpit rendering and live FX switching (USD, EUR, JPY, GBP).
+        - Dynamic savings rules simulation (surplus, roundup, debt sweep, windfall).
+        - One-click task scheduling with full payload verification.
+        - Edge-case handling when user has no active goals or debts.
+      - Full quality gate verification:
+        - Client Vitest Suite: **49 files passed / 374 tests passed** (0 failures).
+        - Server Vitest Suite: **59 files passed / 234 tests passed** (0 failures).
+        - Client Lint: **0 errors, 0 warnings**.
+        - Client Production Build: **Succeeded in 11.48s** (117 precached assets).
+        - Server Production Build: **Succeeded in 79ms**.
+
+        - OpenAPI Route Inventory: 193/193 routes registered (100% route coverage).
+        - Client Lint (`eslint`): 0 warnings, 0 errors.
+        - Client Build (`tsc && vite build`): Succeeded in 13.70s (117 precached assets).
+        - Server Build (`tsc --noEmit && node scripts/build.mjs`): Succeeded in 94ms.
+
+
+27. **Batch 27 - Investment Portfolio Multi-Currency FX Normalization & Dividend Withholding Tax Localization:**
+    - *Backend Schemas & Validation*:
+      - In `server/src/schemas/financialDataSchemas.ts`: Updated `portfolioSummaryQuerySchema` to accept optional `currency: z.enum(["USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY"]).optional()`, `wht_rate: z.coerce.number().min(0).max(100).optional()`, and `treaty_country: z.string().trim().max(50).optional()`.
+      - In `server/src/services/responseCache.ts`: Updated `buildPortfolioSummaryCacheKey` to hash `currency` and `whtRate` (`curr|wht`) into the sha256 cache key, preventing stale USD data from contaminating localized currency and tax views.
+    - *Backend Controller*:
+      - In `server/src/controllers/financialDataController.ts`:
+        - `getPortfolioSummary`: Implemented deterministic conversion using 7 global currencies (`USD`, `EUR`, `GBP`, `INR`, `CAD`, `AUD`, `JPY`) across invested capital totals, monthly SIP estimates, asset allocations, holdings invested amounts, and historical monthly performance progression.
+        - Applied integer rounding for Japanese Yen (`JPY`) across all converted portfolio values.
+        - Calculated cross-border dividend tax metrics: `gross_received` (total distributions in target currency), `wht_deducted` (`gross * (whtRate / 100)`), `net_received` (`gross - wht_deducted`), `ftc_relief_estimate` (foreign tax credit relief equaling withheld tax under Double Tax Avoidance Agreements), and effective `net_portfolio_yield_pct`.
+        - Per-holding dividend metrics: included `gross_amount`, `wht_deducted`, `net_amount`, `yield_on_cost_pct`, and `net_yield_on_cost_pct`.
+        - Recent dividend distributions: enriched with `gross_amount`, `wht_deducted`, and `net_amount`.
+        - Maintained 100% backward compatibility when `currency` parameter is omitted.
+    - *Client API & UI Integration*:
+      - In `client/src/lib/api/transactions.ts`: Updated `getPortfolioSummary` to pass `currency`, `wht_rate`, and `treaty_country` via `URLSearchParams`. Updated interfaces `PortfolioSummaryResponse`, `PortfolioDividendsSummary`, and `PortfolioHoldingPayout`.
+      - In `client/src/pages/Portfolio.tsx`:
+        - Added **Multi-Currency & Dividend Tax Localization Cockpit** (`card-portfolio-currency-localization`):
+          - Quick currency selection button pills (`btn-portfolio-currency-USD`, `btn-portfolio-currency-EUR`, `btn-portfolio-currency-GBP`, `btn-portfolio-currency-INR`, `btn-portfolio-currency-CAD`, `btn-portfolio-currency-AUD`, `btn-portfolio-currency-JPY`).
+          - Currency selector dropdown (`select-portfolio-currency`).
+          - Active reporting currency badge (`badge-portfolio-reporting-currency`).
+          - Exchange rate conversion badge (`badge-portfolio-fx-rate`, e.g. "1 USD = 0.92 EUR", "1 USD = 155 JPY").
+          - Dividend Withholding Tax rate selector (`select-wht-rate`): 15% Standard DTAA, 30% Statutory NRA, 0% Tax-Exempt / Domestic, 20%, 25%.
+          - Active treaty country badge (`badge-treaty-country`).
+        - Updated `formatCurrency` to dynamically format with the selected reporting currency symbol and JPY integer rounding.
+        - In Dividends tab:
+          - Added Net vs Gross Dividend Stat Cards: Net Dividends Received (`metric-net-dividends`), Tax Withheld at Source (`metric-wht-deducted`, with `badge-wht-rate`), Foreign Tax Credit Relief Estimate (`metric-ftc-relief`), and Effective Net Dividend Yield (`metric-net-portfolio-yield`).
+          - Holdings Yield on Cost table (`table-dividends-by-holding`): displays Net Amount, WHT Deducted, and Net Yield on Cost alongside gross distributions.
+          - Recent Dividend Distributions table (`table-recent-dividends`): displays net payout amounts and deducted withholding tax.
+    - *Testing & Verification*:
+      - Created `server/src/test/portfolioMultiCurrencyWht.test.ts`: **4/4 passed** (exit code 0), validating:
+        - EUR normalization with 15% DTAA withholding tax calculations.
+        - JPY normalization with integer rounding and 30% statutory withholding tax calculations.
+        - Input bounds validation (rejecting invalid currencies, negative rates, and rates >100 with HTTP 400).
+        - Strict tenant isolation ensuring separate organizations cannot view or contaminate each other's portfolio metrics.
+      - Re-verified existing summary test suites:
+        - `server/src/test/summaryEndpoints.test.ts`: **1/1 passed** (exit code 0).
+        - `server/src/test/openapiRoutesCoverage.test.ts`: **1/1 passed** (193/193 registered endpoints covered).
+      - Expanded client test suite in `client/src/pages/Portfolio.test.tsx`: **13/13 passed** (exit code 0), verifying:
+        - Multi-Currency Cockpit rendering and 7 currency pills.
+        - Real-time exchange rate badges and currency switching to EUR and JPY.
+        - Cross-border dividend withholding tax modeling with 15% DTAA vs 30% statutory rates.
+        - Net received, tax deducted, FTC relief, and net yield metrics.
+      - Full quality gate verification:
+        - Client Vitest Suite: **49 files passed / 371 tests passed** (0 failures).
+        - Server Vitest Suite: **59 files passed / 231 tests passed** (0 failures).
+        - OpenAPI Route Inventory: 193/193 routes registered (100% coverage).
+        - Client Lint (`eslint`): 0 warnings, 0 errors.
+        - Client Build (`tsc && vite build`): Succeeded in 12.87s (117 precached assets).
+        - Server Build (`tsc --noEmit && node scripts/build.mjs`): Succeeded in 109ms.
+
+29. **Batch 29 - Financial Calendar Multi-Currency FX Normalization, Real-Time Liquidity Forecasting & Batch Reminder Management:**
+    - *Backend Schemas & Route Validation*:
+      - In `server/src/schemas/v1/calendarReminderSchemas.ts`: Added `batchCalendarRemindersBodySchema` validating optional `from`, `to`, and `ids` array.
+      - In `server/src/routes/v1Routes.ts`: Mounted `POST /calendar-reminders/batch-complete` and `POST /calendar-reminders/clear-completed` under authenticated `/api` route prefix with Zod body schema validation.
+    - *Backend Controller Scoping & Operations*:
+      - In `server/src/controllers/v1/calendarReminderController.ts`:
+        - Exported `batchCompleteReminders`: executes `CalendarReminder.updateMany` setting `completed: true` for target reminders strictly scoped to authenticated user and organization.
+        - Exported `clearCompletedReminders`: executes `CalendarReminder.deleteMany` deleting completed reminders (`completed: true`) matching optional date range filters or IDs within tenant boundaries.
+    - *OpenAPI Contracts*:
+      - In `packages/contracts/openapi/v1/paths/index.yaml`: Registered `/api/calendar-reminders/batch-complete` and `/api/calendar-reminders/clear-completed` with complete request bodies and response schemas.
+    - *Client UI & Liquidity Engine Implementation*:
+      - In `client/src/pages/FinancialCalendar.tsx`:
+        - Added **Multi-Currency FX Normalization Cockpit** (`card-calendar-currency-normalization`):
+          - Quick toggle button pills for 7 global currencies (`btn-calendar-currency-USD`, `btn-calendar-currency-EUR`, `btn-calendar-currency-GBP`, `btn-calendar-currency-INR`, `btn-calendar-currency-CAD`, `btn-calendar-currency-AUD`, `btn-calendar-currency-JPY`).
+          - Native select dropdown (`select-calendar-currency`).
+          - Active reporting currency badge (`badge-calendar-reporting-currency`) displaying active symbol.
+          - Live exchange rate badge (`badge-calendar-fx-rate`, e.g. "1 USD = 0.92 EUR", "1 USD = 155 JPY").
+          - Deterministic FX conversion status badge (`badge-calendar-fx-status`).
+        - Updated `fmt` with `useCallback` to support active currency symbol and JPY integer rounding while maintaining 100% backward compatibility for USD.
+        - Added **Real-Time Daily Cash Flow Forecasting & Liquidity Buffer Protection Engine** (`card-calendar-liquidity-forecast`):
+          - Daily running cash computation combining starting balance, transaction inflows/outflows, and reminder amounts (parsed via `extractAmountFromReminder`).
+          - Configurable safety buffer threshold (`input-liquidity-buffer` with $500, $1,000, $2,000, $5,000 quick buttons).
+          - Key liquidity metrics: Lowest Projected Cash (`metric-lowest-projected-cash`), Month-End Projected Balance (`metric-projected-month-end-balance`), Days Below Safety Buffer (`metric-deficit-days-count`), and Liquidity Health Status (`metric-liquidity-status`).
+          - Visual Liquidity Dip badges on calendar day cells (`badge-liquidity-dip-${dateKey}`).
+          - One-Click Liquidity Protection Task scheduling (`btn-schedule-liquidity-task`) creating an actionable task in Tasks workspace.
+        - Added **Batch Reminder Management Controls**:
+          - "Complete All" button (`btn-complete-all-reminders`) and "Clear Completed" button (`btn-clear-completed-reminders`).
+    - *Testing & Verification*:
+      - Created `server/src/test/calendarReminders.test.ts`: **3/3 passed** (exit code 0), validating:
+        - Calendar reminder creation and date range querying.
+        - Batch completion (`/batch-complete`) and clearing (`/clear-completed`).
+        - Strict tenant isolation preventing cross-organization contamination.
+      - Re-verified `server/src/test/openapiRoutesCoverage.test.ts`: **1/1 passed** (195/195 registered endpoints covered).
+      - Expanded client test suite in `client/src/pages/FinancialCalendar.test.tsx`: **11/11 passed** (exit code 0), verifying:
+        - Multi-Currency Cockpit rendering and live FX switching (USD, EUR, JPY, GBP).
+        - Real-time liquidity forecasting, buffer threshold adjustment, and lowest cash calculation.
+        - Visual liquidity dip badge rendering on calendar cells.
+        - One-click liquidity protection task creation with exact payload verification.
+        - Batch reminder completion and clearing controls.
+      - Full quality gate verification:
+        - Client Vitest Suite: **49 files passed / 377 tests passed** (0 failures).
+        - Server Vitest Suite: **60 files passed / 237 tests passed** (0 failures).
+        - Client Lint: **0 errors, 0 warnings**.
+        - Client Production Build: **Succeeded in 11.03s** (117 precached assets).
+        - Server Production Build: **Succeeded in 121ms**.
+
+30. **Batch 30 - Transaction Ledger Multi-Currency FX Normalization, Automated Merchant Clustering Engine & Inbound Bank Feed Webhooks:**
+    - *Backend Schemas & Route Validation*:
+      - In `server/src/schemas/financialDataSchemas.ts`:
+        - Extended `listTransactionsQuerySchema`, `recentTransactionsQuerySchema`, and `transactionsSummaryQuerySchema` with optional `currency: z.enum(["USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY"]).optional()`.
+        - Created `getMerchantClustersQuerySchema`: validates `min_count` (1-50), `limit` (1-100), and `currency`.
+        - Created `applyMerchantClusterBodySchema`: validates `cluster_key`, `normalized_name`, `category`, and `transaction_ids` array (1-200).
+        - Created `bankFeedWebhookBodySchema`: validates bank aggregation webhook payload (`webhook_type`, `webhook_code`, `transactions` array of bank objects with `transaction_id`, `amount`, `date`, `name`, `category`, `pending`).
+      - In `server/src/routes/financialDataRoutes.ts`: Mounted `GET /transactions/merchant-clusters`, `POST /transactions/merchant-clusters/apply`, and `POST /transactions/bank-feed` under `/api` route prefix with Zod schema validation.
+    - *Backend Controller Deterministic Conversion & Engines*:
+      - In `server/src/controllers/financialDataController.ts`:
+        - Updated `mapTransactionRecord`: supports optional `targetCurrency` parameter; dynamically converts `amount`, `splits` subdocuments, and `running_balance` using deterministic exchange rates (`convertUsdToCurrency`), while keeping original values in `raw_amount` and attaching `currency`, `fx_rate`, and `currency_symbol`.
+        - Updated `listTransactions`: parses `currency` query, normalizes with `normalizeCurrency`, and maps paged transactions with deterministic currency conversion.
+        - Updated `listRecentTransactions`: supports `currency` parameter and attaches currency metadata.
+        - Updated `getTransactionsSummary`: parses `currency` query, hashes currency into sha256 cache key in `buildTransactionsSummaryCacheKey`, and normalizes monthly income/expense and category breakdowns into target reporting currency.
+        - Implemented `getMerchantClusters`: automatically parses messy descriptions across tenant transactions, strips store/terminal numbers and noise suffixes, matches against known rules and organization merchant directory, groups matching transactions into clusters with count, volume, suggested category, and confidence score (95%).
+        - Implemented `applyMerchantCluster`: batch-updates transactions with normalized merchant name and category, clears uncategorized review flags, upserts merchant record into `MerchantModel` with aliases, and invalidates cache metadata.
+        - Implemented `ingestBankFeedWebhook`: accepts external bank feed transactions, deduplicates using unique index on `{ orgId, externalId }`, normalizes amounts (income positive, expense negative), applies review heuristics, bulk-inserts new transactions, and updates transaction count.
+    - *OpenAPI Contracts*:
+      - In `packages/contracts/openapi/v1/paths/index.yaml`: Registered `/api/transactions/bank-feed`, `/api/transactions/merchant-clusters`, and `/api/transactions/merchant-clusters/apply` with complete path schemas (198/198 routes covered).
+    - *Client UI & Integration*:
+      - In `client/src/lib/api/transactions.ts`: Added `currency` parameter to `TransactionsQuery` and `TransactionsResponse`, and exported `getMerchantClusters`, `applyMerchantCluster`, and `ingestBankFeed`.
+      - In `client/src/types/index.ts`: Enriched `ITransaction` with optional `raw_amount`, `currency`, `fx_rate`, and `currency_symbol`.
+      - In `client/src/pages/Transactions.tsx`:
+        - Added **Global Multi-Currency FX Normalization Cockpit** (`card-transactions-currency-normalization`):
+          - Quick toggle button pills for all 7 global currencies (`btn-transactions-currency-USD` through `btn-transactions-currency-JPY`).
+          - Native select dropdown (`select-transactions-currency`).
+          - Active reporting currency badge (`badge-transactions-reporting-currency`).
+          - Live exchange rate badge (`badge-transactions-fx-rate`, e.g. "1 USD = 0.92 EUR", "1 USD = 155 JPY").
+          - Deterministic FX conversion status badge (`badge-transactions-fx-status`).
+        - Updated `formatAmount` with `useCallback` to support active currency symbol and JPY integer rounding without layout thrash.
+        - Added **Automated Rule-Based Merchant Normalization & Clustering Cockpit** (`card-merchant-clustering-engine`):
+          - Cluster count badge (`badge-merchant-cluster-count`), spend volume badge (`badge-merchant-cluster-spend`), and confidence badge (`badge-merchant-cluster-confidence`).
+          - Displays detected merchant entities with suggested categories, raw variants list (`text-merchant-variants`), and 1-Click "Apply Merchant Normalization & Auto-Categorize" button (`btn-apply-merchant-cluster-${clusterKey}`).
+        - Added **Inbound Bank Connector Webhook Feed Simulator**:
+          - Header action button (`btn-open-bank-feed-modal`).
+          - Interactive modal dialog (`dialog-bank-feed-simulation`).
+          - Scenario presets: Direct Deposit Payroll, Amazon Retail Order, Uber Transportation, Whole Foods Market.
+          - Live JSON payload preview.
+          - 1-Click "Simulate Bank Feed Ingestion" button (`btn-simulate-bank-feed`).
+    - *Testing & Verification*:
+      - Created `server/src/test/transactionsMultiCurrencyClustering.test.ts`: **4/4 passed** (exit code 0), validating:
+        - EUR normalization (0.92 rate) and JPY normalization (155 rate with integer rounding) across transactions, splits, and raw amounts.
+        - Transactions summary aggregation conversion in target currency.
+        - Merchant clustering extraction and 1-click batch application with `MerchantModel` upsert.
+        - Inbound bank feed webhook ingestion, externalId deduplication, and multi-tenant isolation.
+      - Re-verified `server/src/test/openapiRoutesCoverage.test.ts`: **1/1 passed** (198/198 registered endpoints covered).
+      - Re-verified `server/src/test/transactions.test.ts`: **3/3 passed** (exit code 0).
+      - Re-verified `server/src/test/transactionSplits.test.ts`: **3/3 passed** (exit code 0).
+      - Expanded client test suite in `client/src/pages/Transactions.test.tsx`: **12/12 passed** (exit code 0), verifying:
+        - Multi-Currency Cockpit rendering and live currency switching (USD, EUR, JPY).
+        - Automated merchant clustering engine rendering and 1-click normalization execution.
+        - Bank connector webhook feed simulator modal opening, preset selection, and simulated ingestion execution.
+      - Full quality gate verification:
+        - Client Vitest Suite: **49 files passed / 380 tests passed** (0 failures).
+        - Server Vitest Suite: **61 files passed / 245 tests passed** (0 failures).
+        - Client Lint: **0 errors, 0 warnings**.
+        - Client Production Build: **Succeeded in 12.47s** (117 precached assets).
+        - Server Production Build: **Succeeded in 82ms**.
+
+31. **Batch 31 - Financial Journaling Offline Stroke Sync & 64-Dimensional Semantic Vector Search Engine:**
+    - *Deterministic 64-Dimensional Vector Embedding & Semantic Scoring Service*:
+      - Created `server/src/services/journalEmbeddingService.ts`:
+        - Dimensions 0-7: High-weight canonical financial concept clusters (`savings`, `budget`, `debt`, `investing`, `income`, `goals`, `taxes`, `lifestyle`).
+        - Dimensions 8-63: Sub-token and phrase n-gram FNV-1a hash projections with term frequency weighting.
+        - Strict L2-normalization ($\|\mathbf{v}\|_2 = 1.0$) enabling sub-millisecond dot product cosine similarity scoring: $\cos(\mathbf{u}, \mathbf{v}) = \sum u_i v_i \in [0, 1]$.
+        - Automatic financial concept tag extraction (`extractJournalTags`) from text and hashtags (`#emergency`, `#travel`).
+        - Sentiment & urgency classification (`analyzeJournalSentiment`) classifying notes into `optimistic`, `concerned`, `urgent`, or `neutral`.
+    - *Mongoose Schema & Zod Contract Hardening*:
+      - In `server/src/models/journalEntryModel.ts`:
+        - Added optional `clientDraftId` (sparse unique index `{ orgId: 1, userId: 1, clientDraftId: 1 }` for idempotent deduplication).
+        - Added `title`, `tags`, `embedding` (64 floats), and `sentiment`.
+        - Made `fileId` optional so offline stroke drafts without raw image uploads can be persisted directly.
+      - In `server/src/schemas/journalSchemas.ts`:
+        - Added `syncOfflineNotesBodySchema` validating batches of up to 50 offline notes.
+        - Added `semanticSearchQuerySchema` validating `query`, `threshold`, `limit`, and optional `tag`.
+    - *Offline Stroke Batch Sync & Vector Search Endpoints*:
+      - In `server/src/controllers/financialJournalController.ts`:
+        - Implemented `batchSyncOfflineStrokes` (`POST /api/financial-journal/entries/batch-sync`): ingests offline drafts queue, performs $O(1)$ clientDraftId duplicate check, parses intent (`parseJournalIntent`), computes 64d embedding, tags, and sentiment, and returns `{ syncedCount, duplicatesSkipped, entries }`.
+        - Implemented `semanticSearchJournal` (`GET /api/financial-journal/semantic-search`): computes query embedding, scores notes by cosine similarity with exact phrase matching bonus, applies tag filter and similarity threshold, and returns ranked results.
+        - Updated `recognizeHandwriting` and `patchJournalEntry` to generate and persist embeddings, tags, and sentiment automatically.
+      - In `server/src/routes/financialJournalRoutes.ts`: Mounted both new endpoints under Passport JWT and Zod validation.
+      - In `packages/contracts/openapi/v1/paths/index.yaml`: Registered `/api/financial-journal/entries/batch-sync` and `/api/financial-journal/semantic-search`.
+      - Verified `server/src/test/openapiRoutesCoverage.test.ts` (1/1 passed, 200/200 registered endpoints covered, 100% route coverage).
+      - Verified `server/src/test/journalOfflineSyncAndSemanticSearch.test.ts` (3/3 passed) and `server/src/test/journal.test.ts` (3/3 passed).
+    - *Client Offline Stroke Sync & Semantic Search Cockpit*:
+      - In `client/src/lib/api/journal.ts`: Added types `SyncOfflineNotePayload`, `SyncOfflineNotesResponse`, `JournalSearchResult`, `JournalSearchResponse` and exported `syncOfflineJournalNotes` and `searchJournalEntries`.
+      - In `client/src/pages/Notes.tsx`:
+        - Added Offline Stroke Sync Cockpit (`card-offline-journal-sync`): displays network status pill (`connection-status-pill`: Online/Offline), queue count badge (`badge-offline-queue-count`), "Save Offline Draft" canvas button (`btn-save-offline-draft`), "Sync Offline Notes" action button (`btn-sync-offline-strokes`), and automated reconnect sync via `window.addEventListener('online', ...)`.
+        - Added Semantic Vector Search Cockpit (`card-journal-semantic-search`): includes semantic query input (`input-semantic-search`), search trigger (`btn-semantic-search`), clear button (`btn-clear-search`), and 6 quick-concept pills (`chip-tag-all`, `chip-tag-savings`, `chip-tag-budget`, `chip-tag-debt`, `chip-tag-investing`, `chip-tag-lifestyle`).
+        - Dynamic results grid displaying cosine similarity percentage badges (`badge-similarity-score-${result.id}`, e.g. "93% Match"), sentiment badges, and concept tag chips.
+        - Added sentiment badges (`badge-sentiment-${entry.id}`) and vector indicators on note cards and detail sheet.
+      - In `client/src/pages/Notes.test.tsx`: Expanded to 9 tests (9/9 passed) verifying offline draft caching, batch synchronization, clearing queue, semantic search query execution, and tag filtering.
+
+32. **Batch 32 — Workflow Automation Multi-Step Delay Timers & Visual Drag-and-Drop Node Graph Canvas Editor:**
+    - *Multi-Step Delay Timers Execution Engine*:
+      - In `server/src/models/workflowModel.ts`:
+        - Added `WorkflowDelayAction` interface to `WorkflowAction` union with `duration_seconds: number` (1 to 2,592,000, i.e. 30 days) and optional `description: string` with `{{field}}` interpolation support.
+        - Added `"delay"` to `WorkflowActionType` and defined `workflowDelayActionSchema`.
+      - In `server/src/models/workflowRunModel.ts`:
+        - Added `IWorkflowRunExecutedDelay` (`duration_seconds`, `description`, `delayed_until`).
+        - Added `delays_executed?: IWorkflowRunExecutedDelay[]` to `IWorkflowRunResult`.
+      - In `server/src/schemas/v1/workflowSchemas.ts`:
+        - Added Zod validation for delay action with duration range checks and branch condition filters.
+      - In `server/src/services/workflows.ts`:
+        - In `processWorkflowRun`, handled `action.type === "delay"` with runtime `{{field}}` context string interpolation, branch condition evaluation, and recorded delays executed in `run.result.delays_executed` for complete auditability.
+      - In `server/src/test/workflows.test.ts`:
+        - Added comprehensive multi-step delay test verifying duration, interpolated description, and conditional branch bypass (5/5 passed).
+    - *Client Types & Tool Call Helpers*:
+      - In `client/src/types/apiTypes.ts`: Added `WorkflowActionDelay` and included in `WorkflowAction` discriminated union.
+      - In `client/src/features/workflows/toolCalls.ts`: Extended `workflowActionLabel` to format delay actions (`Delay: 5m (300s) - description`).
+    - *Visual Drag-and-Drop Node Graph Canvas Editor & Workflow Cards Pipeline Ribbons*:
+      - In `client/src/pages/Workflows.tsx`:
+        - Built **Interactive Node Pipeline Flow Canvas** (`card-workflow-node-canvas`):
+          - Root Trigger Node (`node-canvas-trigger`) with trigger icon, type name, and configuration summary.
+          - Directional SVG connectors (`ArrowRight`) between consecutive steps.
+          - Sequential Draggable Action Nodes (`node-canvas-action-${idx}`) with `GripVertical` drag handles, Step indicators (`Step ${idx + 1}`), colored type badges (amber Timer for delay, emerald CheckSquare for task, blue Mail for email, purple FileText for export), summary titles, and condition badges.
+          - Drag-and-drop HTML5 reordering (`onDragStart`, `onDragOver`, `onDrop`) and accessible reorder buttons: Move Earlier (`btn-canvas-move-up-${idx}`) and Move Later (`btn-canvas-move-down-${idx}`) plus Delete (`btn-canvas-delete-${idx}`).
+          - Quick-Add Toolbar on Canvas (`btn-canvas-add-delay`, `btn-canvas-add-task`, `btn-canvas-add-notify`, `btn-canvas-add-export`).
+        - In Action Cards list:
+          - Added `+ Add delay` button (`btn-add-action-delay`) with Timer icon.
+          - Move Up/Down buttons (`btn-action-move-up-${index}`, `btn-action-move-down-${index}`).
+          - Delay configuration block (`action-delay-config-${index}`) with seconds input (`input-delay-seconds-${index}`), preset buttons (1m, 5m, 15m, 1h, 1d), description input with interpolation support (`input-delay-description-${index}`), and full branch condition builder.
+        - In "My Workflows" cards:
+          - Added visual pipeline ribbon (`workflow-pipeline-${wf.id}`) displaying root trigger pill, directional arrows, and step badges with icons and condition indicators.
+      - In `client/src/pages/Workflows.test.tsx`:
+        - Added 5 new comprehensive unit tests (total 13 tests, 13/13 passed) covering pipeline ribbons, canvas rendering, delay quick-add and preset buttons, visual step reordering, and end-to-end multi-step simulation and creation.
+
+33. **Batch 33 — Automated Newsletters Personalized Dynamic HTML Chart Rendering & Interactive In-App Preview Cockpit:**
+    - *Email-Safe HTML Dynamic Chart Rendering Engine*:
+      - In `server/src/services/newsletterTemplate.ts`:
+        - Extended `NewsletterSectionData["spendingSummary"]` with `dailyTrend?: DailySpendTrendItem[]` and `topCategories` percentage shares.
+        - Extended `NewsletterSectionData["healthScore"]` with `pillars?: HealthPillarData[]`.
+        - Created `renderDailySpendingChart`: renders an email-safe table-based 7-day spending velocity bar chart with scaled vertical columns, peak spend callout, weekday labels, and active highlight for today.
+        - Created `renderSpendingCategoryBars`: renders categorical spending distribution progress bars with rounded tracks, category color chips, formatted currency amounts, and percentage badges.
+        - Created `renderHealthPillars`: renders multi-pillar progress meters for Cashflow Health, Budget Discipline, Spending Stability, and Savings & Reserve with status badges (Strong, Moderate, Watch).
+        - Updated `renderSpendingSummary` and `renderHealthScore` to inject the visual charts into the responsive HTML template.
+    - *Backend Data Collection & Health Score Aggregation*:
+      - In `server/src/services/newsletterService.ts`:
+        - In `collectFinancialData`: queries rolling 7-day transactions (`date: { $gte: last7d, $lte: now }`), aggregates daily spending into a 7-day bucket map, and populates `dailyTrend` with day names and `isToday` flags.
+        - Computes percentage share for each category in `topCategories`.
+        - In `computeHealthScore`: calculates 4 objective financial health pillars (`Cashflow Health`, `Budget Discipline`, `Spending Stability`, `Savings & Reserve`) based on net cashflow, budget overruns, daily variance, and savings ratios, summing to total score and populating `healthScore.pillars`.
+    - *Backend Integration & Unit Tests*:
+      - Created `server/src/test/newsletter.test.ts` (3/3 passed):
+        - Validates `collectFinancialData` accurately aggregates rolling 7-day velocity trend, category percentages, and health pillars.
+        - Validates `renderNewsletterHtml` generates valid HTML containing dynamic charts (7-day spending velocity, category distribution bars, and health pillar meters).
+        - Validates API endpoints `GET /api/newsletter/preferences`, `PUT /api/newsletter/preferences`, and `POST /api/newsletter/preview`.
+    - *Client In-App Live Newsletter Preview Cockpit*:
+      - In `client/src/components/NewsletterSettings.tsx`:
+        - Built **Interactive Email Newsletter Live Preview Card** (`card-newsletter-interactive-preview`):
+          - "Live Email Preview" toggle button (`btn-toggle-inapp-preview`).
+          - Responsive desktop (600px) and mobile (375px) viewport switchers (`btn-preview-mode-desktop`, `btn-preview-mode-mobile`).
+          - Email View / Section Data tab switcher (`btn-preview-tab-html`, `btn-preview-tab-data`).
+          - Live preview iframe (`iframe-newsletter-preview`) with `srcDoc` rendering.
+          - In-app preview refresh (`btn-refresh-inapp-preview`) and close (`btn-close-inapp-preview`) buttons.
+      - Created `client/src/components/NewsletterSettings.test.tsx` (4/4 passed) verifying preferences rendering, delivery schedule editing, in-app live preview generation with desktop/mobile view toggles, section data inspection, and immediate send triggers.
+
+  - **Batch 41 — Document Q&A Semantic Evaluation & Grounding Engine:**
+    - *Multi-Modal Document Q&A Architecture (documentQAService.ts)*:
+      - Implements multi-modal document grounding across 4 heterogeneous financial document classes:
+        1. IRS Tax Forms (Form 1040, W-2): Form feeds \\f, Box numbers, standard deduction, total tax liability, withholding, refund.
+        2. Brokerage Statements: Multi-page statements with asset allocation, purchases, dividend/capital gain reinvestment, ending portfolio NAV.
+        3. Scanned Medical & Pharmacy Receipts (OCR): Noisy OCR line items, pharmacy locations, co-pays, itemized subtotal, zero-tax prescription verification.
+        4. Corporate Vendor Invoices: Contract terms (Net 30), itemized service lines, subtotal, sales tax, total balance due.
+        5. Negative/Out-of-Distribution Rejection: Unrelated queries safely rejected without hallucinating facts.
+      - 64-dimensional dense semantic vector similarity (G >= 0.70 grounding threshold).
+      - Strict Physical Page Attribution Invariance: Every quoted passage references its true physical page (Page_cited = Page_ground_truth) derived from \\f form feeds, with zero invented page numbers.
+      - Number Safety & Faithfulness Invariant: Any candidate answer digits must be a strict subset of document reference numbers (Candidate Digits <= Document Digits).
+      - Safe Fallback Rejection: Rejection message on low confidence (G < 0.25 or out-of-scope) preventing hallucinated answers.
+    - *AI Core Python Architecture (document_qa_evaluator.py, 	est_document_qa_eval.py)*:
+      - Comprehensive evaluator assessing faithfulness, page attribution, top-k retrieval precision, and OCR resilience against GOLDEN_DOCUMENT_QA_CASES.
+      - Automated pytest verification suite (**5/5 passed**).
+      - FastAPI endpoints: GET /api/evals/document-qa/status and POST /api/evals/document-qa/run.
+    - *Server Tier Endpoints & OpenAPI Contracts*:
+      - Core Document Q&A service handling tenant isolation, on-demand chunk sync (ensureWorkspaceFileChunks), multi-modal hybrid retrieval (
+etrieveRelevantWorkspaceChunks), page extraction, and grounded answer synthesis.
+      - Candidate retrieval query expansion in
+etrievalService.ts matching terms across 	ext and sectionTitle.
+      - Zod schema documentQABodySchema in ileSchemas.ts.
+      - REST controller handler queryDocumentQA in ileController.ts.
+      - Mounted POST /api/files/qa in ileRoutes.ts.
+      - Registered /api/files/qa in packages/contracts/openapi/v1/paths/index.yaml (**210/210 routes, 100% OpenAPI coverage**).
+      - Server Vitest suite: documentQA.test.ts (**6/6 passed**), full server suite: **70 files passed / 290 tests passed (0 failures)**.
+    - *Client Tier API & Interactive Grounding Cockpit in Files.tsx*:
+      - Exported queryDocumentQA, DocumentQAResponse, and DocumentQAPassage in client/src/lib/api/files.ts.
+      - Added 4th tab 'Document Q&A & Semantic Page Grounding' (tn-tab-doc-qa) in client/src/pages/Files.tsx.
+      - Interactive Document Q&A Cockpit (card-doc-qa-cockpit):
+        - File selector dropdown (select-doc-qa-file).
+        - Question search bar (input-doc-qa-question, tn-run-doc-qa).
+        - Suggested inquiry presets chip toolbar (Form 1040 tax, Rx co-pay, Net 30 invoice, dividend reinvestment).
+        - Summary telemetry bar (matched passages, confidence percentage badge, grounded status badge, physical pages cited).
+        - Direct Answer card (card-direct-answer) with direct answer text (	ext-direct-answer) and 1-click physical page jump chips (pill-page-\).
+        - Ranked Passages list (card-qa-passage-\) with citations (chip-citation-\), physical page badges (adge-passage-page-\), modality chips, and 'Ask Copilot with Citation' action buttons (tn-copilot-citation-\).
+      - Client Vitest suite: Files.test.tsx (**14/14 passed**), full client suite: **51 files passed / 414 tests passed (0 failures)**.
+
+  - **Batch 42 — Multi-Format Financial Document Authorship & Rich Layout Studio:**
+    - *Multi-Format Document Generation Architecture (`richDocumentRenderer.ts`, `chatDocuments.ts`)*:
+      - Supports 6 distinct domain-specific financial document formats:
+        1. Executive Financial Brief (`executive_brief`): C-level financial summary, 4 side-by-side KPI cards, strategic asset allocation roadmap table, governance sign-off.
+        2. Tax Preparation Summary (`tax_prep_summary`): Filing status, itemized deductions & credits schedule with IRS form references, W-2 withholding reconciliation, CPA disclaimer.
+        3. Cash Flow & Burn Audit (`cash_flow_audit`): Operating cash flow velocity, multi-envelope spending allocation table with percentage variance and health status, burn mitigation actions.
+        4. Debt Amortization Schedule (`debt_payoff_schedule`): Liability inventory, Avalanche/Snowball prioritization, minimum vs. accelerated payments, milestone projections, P + I = Payment conservation invariant.
+        5. Consolidated Balance Sheet / Net Worth Statement (`net_worth_statement`): Liquid vs. locked holdings, liabilities schedule, balance sheet conservation invariant (Assets - Liabilities = Net Worth, delta < 0.01).
+        6. Custom Free-Form Document (`standard`): Rich markdown support for # headings, markdown tables, :::kpi blocks, :::callout notes, and signature blocks.
+      - Rich Layout & PDFKit Canvas Composition:
+        - Side-by-side KPI highlight metric cards with rounded borders, accent tint, uppercase labels, and colored status/delta badges.
+        - Multi-column tabular schedules with dark header rows (#1e293b), zebra striping (#ffffff / #f8fafc), cell padding, and automated numeric right-alignment.
+        - Visual callout quote boxes with vertical accent border bars (#3b82f6).
+        - Buffer-aware multi-page pagination with running headers and "Page X of Y" dynamic footers on every page.
+        - Physical form feed page retention (\f) preserved in text extraction for direct Document Q&A retrieval grounding.
+      - GridFS Streaming & Instant Indexing:
+        - Direct streaming into MongoDB GridFS with tenant metadata (userId, orgId, purpose: "export", format).
+        - Automatic WorkspaceFileModel record persistence.
+        - Instant chunk indexing via ensureWorkspaceFileChunks for Vector RAG readiness.
+    - *AI Core Evaluation Architecture (`document_creation_evaluator.py`, `test_document_creation_eval.py`)*:
+      - Evaluator assessing format compliance, layout structure, mathematical invariance, and physical form feed pagination against `GOLDEN_DOCUMENT_CREATION_CASES`.
+      - Automated pytest verification suite (**5/5 passed**).
+      - FastAPI endpoints: `GET /api/evals/document-creation/status` and `POST /api/evals/document-creation/run`.
+    - *Server Tier Endpoints & OpenAPI Contracts*:
+      - Zod schema `createAuthoredDocumentBodySchema` in `fileSchemas.ts`.
+      - REST controller handler `createAuthoredDocument` in `fileController.ts`.
+      - Mounted `POST /api/files/authored-document` in `fileRoutes.ts`.
+      - Registered `/api/files/authored-document` in `packages/contracts/openapi/v1/paths/index.yaml` (**211/211 routes, 100% OpenAPI coverage**).
+      - Server Vitest suite: `documentAuthorship.test.ts` (**8/8 passed**).
+    - *Client Tier API, Chat Badges & Interactive Document Studio in Files.tsx*:
+      - Exported `createAuthoredDocument`, `AuthoredDocumentFormat`, `CreateAuthoredDocumentParams`, and types in `client/src/lib/api/files.ts`.
+      - Extended `IChatMessageMetadata` with `format` and `pageCount`, and updated `ChatDocumentCard.tsx` with format and page count badges (`ChatDocumentCard.test.tsx` **5/5 passed**).
+      - Added 5th tab "Document Studio & Layout" (`btn-tab-doc-authorship`) in `client/src/pages/Files.tsx`.
+      - Interactive Document Authorship Studio Cockpit (`card-doc-authorship-studio`):
+        - 6 format selector buttons (`btn-format-executive_brief`, `btn-format-tax_prep_summary`, `btn-format-cash_flow_audit`, `btn-format-debt_payoff_schedule`, `btn-format-net_worth_statement`, `btn-format-standard`).
+        - 1-click "Load Financial Profile Data" template loader (`btn-load-profile-template`) and Clear button (`btn-reset-authored-form`).
+        - Title input (`input-authored-title`) and narrative textarea (`textarea-authored-content`).
+        - Dynamic KPI builder (`section-kpi-builder`) with label, value, subtext inputs (`btn-add-kpi`) and removal buttons (`btn-remove-kpi-${idx}`).
+        - Live simulated PDF canvas mockup card (`card-authored-live-preview`) with format badge, title, KPI cards grid, and table preview.
+        - "Generate & Save Publication-Grade PDF" button (`btn-generate-authored-pdf`) with loading spinner.
+        - Success card (`card-generated-doc-result`) with format badge, page count, and direct download/inspect/Ask Copilot actions.
+      - Client Vitest suite: `Files.test.tsx` (**17/17 passed**).
+
+  - **Batch 43 — Adaptive Personalized Follow-Through & Multi-Source Signal Ranking Engine (Row 20):**
+    - *Multi-Source Activity Signal Extraction (`activity_signals.py`)*:
+      - Ingests signals across 6 heterogeneous financial data domains:
+        1. Open & Overdue Tasks (`task`): Open tasks with priority scoring, due dates, and overdue obligation detection ($U \in [0.30, 1.00]$, $M \in [0.35, 0.80]$).
+        2. Goal Progress & Milestones (`goal`): Incomplete savings targets, remaining balances, and deadline proximity ($U \in [0.40, 0.88]$, logarithmic target scaling).
+        3. Budget Envelopes (`budget`): Blown envelopes exceeding allocation ($U \in [0.85, 1.00]$, $M \in [0.70, 1.00]$) and elevated burn velocity warnings.
+        4. Calendar Reminders (`reminder`): Upcoming bills and scheduled liquidity buffer dips within 7-14 days ($U \in [0.55, 0.92]$, $M = 0.60$).
+        5. Recurring Candidates (`recurring`): Unreviewed or risky candidate subscriptions detected by clustering.
+        6. Structured Debts (`debt`): High APR credit liabilities, avalanche payoff schedules, and compounding interest mitigation ($U \in [0.50, 0.95]$, $M \in [0.65, 1.00]$).
+      - Normalized candidate signal format: `id`, `domain`, `title`, `description`, `urgency`, `impact`, `action_url`, `is_overdue`, `due_date`, `metadata`.
+    - *Adaptive Preference Learning with Exponential Time Decay (`preference_learning.py`)*:
+      - Models user feedback events (`upvote` / prioritize, `complete` / applied, `dismiss` / hide).
+      - Implements half-life exponential time decay:
+        $$w(\Delta t) = \exp\left(-\frac{\ln(2) \cdot \Delta t}{T_{1/2}}\right)$$
+        where default half-life $T_{1/2} = 14$ days, attenuating older dismissals and preserving recent engagement.
+      - Derives learned domain affinities $P_{\text{domain}} \in [-1.0, 1.0]$:
+        - Upvote/prioritize adds $+0.40 \cdot w$.
+        - Complete adds $+0.25 \cdot w$.
+        - Dismiss/hide subtracts $-0.50 \cdot w$.
+      - Tracks recent dismissed signal IDs for suppression, preventing repetitive nagging.
+    - *Unified History-Aware Ranking Engine (`follow_through_ranking.py`)*:
+      - Computes deterministic composite priority score $S \in [0, 100]$:
+        $$S = \text{clamp}\left(0.35 \cdot U + 0.30 \cdot M + 0.25 \cdot \left(\frac{P_{\text{comb}} + 1}{2}\right) + 0.10 \cdot (1 - D) + \text{OverdueBonus} - \text{DismissalPenalty}, 0.0, 1.0\right) \times 100$$
+      - Overdue Invariance: Overdue tasks and bills strictly rank ahead of future items ($U \ge 0.90$, $+0.15$ overdue bonus).
+      - Category Saturation / Diversity penalty $D$ prevents single-domain monopolization.
+      - Classifies items into human-actionable priority tiers: `critical` ($\ge 80$), `high` ($\ge 60$), `medium` ($\ge 40$), `low` ($< 40$).
+    - *AI Core Evaluation & Answers*:
+      - Evaluator: `follow_through_evaluator.py` evaluating signal extraction, overdue invariance, preference learning responsiveness, exponential decay attenuation, and score bounding across `GOLDEN_FOLLOW_THROUGH_CASES`.
+      - Pytest suite: `test_follow_through_eval.py` (**5/5 passed**).
+      - Enriched Activity Review Answers: `activity_review.py` incorporating broader financial attention sections (`test_activity_review.py` **9/9 passed**).
+      - FastAPI endpoints: `GET /api/evals/follow-through/status`, `POST /api/evals/follow-through/run`, `POST /api/follow-through/rank`.
+    - *Server Tier Persistence, Controller & OpenAPI Contracts*:
+      - Mongoose model: `followThroughPreferenceModel.ts` with compound `{ orgId: 1, userId: 1 }` index and embedded feedback history.
+      - Service: `followThroughService.ts` for concurrent multi-source signal aggregation, ranking, feedback recording, and preference management.
+      - Zod schemas: `followThroughSchemas.ts` (`getRecommendationsQuerySchema`, `recordFeedbackBodySchema`, `updatePreferencesBodySchema`).
+      - Controller: `followThroughController.ts` (`getRecommendationsHandler`, `recordFeedbackHandler`, `getPreferencesHandler`, `updatePreferencesHandler`).
+      - Mounted routes in `v1Routes.ts`:
+        - `GET /api/follow-through/recommendations`
+        - `POST /api/follow-through/feedback`
+        - `GET /api/follow-through/preferences`
+        - `PUT /api/follow-through/preferences`
+      - Registered all 4 routes in `packages/contracts/openapi/v1/paths/index.yaml` (**215/215 routes, 100% OpenAPI coverage**).
+      - Integration test suite: `followThrough.test.ts` (**9/9 passed**).
+    - *Client Tier API & Adaptive Follow-Through Cockpit in Tasks.tsx*:
+      - Exported `getFollowThroughRecommendations`, `recordFollowThroughFeedback`, `updateFollowThroughPreferences`, and types in `client/src/lib/api/followThrough.ts`.
+      - 4th tab in Tasks: "Follow-Through" (`tab-adaptive-follow-through`).
+      - Personalized Follow-Through Cockpit (`card-follow-through-cockpit`):
+        - Header banner with AI Powered badge and 1-click refresh (`btn-refresh-recommendations`).
+        - Preferences strip (`card-follow-through-preferences`) with focus multipliers (Debt, Budget, Goal, Task, Reminder), learned affinity pills (`badge-affinity-${domain}`), cadence badge (`badge-cadence`), total signals counter (`metric-total-signals`), and Save Multipliers button (`btn-save-follow-through-prefs`).
+        - Ranked items list (`list-follow-through-items`) with domain badges (`badge-domain-${domain}`), score badges (`badge-priority-score-${id}`), tier badges (`badge-tier-${tier}`), overdue badges, action links (`btn-action-${id}`), and 1-click feedback buttons (👍 Prioritize `btn-feedback-upvote-${id}`, ✕ Dismiss `btn-feedback-dismiss-${id}`).
+      - Client Vitest suite: `Tasks.test.tsx` (**21/21 passed**).
 
 **Full Verification Snapshot:**
-- Client Vitest Suite: **49 files passed / 357 tests passed** (0 failures).
-- Server Vitest Suite: **56 files passed / 220 tests passed** (0 failures).
-- AI Core Pytest Suite: **217 tests passed** (0 failures, 1 warning).
-- AI Core Evals Suite: **175 tests passed** (0 failures).
+- Client Vitest Suite: **51 files passed / 422 tests passed** (0 failures).
+- Server Vitest Suite: **72 files passed / 307 tests passed** (0 failures).
+- AI Core Pytest Suite: **239 tests passed** (0 failures, 1 warning).
+- AI Core Evals Suite: **190 tests passed** (0 failures).
+- AI Core Linter (`ruff`): All checks passed (0 errors).
 - Client Lint (`eslint`): 0 warnings, 0 errors.
-- Client Build (`tsc && vite build`): Succeeded in 22.58s (116 precached assets).
-- Server Build (`tsc --noEmit && node scripts/build.mjs`): Succeeded in 113ms.
-- OpenAPI Route Inventory: 192/192 routes registered (100% route coverage verified in `openapiRoutesCoverage.test.ts`).
+- Client Build (`tsc && vite build`): Succeeded in 16.53s.
+- Server Build (`tsc --noEmit && node scripts/build.mjs`): Succeeded in 122ms.
+- OpenAPI Route Inventory: 215/215 routes registered (100% route coverage verified in `openapiRoutesCoverage.test.ts`).
+
 
 ### 31 October 2026 - private session boundaries, stream cleanup and empty-state honesty
 
@@ -1517,3 +2128,21 @@ describe('2026 Continuous Improvement Batches 1-9 Verification', () => {
   });
 });
 ```
+
+## 8 November 2026 - Multi-agent QA run, takeover and full re-verification
+
+Environment (freshly executed this session): local synthetic QA stack only - mongod 27019 / finwise-browser-test (NOT the Atlas URI in server/.env), Express dev API :3000, AI Core :8001 from a new isolated venv `.tmp/ai-venv` (the committed `server/AI_Core/.venv` is broken: its base interpreter was removed; left untouched), Vite dev client :5181, system Chrome via playwright-core installed only in `.tmp/qa-browser`. Live API smoke 33/33.
+
+Baseline before edits: client 451/54, client lint, server tsc, server 326/75, AI pytest 248, AI evals 194, Ruff - all passed.
+
+Process: five parallel QA subagents (money, planning/analytics, chat/files/AI, auth/tenancy, productivity + global sweep). Only auth/tenancy delivered a final report; the other four stopped on an HTTP 402 model-API billing error mid-work. The lead then type-checked and re-ran every suite over all of their edits (results below), confirmed the half-finished windfall wiring (`goalsDebtsMath.allocateByWeight`) is complete, and redid the browser sweep.
+
+Verified fixes:
+- Auth/tenancy (agent report + tests): org admin could grant owner (now 403 ORG_ROLE_ESCALATION); invite/login/register query params ignored under wouter v3 (`useSearch`); single-use invite submitted twice; POST /auth/password 500 on empty body and weak passwords accepted; PUT /auth/profile accepted object names/junk phones; Settings email now read-only. Isolation/IDOR/mass-assignment probes: 0 leaks.
+- Interrupted-agent edits (covered by their new tests; root-cause notes were not delivered): concurrent first-load profile creation race (`profileService.ts`, `ensureProfileRace.test.ts`; live: 30 concurrent fresh-user dashboard requests, 0 5xx; earlier logs showed 500s on /budget-health and /dashboard/summary); cent-exact debt payoff simulation and windfall allocation (`goalsDebtsMath.ts` + test); schema hardening for transactions query, goal deadline, finance and export bodies; multer/error-handler and receipt/file handling; AI Core circuit breaker; journal indexes; Workflows, Billing, Exports, Files, Chat sidebar/message, Command palette, Scenarios, Calendar, Notes, FinancialStory, FinanceOS and Transactions fixes with matching tests; AI `plan_builder` action fix.
+- Lead: `python -m evals.runner` (documented in CLAUDE.md) imported the module and exited 0 without running any eval; it now runs the pytest eval suite and fails on failures (194/194).
+- Lead: a 429 from /auth/profile was re-raised via `globalThis.reportError` as an uncaught window error and re-POSTed to /api/client-errors (amplifying load on a throttled API). AuthContext now logs expected throttling as a warning; unexpected errors are still reported. Regression test in `useAuth.test.tsx` failed before the fix and passes after; browser repro went from 3 page errors to 0 with the user-facing "temporarily limited" message intact.
+
+Final results after all edits: client 492/58 (+ auth suite 9/9 after the last fix), client lint, client production build, client tsc; server tsc and server 353/83; AI pytest + evals 444 and Ruff - all passed. Browser: 26 routes x {1440, 768, 390} x {light, dark} = 156 views, 0 5xx, 0 horizontal overflow, dark theme applied everywhere (matrix: `.tmp/qa-browser/shots/lead-sweep-matrix.json`); 13/13 legacy redirects; unknown route renders NotFound in the shell.
+
+Not verified / open: money, planning and chat agents did not finish their browser journeys, so transactions/budget arithmetic, chat streaming/cancel/citations and receipt OCR have only automated coverage this run; AI Core was not restarted after the `plan_builder.py` change (pytest only). CSRF is disabled by default outside production; password change does not revoke existing JWTs; registration reveals existing emails; one 401 per poller after logout (not continuous). No production deployment, real payments, email/OAuth delivery or bank callbacks were exercised. Next priority: finish browser journeys for transactions/FinanceOS math and chat/files citations, then decide on CSRF default and JWT revocation.

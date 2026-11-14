@@ -328,3 +328,41 @@ cp .env.example .env
 # 4. Launch FastAPI development server
 uvicorn api_service:app --host 0.0.0.0 --port 8001 --reload
 ```
+
+---
+
+## Latest AI Core Architecture & Resiliency Modules (2026 Release)
+
+### 1. Multi-Key Provider KeyPool (`utils/key_pool.py`)
+Thread-safe pool of API keys per provider to eliminate HTTP 429 rate limit disruption:
+- **Discovery**: Auto-discovers single, numbered (`PROVIDER_API_KEY_1`, `_2`), and comma-separated keys.
+- **Rotation Strategies**: `round_robin`, `least_used`, and `health_weighted` (prioritizing high success rates and low latency).
+- **Cooldown Policies**: 60s cooldown for HTTP 429, 3600s cooldown for HTTP 403.
+- **Circuit Breaker**: Trips from `CLOSED` to `OPEN` after 5 consecutive failures, excluding the key for 5 minutes before allowing a `HALF-OPEN` probe.
+
+### 2. Universal Model Catalog (`utils/model_catalog.py`, `data/model_catalog.json`)
+Centralized catalog resolving context window limits, token pricing, and modality capabilities across all major 2026 foundation models (Gemini 2.5/2.0, Claude 3.5 Sonnet, GPT-4o, Groq LLaMA 3.3 70B, DeepSeek V3/R1, Mistral, Ollama).
+
+### 3. Real-Time Model Health Monitoring (`utils/model_health.py`)
+Tracks live latency percentiles ($P_{50}$, $P_{95}$, $P_{99}$) and error rates over 10-minute sliding windows. Automatically demotes providers exceeding 15% error rates to secondary fallback status.
+
+### 4. Resumable Session Checkpointing (`utils/session_manager.py`)
+Multi-phase state checkpoints persisted in SQLite across `ROUTING`, `PLANNING`, `RESEARCH`, `EXECUTION`, `VERIFICATION`, and `SYNTHESIS`. Allows long-running workflows to pause, resume, and recover from failures without re-running completed specialist nodes.
+
+### 5. Invariant Evaluation Benchmark Harness (`evals/runner.py`)
+Continuous invariant test harness executing **175 evaluations**:
+- **Number Safety Invariant**: Enforces that candidate numbers in LLM narratives are strict subsets of deterministic ledger digits ($cand \subseteq ref$).
+- **Zero-Sum Budget Rebalance**: Enforces that recommended envelope adjustments sum to exactly zero ($\sum \Delta B_i = 0$).
+- **Deterministic Latency SLAs**: Asserts that routing and deterministic planning complete in $< 1.5$ seconds.
+
+### 6. Continuous Production AI Canary Invariant Validation Engine (`evals/canary_validator.py`, `POST /canary/validate`)
+Continuous mathematical validation microservice endpoint auditing candidate outputs against 5 core identities:
+- **Number Safety**: Verifies all digits are derived from validated source ledgers.
+- **Zero-Sum Budget**: Enforces $\sum \Delta B_i = 0$ with $\text{Proposed}_i \ge 0$.
+- **Balance Sheet**: Enforces $\text{Assets} - \text{Liabilities} = \text{Net Worth} \pm 0.01$.
+- **Cash Flow**: Enforces $\text{Income} - \text{Expenses} = \text{Net Cash Flow} \pm 0.01$.
+- **Debt Amortization**: Enforces $\text{Principal} + \text{Interest} = \text{Total Payment} \pm 0.01$.
+
+### 7. SQLite FTS5 Persistent Memory Store & Rolling Summaries (`memory/store.py`)
+- Full-text search (FTS5) over historical user conversations, user financial preferences, and agent outputs.
+- Rolling conversation summarizer that compresses multi-turn context into semantic memory items without exceeding LLM context limits.

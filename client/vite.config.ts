@@ -36,6 +36,9 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+          // PDF/media/download navigations must reach the authenticated API.
+          // Otherwise Workbox serves index.html and displays a false 404 page.
+          navigateFallbackDenylist: [/^\/api(?:\/|$)/],
           runtimeCaching: [
             {
               // Keep authenticated API responses and uploaded documents out of
@@ -60,6 +63,11 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       proxy: {
+        "/api/voice/live": {
+          target: apiProxyTarget,
+          changeOrigin: true,
+          ws: true,
+        },
         "/api": {
           target: apiProxyTarget,
           changeOrigin: true,

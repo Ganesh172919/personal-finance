@@ -33,6 +33,9 @@ import { useQuery } from "@tanstack/react-query";
 import { getTransactionsSummary, TransactionsSummaryResponse } from "@/lib/apiClient";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
+// Property structure definition for individual spending category metrics.
+// Encapsulates category names, aggregated expense totals, and budget proportions.
+// Specifies corresponding Lucide icons, theme colors, and progress ratios.
 interface SpendingCategory {
   name: string;
   amount: number;
@@ -42,6 +45,9 @@ interface SpendingCategory {
   budgetUsed: number;
 }
 
+// Palette array of distinct theme HSL color tokens for spending categories.
+// Assigns high-contrast hues across dining, travel, utilities, and entertainment.
+// Distinguishes expense segments across visual distribution progress bars.
 const CATEGORY_COLORS = [
   "hsl(158 64% 52%)",
   "hsl(221 83% 53%)",
@@ -51,6 +57,9 @@ const CATEGORY_COLORS = [
   "hsl(24 95% 53%)",
 ];
 
+// Derives a contextual Lucide icon component based on expense category titles.
+// Maps terms like groceries, dining, transit, and entertainment to icons.
+// Falls back to a standard shopping bag icon when matches are not identified.
 const getCategoryIcon = (categoryName: string) => {
   const lower = categoryName.toLowerCase();
 
@@ -69,6 +78,9 @@ const getCategoryIcon = (categoryName: string) => {
   return ShoppingBag;
 };
 
+// Dashboard expense breakdown widget tracking monthly category distributions.
+// Calculates month-over-month expenditure deltas and top category proportions.
+// Employs Framer Motion animations to reveal category progress bars sequentially.
 export function SpendingAnalysis() {
   const { formatMoney } = useOrgFormatters();
   const now = new Date();

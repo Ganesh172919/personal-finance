@@ -21,6 +21,7 @@ const apiAnalytics = vi.hoisted(() => ({
   getAccountBalances: vi.fn(),
   getTopMerchants: vi.fn(),
   getSpendingHeatmap: vi.fn(),
+  getMultiCurrencySummary: vi.fn(),
 }));
 
 vi.mock("@/lib/api/v1/analytics", () => ({
@@ -110,6 +111,34 @@ const mockSpendingHeatmap = {
   request_id: "req-5",
 };
 
+const mockMultiCurrencySummary = {
+  org_id: "org-1",
+  base_currency: "USD",
+  target_currency: "USD",
+  fx_rate: 1.0,
+  currency_symbol: "$",
+  base_summary: {
+    total_assets: 12500,
+    total_liabilities: 1500,
+    net_worth: 11000,
+  },
+  converted_summary: {
+    total_assets: 12500,
+    total_liabilities: 1500,
+    net_worth: 11000,
+  },
+  rates_table: [
+    { currency: "USD", symbol: "$", fx_rate: 1.0, net_worth_localized: 11000, assets_localized: 12500, liabilities_localized: 1500 },
+    { currency: "EUR", symbol: "€", fx_rate: 0.92, net_worth_localized: 10120, assets_localized: 11500, liabilities_localized: 1380 },
+    { currency: "GBP", symbol: "£", fx_rate: 0.78, net_worth_localized: 8580, assets_localized: 9750, liabilities_localized: 1170 },
+    { currency: "INR", symbol: "₹", fx_rate: 83.5, net_worth_localized: 918500, assets_localized: 1043750, liabilities_localized: 125250 },
+    { currency: "CAD", symbol: "CA$", fx_rate: 1.36, net_worth_localized: 14960, assets_localized: 17000, liabilities_localized: 2040 },
+    { currency: "AUD", symbol: "A$", fx_rate: 1.52, net_worth_localized: 16720, assets_localized: 19000, liabilities_localized: 2280 },
+    { currency: "JPY", symbol: "¥", fx_rate: 155.0, net_worth_localized: 1705000, assets_localized: 1937500, liabilities_localized: 232500 },
+  ],
+  request_id: "req-6",
+};
+
 describe("Analytics Page", () => {
   let queryClient: QueryClient;
 
@@ -128,6 +157,7 @@ describe("Analytics Page", () => {
     apiAnalytics.getAccountBalances.mockResolvedValue(mockAccountBalances);
     apiAnalytics.getTopMerchants.mockResolvedValue(mockTopMerchants);
     apiAnalytics.getSpendingHeatmap.mockResolvedValue(mockSpendingHeatmap);
+    apiAnalytics.getMultiCurrencySummary.mockResolvedValue(mockMultiCurrencySummary);
   });
 
   afterEach(() => {
@@ -326,5 +356,70 @@ describe("Analytics Page", () => {
     // Checking balance is $12,500. Total spend is $800 over 90 days = $8.888/day.
     // Runway = floor(12500 / 8.888) = 1406 days.
     expect(screen.getByTestId("metric-cash-runway")).toHaveTextContent("1406 days");
+  });
+
+  it("renders multi-currency normalization cockpit with default USD reporting currency", async () => {
+    renderAnalytics();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-currency-normalization")).toBeInTheDocument();
+      expect(screen.getByTestId("text-normalized-net-worth")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("badge-analytics-reporting-currency")).toHaveTextContent("USD ($)");
+    expect(screen.getByTestId("text-normalized-net-worth")).toHaveTextContent("Normalized Net Worth: $11,000");
+
+    // All 7 currency buttons are present
+    expect(screen.getByTestId("btn-currency-usd")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-currency-eur")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-currency-gbp")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-currency-inr")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-currency-cad")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-currency-aud")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-currency-jpy")).toBeInTheDocument();
+  });
+
+  it("switches reporting currency via select dropdown to EUR and updates FX badge and API queries", async () => {
+    renderAnalytics();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("select-analytics-currency")).toBeInTheDocument();
+    });
+
+    const select = screen.getByTestId("select-analytics-currency");
+    fireEvent.change(select, { target: { value: "EUR" } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("badge-analytics-reporting-currency")).toHaveTextContent("EUR (€)");
+      expect(screen.getByTestId("badge-analytics-fx-rate")).toHaveTextContent("1 USD = 0.92 EUR");
+    });
+
+    // Verifies queries were called with "EUR"
+    await waitFor(() => {
+      expect(apiAnalytics.getIncomeExpenseSummary).toHaveBeenCalledWith(12, "EUR");
+      expect(apiAnalytics.getCategoryTrends).toHaveBeenCalledWith(12, "EUR");
+      expect(apiAnalytics.getAccountBalances).toHaveBeenCalledWith("EUR");
+      expect(apiAnalytics.getTopMerchants).toHaveBeenCalledWith({ limit: 8, months: 12, currency: "EUR" });
+      expect(apiAnalytics.getSpendingHeatmap).toHaveBeenCalledWith(90, "EUR");
+    });
+  });
+
+  it("switches currency via quick button to JPY and formats amounts with JPY integer rounding", async () => {
+    renderAnalytics();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("btn-currency-jpy")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("btn-currency-jpy"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("badge-analytics-reporting-currency")).toHaveTextContent("JPY (¥)");
+      expect(screen.getByTestId("badge-analytics-fx-rate")).toHaveTextContent("1 USD = 155 JPY");
+    });
+
+    // In JPY (155 FX rate, 0 decimals):
+    // 25,500 USD * 155 = 3,952,500 JPY
+    expect(screen.getByTestId("stat-total-income")).toHaveTextContent("¥3,952,500");
   });
 });

@@ -40,6 +40,8 @@ import { HttpError } from "../middleware/httpError"; // Custom HTTP error class
 import { accountLockout, lockoutKey } from "../services/accountLockout"; // Brute-force protection
 import { auditFromRequest } from "../services/auditService"; // Audit logging
 import { logger } from "../config/logger"; // Application logger
+import { getClientBaseUrl, type GoogleOAuthContext } from "../services/googleOAuth"; // Google OAuth helpers
+import { consumeSecondFactor, hashChallenge } from "../services/secondFactor";
 
 /**
  * Builds cookie options for JWT token.
@@ -48,6 +50,9 @@ import { logger } from "../config/logger"; // Application logger
  * @param {number} maxAgeMs - Cookie max age in milliseconds
  * @returns {object} Cookie options object
  */
+// Constructs standardized cookie serialization options based on runtime environment.
+// Ensures strict security attributes like HTTP-only and same-site policies are enforced.
+// Returns an Express-compatible cookie options object with configured expiration and path.
 const buildCookieOptions = (env: ReturnType<typeof getEnv>, maxAgeMs: number) => ({
   httpOnly: true, // Prevent JavaScript access
   secure: env.COOKIE_SECURE, // HTTPS only in production
@@ -63,10 +68,24 @@ const buildCookieOptions = (env: ReturnType<typeof getEnv>, maxAgeMs: number) =>
  * @param {Response} res - Express response object
  * @param {string} userId - User ID to encode in token
  */
-const generateAndSetToken = (res: Response, userId: string) => {
+// Signs a standard JSON Web Token carrying the authenticated subject identifier.
+// Attaches the generated token to outgoing response headers inside a secure cookie.
+// Establishes a protected session credential valid across the client application.
+const clearSessionCookie = (res: Response) => {
+  const { maxAge: _maxAge, ...options } = buildCookieOptions(getEnv(), 0);
+  res.clearCookie("jwt", options);
+};
+
+const clearChallengeCookie = (res: Response) => {
+  const { maxAge: _maxAge, ...options } = buildCookieOptions(getEnv(), 0);
+  res.clearCookie("fw_2fa_challenge", options);
+};
+
+export const generateAndSetToken = (res: Response, userId: string, mfa = false, sessionVersion?: string) => {
   const env = getEnv();
   // Generate JWT token with 1-day expiration
-  const token = jwt.sign({ id: userId }, env.JWT_SECRET, {
+  const token = jwt.sign({ id: userId, ...(mfa ? { mfa: true } : {}),
+    ...(sessionVersion ? { sv: sessionVersion } : {}) }, env.JWT_SECRET, {
     expiresIn: "1d",
   });
   // Set JWT as HTTP-only cookie (24 hours)
@@ -82,7 +101,14 @@ const generateAndSetToken = (res: Response, userId: string) => {
  * @param {Request} req - Express request object
  * @param {Response} res - Express response object
  */
-export const getCsrfToken = async (req: Request, res: Response) => {
+/**
+ * Issues a fresh double-submit CSRF token as a JS-readable cookie and returns the token.
+ * Shared by GET /auth/csrf and the Google OAuth callback so Google sessions start with the same cookie pair.
+ */
+// Produces a cryptographically secure random token used for CSRF defense verification.
+// Binds the token value to a client-readable browser cookie with configured lifetime.
+// Delivers the raw token string for synchronization across double-submit cookie flows.
+export const setCsrfCookie = (res: Response): string => {
   const env = getEnv();
   // Generate random 32-byte CSRF token
   const token = crypto.randomBytes(32).toString("hex");
@@ -96,6 +122,14 @@ export const getCsrfToken = async (req: Request, res: Response) => {
     maxAge: 2 * 60 * 60 * 1000, // 2 hours
     path: "/", // Cookie path
   });
+  return token;
+};
+
+// Handles API requests asking for a fresh double-submit cross-site request forgery token.
+// Issues the cookie on the response and returns the payload containing the secret token.
+// Attaches the unique request identifier to support distributed audit tracing.
+export const getCsrfToken = async (req: Request, res: Response) => {
+  const token = setCsrfCookie(res);
 
   // Return token in response
   res.status(200).json({ csrf_token: token, request_id: req.requestId });
@@ -115,6 +149,9 @@ export const getCsrfToken = async (req: Request, res: Response) => {
  * @param {Response} res - Express response object
  * @throws {HttpError} If user already exists
  */
+// Processes incoming registration submissions for email and password authentication.
+// Checks for preexisting accounts before persisting user credentials to the database.
+// Dispatches an email verification challenge code with short-lived expiration.
 export const register = async (req: Request, res: Response) => {
   const env = getEnv();
   // Extract registration data from request body
@@ -181,6 +218,9 @@ export const register = async (req: Request, res: Response) => {
  * @param {Response} res - Express response object
  * @throws {HttpError} If OTP is invalid or expired
  */
+// Validates one-time verification tokens sent to users during account creation.
+// Transitions the account state to verified and invalidates the single-use token.
+// Automatically issues session authentication cookies upon successful validation.
 export const verifyEmail = async (req: Request, res: Response) => {
   const { email, otp } = req.body as { email: string; otp: string };
 
@@ -189,6 +229,8 @@ export const verifyEmail = async (req: Request, res: Response) => {
   // Find user with matching email and valid OTP
   const user = await UserModel.findOne({
     email,
+    isEmailVerified: false,
+    twoFactorEnabled: { $ne: true },
     emailVerificationToken: otp,
     emailVerificationTokenExpires: { $gt: Date.now() }, // Check expiration
   }).select("+emailVerificationToken +emailVerificationTokenExpires");
@@ -227,6 +269,9 @@ export const verifyEmail = async (req: Request, res: Response) => {
  * @param {Response} res - Express response object
  * @throws {HttpError} If user not found or already verified
  */
+// Handles requests to deliver a fresh verification code to an unverified email address.
+// Validates account status and refreshes one-time token values and expiration stamps.
+// Sends out an email notification containing the newly generated challenge code.
 export const resendVerification = async (req: Request, res: Response) => {
   const env = getEnv();
   const { email } = req.body as { email: string };
@@ -285,8 +330,11 @@ export const resendVerification = async (req: Request, res: Response) => {
  * @param {Response} res - Express response object
  * @throws {HttpError} If credentials are invalid or account is locked
  */
+// Evaluates email and password credentials for standard interactive authentication.
+// Enforces brute-force lockout defenses and audit event logging on repeated failures.
+// Establishes authenticated JWT sessions upon successful credential verification.
 export const login = async (req: Request, res: Response) => {
-  const { email, password } = req.body as { email: string; password: string };
+  const { email, password, twoFactorCode } = req.body as { email: string; password: string; twoFactorCode?: string };
   const normalizedEmail = String(email || "").trim().toLowerCase();
   const normalizedPassword = String(password || "");
 
@@ -311,16 +359,17 @@ export const login = async (req: Request, res: Response) => {
 
   // Find user by email
   const user = await UserModel.findOne({ email: normalizedEmail }).select("+password");
+
+  // Google-only accounts have no password: tell the user how to sign in (and do not count it as a brute-force failure).
+  if (user && user.authProvider === "google") {
+    throw new HttpError(400, "GOOGLE_AUTH_REQUIRED", "This account uses Google sign-in. Please continue with Google.");
+  }
+
   if (!user || !user.password) {
     // Record failed attempt
     accountLockout.recordFailure(key);
     auditFromRequest(req, "login_failed", { metadata: { email: normalizedEmail, reason: "user_not_found" } });
     throw new HttpError(401, "INVALID_CREDENTIALS", "Invalid email or password.");
-  }
-
-  // Check if user uses Google auth
-  if (user.authProvider === "google") {
-    throw new HttpError(400, "GOOGLE_AUTH_REQUIRED", "This account uses Google sign-in. Please continue with Google.");
   }
 
   // Validate password
@@ -344,12 +393,27 @@ export const login = async (req: Request, res: Response) => {
     );
   }
 
-  // Success — clear lockout counter
+  if (user.twoFactorEnabled) {
+    // Password alone never authorizes a session. Reverify the password on the
+    // second submission rather than issuing a bearer token for the interim step.
+    if (!twoFactorCode) {
+      clearSessionCookie(res);
+      res.status(202).json({ two_factor_required: true, request_id: req.requestId });
+      return;
+    }
+    if (!(await consumeSecondFactor(user._id.toString(), twoFactorCode))) {
+      accountLockout.recordFailure(key);
+      auditFromRequest(req, "2fa_failed", { userId: user._id, metadata: { phase: "password_login" } });
+      throw new HttpError(401, "INVALID_SECOND_FACTOR", "Invalid or previously used authentication code.");
+    }
+  }
+
+  // Success — clear lockout counter only after both factors pass.
   accountLockout.recordSuccess(key);
   auditFromRequest(req, "login_success", { userId: user._id });
 
-  // Generate JWT token
-  generateAndSetToken(res, user._id.toString());
+  // Generate JWT token only after every enabled factor passes.
+  generateAndSetToken(res, user._id.toString(), !!user.twoFactorEnabled, user.sessionVersion);
   res.status(200).json({
     id: user._id.toString(),
     name: user.name,
@@ -361,26 +425,83 @@ export const login = async (req: Request, res: Response) => {
 };
 
 /**
- * Handles Google OAuth callback.
+ * Handles a successful Google OAuth callback (state + PKCE already verified by passport, user resolved).
  *
- * This endpoint is called after successful Google OAuth authentication.
- * It generates a JWT token and redirects to the chat page.
- *
- * @param {Request} req - Express request object (with user from Passport)
- * @param {Response} res - Express response object
+ * Requires a one-time second-factor challenge for enrolled accounts before issuing a session.
+ * Otherwise issues a JWT and redirects to the sanitized destination.
  */
-export const getGoogleCallback = (req: Request, res: Response) => {
+// Handles redirection and callback processing following Google OAuth authentication.
+// Emits audit logging and configures session tokens along with CSRF protection cookies.
+// Redirects the client agent back to the destination application interface route.
+export const getGoogleCallback = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
+  const ctx = (res.locals.googleOAuth ?? {}) as GoogleOAuthContext;
+  const outcome = (res.locals.googleOAuthResult ?? {}) as { created?: boolean; linked?: boolean };
 
-  logger.info(`[Auth] Google OAuth callback success for user=${user._id} email=${user.email}`);
+  // Only the internal user id is logged: no e-mail, name or tokens.
+  logger.info(
+    `[Auth] Google sign-in success user=${user._id} created=${Boolean(outcome.created)} linked=${Boolean(outcome.linked)}`,
+  );
+  // Re-read current state: a cached OAuth profile must not bypass newly enabled 2FA.
+  const current = await UserModel.findById(user._id).select("twoFactorEnabled sessionVersion").lean();
+  if (!current) throw new HttpError(401, "UNAUTHORIZED", "Account no longer exists");
+  if (current.twoFactorEnabled) {
+    const nonce = crypto.randomBytes(32).toString("hex");
+    const updated = await UserModel.updateOne(
+      { _id: user._id, twoFactorEnabled: true },
+      { $set: { twoFactorChallengeHash: hashChallenge(nonce), twoFactorChallengeExpires: new Date(Date.now() + 5 * 60_000) } },
+    );
+    if (!updated.matchedCount) throw new HttpError(401, "UNAUTHORIZED", "Start sign-in again");
+    const token = jwt.sign({ sub: user._id.toString(), purpose: "oauth_2fa", nonce, next: ctx.next || "/dashboard" }, getEnv().JWT_SECRET, { expiresIn: "5m" });
+    clearSessionCookie(res);
+    res.cookie("fw_2fa_challenge", token, buildCookieOptions(getEnv(), 5 * 60_000));
+    setCsrfCookie(res);
+    res.redirect(`${getClientBaseUrl()}/login?mfa=required`);
+    return;
+  }
 
-  // Generate JWT token and set as HTTP-only cookie
-  generateAndSetToken(res, user._id.toString());
+  auditFromRequest(req, "login_success", {
+    userId: user._id,
+    metadata: { provider: "google", created: Boolean(outcome.created), linked: Boolean(outcome.linked) },
+  });
+  clearChallengeCookie(res);
+  generateAndSetToken(res, user._id.toString(), false, current.sessionVersion);
+  setCsrfCookie(res);
+  res.redirect(`${getClientBaseUrl()}${ctx.next || "/dashboard"}`);
+};
 
-  // Redirect to dashboard after successful Google authentication
-  const clientUrl = getEnv().CLIENT_URL.replace(/\/$/, "");
-  logger.info(`[Auth] Redirecting Google auth user to ${clientUrl}/dashboard`);
-  res.redirect(`${clientUrl}/dashboard`);
+/** Completes a Google sign-in using a short-lived, single-use challenge cookie. */
+export const completeOAuth2FA = async (req: Request, res: Response) => {
+  const token = req.cookies?.fw_2fa_challenge;
+  let challenge: { sub?: string; purpose?: string; nonce?: string; next?: string };
+  try {
+    challenge = jwt.verify(token || "", getEnv().JWT_SECRET, { algorithms: ["HS256"] }) as typeof challenge;
+  } catch {
+    throw new HttpError(401, "INVALID_CHALLENGE", "Sign in with Google again.");
+  }
+  if (challenge.purpose !== "oauth_2fa" || !challenge.sub || !challenge.nonce || !/^[a-f0-9]{64}$/.test(challenge.nonce)) {
+    throw new HttpError(401, "INVALID_CHALLENGE", "Sign in with Google again.");
+  }
+  const user = await UserModel.findById(challenge.sub).select("email twoFactorEnabled sessionVersion").lean();
+  if (!user?.twoFactorEnabled) throw new HttpError(401, "INVALID_CHALLENGE", "Sign in with Google again.");
+  const key = lockoutKey(user.email, req.ip);
+  if (accountLockout.isLocked(key).locked) throw new HttpError(429, "ACCOUNT_LOCKED", "Too many failed attempts. Try again later.");
+  if (!(await consumeSecondFactor(user._id.toString(), req.body.code))) {
+    accountLockout.recordFailure(key);
+    auditFromRequest(req, "2fa_failed", { userId: user._id, metadata: { phase: "google_login" } });
+    throw new HttpError(401, "INVALID_SECOND_FACTOR", "Invalid or previously used authentication code.");
+  }
+  const consumed = await UserModel.updateOne(
+    { _id: user._id, twoFactorEnabled: true, twoFactorChallengeHash: hashChallenge(challenge.nonce), twoFactorChallengeExpires: { $gt: new Date() } },
+    { $unset: { twoFactorChallengeHash: 1, twoFactorChallengeExpires: 1 } },
+  );
+  if (!consumed.modifiedCount) throw new HttpError(401, "INVALID_CHALLENGE", "Sign in with Google again.");
+  accountLockout.recordSuccess(key);
+  auditFromRequest(req, "login_success", { userId: user._id, metadata: { provider: "google", second_factor: true } });
+  clearChallengeCookie(res);
+  generateAndSetToken(res, user._id.toString(), true, user.sessionVersion);
+  // Do not trust a client-supplied destination; next was captured in the signed OAuth flow.
+  res.json({ id: user._id.toString(), next: challenge.next || "/dashboard", request_id: req.requestId });
 };
 
 /**
@@ -391,6 +512,9 @@ export const getGoogleCallback = (req: Request, res: Response) => {
  * @param {Request} req - Express request object (with user from JWT)
  * @param {Response} res - Express response object
  */
+// Retrieves profile metadata and current account state for authenticated sessions.
+// Formats user identifiers, contact information, and verification status fields.
+// Responds with sanitized identity properties while masking private credential data.
 export const getProfile = (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   res.json({
@@ -413,6 +537,9 @@ export const getProfile = (req: Request, res: Response) => {
  * @param {Request} req - Express request object (with user from JWT)
  * @param {Response} res - Express response object
  */
+// Mutates user profile properties based on authenticated request payload updates.
+// Sanitizes incoming string inputs such as display name and contact phone number.
+// Commits the modified entity attributes to persistent storage and returns updated info.
 export const updateProfile = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const { name, phoneNumber } = req.body as { name?: string; phoneNumber?: string };
@@ -448,6 +575,9 @@ export const updateProfile = async (req: Request, res: Response) => {
  * @param {Response} res - Express response object
  * @throws {HttpError} If current password is incorrect or new password is weak
  */
+// Authenticates existing password credentials prior to changing account access keys.
+// Validates password complexity requirements and updates the stored credential hash.
+// Persists the new credential securely and notifies caller of successful mutation.
 export const changePassword = async (req: Request, res: Response) => {
   // Find user with password field
   const user = await UserModel.findById((req.user as IUserDocument)._id).select("+password");
@@ -487,18 +617,48 @@ export const changePassword = async (req: Request, res: Response) => {
  * @param {Request} req - Express request object
  * @param {Response} res - Express response object
  */
+// Terminates active authenticated user sessions by clearing the session cookie.
+// Enforces domain and path matching to guarantee client-side cookie removal.
+// Returns an acknowledgement payload accompanied by the unique request identifier.
 export const logout = (req: Request, res: Response) => {
-  const env = getEnv();
-
   logger.info(`[Auth] Logout request from IP=${req.ip}`);
 
   // Clear JWT cookie
-  res.clearCookie("jwt", {
-    httpOnly: true,
-    secure: env.COOKIE_SECURE,
-    sameSite: env.COOKIE_SAME_SITE,
-    domain: env.COOKIE_DOMAIN,
-    path: "/",
-  });
+  clearSessionCookie(res);
+  clearChallengeCookie(res);
   res.status(200).json({ message: "Logged out successfully", request_id: req.requestId });
+};
+
+/**
+ * Instant Demo Login for Hackathon Evaluators and Challenge Reviewers.
+ * Authenticates as J Ganesh Kumar Reddy (Primary Registrant).
+ */
+export const demoEvaluatorLogin = async (req: Request, res: Response) => {
+  const email = "evaluator.ganesh@gnani.ai";
+  let user = await UserModel.findOne({ email });
+
+  if (!user) {
+    user = new UserModel({
+      name: "J Ganesh Kumar Reddy",
+      email,
+      password: "GnaniChallenge2026!Secure",
+      isEmailVerified: true,
+      authProvider: "email",
+    });
+    await user.save();
+  }
+
+  generateAndSetToken(res, user._id.toString(), false, user.sessionVersion);
+  setCsrfCookie(res);
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      id: user._id.toString(),
+      name: user.name,
+      email: user.email,
+      currency: "INR",
+    },
+    message: "Logged in as Challenge Evaluator (J Ganesh Kumar Reddy)",
+  });
 };

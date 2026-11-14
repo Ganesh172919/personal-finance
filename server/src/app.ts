@@ -121,6 +121,15 @@ import { mountApiRoutes } from "./routes/routeRegistry"; // Route mounting (sing
 import { sendErrorResponse } from "./utils/apiResponse"; // Standardized error response utility
 import { getDeadLetterStats } from "./services/deadLetterQueue"; // Dead-letter queue stats
 import { getRedis } from "./config/redis"; // Redis cache client
+import { createRateLimitStore } from "./config/rateLimitStore"; // Redis-backed rate-limit store with in-memory fallback
+
+// POST endpoints that spend AI capacity; the per-user AI limiter applies to these only (path is relative to /api).
+// Regular expression matching computationally intensive AI endpoints requiring per-user throttling.
+// Covers natural language command processing, streaming AI completions, what-if scenarios, and autopilot.
+// Restricts abuse on costly generative AI workflows without throttling lighter REST routes.
+const AI_RATE_LIMITED_PATH =
+  /^\/(?:v1\/)?(?:process-command|ai\/process\/stream|scenarios\/what-if|autopilot(?:\/.*)?|chat\/sessions\/[^/]+\/messages)\/?$/;
+import { isShuttingDown } from "./lifecycle"; // Drain state for /readyz
 
 /**
  * Creates and configures a new Express application instance.
@@ -140,6 +149,9 @@ import { getRedis } from "./config/redis"; // Redis cache client
  * const app = createApp();
  * app.listen(3000, () => console.log('Server running on port 3000'));
  */
+// Application factory function assembling and configuring the core Express server instance.
+// Injects security headers, CORS policies, rate limiters, session parsers, and routing trees.
+// Returns an isolated Express application instance suitable for production execution and test harnesses.
 export const createApp = () => {
   // Initialize Express application
   const app = express();
@@ -149,7 +161,6 @@ export const createApp = () => {
   const PYTHON_API_URL = env.PYTHON_API_URL; // URL for Python AI service
   const REQUEST_SIZE_LIMIT = env.REQUEST_SIZE_LIMIT; // Maximum request body size
   const CORS_ORIGINS = env.CORS_ORIGINS; // Allowed CORS origins
-  const allowAllCorsOrigins = CORS_ORIGINS.includes("*"); // Flag to allow all origins
 
   // Trust proxy headers (for load balancers, reverse proxies)
   app.set("trust proxy", env.TRUST_PROXY);
@@ -166,12 +177,16 @@ export const createApp = () => {
    * - User ID (for authenticated user requests)
    * - IP address (fallback for unauthenticated requests)
    */
+  // Rate limiter middleware bounding general API request throughput per tenant organization.
+  // Dynamically resolves keys from API key org IDs, session organization IDs, user IDs, or IPs.
+  // Employs shared Redis backing store across clustered nodes with in-memory fallback.
   const apiRateLimiter = rateLimit({
     windowMs: env.RATE_LIMIT_WINDOW_MS, // Time window in milliseconds
     max: env.RATE_LIMIT_MAX, // Maximum requests per window
     standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
     legacyHeaders: false, // Disable `X-RateLimit-*` headers
     passOnStoreError: true, // Continue if rate limit store fails
+    store: createRateLimitStore("rl:api:"), // Redis-shared across replicas; in-memory when Redis is absent
     keyGenerator: (req, _res) => {
       // Use API key org ID if available
       const apiKeyOrgId = (req as any).apiKey?.orgId;
@@ -205,6 +220,34 @@ export const createApp = () => {
   });
 
   /**
+   * Per-user AI rate limiter
+   *
+   * The general limiter above keys by organization, so a single user hammering an AI endpoint could
+   * exhaust the org's whole budget. This limiter keys by `org:user` on the expensive AI endpoints only
+   * (command processing, streaming, what-if, chat send, autopilot) and uses the same shared store.
+   */
+  // Per-user rate limiter applied specifically to expensive AI generation and streaming endpoints.
+  // Combines organization and user identity to prevent single users from depleting tenant quotas.
+  // Skips non-POST requests and endpoints outside the AI rate limited route pattern.
+  const aiUserRateLimiter = rateLimit({
+    windowMs: env.AI_USER_RATE_LIMIT_WINDOW_MS,
+    max: env.AI_USER_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    passOnStoreError: true,
+    store: createRateLimitStore("rl:ai-user:"),
+    skip: (req) => req.method !== "POST" || !(req as any).user?._id || !AI_RATE_LIMITED_PATH.test(req.path),
+    keyGenerator: (req) => `ai_user:${String((req as any).org?.orgId || "-")}:${String((req as any).user?._id)}`,
+    handler: (req, res) => {
+      sendErrorResponse(res, 429, {
+        message: "Too many AI requests, please slow down.",
+        code: "AI_USER_RATE_LIMITED",
+        requestId: req.requestId,
+      });
+    },
+  });
+
+  /**
    * CORS Configuration
    *
    * Allows cross-origin requests from specified origins.
@@ -214,7 +257,7 @@ export const createApp = () => {
     cors({
       origin: (origin, callback) => {
         // Allow requests with no origin (mobile apps, curl, etc.)
-        if (!origin || allowAllCorsOrigins || CORS_ORIGINS.includes(origin)) {
+        if (!origin || CORS_ORIGINS.includes(origin)) {
           callback(null, true);
           return;
         }
@@ -276,7 +319,7 @@ export const createApp = () => {
       verify: (req, _res, buf) => {
         // Preserve raw body for billing webhook signature verification
         const path = String((req as any).originalUrl || (req as any).url || "");
-        if (path.startsWith("/api/billing/webhook")) {
+        if (path.startsWith("/api/billing/webhook") || path.startsWith("/api/v1/billing/webhook")) {
           (req as any).rawBody = buf;
         }
       },
@@ -291,6 +334,9 @@ export const createApp = () => {
    * dot-notation keys from request body and params.
    * This is Express 5 compatible (unlike express-mongo-sanitize v2).
    */
+  // Recursive sanitization utility stripping NoSQL injection payloads from request inputs.
+  // Removes object keys prefixed with dollar signs ($) or containing period characters (.).
+  // Protects MongoDB query execution layers from query selector and projection tampering.
   const stripDollarDot = (obj: any): any => {
     if (obj === null || typeof obj !== "object") return obj;
     if (Array.isArray(obj)) return obj.map(stripDollarDot);
@@ -386,6 +432,9 @@ export const createApp = () => {
    */
   app.use("/api", apiRateLimiter);
 
+  // Per-user AI cap beneath the org-level key above, so one heavy user cannot spend the whole org's budget.
+  app.use("/api", aiUserRateLimiter);
+
   /**
    * CSRF Protection for API Routes
    *
@@ -398,11 +447,15 @@ export const createApp = () => {
    *
    * Tighter rate limit specifically for authentication endpoints to prevent brute-force attacks.
    */
+  // Stricter rate limiter specifically dedicated to authentication and credential endpoints.
+  // Throttles login and registration attempts per client IP to mitigate brute force credential attacks.
+  // Whitelists benign idempotent GET requests such as profile and CSRF token retrievals.
   const authRateLimiter = rateLimit({
     windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS, // Time window for auth rate limiting
     max: env.AUTH_RATE_LIMIT_MAX, // Maximum auth attempts per window
     standardHeaders: true, // Return rate limit info in headers
     legacyHeaders: false, // Disable legacy headers
+    store: createRateLimitStore("rl:auth:"), // Shared brute-force counter across replicas
     // Workspace reloads read these endpoints; they are not credential attempts.
     // They retain the general API limit applied above.
     skip: (req) => req.method === "GET" && ["/profile", "/csrf", "/providers"].includes(req.path),
@@ -418,7 +471,7 @@ export const createApp = () => {
   });
 
   // Apply auth rate limiter to authentication endpoints
-  app.use("/api/auth", authRateLimiter);
+  app.use(["/api/auth", "/api/v1/auth"], authRateLimiter);
 
   /**
    * Health Check Endpoints
@@ -427,20 +480,38 @@ export const createApp = () => {
    * they are accessible without authentication.
    */
   // Basic health check endpoint
+  // Basic verification endpoint confirming Express server response delivery.
+  // Returns static greeting payload for sanity checks and development smoke tests.
+  // Accessible without authentication checks or session requirements.
   app.get("/api/test", (_req, res) => {
     res.json({ message: "Hello from the Personal Finance Server!" });
   });
 
   // Kubernetes-style health check endpoint
+  // Kubernetes-style liveness probe endpoint confirming process responsiveness.
+  // Returns HTTP 200 plain text status without evaluating downstream service dependencies.
+  // Used by container orchestrators to detect process lockups and trigger restarts.
   app.get("/healthz", (_req, res) => {
     res.status(200).send("ok");
   });
 
+  // Kubernetes readiness probe endpoint reporting traffic readiness status.
+  // Emits 503 during graceful shutdown to allow load balancers to drain connections safely.
+  // Verifies active MongoDB connection status before signaling readiness to accept traffic.
   app.get("/readyz", (_req, res) => {
+    // During graceful shutdown report 503 first so the load balancer drains this
+    // instance before connections are closed.
+    if (isShuttingDown()) {
+      res.status(503).json({ status: "draining" });
+      return;
+    }
     const ready = mongoose.connection.readyState === 1;
     res.status(ready ? 200 : 503).json({ status: ready ? "ready" : "unavailable" });
   });
 
+  // Diagnostic health endpoint exposing system timestamp and dead-letter queue metrics.
+  // Returns JSON object summarizing failed job counts and dead-letter statistics.
+  // Provides lightweight operational diagnostic telemetry for monitoring systems.
   app.get("/healthz/diagnostics", (_req, res) => {
     res.status(200).json({
       status: "ok",
@@ -460,6 +531,9 @@ export const createApp = () => {
    *
    * Returns 200 with { status: "ok" | "degraded" } or 503 with { status: "error" } if database is unreachable.
    */
+  // Comprehensive deep health check evaluating operational health across all infrastructure dependencies.
+  // Pings MongoDB database, tests Redis cache readiness, and queries Python AI Core service.
+  // Returns HTTP 200 with ok/degraded status, or 503 if primary database connection is lost.
   app.get("/healthz/deep", async (_req, res) => {
     const started = Date.now();
     const checks: Record<string, any> = {};
@@ -529,6 +603,9 @@ export const createApp = () => {
    * Checks the health of the Python AI service by making a request to its /health endpoint.
    * Returns 503 if the service is unavailable.
    */
+  // Health inspection proxy probing status of the upstream Python AI microservice.
+  // Forwards request ID to Python /health endpoint and captures response payload.
+  // Returns HTTP 503 if the Python service fails to respond within 4 seconds.
   app.get("/api/python-health", async (req, res) => {
     try {
       const response = await axios.get(`${PYTHON_API_URL}/health`, {
@@ -550,9 +627,8 @@ export const createApp = () => {
   /**
    * Route Mounting
    *
-   * All API routes are mounted under /api/* — there is no versioned
-   * /api/v1 split. This keeps the API surface simple and avoids
-   * duplication between canonical and legacy route sets.
+   * Canonical /api/v1 routes and compatible /api aliases share the same
+   * middleware, authentication limits and route implementations.
    */
   mountApiRoutes(app, env);
 

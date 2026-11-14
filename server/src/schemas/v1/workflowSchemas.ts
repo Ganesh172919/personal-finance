@@ -18,6 +18,7 @@
  *   create_task        - Create a task with title, why, steps, priority, kind, due_days
  *   send_notification  - Send email or in-app notification with subject and message
  *   export_report      - Generate an export (transactions_csv or monthly_summary_pdf)
+ *   delay              - Delay timer pausing pipeline execution for a duration in seconds (1s to 30d)
  *
  * Conditional Branching:
  *   All actions support an optional `condition` object ({ field, operator, value })
@@ -27,16 +28,40 @@
  */
 import { z } from "zod";
 
+// Regular expression pattern validating 24-character hexadecimal MongoDB ObjectIds.
+// Used for validating workflow entity identifiers in workflow route parameters.
+// Case-insensitively checks standard hex format.
 const objectIdRegex = /^[a-f\d]{24}$/i;
 
+// Enumerates permissible task domain classifications created by workflow actions.
+// Enforces task category typing including cashflow, budget, debt, and goal domains.
+// Ensures tasks dispatched by automation conform to standard task classifications.
 const taskKindSchema = z.enum(["cashflow", "budget", "debt", "invest", "goal", "education", "generic"]);
+// Enumerates priority severity levels for automated task creation steps.
+// Restricts priority choices strictly to low, medium, or high values.
+// Determines UI ordering and urgency when presenting workflow tasks to users.
 const taskPrioritySchema = z.enum(["low", "medium", "high"]);
+// Enumerates acceptable export formats supported by automated report export actions.
+// Allows automated export of transaction CSV files or monthly summary PDFs.
+// Prevents invalid export targets from entering workflow pipeline actions.
 const exportTypeSchema = z.enum(["transactions_csv", "monthly_summary_pdf"]);
+// Enumerates supported delivery channels for workflow notification steps.
+// Restricts channels to transactional email messages or in-app activity notices.
+// Controls message routing behavior within notification execution workers.
 const notificationChannelSchema = z.enum(["email", "in_app"]);
+// Validates domain event naming formats for event-driven workflow triggers.
+// Enforces string length boundaries between 2 and 120 characters on event identifiers.
+// Prevents empty or excessively long event names from registering in trigger indices.
 const domainEventTypeSchema = z.string().trim().min(2).max(120);
 
+// Enumerates comparison operators supported in workflow action conditional expressions.
+// Supports equality, inequality, numeric comparisons, and substring matching.
+// Powers conditional branch logic when deciding whether to execute an action.
 export const workflowConditionOperatorSchema = z.enum(["eq", "neq", "gt", "gte", "lt", "lte", "contains"]);
 
+// Validates conditional evaluation clauses assigned to workflow steps.
+// Defines target context field path, comparison operator, and primitive expected value.
+// Restricts extra properties to guarantee deterministic rule evaluation.
 export const workflowActionConditionSchema = z
   .object({
     field: z.string().trim().min(1).max(120),
@@ -45,6 +70,9 @@ export const workflowActionConditionSchema = z
   })
   .strict();
 
+// Discriminated union schema validating actionable steps within an automation workflow.
+// Dispatches validation across task creation, notification, export, and delay steps.
+// Enforces action-specific parameters including period keys for monthly summary exports.
 export const workflowActionSchema = z.discriminatedUnion("type", [
   z
     .object({
@@ -89,8 +117,19 @@ export const workflowActionSchema = z.discriminatedUnion("type", [
         }
       }
     }),
+  z
+    .object({
+      type: z.literal("delay"),
+      duration_seconds: z.number().int().min(1).max(86400 * 30),
+      description: z.string().trim().max(200).optional(),
+      condition: workflowActionConditionSchema.optional(),
+    })
+    .strict(),
 ]);
 
+// Validates request payload for creating an end-to-end automated workflow definition.
+// Enforces workflow name, activation flag, trigger specifications, and ordered action steps.
+// Ensures at least one action is specified up to a maximum limit of 50 actions.
 export const createWorkflowBodySchema = z
   .object({
     name: z.string().trim().min(2).max(160),
@@ -124,12 +163,18 @@ export const createWorkflowBodySchema = z
   })
   .strict();
 
+// Validates route parameter objects containing a workflow identifier.
+// Enforces 24-character hexadecimal ObjectId format on the id route param.
+// Rejects malformed identifier strings before attempting workflow database queries.
 export const workflowIdParamSchema = z
   .object({
     id: z.string().regex(objectIdRegex, "Invalid workflow id"),
   })
   .strict();
 
+// Validates request payload submitted when triggering an on-demand workflow execution.
+// Supports optional idempotency keys for deduplication and arbitrary context payloads.
+// Restricts unexpected payload attributes using strict schema evaluation.
 export const runWorkflowBodySchema = z
   .object({
     idempotency_key: z.string().trim().min(8).max(128).optional(),
@@ -137,10 +182,16 @@ export const runWorkflowBodySchema = z
   })
   .strict();
 
+// Validates route parameter containing an inbound webhook authentication token.
+// Enforces string presence and bounds between 16 and 128 characters in length.
+// Protects webhook ingestion routes against malformed authentication tokens.
 export const webhookTokenParamSchema = z
   .object({
     token: z.string().trim().min(16).max(128),
   })
   .strict();
 
+// Validates generic JSON payload bodies delivered to inbound workflow webhook endpoints.
+// Accepts arbitrary key-value mappings to allow flexible integration with third-party webhooks.
+// Ensures incoming webhook payload is a valid JSON object structure.
 export const webhookPayloadBodySchema = z.record(z.string(), z.unknown());

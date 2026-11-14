@@ -4,6 +4,9 @@ import { Button } from "@/components/ui/Button";
 import { Label } from "@/components/ui/Label";
 import { Textarea } from "@/components/ui/TextArea";
 
+// Renders extracted plain-text content from parsed documents with pagination controls.
+// Splits multi-page documents delimited by form-feed characters into distinct pages.
+// Supplies accessible status descriptions for scanned or unextractable document pages.
 export function ExtractedFileText({ text = "", pageCount, page, onPageChange }: {
   text?: string;
   pageCount?: number;

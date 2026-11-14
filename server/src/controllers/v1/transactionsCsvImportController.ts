@@ -25,18 +25,24 @@ import type { IUserDocument } from "../../models/userModel";
 import AccountModel from "../../models/accountModel";
 import { HttpError } from "../../middleware/httpError";
 import type { MutationSource } from "../../types/provenance";
-import { enforceFeatureLimit, recordFeatureUsage } from "../../services/entitlements";
+import { recordFeatureUsage, releaseReservationOnResponseEnd, reserveFeatureUsage, type FeatureReservation } from "../../services/entitlements";
 import { ensureProfileWithMigration, bumpTransactionMetadata, setProfileMutationSource } from "../../services/profileService";
 import { publishDomainEvent } from "../../services/domainEvents";
 import { importTransactionsCsv } from "../../services/transactionsCsvImport";
 import { fireAndForget } from "../../services/deadLetterQueue";
 
+// Defines numerical authority weights across organization membership tiers.
+// Enables evaluation of user privileges against required administrative thresholds.
+// Utilized by organization access guards to restrict bulk import actions.
 const roleRank: Record<"member" | "admin" | "owner", number> = {
   member: 1,
   admin: 2,
   owner: 3,
 };
 
+// Checks whether valid organization context is present on the incoming request.
+// Throws a 401 unauthorized error when organization context is absent.
+// Returns the resolved organization ID cast to a typed MongoDB ObjectId.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -44,6 +50,9 @@ const requireOrgContext = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Enforces that the requesting actor has administrator-level authority in the org.
+// Evaluates organization context and compares user role rank against the admin limit.
+// Throws a 403 access denied exception when user authorization is inadequate.
 const requireOrgAdmin = (req: Request) => {
   const orgId = requireOrgContext(req);
   if (roleRank[req.org!.role] < roleRank.admin) {
@@ -52,6 +61,9 @@ const requireOrgAdmin = (req: Request) => {
   return orgId;
 };
 
+// Constructs a standardized provenance record describing the origin of data changes.
+// Annotates mutated records with file names, actor categories, and unique link IDs.
+// Supports auditing, change provenance, and event tracing across the application.
 const buildMutationSource = (params: {
   requestId?: string;
   note?: string;
@@ -65,6 +77,9 @@ const buildMutationSource = (params: {
   note: params.note,
 });
 
+// Handles CSV file upload and ingestion for bulk financial transaction importing.
+// Supports column mapping, dry-run simulation, deduplication, and entitlement limits.
+// Records audit provenance, emits domain events, and updates user transaction tallies.
 export const importTransactionsCsvEndpoint = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;
@@ -105,6 +120,7 @@ export const importTransactionsCsvEndpoint = async (req: Request, res: Response)
     actionLinkId: `csv_import:${req.requestId || Date.now()}`.slice(0, 128),
   });
 
+  let reservation: FeatureReservation | undefined;
   const result = await importTransactionsCsv({
     orgId,
     userId: user._id,
@@ -116,13 +132,14 @@ export const importTransactionsCsvEndpoint = async (req: Request, res: Response)
     dryRun,
     source,
     enforceLimit: async (validRows) => {
-      await enforceFeatureLimit({
+      reservation = await reserveFeatureUsage({
         orgId,
         userId: user._id,
         feature: "connector_sync_records",
         units: validRows,
         requestId: req.requestId,
       });
+      releaseReservationOnResponseEnd(res, reservation);
     },
   });
 
@@ -164,6 +181,7 @@ export const importTransactionsCsvEndpoint = async (req: Request, res: Response)
         userId: user._id,
         feature: "connector_sync_records",
         units: result.inserted,
+        reservation,
         requestId: req.requestId,
         idempotencyKey: `csv_import:${result.import_id || req.requestId || ""}`.slice(0, 128),
         context: {

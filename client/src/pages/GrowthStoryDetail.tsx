@@ -53,6 +53,9 @@ import { getGrowthStoryBySlug, toggleGrowthStoryLike } from "@/lib/apiClient";
 import { resolveGrowthStoryCoverImage } from "@/lib/media";
 import { useToast } from "@/hooks/useToast";
 
+// Formats numerical currency amounts in Indian Rupees (INR) with localized separators.
+// Suppresses fractional decimal digits for clean readability in milestone metrics.
+// Used for displaying financial transformation figures like net worth and debt cleared.
 const formatINR = (value: number) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -60,6 +63,9 @@ const formatINR = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
+// Detailed view page for an individual financial growth and transformation story.
+// Renders rich story content, before-and-after financial metrics, and interactive charts.
+// Provides like interactions, social sharing, reading progress indicators, and comment threads.
 export default function GrowthStoryDetail() {
   const [, params] = useRoute("/growth-stories/:slug");
   const slug = params?.slug;

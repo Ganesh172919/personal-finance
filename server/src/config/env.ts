@@ -23,37 +23,17 @@ import { z } from "zod"; // Zod schema validation library
 // Load environment variables from .env file
 dotenv.config();
 
-/**
- * Trims whitespace from a string value.
- *
- * @param {string} value - String to trim
- * @returns {string} Trimmed string
- */
+// Strips leading and trailing whitespace characters from input configuration strings.
+// Sanitizes incoming environment variables to avoid formatting inconsistencies.
 const trim = (value: string) => value.trim();
 
-/**
- * Converts empty strings to undefined.
- *
- * This is used to handle optional environment variables that may be set to
- * empty strings in the .env file.
- *
- * @param {unknown} value - Value to check
- * @returns {unknown} Original value or undefined if empty string
- */
+// Transforms empty or whitespace-only string values into undefined values.
+// Ensures optional environment variables can properly fall back to defined schema defaults.
 const emptyStringToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim().length === 0 ? undefined : value;
 
-/**
- * Normalizes a base URL string.
- *
- * This function:
- * - Converts localhost to 127.0.0.1 for consistency
- * - Returns the origin (protocol + hostname + port)
- * - Strips trailing slashes for invalid URLs
- *
- * @param {string} rawValue - Raw URL string to normalize
- * @returns {string} Normalized URL origin
- */
+// Normalizes base application URLs by standardizing localhost variants to IPv4 loopback format.
+// Strips trailing slash characters and extracts origin host protocols for consistent matching.
 const normalizeBaseUrl = (rawValue: string) => {
   try {
     const url = new URL(rawValue);
@@ -68,15 +48,8 @@ const normalizeBaseUrl = (rawValue: string) => {
   }
 };
 
-/**
- * Generates aliases for local origins (localhost <-> 127.0.0.1).
- *
- * This function creates a set of origin aliases to handle both localhost
- * and 127.0.0.1 variants of the same origin.
- *
- * @param {string} origin - Origin URL to generate aliases for
- * @returns {string[]} Array of origin aliases
- */
+// Derives equivalent localhost and 127.0.0.1 domain origin variants from a URL string.
+// Resolves cross-origin resource sharing mismatches between loopback hostname representations.
 const localOriginAliases = (origin: string) => {
   try {
     const url = new URL(origin);
@@ -98,13 +71,8 @@ const localOriginAliases = (origin: string) => {
   }
 };
 
-/**
- * Zod schema for parsing boolean values from environment variables.
- *
- * Accepts various boolean representations:
- * - true: "1", "true", "yes", "on"
- * - false: "0", "false", "no", "off"
- */
+// Preprocessing schema validating string boolean representations from environment variables.
+// Normalizes affirmative tokens (1, true, yes, on) and negative tokens (0, false, no, off).
 const boolFromEnv = z.preprocess(value => {
   if (typeof value === "boolean") return value;
   if (typeof value !== "string") return undefined;
@@ -116,33 +84,26 @@ const boolFromEnv = z.preprocess(value => {
   return undefined;
 }, z.boolean());
 
-/**
- * Optional boolean schema that treats empty strings as undefined.
- */
+// Preprocessing schema for optional boolean flags that converts empty strings to undefined.
+// Delegates valid input to boolFromEnv while allowing missing environment variables.
 const optionalBoolFromEnv = z.preprocess(emptyStringToUndefined, boolFromEnv.optional());
 
-/**
- * Optional non-empty string schema that treats empty strings as undefined.
- */
+// Schema validating optional strings while enforcing a minimum trimmed length of one character.
+// Converts whitespace-only environment variable assignments into undefined.
 const optionalNonEmptyString = z.preprocess(
   emptyStringToUndefined,
   z.string().trim().min(1).optional()
 );
 
-/**
- * Optional port number schema (1-65535) that treats empty strings as undefined.
- */
+// Preprocessing schema parsing optional TCP port numbers within valid range bounds 1 to 65535.
+// Converts string numeric input to integers and safely treats empty strings as undefined.
 const optionalPortFromEnv = z.preprocess(
   emptyStringToUndefined,
   z.coerce.number().int().min(1).max(65535).optional()
 );
 
-/**
- * Creates a Zod schema for parsing comma-separated values.
- *
- * @param {string} defaultValue - Default comma-separated string
- * @returns {z.ZodType} Zod schema that transforms CSV string to array
- */
+// Factory generating Zod schemas that parse comma-delimited strings into string arrays.
+// Filters empty entries, trims token whitespace, and applies fallback defaults when empty.
 const csv = (defaultValue: string) =>
   z
     .string()
@@ -299,10 +260,28 @@ const envSchema = z
 
     // AI Core Service Configuration
     AI_CORE_INTERNAL_TOKEN: optionalNonEmptyString,
+    WEBHOOK_CREDENTIALS_KEY: optionalNonEmptyString,
     AI_CORE_TOOLS_TOKEN: z.preprocess(
       emptyStringToUndefined,
       z.string().trim().min(16).max(256).optional()
     ),
+
+    // Gnani AI Platform Configuration (The Great Indian AI Internship Challenge)
+    GNANI_API_KEY: optionalNonEmptyString,
+    GNANI_CLIENT_ID: optionalNonEmptyString,
+    GNANI_ACCESS_TOKEN: optionalNonEmptyString,
+    GNANI_STT_URL: z.string().url().default("https://api.vachana.ai/stt/v3"),
+    GNANI_TTS_URL: z.string().url().default("https://api.vachana.ai/api/v1/tts/inference"),
+    GNANI_REASONING_URL: z.preprocess(
+      emptyStringToUndefined,
+      z.string().trim().url().transform(value => value.replace(/\/+$/, "")).optional()
+    ),
+    GNANI_REASONING_API_KEY: optionalNonEmptyString,
+    GNANI_MODEL: z.preprocess(
+      emptyStringToUndefined,
+      z.string().trim().min(1).default("gnani/gnani-evon-v3.3-30B-A3B")
+    ),
+    GNANI_VOICE_MOCK_FALLBACK: optionalBoolFromEnv.default(true),
 
     // Billing Configuration
     BILLING_PROVIDER: z.enum(["stub", "stripe"]).optional(),
@@ -315,6 +294,18 @@ const envSchema = z
     // AI Core Concurrency Configuration
     AI_CORE_MAX_CONCURRENCY: z.coerce.number().int().positive().default(8),
     AI_CORE_MAX_CONCURRENCY_PER_USER: z.coerce.number().int().positive().default(2),
+    // AI gateway admission control (aiConcurrency.ts). AI_MAX_CONCURRENCY, when set, wins over the
+    // older AI_CORE_MAX_CONCURRENCY alias. Excess work waits in a bounded priority queue and is
+    // shed with 429/503 + Retry-After when the queue is full or the wait exceeds AI_QUEUE_MAX_WAIT_MS.
+    AI_MAX_CONCURRENCY: z.coerce.number().int().positive().optional(),
+    AI_QUEUE_MAX: z.coerce.number().int().min(0).default(50),
+    AI_QUEUE_MAX_PER_USER: z.coerce.number().int().min(0).default(6),
+    AI_QUEUE_MAX_WAIT_MS: z.coerce.number().int().positive().default(15_000),
+    // Per-user cap on AI endpoints, applied beneath the org-level API limiter
+    AI_USER_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
+    AI_USER_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+    // Realtime (SSE) event bus: "memory" (single replica) or "redis" (pub/sub across replicas)
+    EVENT_BUS: z.enum(["memory", "redis"]).default("memory"),
 
     // AI Core Timeout Configuration
     AI_CORE_STATUS_TIMEOUT_MS: z.coerce.number().int().positive().default(2500),
@@ -325,6 +316,13 @@ const envSchema = z
     AI_CORE_CIRCUIT_FAILURE_THRESHOLD: z.coerce.number().int().positive().default(3),
     AI_CORE_CIRCUIT_OPEN_MS: z.coerce.number().int().positive().default(30_000),
     AI_CORE_HEALTH_CACHE_MS: z.coerce.number().int().positive().default(5000),
+    // TCP connect timeout (the existing AI_CORE_TIMEOUT_MS is the read/response timeout)
+    AI_CORE_CONNECT_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
+    // Jittered retries, applied to IDEMPOTENT calls only (status reads, newsletter, what-if, OCR)
+    AI_CORE_RETRY_MAX: z.coerce.number().int().min(0).max(5).default(1),
+    AI_CORE_RETRY_BASE_MS: z.coerce.number().int().positive().default(200),
+    // Longest AI Core 503 Retry-After the gateway will wait out before its single shed retry
+    AI_CORE_RETRY_AFTER_MAX_MS: z.coerce.number().int().positive().default(5000),
     CONVERSATION_INSIGHTS_CACHE_TTL_MS: z.coerce.number().int().min(0).max(300_000).default(120_000),
 
     // Plugin Runtime Configuration
@@ -360,24 +358,15 @@ const envSchema = z
     OTEL_ENDPOINT: optionalNonEmptyString,
   });
 
-/**
- * Type definition for the validated environment configuration.
- *
- * This type is derived from the Zod schema with additional type refinements:
- * - COOKIE_SECURE is always a boolean (not optional)
- * - TRUST_PROXY is either a boolean or number (not string)
- */
+// Type contract representing the fully validated and sanitized server environment configuration.
+// Overrides inferred schema types with strict boolean flags and computed proxy settings.
 export type Env = Omit<z.infer<typeof envSchema>, "COOKIE_SECURE" | "TRUST_PROXY"> & {
   COOKIE_SECURE: boolean;
   TRUST_PROXY: boolean | number;
 };
 
-/**
- * Formats Zod validation issues into a human-readable string.
- *
- * @param {z.ZodIssue[]} issues - Array of Zod validation issues
- * @returns {string} Formatted error message
- */
+// Converts Zod validation issue objects into a single formatted error description string.
+// Concatenates offending configuration key paths with corresponding validation failure messages.
 const formatEnvIssues = (issues: z.ZodIssue[]) => {
   return issues
     .map(issue => {
@@ -387,28 +376,8 @@ const formatEnvIssues = (issues: z.ZodIssue[]) => {
     .join(", ");
 };
 
-/**
- * Gets the validated environment configuration.
- *
- * This function:
- * 1. Validates all environment variables against the schema
- * 2. Applies computed values for optional settings
- * 3. Validates cross-field dependencies
- * 4. Returns a fully typed configuration object
- *
- * COMPUTED VALUES:
- * - TASKS_ENABLED: Defaults to true in development, false in production
- * - MONETIZATION_ENABLED: Defaults to true in development, false in production
- * - CSRF_ENABLED: Defaults to true in production
- * - COOKIE_SECURE: Defaults to true in production with HTTPS
- * - TRUST_PROXY: Defaults to true in production
- * - PLUGIN_RUNTIME_ALLOW_INSECURE: Defaults to true in development
- * - PLUGIN_RUNTIME_ALLOW_LOCALHOST: Defaults to true in development
- * - BILLING_PROVIDER: Defaults to "stripe" if STRIPE_SECRET_KEY is set
- *
- * @returns {Env} Validated environment configuration
- * @throws {Error} If configuration is invalid or dependencies are not met
- */
+// Parses, validates, and computes the runtime configuration object from process.env.
+// Enforces cross-field invariant constraints, defaults, and security configurations.
 export const getEnv = (): Env => {
   // Validate environment variables against schema
   const parsed = envSchema.safeParse(process.env);
@@ -419,6 +388,10 @@ export const getEnv = (): Env => {
   // Validate metrics configuration
   if (parsed.data.METRICS_ENABLED && !parsed.data.METRICS_TOKEN) {
     throw new Error("METRICS_TOKEN is required when METRICS_ENABLED=true");
+  }
+
+  if (parsed.data.NODE_ENV === "production" && !parsed.data.AI_CORE_INTERNAL_TOKEN) {
+    throw new Error("AI_CORE_INTERNAL_TOKEN is required in production");
   }
 
   // Compute TASKS_ENABLED (default: true in development, false in production)
@@ -499,6 +472,10 @@ export const getEnv = (): Env => {
       ].flatMap(origin => (origin === "*" ? ["*"] : localOriginAliases(origin)))
     )
   );
+
+  if (corsOrigins.includes("*")) {
+    throw new Error("CORS_ORIGINS must list explicit origins when credentialed requests are enabled.");
+  }
 
   // Return validated and computed configuration
   return {

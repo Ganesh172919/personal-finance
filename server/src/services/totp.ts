@@ -21,6 +21,9 @@ const TOTP_ISSUER = "Personal Finance";
 /**
  * Generate a random TOTP secret (base32 encoded).
  */
+// Generates a cryptographically random TOTP secret key in base32 format.
+// Employs secure random byte generation for initial key material creation.
+// Produces standard 20-byte encoded secrets compatible with authenticator apps.
 export function generateTotpSecret(length: number = 20): string {
   const buffer = crypto.randomBytes(length);
   return base32Encode(buffer);
@@ -29,6 +32,9 @@ export function generateTotpSecret(length: number = 20): string {
 /**
  * Generate the otpauth:// URI for QR code scanning.
  */
+// Constructs an RFC-compliant otpauth URI string for authenticator setup.
+// Encodes the secret, account email, and system issuer branding details.
+// Formats URI query parameters used for generating client QR code images.
 export function generateTotpUri(
   secret: string,
   userEmail: string,
@@ -43,6 +49,9 @@ export function generateTotpUri(
  * Verify a TOTP token against a secret.
  * Allows a window of ±1 period to account for clock drift.
  */
+// Verifies an incoming one-time passcode against a base32 encoded secret.
+// Accommodates allowable clock drift across a configurable time window.
+// Utilizes timing-safe string comparison to protect against side-channel attacks.
 export function verifyTotp(
   token: string,
   secret: string,
@@ -72,6 +81,9 @@ export function verifyTotp(
 /**
  * Generate a current TOTP token (for testing/debugging only).
  */
+// Computes the active TOTP passcode for the current 30-second epoch window.
+// Intended primarily for testing, diagnostic validation, and automated checks.
+// Translates the base32 secret and active counter through the HOTP algorithm.
 export function generateCurrentTotp(secret: string): string {
   const counter = Math.floor(Date.now() / 1000 / TOTP_PERIOD);
   return generateHotp(base32Decode(secret), counter);
@@ -80,6 +92,9 @@ export function generateCurrentTotp(secret: string): string {
 /**
  * Generate backup codes — single-use recovery codes for 2FA.
  */
+// Generates a set of single-use emergency recovery backup codes.
+// Formats alphanumeric token pairs separated by hyphens for readability.
+// Provides alternative authentication access when primary 2FA devices are lost.
 export function generateBackupCodes(count: number = 8): string[] {
   const codes: string[] = [];
   for (let i = 0; i < count; i++) {
@@ -93,6 +108,9 @@ export function generateBackupCodes(count: number = 8): string[] {
 /**
  * Hash backup codes for storage (don't store plaintext).
  */
+// Generates a SHA-256 cryptographic digest of a user backup recovery code.
+// Normalizes code characters by removing whitespace and hyphens before hashing.
+// Protects stored recovery codes against exposure in database leaks.
 export function hashBackupCode(code: string): string {
   return crypto
     .createHash("sha256")
@@ -102,6 +120,9 @@ export function hashBackupCode(code: string): string {
 
 // ─── Internal Helpers ────────────────────────────────────
 
+// Derives an HMAC-based one-time password according to RFC 4226 standards.
+// Computes SHA-1 HMAC digests over binary big-endian counter representations.
+// Performs dynamic truncation to extract standardized 6-digit numeric codes.
 function generateHotp(secret: Buffer, counter: number): string {
   const counterBuffer = Buffer.alloc(8);
   for (let i = 7; i >= 0; i--) {
@@ -123,6 +144,9 @@ function generateHotp(secret: Buffer, counter: number): string {
   return (code % Math.pow(10, TOTP_DIGITS)).toString().padStart(TOTP_DIGITS, "0");
 }
 
+// Performs a constant-time comparison between two strings to prevent timing attacks.
+// Validates byte lengths prior to executing crypto timingSafeEqual evaluation.
+// Mitigates information leakage during authentication code verification.
 function timingSafeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   const bufA = Buffer.from(a, "utf8");
@@ -134,6 +158,9 @@ function timingSafeCompare(a: string, b: string): boolean {
 
 const BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
+// Encodes an arbitrary binary buffer into an RFC 4648 Base32 character string.
+// Shifts byte bitstreams into 5-bit chunks mapped to the standard alphabet.
+// Used for exporting binary TOTP secret keys into human-readable strings.
 function base32Encode(buffer: Buffer): string {
   let bits = 0;
   let value = 0;
@@ -155,6 +182,9 @@ function base32Encode(buffer: Buffer): string {
   return result;
 }
 
+// Decodes an RFC 4648 Base32 encoded string into its raw binary Buffer.
+// Strips formatting padding and parses 5-bit character indices into bytes.
+// Restores raw cryptographic secret key buffers for HMAC processing.
 function base32Decode(encoded: string): Buffer {
   const stripped = encoded.replace(/[=\s]/g, "").toUpperCase();
   const bytes: number[] = [];

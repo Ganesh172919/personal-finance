@@ -26,6 +26,9 @@ import { useQuery } from "@tanstack/react-query";
 import { DashboardSummaryResponse, getDashboardSummary } from "@/lib/apiClient";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
+// Structural specification representing a high-level financial vitality indicator.
+// Encapsulates iconography, metric label descriptions, formatted monetary values,
+// and positive or negative valuation trend flags for dashboard card rendering.
 interface Metric {
   icon: typeof Wallet;
   label: string;
@@ -34,6 +37,9 @@ interface Metric {
   isPositive: boolean | null;
 }
 
+// Top-level dashboard summary grid presenting four primary financial indicators.
+// Displays live cash flow, savings rates, aggregate savings, and goal progression.
+// Incorporates skeleton loading placeholders and responsive currency formatting.
 export function FinancialVitals() {
   const { formatMoney } = useOrgFormatters();
   const { data: summary, isPending, isError, isFetching, refetch } = useQuery<DashboardSummaryResponse>({

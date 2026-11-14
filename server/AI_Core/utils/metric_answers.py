@@ -8,6 +8,9 @@ from typing import Any
 from utils.agent_helpers import get_currency_code
 
 
+# Validates and parses input value into finite non-negative floating-point number.
+# Handles type conversion errors, non-finite values, and negative inputs safely.
+# Returns validated float value or none if input is invalid or negative.
 def _nonnegative(value: Any) -> float | None:
     try:
         number = float(value)
@@ -16,6 +19,9 @@ def _nonnegative(value: Any) -> float | None:
         return None
 
 
+# Computes deterministic financial metric answers directly from user profile.
+# Resolves queries for monthly income, debt-to-income ratio, debts, and savings rate.
+# Returns formatted markdown calculation text bypassing LLM inference calls.
 def direct_metric_answer(question: str, profile: dict[str, Any] | None) -> str:
     query = str(question or "").lower()
     wants_income = bool(re.search(r"\bmonthly income\b|\bincome per month\b", query))

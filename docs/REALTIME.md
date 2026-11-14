@@ -677,3 +677,84 @@ export async function streamAiInference(req: Request, res: Response) {
   }
 }
 ```
+
+---
+
+## 9. Real-Time Event Streaming for 2026 Microservices
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#3b82f6', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((Real-Time Event Streams))
+    Bank Ingress Feed
+      POST /api/financial-data/bank-feed
+      Cluster Centroid Re-assignment
+      SSE Emit 'bank.feed.ingested'
+    Offline Journal Sync
+      POST /api/financial-journal/entries/batch-sync
+      Deduplication Key Verification
+      SSE Emit 'journal.batch.synced'
+    Visual Workflows
+      Node Transition DELAYED -> RUNNING
+      Execution Step Completed
+      SSE Emit 'workflow.step.advanced'
+    Budget Health
+      Zero-Sum Rebalancing Applied
+      SSE Emit 'budget.rebalanced'
+```
+
+### 9.1 Bank Feed Ingestion Stream Protocol
+When an external banking webhook dispatches raw transactions, the server processes them through `merchantEmbeddingClustering.ts` and broadcasts an SSE notification:
+
+```typescript
+// server/src/controllers/financialDataController.ts
+export async function handleBankFeedIngest(req: Request, res: Response) {
+  const { orgId } = req;
+  const { transactions } = req.body;
+
+  const clustered = clusterMerchantTransactions(transactions, 0.70);
+  await persistTransactionsAndClusters(orgId, clustered);
+
+  // Broadcast to all active client sessions within the organization
+  realtimeService.emitToOrg(orgId, {
+    type: 'bank.feed.ingested',
+    payload: {
+      count: transactions.length,
+      clustersDiscovered: clustered.length,
+      timestamp: new Date().toISOString()
+    }
+  });
+
+  res.status(200).json({ success: true, count: transactions.length });
+}
+```
+
+---
+
+### 9.2 Client-Side Realtime Event Invalidation (`client/src/hooks/useRealtimeEvents.ts`)
+
+The React application subscribes to the Server-Sent Events stream and automatically invalidates React Query caches with zero page refreshes:
+
+```typescript
+// client/src/hooks/useRealtimeEvents.ts
+useEffect(() => {
+  const eventSource = new EventSource('/api/v1/realtime/stream', { withCredentials: true });
+
+  eventSource.addEventListener('bank.feed.ingested', () => {
+    queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    queryClient.invalidateQueries({ queryKey: ['merchant-clusters'] });
+    queryClient.invalidateQueries({ queryKey: ['command-center'] });
+  });
+
+  eventSource.addEventListener('journal.batch.synced', () => {
+    queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
+  });
+
+  eventSource.addEventListener('budget.rebalanced', () => {
+    queryClient.invalidateQueries({ queryKey: ['budgets'] });
+    queryClient.invalidateQueries({ queryKey: ['budget-health'] });
+  });
+
+  return () => eventSource.close();
+}, [queryClient]);
+```

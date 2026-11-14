@@ -9,6 +9,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
+# Loads and validates JSONL dataset records for LoRA model fine-tuning.
+# Verifies role sequences, content presence, and synthetic sample markers.
+# Raises descriptive ValueError upon discovering malformed rows or empty files.
 def load_rows(path: Path) -> list[dict]:
     rows = []
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -28,6 +31,9 @@ def load_rows(path: Path) -> list[dict]:
     return rows
 
 
+# Validates training and evaluation dataset splits against configuration.
+# Asserts absence of duplicate prompts across train and eval partitions.
+# Checks that token sequence limits and LoRA rank hyperparameters are valid.
 def validate(config: dict) -> tuple[list[dict], list[dict]]:
     train = load_rows(ROOT / config["train_file"])
     evaluation = load_rows(ROOT / config["eval_file"])
@@ -39,6 +45,9 @@ def validate(config: dict) -> tuple[list[dict], list[dict]]:
     return train, evaluation
 
 
+# Tokenizes chat example into input IDs, attention mask, and label targets.
+# Applies chat templates, masks out prompt prefix tokens using minus 100.
+# Ensures target token sequence length adheres to maximum limit boundaries.
 def tokenize_row(row: dict, tokenizer, max_length: int) -> dict:
     messages = row["messages"]
     prompt = tokenizer.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True)
@@ -55,6 +64,9 @@ def tokenize_row(row: dict, tokenizer, max_length: int) -> dict:
     return {"input_ids": ids, "attention_mask": [1] * len(ids), "labels": labels}
 
 
+# Command line entry point for training or validating LoRA parameter adapters.
+# Parses training CLI arguments, configures tokenizer, and trains PEFT model.
+# Saves trained adapter weights, tokenizer configs, and evaluation manifests.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=ROOT / "config.json")
@@ -116,5 +128,8 @@ def main() -> None:
     print(f"Adapter saved to {output}")
 
 
+# Script execution guard invoking LoRA training process main function.
+# Directs command execution into training pipeline logic.
+# Ensures proper entry point handling when invoked as standalone script.
 if __name__ == "__main__":
     main()

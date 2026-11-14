@@ -105,6 +105,9 @@ import { ensureUserTransactionsMigrated } from "./transactionMigration"; // Lega
  * Normalized transaction type for AI consumption.
  * All fields are guaranteed to be non-null and properly typed.
  */
+// Defines a normalized financial transaction formatted for AI context ingestion.
+// Enforces non-null numerical amounts, categories, descriptions, and date stamps.
+// Categorizes ledger entries across income, expense, and investment types.
 export type AiTransaction = {
   amount: number; // Normalized amount (positive for income, negative for expenses)
   category: string; // Transaction category (e.g., "Food", "Rent", "Salary")
@@ -117,6 +120,9 @@ export type AiTransaction = {
  * Result type including both the transactions and statistics about the fetch.
  * Stats are used for logging and displayed in the AI response metadata.
  */
+// Represents the payload returned by the AI transaction retrieval pipeline.
+// Encapsulates normalized chronological transaction records and retrieval stats.
+// Tracks total matched volume, transmitted count, and dropped historical items.
 export type AiTransactionFetchResult = {
   transactions: AiTransaction[]; // Normalized transactions ready for AI
   stats: {
@@ -148,6 +154,9 @@ export type AiTransactionFetchResult = {
  * @param {number} [params.maxItems=300] - Maximum number of transactions to return
  * @returns {Promise<AiTransactionFetchResult>} Transactions and fetch statistics
  */
+// Fetches, filters, and normalizes tenant transactions for AI prompt context windows.
+// Runs legacy data migrations and executes parallel query count and retrieval calls.
+// Reverses fetched descending batches into chronological order for agent reasoning.
 export const fetchTransactionsForAi = async (params: {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;

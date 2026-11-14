@@ -13,17 +13,29 @@ import { sendEmail } from "../utils/sendEmail";
 import { getCurrentPeriodKey } from "./entitlements";
 import { aggregateUsageLedger } from "./usageLedger";
 
+// Extracts the YYYY-MM-DD date prefix from a Date instance in UTC notation.
+// Produces a standardized day key for scheduled email digest tracking.
+// Ensures consistent date range display in subject lines and logs.
 const toDayKey = (value: Date) => value.toISOString().slice(0, 10);
 
+// Safely parses and restricts a lookback day window between 1 and 31 days.
+// Defaults gracefully to a provided fallback value if non-numeric or invalid.
+// Prevents out-of-range historical query scans during digest generation.
 const clampDaysBack = (value: unknown, fallback: number) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(1, Math.min(31, Math.floor(parsed)));
 };
 
+// Formats a numeric currency value into a localized US Dollar string.
+// Applies standard currency formatting with comma separators and two decimals.
+// Enhances readability for financial totals displayed inside email digests.
 const formatUsd = (amount: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
 
+// Dispatches batch digest email generation tasks across all registered organizations.
+// Streams organization documents via cursor and throttles dispatching with PQueue concurrency.
+// Logs scheduled digest run telemetry and returns queue processing statistics.
 export const enqueueDigestJobsForAllOrgs = async (params?: {
   asOf?: Date;
   daysBack?: number;
@@ -70,6 +82,9 @@ export const enqueueDigestJobsForAllOrgs = async (params?: {
   return { enqueued, day_key: dayKey, period_key: periodKey, days_back: daysBack };
 };
 
+// Generates and sends personalized financial summary emails to organization members.
+// Compiles recent transaction flow, upcoming task deadlines, and AI quota consumption.
+// Emits emails asynchronously through configured SMTP or console fallback channels.
 export const sendOrgDigestEmails = async (params: {
   orgId: mongoose.Types.ObjectId;
   asOf?: Date;
@@ -275,6 +290,9 @@ export const sendOrgDigestEmails = async (params: {
   };
 };
 
+// Triggers billing period AI usage ledger aggregation across recorded usage events.
+// Resolves active billing period key and synchronizes materialized quota totals.
+// Returns execution summary indicating number of updated organization ledger records.
 export const enqueueUsageAggregation = async (params?: { periodKey?: string }) => {
   const periodKey = params?.periodKey?.trim() ? params.periodKey.trim() : getCurrentPeriodKey();
   const aggregation = await aggregateUsageLedger({ periodKey });

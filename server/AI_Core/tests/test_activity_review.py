@@ -35,7 +35,7 @@ def test_does_not_guess_progress_or_turn_record_markup_into_links():
     assert r"\<script\>" in answer
 
 
-@pytest.mark.parametrize("question", ["What is compound interest?", "Mark my task complete", "Review my goals in this attached PDF"])
+@pytest.mark.parametrize("question", ["What is compound interest?", "Mark my task complete", "Review my goals in this attached PDF", "Mark my task complete as the next step", "Create my next step task"])
 def test_leaves_unrelated_requests_and_document_questions_to_the_existing_workflow(question):
     assert activity_review_answer(question, None, CONTEXT) == ""
 
@@ -47,12 +47,13 @@ def test_empty_or_malformed_context_is_not_invented():
     assert "No saved goals were supplied" in answer
 
 
-def test_activity_review_skips_graph_fanout_and_model_calls(monkeypatch):
+@pytest.mark.parametrize("question", [QUESTION, "Suggest one next step from my saved activity"])
+def test_activity_review_skips_graph_fanout_and_model_calls(monkeypatch, question):
     workflow = FinancialWorkflow()
     monkeypatch.setattr(workflow, "_get_session_manager", lambda: None)
     monkeypatch.setattr(workflow.workflow, "invoke", lambda *_: pytest.fail("Unnecessary specialist fanout"))
     begin_request_metrics("activity-test")
-    result = workflow.process_request(QUESTION, {"currency": "USD"}, finance_context=CONTEXT)
+    result = workflow.process_request(question, {"currency": "USD"}, finance_context=CONTEXT)
     assert result["phase"] == "complete"
     assert [entry["agent"] for entry in result["workflow_trace"]] == ["activity_review"]
     assert result["workflow_trace"][0]["llmCalls"] == 0
@@ -61,10 +62,11 @@ def test_activity_review_skips_graph_fanout_and_model_calls(monkeypatch):
 
 
 @pytest.mark.parametrize("stream", [False, True])
-def test_http_and_sse_use_the_same_current_activity_snapshot(stream):
+@pytest.mark.parametrize("question", [QUESTION, "Suggest one next step from my saved activity"])
+def test_http_and_sse_use_the_same_current_activity_snapshot(stream, question):
     with TestClient(app) as client:
         response = client.post("/api/agents/process" + ("/stream" if stream else ""), json={
-            "user_input": QUESTION, "user_profile": None, "finance_context": CONTEXT,
+            "user_input": question, "user_profile": None, "finance_context": CONTEXT,
             "options": {"narrative": True},
         })
     assert response.status_code == 200, response.text
@@ -74,8 +76,18 @@ def test_http_and_sse_use_the_same_current_activity_snapshot(stream):
         data = next(event["result"] for event in events if event.get("phase") == "complete")
     else:
         data = response.json()
-    assert data["final_output"].startswith("## Your next steps")
-    assert "Campus buffer" in data["final_output"]
+    assert data["final_output"].startswith("## Your next step")
+    assert "Overdue review" in data["final_output"]
+    if question == QUESTION:
+        assert "Campus buffer" in data["final_output"]
     assert data["analysis_type"] == "activity_review"
     assert data["llm_call_count"] == 0
     assert not data.get("tool_calls")
+
+
+def test_one_step_names_only_the_first_owned_task_and_does_not_generate_a_plan():
+    answer = activity_review_answer("Suggest one next step from my saved activity", {"currency": "USD"}, CONTEXT)
+    assert "Overdue review" in answer
+    assert "Current high priority" not in answer
+    assert "Goal progress" not in answer
+    assert "No task or financial record has been changed" in answer

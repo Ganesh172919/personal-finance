@@ -41,6 +41,9 @@ ToolName = Literal[
 ]
 
 
+# Structured proposal schema representing an executable client-side tool action.
+# Defines target tool endpoints, structured arguments, and risk classification.
+# Enforces mandatory explicit user confirmation before applying proposed state changes.
 class ToolCall(BaseModel):
     id: str
     title: str
@@ -51,5 +54,8 @@ class ToolCall(BaseModel):
     risk: ToolRisk = "low"
 
 
+# Container contract wrapping an ordered collection of proposed tool calls.
+# Facilitates batch serialization of client automation proposals in API responses.
+# Provides a structured payload wrapper for idempotent workflow operations.
 class ToolCallSet(BaseModel):
     tool_calls: List[ToolCall] = Field(default_factory=list)

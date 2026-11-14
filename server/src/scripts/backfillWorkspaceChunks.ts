@@ -5,6 +5,9 @@ import WorkspaceFileModel from "../models/workspaceFileModel";
 import { chunkWorkspaceTextForRetrieval, ensureWorkspaceFileChunks } from "../services/retrievalService";
 
 // Usage: npm run backfill:retrieval -- --org-id <id> [--user-id <id>] [--dry-run]
+// CLI migration script that parses command line arguments and backfills vector knowledge chunks.
+// Iterates through workspace files scoped by organization and splits text into semantic chunks.
+// Supports dry-run simulation mode and batch streaming to minimize process memory footprint.
 const main = async () => {
   const args = process.argv.slice(2);
   const flags = new Map<string, string | boolean>();
@@ -56,6 +59,9 @@ const main = async () => {
   }
 };
 
+// Script entrypoint invoking backfill logic and catching unexpected runtime exceptions.
+// Sets non-zero process exit code on unhandled promise rejections.
+// Prints detailed error diagnostics to standard error console.
 main().catch((error) => {
   console.error("Workspace chunk backfill failed:", error);
   process.exitCode = 1;

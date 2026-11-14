@@ -102,19 +102,29 @@ import TaskModel from "../models/taskModel";
 import WorkspaceFileModel from "../models/workspaceFileModel";
 import { detectRecurringCandidates, getBudgetEnvelopes } from "./financeIntelligence";
 import { ensureWorkspaceFileChunks, retrieveRelevantWorkspaceChunks } from "./retrievalService";
+import { retrieveUnifiedContext, type UnifiedContextResult } from "./unifiedContextRetrievalService";
 
 /** Generate the current period key (YYYY-MM format) */
+// Formats the current UTC calendar date into a YYYY-MM period identifier string.
+// Zero-pads month indices to maintain uniform lexicographical date sorting.
+// Provides the primary period key for monthly budget and grounding aggregations.
 const currentPeriodKey = () => {
   const now = new Date();
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 };
 
+// Safely converts an optional date value or string into an ISO 8601 string representation.
+// Validates time finiteness to ensure invalid dates return null instead of throwing.
+// Standardizes timestamp properties injected into downstream AI prompt contexts.
 const isoDate = (value?: Date | string | null) => {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
+// Represents a discrete factual evidence item cited within AI generation contexts.
+// Encapsulates data source category, human-readable label, text snippet, and page number.
+// Surfaced to end-users so they can inspect and verify AI-derived financial answers.
 export type AiEvidenceItem = {
   id: string;
   type: "transaction_scope" | "budget" | "recurring" | "task" | "reminder" | "file" | "memory" | "retrieval_chunk";
@@ -124,6 +134,9 @@ export type AiEvidenceItem = {
   page_number?: number;
 };
 
+// Assembles comprehensive financial grounding context across multiple workspace data sources.
+// Aggregates account balances, budget envelopes, scheduled tasks, reminders, and RAG knowledge.
+// Formulates structured evidence items and computes factual grounding confidence metrics.
 export const buildAiFinanceGrounding = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -204,6 +217,15 @@ export const buildAiFinanceGrounding = async (params: {
       }).catch(() => [])
     : [];
 
+  const unifiedResult: UnifiedContextResult | null = params.retrievalQuery
+    ? await retrieveUnifiedContext({
+        orgId: params.orgId,
+        userId: params.userId,
+        query: params.retrievalQuery,
+        limit: 8,
+      }).catch(() => null)
+    : null;
+
   const evidence: AiEvidenceItem[] = [];
 
   if (budgetResult) {
@@ -262,15 +284,31 @@ export const buildAiFinanceGrounding = async (params: {
     });
   });
 
-  memoryRows.slice(0, 3).forEach((memory) => {
-    evidence.push({
-      id: `memory:${memory._id}`,
-      type: "memory",
-      label: memory.key,
-      snippet: memory.value,
-      entity_id: String(memory._id),
+  const topRankedMemories = unifiedResult && unifiedResult.results.some((r) => r.sourceType === "memory")
+    ? unifiedResult.results.filter((r) => r.sourceType === "memory").slice(0, 3)
+    : null;
+
+  if (topRankedMemories && topRankedMemories.length > 0) {
+    topRankedMemories.forEach((mem) => {
+      evidence.push({
+        id: `memory:${mem.id}`,
+        type: "memory",
+        label: mem.title,
+        snippet: `${mem.snippet} (Relevance ${mem.score}%)`,
+        entity_id: mem.id,
+      });
     });
-  });
+  } else {
+    memoryRows.slice(0, 3).forEach((memory) => {
+      evidence.push({
+        id: `memory:${memory._id}`,
+        type: "memory",
+        label: memory.key,
+        snippet: memory.value,
+        entity_id: String(memory._id),
+      });
+    });
+  }
 
   retrievedChunks.forEach((chunk) => {
     evidence.push({
@@ -346,12 +384,28 @@ export const buildAiFinanceGrounding = async (params: {
         kind: file.kind,
         summary: String(file.analysis?.summary || file.extractedPreview || "").slice(0, 240),
       })),
-      memory: memoryRows.map((memory) => ({
-        key: memory.key,
-        value: memory.value,
-        confidence: Number(memory.confidence || 0),
-        source: memory.source,
-      })),
+      memory: (topRankedMemories && topRankedMemories.length > 0)
+        ? topRankedMemories.map((m) => ({
+            key: m.metadata.key || m.title,
+            value: m.snippet,
+            confidence: Number(m.metadata.confidence || 0.8),
+            source: m.metadata.source || "ranked_memory",
+          }))
+        : memoryRows.map((memory) => ({
+            key: memory.key,
+            value: memory.value,
+            confidence: Number(memory.confidence || 0),
+            source: memory.source,
+          })),
+      unified_retrieval: unifiedResult
+        ? {
+            query: unifiedResult.query,
+            total: unifiedResult.total,
+            breakdown: unifiedResult.breakdown,
+            results: unifiedResult.results,
+            grounded_context_prompt: unifiedResult.groundedContextPrompt,
+          }
+        : undefined,
       retrieval: {
         query: params.retrievalQuery || "",
         top_chunks: retrievedChunks.map((chunk) => ({

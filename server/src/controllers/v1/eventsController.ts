@@ -25,7 +25,11 @@ import type { IUserDocument } from "../../models/userModel";
 import DomainEventModel from "../../models/domainEventModel";
 import { HttpError } from "../../middleware/httpError";
 import { getEventBus, type EventBusEvent, type EventBusSubscription } from "../../modules/realtime/eventBus";
+import { trackSseConnection } from "../../observability/metrics";
 
+// Enforces tenant organization context presence on realtime event stream connections.
+// Parses and validates the organization ID into a strongly-typed MongoDB ObjectId.
+// Raises an unauthorized HTTP exception if organization scoping is missing.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -33,6 +37,9 @@ const requireOrgContext = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Extracts and validates the historical resume point from headers or query params.
+// Checks last-event-id headers or after parameters against ObjectId specifications.
+// Delivers the parsed resume ObjectId or null when client requests a fresh stream.
 const parseAfterId = (req: Request): mongoose.Types.ObjectId | null => {
   const header = String(req.header("last-event-id") || "").trim();
   const query = String((req.query as any)?.after || "").trim();
@@ -44,6 +51,9 @@ const parseAfterId = (req: Request): mongoose.Types.ObjectId | null => {
   return new mongoose.Types.ObjectId(candidate);
 };
 
+// Establishes a persistent Server-Sent Events channel streaming real-time domain events.
+// Replays missed events upon reconnection and maintains connections via heartbeats.
+// Coordinates stream backpressure, in-memory event bus piping, and socket teardown.
 export const streamEvents = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -88,11 +98,13 @@ export const streamEvents = async (req: Request, res: Response) => {
 
   let stopped = false;
   let subscription: EventBusSubscription | null = null;
+  const endSseMetric = trackSseConnection("events");
 
   const cleanup = () => {
     if (stopped) return;
     stopped = true;
     clearInterval(heartbeat);
+    endSseMetric();
     if (subscription) {
       subscription.close();
       subscription = null;

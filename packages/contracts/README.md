@@ -149,3 +149,14 @@ export interface HealthScoreDTO {
                 data:
                   $ref: '#/components/schemas/HealthScoreDTO'
 ```
+
+
+---
+
+## 2026 Enterprise Canonical Contracts
+
+The contracts package specifies OpenAPI and JSON Schema definitions across all versioned endpoints:
+- `paths/v1/ai/canary.yaml`: Continuous AI Canary status and validation contracts.
+- `paths/v1/unified-context.yaml`: Cross-silo ranked retrieval schemas for Reciprocal Rank Fusion ($k = 60$).
+- `paths/v1/calendar-reminders.yaml`: RFC 5545 iCalendar stream schemas.
+- `paths/v1/merchant-clusters.yaml`: 64-D embedding space and cluster promotion contracts.

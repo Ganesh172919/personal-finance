@@ -46,6 +46,9 @@ import { useAuth } from "@/hooks/useAuth";
 
 // ─── Helpers ────────────────────────────────────────────
 
+// Calculates human-readable relative time strings from ISO timestamp strings.
+// Outputs concise intervals such as just now, minutes, hours, or days ago.
+// Falls back to standard month and day dates for comments older than a week.
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60_000);
@@ -58,6 +61,9 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+// Extracts capitalized user initials from a full display name string.
+// Splits multi-word names and grabs the first letter of the first two tokens.
+// Powers fallback user avatar chips when custom profile images are unavailable.
 function getInitials(name: string): string {
   return name
     .split(" ")
@@ -67,6 +73,9 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
+// Theme palette array of background Tailwind color classes for user avatars.
+// Assigns vibrant hues across emerald, indigo, rose, and amber variants.
+// Supports deterministic color hashing based on author username strings.
 const AVATAR_COLORS = [
   "bg-violet-500",
   "bg-emerald-500",
@@ -78,6 +87,9 @@ const AVATAR_COLORS = [
   "bg-pink-500",
 ];
 
+// Hashes a user's display name string to deterministically select an avatar color.
+// Generates an integer hash code by cycling through string character codes.
+// Guarantees consistent profile badge background colors across comment threads.
 function getAvatarColor(name: string): string {
   let hash = 0;
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
@@ -86,6 +98,9 @@ function getAvatarColor(name: string): string {
 
 // ─── Props ──────────────────────────────────────────────
 
+// Configuration specifications for the multi-resource comment discussion thread.
+// Associates discussion threads with target resource types and unique entity IDs.
+// Includes compact layout flags for tight embed scenarios in cards and modal panes.
 interface CommentThreadProps {
   resourceType: "transaction" | "budget" | "goal" | "workflow" | "insight";
   resourceId: string;
@@ -95,6 +110,9 @@ interface CommentThreadProps {
 
 // ─── Main Component ─────────────────────────────────────
 
+// Interactive threaded discussion component supporting collaboration across records.
+// Facilitates creating, editing, and deleting comments with instant optimistic updates.
+// Displays user avatars, relative timestamps, and permission-aware editing menus.
 export function CommentThread({
   resourceType,
   resourceId,

@@ -1,7 +1,13 @@
 import { Schema, model, Document, Types } from "mongoose";
 
+// Enumerates payment dunning lifecycle states for delinquent subscriptions.
+// Distinguishes active retry sequences from recovered accounts or exhausted retries.
+// Used by billing controllers to gate subscription access during payment failures.
 export type DunningStatus = "active" | "recovered" | "exhausted";
 
+// Defines TypeScript interface for tracking payment retry attempts during dunning.
+// Records attempt index, timestamp, outcome status, error details, and invoice.
+// Provides historical audit logs of recovery workflows following card declines.
 export interface IDunningRetryHistory {
   attempt: number;
   attemptedAt: Date;
@@ -10,6 +16,9 @@ export interface IDunningRetryHistory {
   invoiceNumber?: string;
 }
 
+// Defines TypeScript contract representing an active dunning management cycle.
+// Tracks attempt counters, grace period deadlines, scheduled retries, and errors.
+// Encapsulates tenant subscription recovery status and past retry history records.
 export interface IDunning {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;
@@ -25,10 +34,16 @@ export interface IDunning {
   updatedAt: Date;
 }
 
+// Extends IDunning with Mongoose Document properties and ObjectId primary key.
+// Enables runtime database querying, persistence methods, and schema validation.
+// Represents individual dunning cycle documents within MongoDB collection.
 export interface IDunningDocument extends IDunning, Document {
   _id: Types.ObjectId;
 }
 
+// Sub-document Mongoose schema recording historical payment retry attempts.
+// Tracks attempt number, execution timestamps, failure reasons, and outcomes.
+// Embedded inside the parent dunning schema without generating separate ObjectIds.
 const dunningRetryHistorySchema = new Schema<IDunningRetryHistory>(
   {
     attempt: { type: Number, required: true },
@@ -40,6 +55,9 @@ const dunningRetryHistorySchema = new Schema<IDunningRetryHistory>(
   { _id: false }
 );
 
+// Mongoose schema definition governing subscription dunning recovery cycles.
+// Enforces unique organization mapping, status enumerations, and retry limits.
+// Automatically tracks record creation and modification timestamps for billing.
 const dunningSchema = new Schema<IDunningDocument>(
   {
     orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, unique: true, index: true },
@@ -56,4 +74,7 @@ const dunningSchema = new Schema<IDunningDocument>(
   { timestamps: true }
 );
 
+// Instantiates and exports compiled Mongoose model for "Dunning" collection.
+// Provides strongly typed querying, retry scheduling, and recovery state updates.
+// Consumed by billing retry cron jobs, payment webhooks, and dunning controllers.
 export default model<IDunningDocument>("Dunning", dunningSchema);

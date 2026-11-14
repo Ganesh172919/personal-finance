@@ -25,6 +25,14 @@ vi.mock("@/lib/api/transactions", () => ({
   ...apiTransactions,
 }));
 
+const apiFinance = vi.hoisted(() => ({
+  rebalanceBudgetAllocations: vi.fn(),
+}));
+
+vi.mock("@/lib/api/v1/finance", () => ({
+  ...apiFinance,
+}));
+
 const apiTasks = vi.hoisted(() => ({
   createTask: vi.fn(),
 }));
@@ -155,6 +163,83 @@ const mockBudgetHealthData = {
     potential_score_improvement: 11,
     recommended_actions_count: 2,
   },
+  peer_benchmarks: [
+    {
+      category: "Dining Out",
+      user_spend: 450,
+      user_pct_of_income: 11.2,
+      peer_median_pct: 12.0,
+      peer_p25_pct: 8.0,
+      peer_p75_pct: 16.0,
+      delta_vs_peer_median: -0.8,
+      monthly_dollar_delta: -32,
+      status: "aligned" as const,
+      benchmark_description: "Aligned: Spending is 11.2% of income, well within typical peer bounds (8.0%–16.0%).",
+    },
+    {
+      category: "Groceries",
+      user_spend: 300,
+      user_pct_of_income: 6.5,
+      peer_median_pct: 10.0,
+      peer_p25_pct: 7.0,
+      peer_p75_pct: 13.5,
+      delta_vs_peer_median: -3.5,
+      monthly_dollar_delta: -140,
+      status: "frugal" as const,
+      benchmark_description: "Top Saver: Your spending is 6.5% of income, significantly below peer median (10%).",
+    },
+    {
+      category: "Shopping",
+      user_spend: 240,
+      user_pct_of_income: 11.5,
+      peer_median_pct: 6.5,
+      peer_p25_pct: 4.0,
+      peer_p75_pct: 10.0,
+      delta_vs_peer_median: 5.0,
+      monthly_dollar_delta: 200,
+      status: "elevated" as const,
+      benchmark_description: "Elevated: Spending is 11.5% of income vs peer median of 6.5% (+$200/mo above peers).",
+    },
+  ],
+  peer_benchmarking_summary: {
+    available: true,
+    cohort_name: "Standard Household Peer Cohort",
+    alignment_index: 86,
+    frugal_categories_count: 1,
+    elevated_categories_count: 1,
+    top_peer_savings_opportunity: "Shopping",
+  },
+  auto_rebalance_plan: {
+    period_key: "2026-10",
+    needed: true,
+    transfers: [
+      {
+        from_category: "Groceries",
+        to_category: "Dining Out",
+        amount: 50,
+        reason: "Transfer $50 surplus from Groceries to cover Dining Out overrun without increasing total budget",
+      },
+    ],
+    proposed_allocations: [
+      {
+        category: "Groceries",
+        current_planned: 600,
+        recommended_planned: 550,
+        delta: -50,
+        status: "surplus_donated" as const,
+      },
+      {
+        category: "Dining Out",
+        current_planned: 500,
+        recommended_planned: 550,
+        delta: 50,
+        status: "deficit_buffered" as const,
+      },
+    ],
+    total_rebalanced_amount: 50,
+    envelopes_stabilized: 1,
+    budget_preserved: true,
+  },
 };
 
 describe("BudgetHealthCard Component", () => {
@@ -171,6 +256,16 @@ describe("BudgetHealthCard Component", () => {
     });
 
     apiTransactions.getBudgetHealth.mockResolvedValue(mockBudgetHealthData);
+    apiFinance.rebalanceBudgetAllocations.mockResolvedValue({
+      message: "Budget allocations successfully rebalanced",
+      period_key: "2026-10",
+      transfers_executed: 1,
+      total_rebalanced: 50,
+      allocations: [
+        { category: "Groceries", amount: 550, currency: "USD", previous_amount: 600, delta: -50 },
+        { category: "Dining Out", amount: 550, currency: "USD", previous_amount: 500, delta: 50 },
+      ],
+    });
   });
 
   afterEach(() => {
@@ -410,6 +505,206 @@ describe("BudgetHealthCard Component", () => {
         expect.objectContaining({
           title: "Savings Action Added",
           description: expect.stringContaining("Enforce $5/day spending limit on Dining Out"),
+        })
+      );
+    });
+  });
+
+  it("renders peer spending benchmarks tab with statistical cohort alignment and category insights", async () => {
+    renderBudgetHealth();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("btn-tab-peer-benchmarks")).toBeInTheDocument();
+    });
+
+    // Switch to peer benchmarks tab
+    fireEvent.click(screen.getByTestId("btn-tab-peer-benchmarks"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-peer-benchmarking")).toBeInTheDocument();
+    });
+
+    // Cohort metadata badges
+    expect(screen.getByTestId("badge-peer-cohort")).toHaveTextContent("Standard Household Peer Cohort");
+    expect(screen.getByTestId("badge-peer-alignment")).toHaveTextContent("Peer Alignment: 86%");
+    expect(screen.getByTestId("badge-peer-frugal-count")).toHaveTextContent("1 Frugal Categories");
+    expect(screen.getByTestId("badge-peer-elevated-count")).toHaveTextContent("1 Elevated Categories");
+
+    // Top savings opportunity banner
+    expect(screen.getByTestId("card-peer-opportunity-banner")).toHaveTextContent("Shopping");
+
+    // Category cards and statuses
+    expect(screen.getByTestId("card-peer-item-dining-out")).toBeInTheDocument();
+    expect(screen.getByTestId("badge-peer-status-dining-out")).toHaveTextContent("Aligned");
+    expect(screen.getByTestId("metric-peer-delta-dining-out")).toHaveTextContent("-$32/mo");
+
+    expect(screen.getByTestId("card-peer-item-groceries")).toBeInTheDocument();
+    expect(screen.getByTestId("badge-peer-status-groceries")).toHaveTextContent("Top Saver");
+    expect(screen.getByTestId("metric-peer-delta-groceries")).toHaveTextContent("-$140/mo");
+
+    expect(screen.getByTestId("card-peer-item-shopping")).toBeInTheDocument();
+    expect(screen.getByTestId("badge-peer-status-shopping")).toHaveTextContent("Elevated");
+    expect(screen.getByTestId("metric-peer-delta-shopping")).toHaveTextContent("+$200/mo");
+    expect(screen.getByTestId("desc-peer-benchmark-shopping")).toHaveTextContent("Elevated: Spending is 11.5% of income");
+  });
+
+  it("shows an unavailable peer comparison state without inventing cohort statistics", async () => {
+    apiTransactions.getBudgetHealth.mockResolvedValueOnce({
+      ...mockBudgetHealthData,
+      peer_benchmarks: [],
+      peer_benchmarking_summary: {
+        available: false,
+        unavailable_reason: "No verified peer comparison data is connected.",
+        cohort_name: null,
+        alignment_index: null,
+        frugal_categories_count: null,
+        elevated_categories_count: null,
+      },
+    });
+    renderBudgetHealth();
+    fireEvent.click(await screen.findByTestId("btn-tab-peer-benchmarks"));
+
+    expect(screen.getByTestId("peer-benchmarks-unavailable")).toHaveTextContent("No verified peer comparison data is connected.");
+    expect(screen.queryByTestId("badge-peer-cohort")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("badge-peer-alignment")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("badge-peer-frugal-count")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("badge-peer-elevated-count")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "View your budget" }));
+    expect(screen.getByTestId("predictive-spending-limits")).toBeInTheDocument();
+  });
+
+  it("keeps peer and rebalance controls useful when no financial records exist", async () => {
+    apiTransactions.getBudgetHealth.mockResolvedValueOnce({
+      ...mockBudgetHealthData,
+      health_score: { ...mockBudgetHealthData.health_score, data_available: false },
+      peer_benchmarks: [],
+      peer_benchmarking_summary: { available: false, unavailable_reason: "No verified peer comparison data is connected." },
+    });
+    renderBudgetHealth();
+    expect(await screen.findByTestId("budget-health-empty")).toHaveTextContent("Add transactions");
+    fireEvent.click(screen.getByTestId("btn-tab-peer-benchmarks"));
+    expect(screen.getByTestId("peer-benchmarks-unavailable")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-tab-peer-benchmarks")).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByTestId("btn-tab-auto-rebalance"));
+    expect(screen.getByTestId("budget-health-empty")).toHaveTextContent("Add budget allocations and spending");
+    expect(screen.queryByTestId("card-peer-benchmarking")).not.toBeInTheDocument();
+  });
+
+  it("does not display a fallback cohort or alignment when peer metadata is missing", async () => {
+    apiTransactions.getBudgetHealth.mockResolvedValueOnce({
+      ...mockBudgetHealthData,
+      peer_benchmarks: [],
+      peer_benchmarking_summary: undefined,
+    });
+    renderBudgetHealth();
+    fireEvent.click(await screen.findByTestId("btn-tab-peer-benchmarks"));
+
+    expect(screen.getByTestId("peer-benchmarks-unavailable")).toBeInTheDocument();
+    expect(screen.queryByTestId("badge-peer-cohort")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("badge-peer-alignment")).not.toBeInTheDocument();
+  });
+
+  it("honors explicit peer unavailability even if an old payload contains benchmark rows", async () => {
+    apiTransactions.getBudgetHealth.mockResolvedValueOnce({
+      ...mockBudgetHealthData,
+      peer_benchmarking_summary: {
+        ...mockBudgetHealthData.peer_benchmarking_summary,
+        available: false,
+      },
+    });
+    renderBudgetHealth();
+    fireEvent.click(await screen.findByTestId("btn-tab-peer-benchmarks"));
+
+    expect(screen.getByTestId("peer-benchmarks-unavailable")).toBeInTheDocument();
+    expect(screen.queryByTestId("card-peer-item-dining-out")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("badge-peer-alignment")).not.toBeInTheDocument();
+  });
+
+  it("keeps unknown debt savings and score impact out of badges and task promises", async () => {
+    apiTransactions.getBudgetHealth.mockResolvedValueOnce({
+      ...mockBudgetHealthData,
+      proactive_savings_recommendations: [{
+        id: "debt-saved-card",
+        title: "Accelerate payoff on Saved Card",
+        category: "Debt Paydown",
+        impact_monthly_savings: null,
+        score_impact_pts: null,
+        difficulty: "strategic",
+        reasoning: "Your saved balance is $1000.00 at 20% APR. Extra-payment savings have not been calculated.",
+        action_type: "create_task",
+        suggested_task_title: "Review an affordable extra principal payment on Saved Card",
+      }],
+      savings_potential_summary: {
+        total_monthly_savings: 0,
+        potential_score_improvement: 0,
+        recommended_actions_count: 1,
+      },
+    });
+    apiTasks.createTask.mockResolvedValueOnce({ task: { id: "debt-review-task" } });
+    renderBudgetHealth();
+
+    expect(await screen.findByTestId("rec-impact-unknown-debt-saved-card")).toHaveTextContent("Savings not calculated");
+    expect(screen.queryByTestId("badge-rec-savings-debt-saved-card")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("badge-rec-score-debt-saved-card")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("badge-total-potential-savings")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("badge-potential-score-bump")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("btn-apply-recommendation-debt-saved-card"));
+    await waitFor(() => expect(apiTasks.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      expected_impact: "Savings and health-score impact have not been calculated.",
+    })));
+  });
+
+  it("renders auto-rebalancing cockpit and executes 1-click envelope rebalance with budget preservation", async () => {
+    renderBudgetHealth();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("btn-tab-auto-rebalance")).toBeInTheDocument();
+    });
+
+    // Switch to auto-rebalance tab
+    fireEvent.click(screen.getByTestId("btn-tab-auto-rebalance"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-envelope-auto-rebalance")).toBeInTheDocument();
+    });
+
+    // Plan badges and guarantees
+    expect(screen.getByTestId("badge-rebalance-preserved")).toHaveTextContent("Zero-Sum Budget Preserved: Total Budget Unchanged");
+    expect(screen.getByTestId("badge-rebalance-needed")).toHaveTextContent("1 Transfers Recommended");
+    expect(screen.getByTestId("metric-total-rebalanced")).toHaveTextContent("$50");
+
+    // Transfers proposal items
+    expect(screen.getByTestId("item-rebalance-transfer-0")).toHaveTextContent("Groceries (Surplus)");
+    expect(screen.getByTestId("item-rebalance-transfer-0")).toHaveTextContent("Dining Out (Deficit)");
+    expect(screen.getByTestId("metric-transfer-amount-0")).toHaveTextContent("$50");
+
+    // Proposed allocations breakdown
+    expect(screen.getByTestId("item-proposed-allocation-groceries")).toHaveTextContent("Planned: $600.00 → $550.00");
+    expect(screen.getByTestId("item-proposed-allocation-dining-out")).toHaveTextContent("Planned: $500.00 → $550.00");
+
+    // Click 1-Click Execute Envelope Auto-Rebalance
+    const rebalanceBtn = screen.getByTestId("btn-apply-auto-rebalance");
+    expect(rebalanceBtn).not.toBeDisabled();
+    fireEvent.click(rebalanceBtn);
+
+    await waitFor(() => {
+      expect(apiFinance.rebalanceBudgetAllocations).toHaveBeenCalledWith(
+        "2026-10",
+        {
+          transfers: [
+            {
+              from_category: "Groceries",
+              to_category: "Dining Out",
+              amount: 50,
+              reason: "Transfer $50 surplus from Groceries to cover Dining Out overrun without increasing total budget",
+            },
+          ],
+        }
+      );
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Envelope Budget Rebalanced",
+          description: expect.stringContaining("Successfully executed 1 transfers"),
         })
       );
     });

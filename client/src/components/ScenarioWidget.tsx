@@ -29,6 +29,9 @@ import { processScenario, ScenarioResponse } from "@/lib/apiClient";
 import { useLocation } from "wouter";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
+// Compact dashboard widget simulating the budgetary impact of hypothetical expenses.
+// Dispatches scenario models to multi-agent engines to estimate savings rate changes.
+// Displays projected goal delays, remaining cash buffers, and suggested mitigations.
 export function ScenarioWidget() {
   const { formatMoney, currency } = useOrgFormatters();
   const [amount, setAmount] = useState("");

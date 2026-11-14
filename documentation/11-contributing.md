@@ -266,3 +266,41 @@ jobs:
       - name: Pytest Invariants & Multi-Agent Evals
         run: cd server/AI_Core && pytest tests/ evals/ -v
 ```
+
+---
+
+## 7. 2026 Contribution Quality Gates & Invariant Verification Requirements
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4f46e5', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#3730a3', 'lineColor': '#6366f1', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((PR Quality Gates))
+    Client PR Checklist
+      cd client && npm test (51 suites, 408 tests)
+      cd client && npm run build (0 errors)
+    Server Gateway Checklist
+      cd server && npm run test:ci (67 suites, 271 tests)
+      cd server && npm run check (0 tsc errors)
+    AI Core & Canary Checklist
+      cd server/AI_Core && pytest tests/ -v (316+ tests)
+      cd server/AI_Core && python -m evals.runner (175/175 evals)
+    Invariant Hard Blockers
+      Any failure in Canary Math Invariants blocks merge
+```
+
+### 7.1 Mandatory CI / CD Quality Gate Commands
+Before opening a pull request, all contributors must execute and pass the four-tier verification matrix:
+
+```bash
+# 1. Verify React Client (51 suites / 408 tests)
+cd client && npm test
+
+# 2. Verify Express Gateway (67 suites / 271 tests)
+cd server && npm run test:ci
+
+# 3. Verify Python AI Core Unit Tests (316+ tests)
+cd server/AI_Core && pytest tests/ -v
+
+# 4. Verify Continuous Production Canary Invariants (175/175 passed)
+cd server/AI_Core && python -m evals.runner
+```

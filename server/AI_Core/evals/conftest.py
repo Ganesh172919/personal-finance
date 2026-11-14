@@ -34,6 +34,9 @@ if str(AI_CORE_ROOT) not in sys.path:
 # ---------------------------------------------------------------------------
 
 
+# Registers specialized test markers within the pytest configuration context.
+# Categorizes eval tests into routing, quality, determinism, safety, and latency.
+# Enables granular test selection during local testing and automated CI pipelines.
 def pytest_configure(config):
     """Register custom markers for the eval suite."""
     config.addinivalue_line("markers", "routing: Routing accuracy tests")
@@ -48,6 +51,9 @@ def pytest_configure(config):
 # ---------------------------------------------------------------------------
 
 
+# Provides a minimal test user profile containing only basic age and income fields.
+# Simulates sparse user profiles to test agent resilience against missing data.
+# Supplies a standard deterministic fixture for edge-case evaluation scenarios.
 @pytest.fixture
 def minimal_profile() -> Dict[str, Any]:
     """Bare-minimum profile -- age and income only.
@@ -68,6 +74,9 @@ def minimal_profile() -> Dict[str, Any]:
     }
 
 
+# Provides an exhaustive user financial profile with debts, goals, and transactions.
+# Represents realistic financial scenarios across multiple months and asset classes.
+# Serves as the primary fixture for comprehensive end-to-end plan generation tests.
 @pytest.fixture
 def full_profile() -> Dict[str, Any]:
     """Complete profile with debts, goals, transactions, and settings.
@@ -119,6 +128,9 @@ def full_profile() -> Dict[str, Any]:
     }
 
 
+# Provides a financial profile with boundary edge cases such as zero income.
+# Simulates extreme indebtedness scenarios without corresponding earnings.
+# Tests system robustness and error handling under severe financial distress.
 @pytest.fixture
 def edge_case_profile() -> Dict[str, Any]:
     """Profile with edge-case values: zero income, extreme debt, no expenses.
@@ -146,6 +158,9 @@ def edge_case_profile() -> Dict[str, Any]:
     }
 
 
+# Provides a high net worth financial profile with strong savings and zero debt.
+# Simulates affluent user personas seeking aggressive growth and wealth building.
+# Exercises portfolio allocation and advanced investment advisory logic paths.
 @pytest.fixture
 def high_income_profile() -> Dict[str, Any]:
     """High-income profile with no debts and strong savings.
@@ -176,6 +191,9 @@ def high_income_profile() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+# Supplies a realistic two-month transaction dataset with diverse expense categories.
+# Includes recurring salary inflows, utility bills, and discretionary spending.
+# Serves as deterministic input data for income and expense analyzer evaluations.
 @pytest.fixture
 def sample_transactions() -> List[Dict[str, Any]]:
     """A realistic 2-month transaction history."""
@@ -202,6 +220,9 @@ def sample_transactions() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+# Supplies a standard debt portfolio containing mortgages and revolving credit cards.
+# Captures high-interest consumer debt alongside low-interest collateralized loans.
+# Exercises basic debt payoff strategy modeling and amortization schedules.
 @pytest.fixture
 def sample_debts() -> List[Dict[str, Any]]:
     """A typical debt portfolio: home loan + credit card."""
@@ -221,6 +242,9 @@ def sample_debts() -> List[Dict[str, Any]]:
     ]
 
 
+# Supplies a multi-tier liability portfolio comprising four distinct debt accounts.
+# Provides varied balances and interest rates for snowball versus avalanche tests.
+# Enables quantitative interest savings comparisons across repayment strategies.
 @pytest.fixture
 def multiple_debts() -> List[Dict[str, Any]]:
     """Four debts for snowball vs avalanche comparison tests."""
@@ -237,6 +261,9 @@ def multiple_debts() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+# Provides an isolated instance of the MasterFinancialStrategistAgent for testing.
+# Configures fresh agent routing logic and deterministic synthesis capabilities.
+# Ensures clean execution state without test cross-contamination between runs.
 @pytest.fixture
 def master_agent():
     """Fresh MasterFinancialStrategistAgent instance."""
@@ -245,6 +272,9 @@ def master_agent():
     return MasterFinancialStrategistAgent()
 
 
+# Provides an isolated instance of the IncomeExpenseAnalyzerAgent for testing.
+# Supplies cash flow metrics, category breakdowns, and anomaly detection rules.
+# Enables deterministic validation of transaction analysis logic in unit suites.
 @pytest.fixture
 def income_analyzer():
     """Fresh IncomeExpenseAnalyzerAgent instance."""
@@ -253,6 +283,9 @@ def income_analyzer():
     return IncomeExpenseAnalyzerAgent()
 
 
+# Provides an isolated instance of the BudgetPlannerAgent for evaluation tests.
+# Evaluates category envelope allocations and goal funding recommendations.
+# Ensures repeatable budget calculations without external service dependencies.
 @pytest.fixture
 def budget_planner():
     """Fresh BudgetPlannerAgent instance."""
@@ -261,6 +294,9 @@ def budget_planner():
     return BudgetPlannerAgent()
 
 
+# Provides an isolated instance of the InvestmentAdvisorAgent for test execution.
+# Tests risk tolerance assessment logic and asset class allocation models.
+# Ensures deterministic investment advice generation without external LLM calls.
 @pytest.fixture
 def investment_advisor():
     """Fresh InvestmentAdvisorAgent instance."""
@@ -269,6 +305,9 @@ def investment_advisor():
     return InvestmentAdvisorAgent()
 
 
+# Provides an isolated instance of the DebtOptimizerAgent for test suites.
+# Evaluates repayment strategy selection and debt amortization schedules.
+# Verifies accelerated payoff calculations across diverse financial liabilities.
 @pytest.fixture
 def debt_optimizer():
     """Fresh DebtOptimizerAgent instance."""
@@ -282,6 +321,9 @@ def debt_optimizer():
 # ---------------------------------------------------------------------------
 
 
+# Provides a test helper fixture for executing master agent query routing logic.
+# Dispatches text prompts against user profiles to obtain deterministic route enums.
+# Unifies analysis type extraction across test assertions and routing benchmarks.
 @pytest.fixture
 def run_routing():
     """Fixture that returns a helper function for running the master agent routing."""
@@ -299,6 +341,9 @@ def run_routing():
     return _run
 
 
+# Validates that a plan dictionary satisfies all structural contract invariants.
+# Asserts presence of executive summaries, key metrics, and action bucket arrays.
+# Raises explicit assertion errors when plan contracts are violated during tests.
 def assert_valid_plan(plan_dict: Dict[str, Any]) -> None:
     """Assert that a plan dict satisfies the Plan contract invariants."""
     assert "executive_summary" in plan_dict, "Plan missing executive_summary"
@@ -314,6 +359,9 @@ def assert_valid_plan(plan_dict: Dict[str, Any]) -> None:
         assert isinstance(actions[bucket], list), f"actions['{bucket}'] must be a list"
 
 
+# Asserts that all action items in a list adhere to mandatory schema properties.
+# Verifies presence of titles, justifications, positive due days, and impact notes.
+# Confirms that action kinds and priorities conform to strict enumeration subsets.
 def assert_action_items_valid(items: List[Dict[str, Any]]) -> None:
     """Assert that every action item has the required fields."""
     valid_kinds = {"cashflow", "budget", "debt", "invest", "goal", "education", "generic"}

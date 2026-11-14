@@ -51,8 +51,11 @@ _AI_CORE_DIR = _CONFIG_DIR.parent                   # AI_Core/
 _SERVER_DIR = _AI_CORE_DIR.parent                   # server/
 
 
+# Resolves candidate dotenv file paths across server and service directories.
+# Orders file locations so that service settings override shared server defaults.
+# Returns path objects for layered configuration ingestion at startup time.
 def resolve_env_file_candidates() -> List[Path]:
-    """Return env file paths in precedence order (lower index = higher priority).
+    """Return env files in load order, with service values overriding shared defaults.
 
     OS-level environment variables always take priority over these files.
     """
@@ -62,12 +65,15 @@ def resolve_env_file_candidates() -> List[Path]:
     ]
 
 
+# Ingests and merges variables from discovered dotenv configuration files.
+# Populates process environment variables only when not already established.
+# Preserves host OS environment variable precedence over local file settings.
 def load_env_defaults() -> None:
     """Apply non-empty values from .env files without overwriting real OS env vars.
 
     This function is called at module import time (see below).  It:
     1. Reads all .env files in precedence order.
-    2. Merges their values (later files do NOT override earlier ones).
+    2. Merges their values, with nonempty service values overriding shared defaults.
     3. For each key, sets it in ``os.environ`` only if not already present.
     """
     merged: Dict[str, str] = {}
@@ -99,6 +105,9 @@ def load_env_defaults() -> None:
 load_env_defaults()
 
 
+# Central configuration registry for AI Core runtime options and API tokens.
+# Manages model candidates, rate limits, timeouts, heuristics, and state backends.
+# Provides structured access to environment-driven financial assistant settings.
 class Settings:
     """Application settings configuration.
 
@@ -114,14 +123,20 @@ class Settings:
     # ======================================================================
     # LLM Provider Selection
     # ======================================================================
-    # Set LLM_PROVIDER to one of: gemini, openrouter, groq, openai, deepseek,
-    # grok, together, mistral.  If not set, auto-detects from the first
+    # Set LLM_PROVIDER to one of: gnani, gemini, openrouter, groq, openai, deepseek,
+    # grok, together, mistral, fireworks. If not set, auto-detects from the first
     # configured API key.
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").strip().lower() or None
 
     # ======================================================================
     # API Keys (one per provider -- set whichever you want to use)
     # ======================================================================
+    GNANI_REASONING_API_KEY = os.getenv("GNANI_REASONING_API_KEY", "").strip() or None
+    GNANI_API_BASE_URL = (
+        os.getenv("GNANI_REASONING_URL", "").strip()
+        or os.getenv("GNANI_API_BASE_URL", "").strip()
+    )
+    GNANI_MODEL = os.getenv("GNANI_MODEL", "").strip() or "gnani/gnani-evon-v3.3-30B-A3B"
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip() or None
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip() or None
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip() or None
@@ -130,6 +145,7 @@ class Settings:
     XAI_API_KEY = os.getenv("XAI_API_KEY", "").strip() or None
     TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "").strip() or None
     MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "").strip() or None
+    FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY", "").strip() or None
 
     # ======================================================================
     # Model Configuration
@@ -165,6 +181,7 @@ class Settings:
     # Rate Limiting / Retry Behaviour
     # ======================================================================
     LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
+    LLM_INTERACTIVE_BUDGET_SECONDS = int(os.getenv("LLM_INTERACTIVE_BUDGET_SECONDS", "28"))
     LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "0"))
 
     # ======================================================================
@@ -212,7 +229,7 @@ class Settings:
     FINWISE_TOOLS_TOKEN = os.getenv("FINWISE_TOOLS_TOKEN", "").strip()
 
     # ======================================================================
-    # Memory Store (SQLite)
+    # Memory Store (SQLite fallback)
     # ======================================================================
     # Local-first memory store for user preferences and facts.
     MEMORY_DB_PATH = os.getenv(
@@ -230,6 +247,21 @@ class Settings:
     # Number of memories to retrieve per query.
     MEMORY_TOP_K = int(os.getenv("FINWISE_MEMORY_TOP_K", "8"))
 
+    # ======================================================================
+    # State backend (sessions, checkpoints, memories) - see memory/state_store.py
+    # ======================================================================
+    # mongo | sqlite | memory (mongomock). Empty = mongo when a Mongo URI is set, else sqlite.
+    # SQLite files (MEMORY_DB_PATH above, sessions beside it) are the local-dev fallback.
+    STATE_BACKEND = os.getenv("AI_CORE_STATE_BACKEND", "").strip().lower()
+    # Mongo TTLs: sessions expire 24h after last update, checkpoints 7d after creation.
+    SESSION_TTL_SECONDS = int(os.getenv("AI_CORE_SESSION_TTL_SECONDS", "86400") or 86400)
+    CHECKPOINT_TTL_SECONDS = int(os.getenv("AI_CORE_CHECKPOINT_TTL_SECONDS", "604800") or 604800)
+    # boundary = checkpoint at request start/end only; every_node = legacy per-node writes.
+    CHECKPOINT_MODE = os.getenv("AI_CORE_CHECKPOINT_MODE", "boundary").strip().lower()
+
+    # Retrieves model execution parameters tailored to a specific agent persona.
+    # Returns customized generation temperature settings and token budget allocations.
+    # Falls back to safe default parameters when requested agent types are omitted.
     @classmethod
     def get_agent_config(cls, agent_type: str) -> Dict[str, Any]:
         """Get temperature/max_tokens configuration for a specific agent type.
@@ -241,6 +273,9 @@ class Settings:
             agent_type, {"temperature": 0.1, "max_tokens": 1024}
         )
 
+    # Validates presence of at least one functional LLM provider API credential.
+    # Scans supported platform provider keys including Gemini, Groq, and OpenRouter.
+    # Raises explicit configuration errors if all external AI provider keys are missing.
     @classmethod
     def validate_api_key(cls):
         """Validate that at least one LLM API key is configured.
@@ -250,6 +285,7 @@ class Settings:
         mode).
         """
         keys = [
+            cls.GNANI_REASONING_API_KEY and cls.GNANI_API_BASE_URL,
             cls.GEMINI_API_KEY,
             cls.OPENROUTER_API_KEY,
             cls.GROQ_API_KEY,
@@ -258,14 +294,19 @@ class Settings:
             cls.XAI_API_KEY,
             cls.TOGETHER_API_KEY,
             cls.MISTRAL_API_KEY,
+            cls.FIREWORKS_API_KEY,
         ]
         if not any(keys):
             raise ValueError(
                 "No LLM API key is configured. Set at least one of: "
-                "GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, "
-                "XAI_API_KEY, TOGETHER_API_KEY, MISTRAL_API_KEY"
+                "GNANI_REASONING_API_KEY with GNANI_REASONING_URL, GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, "
+                "OPENAI_API_KEY, DEEPSEEK_API_KEY, "
+                "XAI_API_KEY, TOGETHER_API_KEY, MISTRAL_API_KEY, FIREWORKS_API_KEY"
             )
 
+    # Gathers diagnostic configuration metadata regarding active model providers.
+    # Compiles active provider identifiers, configured models, and registry status.
+    # Facilitates health check diagnostics and administrative model telemetry.
     @classmethod
     def get_active_provider_info(cls) -> Dict[str, Any]:
         """Get info about which provider is active and available.
@@ -282,6 +323,9 @@ class Settings:
         }
 
 
+# Global singleton instance providing typed access to application configuration.
+# Exposes validated environment settings to all agent and orchestration modules.
+# Ensures unified configuration values across all concurrent server threads.
 settings = Settings()
 
 

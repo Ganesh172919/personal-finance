@@ -75,11 +75,17 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getFinancialProfile } from "@/lib/api/profile";
 import { createTask } from "@/lib/api/tasks";
+import { listAccounts, type Account } from "@/lib/api/v1/finance";
+import { getPortfolioSummary } from "@/lib/api/transactions";
+import { Landmark, Wallet, CreditCard, Shield } from "lucide-react";
 import { processScenario, ScenarioResponse } from "@/lib/apiClient";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import { useToast } from "@/hooks/useToast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/Alert";
 
+// Model representing a saved what-if scenario simulation result.
+// Stores parameters such as cashflow impact, investment horizon, returns, and taxes.
+// Enables side-by-side comparison and historical scenario recall.
 export interface SavedScenario {
   id: string;
   name: string;
@@ -92,6 +98,9 @@ export interface SavedScenario {
   timestamp: number;
 }
 
+// Computes Monte Carlo percentile bands (P10, P50, P90) for cash and investments.
+// Models compound growth volatility using stochastic log-normal returns.
+// Generates probability of target capital achievement over specified months.
 /**
  * Computes stochastic Monte Carlo confidence bounds for accumulated savings / investments.
  */
@@ -130,11 +139,13 @@ export function calculateMonteCarloBounds(
       successProbability: p10 > 0 ? 94 : 72,
     };
   } else {
-    // Non-investment cashflow (income boost or expense delta)
+    // Non-investment cashflow (income boost is positive, expense is negative).
+    // Bearish (P10) is always the worse cash outcome: 15% less income or a 15% higher
+    // cost; bullish (P90) is 5% more income or a 5% lower cost.
     const totalCash = monthlyAmount * months;
-    const p10 = Math.round(totalCash * 0.85);
+    const p10 = Math.round(totalCash - Math.abs(totalCash) * 0.15);
     const p50 = Math.round(totalCash);
-    const p90 = Math.round(totalCash * 1.05);
+    const p90 = Math.round(totalCash + Math.abs(totalCash) * 0.05);
 
     return {
       p10,
@@ -145,6 +156,17 @@ export function calculateMonteCarloBounds(
   }
 }
 
+// Formats emergency fund survival runway duration to a clean single decimal digit.
+// Rounds raw fractional months into user-friendly numeric strings.
+// Used for displaying emergency liquidity health before and after shocks.
+/** Runway months from the scenario engine, rounded for display (e.g. 3.658… -> 3.7). */
+export function formatRunwayMonths(months: number): string {
+  return String(Number(Number(months).toFixed(1)));
+}
+
+// Discounts future nominal cash sums by compound annual inflation rates.
+// Calculates purchasing power degradation and cumulative real inflation loss.
+// Clarifies the long-term impact of inflation on stagnant cash reserves.
 /**
  * Computes inflation-adjusted real purchasing power of future cash.
  */
@@ -163,6 +185,9 @@ export function calculateRealPurchasingPower(
   };
 }
 
+// Model defining macroeconomic stress testing scenarios based on historic crises.
+// Outlines equity drawdowns, income drops, inflation spikes, and recovery durations.
+// Used to simulate user financial resilience against severe economic recessions.
 export interface MacroCrisisScenario {
   id: string;
   name: string;
@@ -177,6 +202,9 @@ export interface MacroCrisisScenario {
   historicalContext: string;
 }
 
+// Curated historical financial crisis models for stress test evaluations.
+// Includes 2008 GFC, 2020 COVID shock, 1970s stagflation, and dot-com bubble crash.
+// Applies real-world historical shock magnitudes to current personal balance sheets.
 export const HISTORICAL_MACRO_CRISES: MacroCrisisScenario[] = [
   {
     id: "gfc_2008",
@@ -245,6 +273,9 @@ export const HISTORICAL_MACRO_CRISES: MacroCrisisScenario[] = [
   },
 ];
 
+// Comprehensive result metrics returned from macro crisis stress test evaluations.
+// Details shocked income, expenses, monthly burn rate, drawdown, and resilience rating.
+// Provides personalized financial defense recommendations based on crisis severity.
 export interface MacroStressTestResult {
   crisis: MacroCrisisScenario;
   baselineIncome: number;
@@ -258,34 +289,109 @@ export interface MacroStressTestResult {
   monthlyBurn: number;
   portfolioDrawdown: number;
   stressedPortfolioValue: number;
-  stressedEmergencyRunwayMonths: number;
+  stressedEmergencyRunwayMonths: number | null;
   capitalDeficit: number;
-  resilienceScore: number;
-  resilienceRating: "Bulletproof" | "Resilient" | "Moderate Risk" | "Vulnerable";
+  resilienceScore: number | null;
+  resilienceRating: "Bulletproof" | "Resilient" | "Moderate Risk" | "Vulnerable" | "Not assessed";
   recommendations: string[];
 }
 
+// Evaluates crisis shock impacts on an individual bank or investment account.
+// Captures pre and post shock balances, percentage changes, and vulnerability tags.
+// Distinguishes between equity volatility, inflation drag, and debt interest hikes.
+export interface StressedAccountImpact {
+  account: Account;
+  preBalance: number;
+  postBalance: number;
+  dollarChange: number;
+  pctChange: number;
+  vulnerabilityLabel: string;
+  vulnerabilitySeverity: "high" | "moderate" | "safe";
+}
+
+// Calculates stressed account balance changes under macroeconomic crisis shocks.
+// Applies beta-adjusted market equity shocks, liquidity haircuts, or debt rate hikes.
+// Classifies vulnerability severity to highlight accounts most exposed to systemic risk.
+export const calculateAccountStressImpact = (
+  account: Account,
+  crisis: MacroCrisisScenario,
+  beta: number
+): StressedAccountImpact => {
+  const preBalance = typeof account.current_balance === "number" ? account.current_balance : Number(account.opening_balance || 0);
+  let postBalance = preBalance;
+  let vulnerabilityLabel = "Protected";
+  let vulnerabilitySeverity: "high" | "moderate" | "safe" = "safe";
+
+  if (account.type === "brokerage") {
+    const dropRate = (crisis.equityShockPct * beta) / 100;
+    postBalance = Math.round(Math.max(0, preBalance * (1 + dropRate)));
+    vulnerabilityLabel = `Equity Shock (${(crisis.equityShockPct * beta).toFixed(0)}%)`;
+    vulnerabilitySeverity = "high";
+  } else if (account.type === "savings" || account.type === "checking" || account.type === "cash") {
+    const inflationHaircut = (crisis.expenseShockPct * 0.5) / 100;
+    postBalance = Math.round(Math.max(0, preBalance * (1 - inflationHaircut)));
+    vulnerabilityLabel = crisis.expenseShockPct > 0 ? `Inflation Drag (-${(crisis.expenseShockPct * 0.5).toFixed(0)}%)` : "FDIC Liquid";
+    vulnerabilitySeverity = "safe";
+  } else if (account.type === "credit") {
+    if (preBalance < 0) {
+      const debtIncrease = Math.abs(preBalance) * 0.15;
+      postBalance = Math.round(preBalance - debtIncrease);
+      vulnerabilityLabel = "Debt Service Hike (+15%)";
+      vulnerabilitySeverity = "moderate";
+    }
+  }
+
+  const dollarChange = Math.round(postBalance - preBalance);
+  const pctChange = preBalance !== 0 ? Number(((dollarChange / Math.abs(preBalance)) * 100).toFixed(1)) : 0;
+
+  return {
+    account,
+    preBalance,
+    postBalance,
+    dollarChange,
+    pctChange,
+    vulnerabilityLabel,
+    vulnerabilitySeverity,
+  };
+};
+
+// Validates that an unknown input value represents a valid non-negative number.
+// Distinguishes valid recorded balances (including zero) from missing or invalid entries.
+// Used to verify baseline profile completeness prior to running financial stress tests.
+function recordedAmount(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+// Simulates macroeconomic crisis shock impacts against user baseline finances.
+// Computes stressed cashflow, investment drawdown, burn rate, and resilience scores.
+// Yields actionable hedging and liquidity protection recommendations.
 export function calculateMacroStressImpact(
   crisis: MacroCrisisScenario,
   baseline: {
     monthly_income: number;
     monthly_expenses: number;
     savings: number;
-    investments?: number;
+    investments: number;
   }
 ): MacroStressTestResult {
-  const inc0 = Math.max(0, baseline.monthly_income || 5000);
-  const exp0 = Math.max(0, baseline.monthly_expenses || 3000);
+  // Unknown balances cannot support a personalised forecast. Explicit zeroes are
+  // valid recorded values; missing, invalid or negative values need correction.
+  if ([baseline.monthly_income, baseline.monthly_expenses, baseline.savings, baseline.investments]
+        .some((value) => recordedAmount(value) === null)) {
+    throw new Error("A complete saved financial baseline is required for stress testing.");
+  }
+  const inc0 = baseline.monthly_income;
+  const exp0 = baseline.monthly_expenses;
   const surplus0 = inc0 - exp0;
-  const sav0 = Math.max(0, baseline.savings || 15000);
-  const inv0 = Math.max(0, baseline.investments || 50000);
+  const sav0 = baseline.savings;
+  const inv0 = baseline.investments;
 
   const stressedIncome = Math.round(inc0 * (1 + crisis.incomeShockPct / 100));
   const stressedExpenses = Math.round(exp0 * (1 + crisis.expenseShockPct / 100));
   const stressedMonthlyCashflow = stressedIncome - stressedExpenses;
   const monthlyBurn = stressedMonthlyCashflow < 0 ? Math.abs(stressedMonthlyCashflow) : 0;
 
-  const portfolioDrawdown = Math.round(inv0 * (crisis.equityShockPct / 100));
+  const portfolioDrawdown = Math.round(inv0 * (crisis.equityShockPct / 100)) || 0;
   const stressedPortfolioValue = Math.max(0, inv0 + portfolioDrawdown);
 
   const totalCrisisCashBurn = monthlyBurn * crisis.durationMonths;
@@ -296,12 +402,15 @@ export function calculateMacroStressImpact(
       ? Number((sav0 / monthlyBurn).toFixed(1))
       : stressedExpenses > 0
       ? Number((sav0 / stressedExpenses).toFixed(1))
-      : 99.9;
+      : null;
 
-  let resilienceScore = 50;
+  let resilienceScore: number | null = 50;
   let resilienceRating: MacroStressTestResult["resilienceRating"] = "Moderate Risk";
 
-  if (stressedEmergencyRunwayMonths >= crisis.durationMonths && capitalDeficit === 0) {
+  if (stressedEmergencyRunwayMonths === null) {
+    resilienceScore = null;
+    resilienceRating = "Not assessed";
+  } else if (stressedEmergencyRunwayMonths >= crisis.durationMonths && capitalDeficit === 0) {
     resilienceScore = Math.min(100, Math.round(85 + (stressedEmergencyRunwayMonths - crisis.durationMonths) * 1.5));
     resilienceRating = "Bulletproof";
   } else if (stressedEmergencyRunwayMonths >= crisis.durationMonths / 2) {
@@ -363,6 +472,9 @@ export function calculateMacroStressImpact(
   };
 }
 
+// Interactive financial what-if scenario forecasting and macroeconomic stress testing.
+// Simulates income adjustments, major expenses, and investment compounding over time.
+// Runs stochastic Monte Carlo confidence bands and historical financial crisis modeling.
 export default function Scenarios() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -402,6 +514,53 @@ export default function Scenarios() {
     queryFn: () => getFinancialProfile(),
   });
 
+  const accountsQuery = useQuery({
+    queryKey: ["/api/finance/accounts"],
+    queryFn: () => listAccounts(),
+  });
+
+  const portfolioQuery = useQuery({
+    queryKey: ["portfolio-summary", "scenarios-stress"],
+    queryFn: () => getPortfolioSummary({ months: 12 }),
+    staleTime: 60_000,
+  });
+
+  // Dynamic Real-Time Linked Bank / Broker Accounts Live Stress State
+  const [useLiveAccounts, setUseLiveAccounts] = useState<boolean>(true);
+  const [equityBeta, setEquityBeta] = useState<number>(1.0);
+
+  const linkedAccounts = useMemo(() => {
+    return (accountsQuery.data?.accounts || []).filter((a) => a.status !== "closed");
+  }, [accountsQuery.data]);
+
+  const liveAccountsSummary = useMemo(() => {
+    let liquidCash = 0;
+    let brokerageTotal = 0;
+    let creditDebt = 0;
+
+    linkedAccounts.forEach((acc) => {
+      const bal = typeof acc.current_balance === "number" ? acc.current_balance : Number(acc.opening_balance || 0);
+      if (acc.type === "checking" || acc.type === "savings" || acc.type === "cash") {
+        if (bal > 0) liquidCash += bal;
+      } else if (acc.type === "brokerage") {
+        if (bal > 0) brokerageTotal += bal;
+      } else if (acc.type === "credit") {
+        if (bal < 0) creditDebt += Math.abs(bal);
+      }
+    });
+
+    const netLiquid = Math.max(0, liquidCash - creditDebt);
+
+    return {
+      liquidCash,
+      brokerageTotal,
+      creditDebt,
+      netLiquid,
+      totalCount: linkedAccounts.length,
+      hasLiveAccounts: linkedAccounts.length > 0,
+    };
+  }, [linkedAccounts]);
+
   const createTaskMutation = useMutation({
     mutationFn: (p: Parameters<typeof createTask>[0]) => createTask(p),
     onSuccess: (res) => {
@@ -420,35 +579,104 @@ export default function Scenarios() {
   });
 
   const baselineData = useMemo(() => {
-    if (results?.baseline) {
-      return {
-        monthly_income: results.baseline.monthly_income,
-        monthly_expenses: results.baseline.monthly_expenses,
-        savings: results.baseline.savings,
-        investments: 50000,
-      };
-    }
-    const profile = profileQuery.data as any;
-    const inc = profile?.annual_income ? Math.round(profile.annual_income / 12) : 6500;
-    const exp = profile?.monthly_expenses || 3500;
-    const sav = profile?.savings || 18000;
+    const profile = profileQuery.data;
+    const annualIncome = recordedAmount(profile?.annual_income);
+    const inc = annualIncome === null ? null : Math.round(annualIncome / 12);
+    const exp = recordedAmount(profile?.monthly_expenses);
+    const manualSav = recordedAmount(results?.baseline?.savings) ?? recordedAmount(profile?.savings);
+    const manualInv = recordedAmount(portfolioQuery.data?.summary?.total_invested);
+
+    const useLive = useLiveAccounts && liveAccountsSummary.hasLiveAccounts;
+    // The selected account source is authoritative even when its balance is zero.
+    const effectiveSavings = useLive ? recordedAmount(liveAccountsSummary.netLiquid) : manualSav;
+    const effectiveInvestments = useLive ? recordedAmount(liveAccountsSummary.brokerageTotal) : manualInv;
+
     return {
-      monthly_income: inc,
-      monthly_expenses: exp,
-      savings: sav,
-      investments: 50000,
+      monthly_income: recordedAmount(results?.baseline?.monthly_income) ?? inc,
+      monthly_expenses: recordedAmount(results?.baseline?.monthly_expenses) ?? exp,
+      savings: effectiveSavings,
+      investments: effectiveInvestments,
+      isLiveLinked: useLive,
     };
-  }, [results, profileQuery.data]);
+  }, [results, profileQuery.data, portfolioQuery.data, useLiveAccounts, liveAccountsSummary]);
 
   const activeCrisis = useMemo(
     () => HISTORICAL_MACRO_CRISES.find((c) => c.id === selectedCrisisId) || HISTORICAL_MACRO_CRISES[0],
     [selectedCrisisId]
   );
 
-  const macroStressResult = useMemo(
-    () => calculateMacroStressImpact(activeCrisis, baselineData),
-    [activeCrisis, baselineData]
-  );
+  const missingBaselineFields = [
+    ["monthly income", baselineData.monthly_income],
+    ["monthly expenses", baselineData.monthly_expenses],
+    ["savings", baselineData.savings],
+    ["invested capital", baselineData.investments],
+  ].filter(([, value]) => value === null).map(([label]) => label);
+
+  const macroStressResult = useMemo(() => {
+    const { monthly_income, monthly_expenses, savings, investments } = baselineData;
+    if (monthly_income === null || monthly_expenses === null || savings === null || investments === null) {
+      return null;
+    }
+    return calculateMacroStressImpact(activeCrisis, { monthly_income, monthly_expenses, savings, investments });
+  }, [activeCrisis, baselineData]);
+
+  const stressedAccountImpacts = useMemo(() => {
+    return linkedAccounts.map((acc) => calculateAccountStressImpact(acc, activeCrisis, equityBeta));
+  }, [linkedAccounts, activeCrisis, equityBeta]);
+
+  const liveStressAggregates = useMemo(() => {
+    if (!macroStressResult || !liveAccountsSummary.hasLiveAccounts) return null;
+    let preLiquid = 0;
+    let postLiquid = 0;
+    let preBroker = 0;
+    let postBroker = 0;
+    let preDebt = 0;
+    let postDebt = 0;
+
+    stressedAccountImpacts.forEach((imp) => {
+      if (imp.account.type === "checking" || imp.account.type === "savings" || imp.account.type === "cash") {
+        if (imp.preBalance > 0) preLiquid += imp.preBalance;
+        if (imp.postBalance > 0) postLiquid += imp.postBalance;
+      } else if (imp.account.type === "brokerage") {
+        if (imp.preBalance > 0) preBroker += imp.preBalance;
+        if (imp.postBalance > 0) postBroker += imp.postBalance;
+      } else if (imp.account.type === "credit") {
+        if (imp.preBalance < 0) preDebt += Math.abs(imp.preBalance);
+        if (imp.postBalance < 0) postDebt += Math.abs(imp.postBalance);
+      }
+    });
+
+    const netLiquidPre = Math.max(0, preLiquid - preDebt);
+    const netLiquidPost = Math.max(0, postLiquid - postDebt);
+    const brokerDrawdown = Math.round(postBroker - preBroker);
+    const monthlyBurn = macroStressResult.monthlyBurn;
+    const requiredBuffer = monthlyBurn * activeCrisis.durationMonths;
+    const bufferSurplus = netLiquidPost - requiredBuffer;
+    const isLiquidationRisk = bufferSurplus < 0 && monthlyBurn > 0;
+    const deficitAmount = Math.abs(Math.min(0, bufferSurplus));
+
+    return {
+      preLiquid,
+      postLiquid,
+      netLiquidPre,
+      netLiquidPost,
+      preBroker,
+      postBroker,
+      brokerDrawdown,
+      requiredBuffer,
+      bufferSurplus,
+      isLiquidationRisk,
+      deficitAmount,
+    };
+  }, [stressedAccountImpacts, macroStressResult, activeCrisis, liveAccountsSummary.hasLiveAccounts]);
+
+  const handleScheduleBufferTask = (deficit: number) => {
+    createTaskMutation.mutate({
+      title: `Defensive Capital Buffer: Rebalance $${deficit.toLocaleString()} to Liquid HYSA for ${activeCrisis.name}`,
+      why: `Protect against forced liquidation of depressed brokerage assets during an extended ${activeCrisis.durationMonths}-month market crisis.`,
+      priority: "high",
+    });
+  };
 
   const handleLoadMacroScenario = (res: MacroStressTestResult) => {
     if (res.monthlyBurn > 0) {
@@ -465,7 +693,7 @@ export default function Scenarios() {
     } else {
       setScenarioType("expense");
       const expInc = Math.abs(res.stressedExpenses - res.baselineExpenses);
-      setAmount(String(expInc || 500));
+      setAmount(expInc > 0 ? String(expInc) : "");
       setDescription(`Cost Surge under ${res.crisis.name}`);
       setMonths(String(res.crisis.durationMonths));
     }
@@ -484,7 +712,9 @@ export default function Scenarios() {
       kind: "cashflow",
       steps: [
         `Review current emergency liquidity ($${res.baselineSavings.toLocaleString()}) against simulated crisis cash drain.`,
-        `Target additional liquid buffer of ${formatCurrency(Math.max(1000, res.capitalDeficit || 2500))}.`,
+        res.capitalDeficit > 0
+          ? `Target additional liquid buffer of ${formatCurrency(res.capitalDeficit)}.`
+          : "Maintain the current liquid reserve; this simulation shows no additional cash buffer deficit.",
         res.recommendations[0] || `Prepare contingency budget for ${res.crisis.durationMonths}-month downturn.`,
       ],
     });
@@ -739,7 +969,8 @@ export default function Scenarios() {
   // Monte Carlo bounds calculation
   const monteCarlo = results
     ? calculateMonteCarloBounds(
-        results.amount,
+        // Expenses reduce cash, so model them as a negative monthly cash flow.
+        results.scenario_type === "expense" ? -Math.abs(results.amount) : results.amount,
         results.assumptions.months,
         results.scenario_type === "investment",
         results.assumptions.expected_return_pct
@@ -910,7 +1141,7 @@ export default function Scenarios() {
               </div>
 
               <div className="space-y-2 pt-1">
-                <span className="text-xs text-muted-foreground font-medium">Quick Presets:</span>
+                <span className="text-xs text-muted-foreground font-medium">Quick Presets (editable assumptions):</span>
                 <div className="flex flex-wrap gap-1.5">
                   <Button
                     type="button"
@@ -1139,11 +1370,16 @@ export default function Scenarios() {
                       <div className="text-2xl font-bold text-foreground mb-1">
                         {results.delta.emergency_fund_months_after !== null &&
                         results.delta.emergency_fund_months_after !== undefined
-                          ? `${results.delta.emergency_fund_months_after} months`
+                          ? `${formatRunwayMonths(results.delta.emergency_fund_months_after)} months`
                           : "—"}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        Before: {results.delta.emergency_fund_months_before ?? "—"} months
+                        Before:{" "}
+                        {results.delta.emergency_fund_months_before !== null &&
+                        results.delta.emergency_fund_months_before !== undefined
+                          ? formatRunwayMonths(results.delta.emergency_fund_months_before)
+                          : "—"}{" "}
+                        months
                       </div>
                     </div>
 
@@ -1574,7 +1810,7 @@ export default function Scenarios() {
                       <TableCell className="text-muted-foreground bg-accent/10">—</TableCell>
                       {savedScenarios.map((scen) => {
                         const bounds = calculateMonteCarloBounds(
-                          scen.amount,
+                          scen.type === "expense" ? -Math.abs(scen.amount) : scen.amount,
                           scen.months,
                           scen.type === "investment",
                           scen.returnPct
@@ -1617,7 +1853,7 @@ export default function Scenarios() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            {macroStressResult && macroStressResult.resilienceScore !== null && <div className="flex items-center gap-2">
               <Badge
                 variant={
                   macroStressResult.resilienceRating === "Bulletproof"
@@ -1639,12 +1875,13 @@ export default function Scenarios() {
               >
                 Resilience: {macroStressResult.resilienceRating} ({macroStressResult.resilienceScore}/100)
               </Badge>
-            </div>
+            </div>}
           </div>
 
           {/* Crisis Preset Chips */}
           <div className="pt-4 space-y-2">
             <span className="text-xs font-medium text-muted-foreground">Select Crisis Scenario to Replay:</span>
+            <p className="text-xs text-muted-foreground">These are hypothetical shock assumptions, not predictions of your future finances. Loading a shock lets you edit its amount and duration in the builder.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2" data-testid="macro-crisis-chips">
               {HISTORICAL_MACRO_CRISES.map((crisis) => {
                 const active = crisis.id === selectedCrisisId;
@@ -1684,6 +1921,32 @@ export default function Scenarios() {
           </div>
 
           {/* Active Crisis Replay Dashboard */}
+          {!macroStressResult ? (
+            <Alert className="mt-5" data-testid="macro-baseline-unavailable">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>
+                {profileQuery.isPending || accountsQuery.isPending || portfolioQuery.isPending
+                  ? "Loading your saved financial baseline"
+                  : "Financial baseline unavailable"}
+              </AlertTitle>
+              <AlertDescription>
+                <p>Stress testing needs recorded {missingBaselineFields.join(", ")}. Save these values in your financial profile or accounts to see a personalised result. Zero is accepted when it reflects your finances.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => {
+                    void profileQuery.refetch();
+                    void accountsQuery.refetch();
+                    void portfolioQuery.refetch();
+                  }}
+                  disabled={profileQuery.isFetching || accountsQuery.isFetching || portfolioQuery.isFetching}
+                >
+                  Refresh saved data
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : (
           <div className="mt-5 space-y-4" data-testid="macro-stress-results">
             {/* Metrics Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1693,10 +1956,10 @@ export default function Scenarios() {
                   <Clock className="w-3.5 h-3.5 text-primary" />
                 </div>
                 <div className="text-xl font-bold text-foreground" data-testid="metric-stressed-runway">
-                  {macroStressResult.stressedEmergencyRunwayMonths} months
+                  {macroStressResult.stressedEmergencyRunwayMonths === null ? "Not available" : `${macroStressResult.stressedEmergencyRunwayMonths} months`}
                 </div>
                 <div className="text-[11px] text-muted-foreground mt-0.5">
-                  Crisis length: {activeCrisis.durationMonths} months
+                  {macroStressResult.stressedEmergencyRunwayMonths === null ? "No recorded expenses to calculate runway" : `Crisis length: ${activeCrisis.durationMonths} months`}
                 </div>
               </div>
 
@@ -1745,10 +2008,10 @@ export default function Scenarios() {
                 >
                   {macroStressResult.capitalDeficit > 0
                     ? formatCurrency(macroStressResult.capitalDeficit)
-                    : "No Deficit ($0)"}
+                    : `No deficit (${formatCurrency(0)})`}
                 </div>
                 <div className="text-[11px] text-muted-foreground mt-0.5">
-                  {macroStressResult.capitalDeficit > 0 ? "Extra cash needed" : "Liquid reserve intact"}
+                  {macroStressResult.capitalDeficit > 0 ? "Extra cash needed" : macroStressResult.baselineSavings > 0 ? "Saved reserves cover the modelled burn" : "No reserve balance recorded"}
                 </div>
               </div>
             </div>
@@ -1797,7 +2060,7 @@ export default function Scenarios() {
                 <Button
                   size="sm"
                   onClick={() => handleScheduleCrisisTask(macroStressResult)}
-                  disabled={createTaskMutation.isPending}
+                  disabled={createTaskMutation.isPending || macroStressResult.stressedEmergencyRunwayMonths === null}
                   className="text-xs h-8"
                   data-testid="btn-schedule-crisis-plan"
                 >
@@ -1806,7 +2069,285 @@ export default function Scenarios() {
                 </Button>
               </div>
             </div>
+
+            {/* Dynamic Real-Time Linked Bank / Broker Account Live Stress Testing Cockpit */}
+            <div data-testid="card-live-accounts-stress-testing" className="mt-6 pt-5 border-t border-border/60 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Landmark className="w-4 h-4 text-primary" />
+                    <h3 className="text-sm font-bold text-foreground">Account balance stress test</h3>
+                    <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/20">
+                      Saved balances
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Apply {activeCrisis.name} assumptions to your saved account balances. Results depend on how current those balances are.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant={useLiveAccounts ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setUseLiveAccounts(!useLiveAccounts)}
+                    data-testid="toggle-live-accounts-mode"
+                    className="h-7 text-xs rounded-lg"
+                  >
+                    {useLiveAccounts ? (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
+                        Use saved accounts ({liveAccountsSummary.totalCount})
+                      </>
+                    ) : (
+                      <>
+                        <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                        Using Profile Baseline
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void accountsQuery.refetch()}
+                    data-testid="btn-refresh-live-accounts"
+                    className="h-7 text-xs px-2"
+                    title="Refresh live account balances"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+
+              {liveStressAggregates ? <>
+              {/* Equity Risk Beta Sensitivity Controls */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-accent/20 p-3 rounded-xl border border-border/40">
+                <div className="flex items-center gap-2 text-xs">
+                  <Percent className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span className="font-semibold text-foreground">Brokerage Equity Beta (&beta;):</span>
+                  <span className="text-muted-foreground">Adjust sensitivity of your stock/equity holdings relative to the broad market drawdown.</span>
+                </div>
+                <div className="flex items-center gap-1.5" data-testid="slider-equity-beta">
+                  {[
+                    { label: "0.5x Defensive", val: 0.5 },
+                    { label: "1.0x Market Beta", val: 1.0 },
+                    { label: "1.5x Aggressive", val: 1.5 },
+                    { label: "2.0x High Leverage", val: 2.0 },
+                  ].map((preset) => (
+                    <Button
+                      key={preset.val}
+                      type="button"
+                      variant={equityBeta === preset.val ? "secondary" : "ghost"}
+                      size="sm"
+                      onClick={() => setEquityBeta(preset.val)}
+                      data-testid={`btn-beta-${preset.val.toFixed(1)}`}
+                      className="h-6 text-[11px] px-2 rounded"
+                    >
+                      {preset.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Real-Time Linked Account Stress Metrics */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="bg-accent/30 rounded-xl p-3 border border-border/40">
+                  <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+                    <span>Saved net liquid cash</span>
+                    <Wallet className="w-3 h-3 text-primary" />
+                  </div>
+                  <div className="text-base font-bold text-foreground mt-0.5" data-testid="metric-live-net-liquid">
+                    {formatCurrency(liveStressAggregates.netLiquidPre)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    Post-crisis real: {formatCurrency(liveStressAggregates.netLiquidPost)}
+                  </div>
+                </div>
+
+                <div className="bg-accent/30 rounded-xl p-3 border border-border/40">
+                  <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+                    <span>Brokerage Holdings</span>
+                    <TrendingDown className="w-3 h-3 text-destructive" />
+                  </div>
+                  <div className="text-base font-bold text-foreground mt-0.5" data-testid="metric-live-broker-holdings">
+                    {formatCurrency(liveStressAggregates.preBroker)}
+                  </div>
+                  <div className="text-[10px] text-destructive mt-0.5" data-testid="metric-live-broker-drawdown">
+                    Drawdown: {formatCurrency(liveStressAggregates.brokerDrawdown)} ({(activeCrisis.equityShockPct * equityBeta).toFixed(0)}%)
+                  </div>
+                </div>
+
+                <div className="bg-accent/30 rounded-xl p-3 border border-border/40">
+                  <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+                    <span>Required Shock Buffer</span>
+                    <Clock className="w-3 h-3 text-primary" />
+                  </div>
+                  <div className="text-base font-bold text-foreground mt-0.5" data-testid="metric-live-required-buffer">
+                    {formatCurrency(liveStressAggregates.requiredBuffer)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    {activeCrisis.durationMonths} mos &times; {formatCurrency(macroStressResult.monthlyBurn)}/mo burn
+                  </div>
+                </div>
+
+                <div className="bg-accent/30 rounded-xl p-3 border border-border/40">
+                  <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+                    <span>Buffer Cushion Status</span>
+                    {liveStressAggregates.isLiquidationRisk ? (
+                      <AlertTriangle className="w-3 h-3 text-destructive" />
+                    ) : (
+                      <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                    )}
+                  </div>
+                  <div
+                    className={`text-base font-bold mt-0.5 ${
+                      liveStressAggregates.isLiquidationRisk ? "text-destructive" : "text-emerald-500"
+                    }`}
+                    data-testid="metric-live-buffer-health"
+                  >
+                    {liveStressAggregates.isLiquidationRisk
+                      ? `-${formatCurrency(liveStressAggregates.deficitAmount)} Deficit`
+                      : `+${formatCurrency(liveStressAggregates.bufferSurplus)} Safe`}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    {liveStressAggregates.isLiquidationRisk ? "Forced liquidation risk" : "Liquid buffer intact"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Linked Accounts Shock Impact Breakdown Table */}
+              {linkedAccounts.length > 0 ? (
+                <div className="rounded-xl border border-border/50 overflow-hidden">
+                  <Table data-testid="table-live-account-stress">
+                    <TableHeader className="bg-muted/40 text-[11px]">
+                      <TableRow>
+                        <TableHead>Account Name & Institution</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead className="text-right">Saved balance</TableHead>
+                        <TableHead className="text-right">Post-Crisis Value</TableHead>
+                        <TableHead className="text-right">Dollar Change (&Delta; $)</TableHead>
+                        <TableHead className="text-right">% Change</TableHead>
+                        <TableHead>Vulnerability Assessment</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="text-xs">
+                      {stressedAccountImpacts.map((imp) => (
+                        <TableRow key={imp.account.id} data-testid={`row-account-stress-${imp.account.id}`}>
+                          <TableCell className="font-medium text-foreground">
+                            <div className="flex items-center gap-2">
+                              {imp.account.type === "brokerage" && <TrendingUp className="w-3.5 h-3.5 text-primary" />}
+                              {(imp.account.type === "checking" || imp.account.type === "savings") && (
+                                <Landmark className="w-3.5 h-3.5 text-emerald-500" />
+                              )}
+                              {imp.account.type === "credit" && <CreditCard className="w-3.5 h-3.5 text-amber-500" />}
+                              <div>
+                                <div>{imp.account.name}</div>
+                                {imp.account.institution && (
+                                  <div className="text-[10px] text-muted-foreground">{imp.account.institution}</div>
+                                )}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-[10px] capitalize">
+                              {imp.account.type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-medium">
+                            {formatCurrency(imp.preBalance)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-bold text-foreground">
+                            {formatCurrency(imp.postBalance)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-mono font-semibold ${
+                              imp.dollarChange < 0 ? "text-destructive" : "text-emerald-500"
+                            }`}
+                          >
+                            {imp.dollarChange > 0 ? "+" : ""}
+                            {formatCurrency(imp.dollarChange)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-mono ${
+                              imp.pctChange < 0 ? "text-destructive" : "text-emerald-500"
+                            }`}
+                          >
+                            {imp.pctChange > 0 ? "+" : ""}
+                            {imp.pctChange}%
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              data-testid={`badge-account-risk-${imp.account.id}`}
+                              className={`text-[10px] ${
+                                imp.vulnerabilitySeverity === "high"
+                                  ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30"
+                                  : imp.vulnerabilitySeverity === "moderate"
+                                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                                  : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                              }`}
+                            >
+                              {imp.vulnerabilityLabel}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-border/60 bg-muted/20 p-4 text-center text-xs text-muted-foreground">
+                  No linked bank or broker accounts found. Add accounts in Finance OS to run live account-level stress simulations.
+                </div>
+              )}
+
+              {/* Liquidation Risk Callout Banner */}
+              {liveStressAggregates.isLiquidationRisk ? (
+                <div data-testid="alert-liquidation-risk" className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 mt-0.5 shrink-0" />
+                    <div>
+                      <h4 className="text-xs font-bold text-rose-700 dark:text-rose-300">
+                        Forced Brokerage Liquidation Warning: {formatCurrency(liveStressAggregates.deficitAmount)} Deficit
+                      </h4>
+                      <p className="text-xs text-rose-600/90 dark:text-rose-400/90 mt-0.5">
+                        During an extended {activeCrisis.durationMonths}-month crisis, your post-shock liquid reserves will be exhausted, forcing the fire-sale of up to {formatCurrency(liveStressAggregates.deficitAmount)} in depressed brokerage assets to cover living expenses.
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => handleScheduleBufferTask(liveStressAggregates.deficitAmount)}
+                    disabled={createTaskMutation.isPending}
+                    data-testid="btn-schedule-buffer-task"
+                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs h-8 shrink-0 self-start sm:self-auto"
+                  >
+                    <Shield className="w-3.5 h-3.5 mr-1.5" />
+                    {createTaskMutation.isPending ? "Scheduling…" : "Schedule Buffer Rebalance"}
+                  </Button>
+                </div>
+              ) : (
+                <div data-testid="banner-buffer-safe" className="bg-emerald-500/10 border border-emerald-500/25 rounded-xl p-3.5 flex items-center gap-2.5 text-xs text-emerald-700 dark:text-emerald-300">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <div>
+                    <span className="font-bold">Resilient Liquid Buffer: </span>
+                    Your post-shock net liquid cash of {formatCurrency(liveStressAggregates.netLiquidPost)} completely absorbs the {activeCrisis.durationMonths}-month crisis burn without requiring any forced brokerage liquidation.
+                  </div>
+                </div>
+              )}
+              </> : (
+                <p className="rounded-xl border border-dashed border-border/60 bg-muted/20 p-4 text-center text-xs text-muted-foreground" data-testid="live-accounts-unavailable">
+                  {accountsQuery.isPending
+                    ? "Loading saved account balances…"
+                    : accountsQuery.isError
+                    ? "Account balances could not be loaded. Refresh to retry."
+                    : "No linked bank or broker accounts found. Add accounts in Finance OS to run account-level stress simulations."}
+                </p>
+              )}
+            </div>
           </div>
+          )}
         </Card>
       </motion.div>
     </div>

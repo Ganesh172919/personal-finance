@@ -35,12 +35,18 @@ import {
 } from "../../services/workflows";
 import { listWorkflowTemplatesForOrg } from "../../services/workflowTemplates";
 
+// Maps organization role identifiers to numeric rank values.
+// Supports rank comparisons for validating administration privileges.
+// Used by role-checking helpers to secure workflow creation and execution.
 const roleRank: Record<"member" | "admin" | "owner", number> = {
   member: 1,
   admin: 2,
   owner: 3,
 };
 
+// Checks whether organization context exists on the incoming request.
+// Throws an HTTP 401 error if the organization context is omitted.
+// Returns the active organization ID parsed as a MongoDB ObjectId instance.
 const requireOrg = (req: Request) => {
   if (!req.org?.orgId) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -48,6 +54,9 @@ const requireOrg = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Enforces administrator role requirement for executing restricted workflow actions.
+// Assesses role rank hierarchy against administrative privilege benchmarks.
+// Throws a 403 access denied exception if the actor does not meet admin level.
 const requireOrgAdmin = (req: Request) => {
   const orgId = requireOrg(req);
   if (roleRank[req.org!.role] < roleRank.admin) {
@@ -56,6 +65,9 @@ const requireOrgAdmin = (req: Request) => {
   return orgId;
 };
 
+// Retrieves all automation workflows configured within the caller's organization.
+// Fetches triggers, configured actions, enabled statuses, and update timestamps.
+// Returns an array of formatted workflow definitions scoped to the active org.
 export const listOrgWorkflows = async (req: Request, res: Response) => {
   const orgId = requireOrg(req);
   const workflows = await listWorkflows({ orgId });
@@ -73,6 +85,9 @@ export const listOrgWorkflows = async (req: Request, res: Response) => {
   });
 };
 
+// Lists preconfigured workflow templates available to the organization.
+// Retrieves starter templates with prebuilt triggers, actions, and configurations.
+// Returns template catalog items along with request tracing identifiers.
 export const listOrgWorkflowTemplates = async (req: Request, res: Response) => {
   const orgId = requireOrg(req);
   const templates = await listWorkflowTemplatesForOrg({ orgId });
@@ -83,6 +98,9 @@ export const listOrgWorkflowTemplates = async (req: Request, res: Response) => {
   });
 };
 
+// Creates a new automated workflow featuring customizable triggers and action steps.
+// Validates administrator authorization and persists the workflow definition in the database.
+// Responds with HTTP 201 Created and the newly constructed workflow object.
 export const createOrgWorkflow = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgAdmin(req);
@@ -110,6 +128,9 @@ export const createOrgWorkflow = async (req: Request, res: Response) => {
   });
 };
 
+// Enqueues an on-demand execution of an automated workflow by identifier.
+// Supports idempotency keys to avoid duplicate executions during retries.
+// Returns the queued workflow run details including execution state and run IDs.
 export const runOrgWorkflow = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgAdmin(req);
@@ -147,6 +168,9 @@ export const runOrgWorkflow = async (req: Request, res: Response) => {
   });
 };
 
+// Handles inbound external webhook requests that trigger automated workflows.
+// Authenticates callers via token in the request path and passes inbound payloads.
+// Dispatches the corresponding workflow execution and returns execution results.
 export const handleWorkflowWebhook = async (req: Request, res: Response) => {
   const token = String(req.params.token || "").trim();
   if (!token) {

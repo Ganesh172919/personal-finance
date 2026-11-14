@@ -112,12 +112,18 @@ import { splitAnswerAndPlan } from "@/lib/chatResponse";
 
 // ─── Page Context Suggestions ───────────────────────────
 
+// Defines route-specific contextual suggestions and title labels for the copilot.
+// Associates active pathnames with targeted inquiry prompts and advice categories.
+// Informs users of relevant actions tailored specifically to the viewed screen.
 type PageContext = {
   pageKey: string;
   label: string;
   suggestions: string[];
 };
 
+// Context dictionary providing specialized starter prompts across application views.
+// Tailors quick-prompt queries to transaction tables, goals, portfolios, and settings.
+// Enhances copilot relevance by reflecting current user workflow intent.
 const PAGE_CONTEXTS: Record<string, PageContext> = {
   "/dashboard": {
     pageKey: "dashboard",
@@ -184,6 +190,9 @@ const PAGE_CONTEXTS: Record<string, PageContext> = {
   },
 };
 
+// Resolves the current URL path string to its matching PageContext configuration.
+// Normalizes route segments and matches against known application path keys.
+// Falls back to global general guidance when viewing unconfigured routes.
 function getPageContext(location: string): PageContext {
   // Try exact match first, then prefix match
   if (PAGE_CONTEXTS[location]) return PAGE_CONTEXTS[location];
@@ -203,6 +212,9 @@ function getPageContext(location: string): PageContext {
 
 // ─── Chat Message Type ──────────────────────────────────
 
+// Structural specification representing a conversational entry within the copilot.
+// Distinguishes between user prompt queries and assistant analytical replies.
+// Encapsulates unique identifiers, text content, and creation timestamps.
 interface CopilotMessage {
   id: string;
   role: "user" | "assistant";
@@ -210,6 +222,9 @@ interface CopilotMessage {
   timestamp: Date;
 }
 
+// Restores persisted copilot message history from browser local storage.
+// Parses JSON serialized entries while safely trapping potential syntax exceptions.
+// Enforces a rolling window of recent messages to keep memory bounds stable.
 function loadStoredMessages(storageKey: string): CopilotMessage[] {
   try {
     const raw = sessionStorage.getItem(storageKey);
@@ -228,6 +243,9 @@ function loadStoredMessages(storageKey: string): CopilotMessage[] {
 
 // ─── Main Component ─────────────────────────────────────
 
+// Persistent floating action button and conversational copilot drawer.
+// Scopes message caches and active conversations to authenticated user workspaces.
+// Mounts global floating triggers without disturbing underlying page layouts.
 export function FinancialCopilot() {
   const { user } = useAuth();
   const config = useAppConfig({ enabled: Boolean(user) });
@@ -239,6 +257,9 @@ export function FinancialCopilot() {
   return <ScopedFinancialCopilot key={storageKey} storageKey={storageKey} />;
 }
 
+// Dedicated Markdown prose renderer for concise copilot conversational outputs.
+// Supports GitHub-Flavored Markdown tables, inline bold metrics, and code blocks.
+// Prevents header overflow by constraining typography scale inside small drawer panels.
 function CopilotResponse({ content }: { content: string }) {
   const parts = splitAnswerAndPlan(content);
   return <div className="prose prose-sm dark:prose-invert max-w-none break-words [&>*]:text-foreground [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_p]:my-1 [&_ul]:my-1 [&_li]:text-xs [&_p]:text-sm">
@@ -250,6 +271,9 @@ function CopilotResponse({ content }: { content: string }) {
   </div>;
 }
 
+// Internal drawer implementation managing floating chat state and query mutations.
+// Coordinates minimization, drawer expansion, and optimistic prompt delivery.
+// Persists active message threads to local storage keys across user visits.
 function ScopedFinancialCopilot({ storageKey }: { storageKey: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);

@@ -1,5 +1,54 @@
 # Browser verification - 31 October 2026
 
+## 8 November 2026 — Recorded data, mobile controls and source links
+
+Fresh inbuilt-browser verification: populated/empty workspace switch; saved
+USD 4.32 budget cap; no-history Apply disabled; peer/rebalance empty tabs; no
+99.9-month zero-expense runway; PDF creation/title; exact USD 3000.00 source on
+physical page 1; source-to-file-to-chat return; original PDF viewer and actual
+download. Downloaded bytes match the authenticated API PDF. The direct question
+now uses one document_lookup step (3 ms, zero model calls) instead of seven steps.
+
+Phone 320/390 in both themes, tablet 768 navigation and desktop 1440 sidebar checks
+are recorded in BUTTON_COVERAGE_20261108.md. Final source walk had 12 responses and
+no HTTP failures; fresh console warning/error log empty. Temporary overrides were
+cleared; verified chat remains open on localhost:5181. Clean-install PWA routing
+passes; upgrade from an older installed worker is separately unverified. No other
+browser was used in this pass. See DATA_INTEGRITY_QA_20261108.md for open blockers.
+
+## 6 November 2026 - Remaining controls and honest estimates
+
+Final automated sign-off: client 451 tests/54 files, AI 442 tests/evaluations, server 322/74 before the review repair plus 4 approval regressions. Lint, targeted Ruff and both builds pass. API smoke 33/33 and both npm production audits report zero vulnerabilities. Final client entry index-LFS3h7um.js was confirmed in the browser after a cache-bypassing reload; normal caching and sizing were restored. The native starter's Enter key submitted the question. After correcting singular wording, it returned one owned task through activity_review (5ms, zero model calls), and Open tasks displayed that record. The verified document chat is left open on 5181.
+
+The current built preview is on **127.0.0.1:5181**. An unrelated project occupied 5180 after the session change; it was not stopped. Reconnected the dedicated QA database/API/AI Core without changing the user's secrets or data. Full control coverage and boundaries are in BUTTON_COVERAGE_20261106.md.
+
+Confirmed in the inbuilt browser: USD 12.34 ledger creation, converted-display edit using original values, saved 6.17/6.17 splits, original-currency recurring rule, approval persisting after reload, completed task detail, real task-to-calendar reminder, calendar month/day controls, CSV/PDF export jobs and downloads, and the confirmed local manual workflow. The independent development worker produced one owned CSV with cents, excluded foreign data and continued after a failed PDF job; production drain was not verified.
+
+The final calendar has no invented opening reserve or USD 50 reminder fallback. At measured 390 CSS pixels, explicit November opening 1000.50 yields 988.16 after the recorded expense; December resets the input and stays at 1000.50 despite a reminder containing the date “5 November.” EUR display yields 920.46 without changing the USD assumption. No horizontal overflow was measured. The old tab's screenshot capture failed or tiled; a fresh inbuilt-browser tab captured a clean 390px chat screenshot. Normal caching and temporary emulation settings are restored after checks.
+
+Chat created and downloaded Mobile release review 6 November from saved goals/open tasks. Follow-up quoted USD 25.25 saved toward USD 1250.50, deadline 2027-05-01, on physical page 1. The source opened the correct owned file and preserved Back to chat. PDF rendering and lookup used zero model calls; lookup took 1ms. At 320px the composer and history open/close fit the viewport. Evidence: output/browser/mobile-document-chat-20261106.jpg, document-chat-20261106.jpg and workflow-result-20261106.json. The generated PDF and monthly export were also rendered for visual inspection.
+
+Copy response showed acknowledgement while the browser automation clipboard read remained empty. Do not treat that as a verified end-to-end clipboard transfer. The code's separate unawaited-write defect is repaired with success/rejection regressions. The old cached shell also briefly showed older starter cards; PWA update behavior remains a staging prerequisite. All external delivery, payment, destructive/security access operations and production runtime limitations remain explicit in the coverage matrix.
+
+## 5 November 2026 - Inbuilt-browser regression review
+
+Final rechecks: 42 focused client tests, 44 server configuration regressions, 11 AI transport checks, and a fresh 33/33 live API smoke pass. All six format buttons preserve draft notes; metric add/remove, Clear and blank-title validation passed in the browser. The final cited handoff includes both the attachment and an editable question; sending produced the exact EUR quotation with zero model calls. Structured evidence: output/browser/verification-20261105.json.
+
+Used only the inbuilt browser for UI testing, with the existing synthetic account and dedicated QA database. Phone layout was measured at 390 CSS pixels, and chat at 320 pixels. The 25-route inventory covers rendered pages and navigation, not all destructive, financial or external mutations. The initial rapid sweep triggered a real 429; the three library routes were rechecked after recovery.
+
+Verified journeys:
+- Files > Create PDF: blank editable template, explicit profile inclusion, custom EUR invoice, real PDF generation and download, exact extracted physical page. No invented preset balances remain.
+- Ask Copilot about this PDF: originally failed to attach; repaired handoff displays the saved file and waits for Send. Chat quoted EUR 545.50 and Net 30 days, using document_lookup with zero LLM calls and an 8ms local workflow step.
+- Sources: expand, open the exact file/page 1, reload, Back to chat, and Copy response. Copy retained the currency and amount.
+- AI chat: created Release review 5 November from saved goals/open tasks, downloaded it, and asked about the laptop goal. Reply quoted USD 25.25 toward USD 1250.50, deadline 2027-05-01, on physical page 1. PDF renderer: 119ms/zero LLM calls; subsequent lookup: 14ms/zero calls.
+- Document Q&A: selected the EUR invoice, answered with unchanged currency and the physical page, fitted 390px, and exposed its own source action.
+- Auth recovery: actual API/preview connection interruption displayed Unable to check sign-in; Retry restored the workspace without entering credentials. Strict rate limits were retained.
+
+Evidence: output/browser/mobile-document-chat-20261105.jpg, auth-recovery-20261105.jpg and mobile-route-audit-20261105.json. Screenshot capture intermittently failed at 320px; the successful 390px proof and DOM width measurements are retained. Built-preview metadata and the cached shell were refreshed during QA, with normal cache settings restored. Production PWA upgrades still require staging.
+
+Automated verification: full client 431/52, server 321/74 plus final targeted auth-limit checks, AI 436, live API 33. Paid checkout, SMTP/OAuth delivery, bank-provider callbacks, cloud uploads, production startup and Docker/worker operation were not signed off by these browser checks.
+
+
 ## 31 October - account/workspace boundaries and real document integration
 
 Computer Use used only the inbuilt browser. At 390 CSS pixels, switching from

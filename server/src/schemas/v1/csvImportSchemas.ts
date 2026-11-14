@@ -16,6 +16,9 @@
  */
 import { z } from "zod";
 
+// Safely parses an incoming string value as JSON object or returns it unaltered.
+// Normalizes multipart form fields where objects arrive serialized as strings.
+// Prevents JSON parse exceptions by gracefully falling back to original inputs.
 const parseJson = (value: unknown) => {
   if (typeof value !== "string") return value;
   try {
@@ -25,6 +28,9 @@ const parseJson = (value: unknown) => {
   }
 };
 
+// Validates request parameters and column mappings for CSV transaction imports.
+// Maps file column headers to monetary amount, date, description, and merchant fields.
+// Supports dry-run validation preview toggles and saved mapping preferences.
 export const transactionsCsvImportBodySchema = z
   .object({
     mapping: z.preprocess(

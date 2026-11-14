@@ -73,12 +73,18 @@ import {
   type ScheduledExport,
 } from "@/lib/apiClient";
 
+// Formats API and generic errors into human-readable strings.
+// Extracts request IDs when available to aid troubleshooting.
+// Provides a fallback message if no specific error details exist.
 const formatError = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
+// Converts raw byte counts into human-readable data size representations.
+// Supports standard scale units from bytes up to gigabytes.
+// Returns a placeholder dash when byte inputs are negative or invalid.
 const bytesToHuman = (bytes: unknown) => {
   const n = Number(bytes);
   if (!Number.isFinite(n) || n <= 0) return "—";
@@ -92,6 +98,9 @@ const bytesToHuman = (bytes: unknown) => {
   return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 };
 
+// Defines column options available for custom CSV transaction exports.
+// Maps technical transaction fields to user-facing display labels.
+// Used to configure custom columns or fallback to default selections.
 const AVAILABLE_CSV_COLUMNS = [
   { key: "date", label: "Date" },
   { key: "amount", label: "Amount" },
@@ -103,6 +112,9 @@ const AVAILABLE_CSV_COLUMNS = [
   { key: "created_at", label: "Created At" },
 ];
 
+// Manages the data export dashboard for transactions and monthly reports.
+// Handles on-demand CSV and PDF generation as well as automated schedules.
+// Provides real-time job status polling, downloading, and audit tracking.
 export default function Exports() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -187,15 +199,10 @@ export default function Exports() {
   const [scheduleName, setScheduleName] = useState("");
   const [scheduleType, setScheduleType] = useState<"transactions_csv" | "monthly_summary_pdf">("monthly_summary_pdf");
   const [scheduleFrequency, setScheduleFrequency] = useState<"weekly" | "monthly">("monthly");
-  const [scheduleDestination, setScheduleDestination] = useState<"email" | "webhook" | "cloud_storage">("email");
+  const [scheduleDestination, setScheduleDestination] = useState<"email" | "webhook">("email");
   const [scheduleEmail, setScheduleEmail] = useState("");
   const [scheduleWebhookUrl, setScheduleWebhookUrl] = useState("");
   const [scheduleAuthHeader, setScheduleAuthHeader] = useState("");
-  const [scheduleCloudProvider, setScheduleCloudProvider] = useState<"s3" | "gcs">("s3");
-  const [scheduleBucketName, setScheduleBucketName] = useState("");
-  const [scheduleBucketRegion, setScheduleBucketRegion] = useState("us-east-1");
-  const [scheduleBucketPrefix, setScheduleBucketPrefix] = useState("finwise-reports");
-  const [scheduleCustomFilename, setScheduleCustomFilename] = useState("");
 
   const schedulesQuery = useQuery({
     queryKey: ["v1/exports/schedules"],
@@ -210,16 +217,11 @@ export default function Exports() {
       name: string;
       type: "transactions_csv" | "monthly_summary_pdf";
       frequency: "weekly" | "monthly";
-      destination: "email" | "webhook" | "cloud_storage";
+      destination: "email" | "webhook";
       delivery_email?: string;
       destination_config?: {
         webhook_url?: string;
         auth_header?: string;
-        cloud_provider?: "s3" | "gcs";
-        bucket_name?: string;
-        bucket_region?: string;
-        bucket_prefix?: string;
-        custom_filename?: string;
       };
     }) => createScheduledExport(payload),
     onSuccess: (data) => {
@@ -229,7 +231,6 @@ export default function Exports() {
       setScheduleEmail("");
       setScheduleWebhookUrl("");
       setScheduleAuthHeader("");
-      setScheduleBucketName("");
       const targetDesc =
         data.schedule.destination === "webhook"
           ? `webhook push to ${data.schedule.destination_config?.webhook_url}`
@@ -320,10 +321,23 @@ export default function Exports() {
     return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
   };
 
+  /** The API treats date_to as exclusive; the "Date to" picker is inclusive, so send the next day. */
+  const toExclusiveEndIso = (val: string) => {
+    const iso = toIsoSafe(val);
+    if (!iso) return undefined;
+    const d = new Date(iso);
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString();
+  };
+
   const createTransactionsCsv = () => {
     const params: Record<string, unknown> = {};
     const fromIso = toIsoSafe(csvDateFrom);
-    const toIso = toIsoSafe(csvDateTo);
+    const toIso = toExclusiveEndIso(csvDateTo);
+    if (fromIso && toIso && new Date(fromIso) >= new Date(toIso)) {
+      toast({ title: "Invalid date range", description: "\"Date from\" must be on or before \"Date to\".", variant: "destructive" });
+      return;
+    }
     if (fromIso) params.date_from = fromIso;
     if (toIso) params.date_to = toIso;
     if (csvTxType && csvTxType !== "all") params.tx_type = csvTxType;
@@ -901,7 +915,7 @@ export default function Exports() {
               Schedule Recurring Export Report
             </DialogTitle>
             <DialogDescription>
-              Set up automated reports delivered to your email, external webhook endpoint, or cloud storage bucket.
+              Set up automated reports delivered to your email or a public HTTPS webhook endpoint.
             </DialogDescription>
           </DialogHeader>
 
@@ -932,28 +946,11 @@ export default function Exports() {
                 });
                 return;
               }
-              if (scheduleDestination === "cloud_storage" && !scheduleBucketName.trim()) {
-                toast({
-                  title: "Missing fields",
-                  description: "Please provide a target bucket name.",
-                  variant: "destructive",
-                });
-                return;
-              }
-
               const destination_config =
                 scheduleDestination === "webhook"
                   ? {
                       webhook_url: scheduleWebhookUrl.trim(),
                       auth_header: scheduleAuthHeader.trim() || undefined,
-                    }
-                  : scheduleDestination === "cloud_storage"
-                  ? {
-                      cloud_provider: scheduleCloudProvider,
-                      bucket_name: scheduleBucketName.trim(),
-                      bucket_region: scheduleBucketRegion.trim() || undefined,
-                      bucket_prefix: scheduleBucketPrefix.trim() || undefined,
-                      custom_filename: scheduleCustomFilename.trim() || undefined,
                     }
                   : undefined;
 
@@ -1025,7 +1022,6 @@ export default function Exports() {
                 <SelectContent>
                   <SelectItem value="email">Email Inbox</SelectItem>
                   <SelectItem value="webhook">Automated Webhook Push</SelectItem>
-                  <SelectItem value="cloud_storage">Cloud Storage Bucket (S3 / GCS)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1067,68 +1063,6 @@ export default function Exports() {
                     onChange={(e) => setScheduleAuthHeader(e.target.value)}
                     placeholder="Bearer acc_sec_..."
                     data-testid="input-schedule-webhook-auth"
-                  />
-                </div>
-              </div>
-            )}
-
-            {scheduleDestination === "cloud_storage" && (
-              <div className="space-y-3 p-3 rounded-lg border border-border/70 bg-muted/30">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="schedule-cloud-provider">Cloud Provider</Label>
-                    <Select value={scheduleCloudProvider} onValueChange={(v) => setScheduleCloudProvider(v as any)}>
-                      <SelectTrigger id="schedule-cloud-provider" data-testid="select-schedule-cloud-provider">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="s3">Amazon S3</SelectItem>
-                        <SelectItem value="gcs">Google Cloud Storage</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="schedule-bucket-name">Bucket Name</Label>
-                    <Input
-                      id="schedule-bucket-name"
-                      value={scheduleBucketName}
-                      onChange={(e) => setScheduleBucketName(e.target.value)}
-                      placeholder="corporate-audit-vault"
-                      data-testid="input-schedule-bucket-name"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="schedule-bucket-region">Region</Label>
-                    <Input
-                      id="schedule-bucket-region"
-                      value={scheduleBucketRegion}
-                      onChange={(e) => setScheduleBucketRegion(e.target.value)}
-                      placeholder="us-east-1"
-                      data-testid="input-schedule-bucket-region"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="schedule-bucket-prefix">Folder / Prefix</Label>
-                    <Input
-                      id="schedule-bucket-prefix"
-                      value={scheduleBucketPrefix}
-                      onChange={(e) => setScheduleBucketPrefix(e.target.value)}
-                      placeholder="financial-exports"
-                      data-testid="input-schedule-bucket-prefix"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="schedule-custom-filename">Custom Filename (Optional)</Label>
-                  <Input
-                    id="schedule-custom-filename"
-                    value={scheduleCustomFilename}
-                    onChange={(e) => setScheduleCustomFilename(e.target.value)}
-                    placeholder="e.g. monthly-audit.pdf"
-                    data-testid="input-schedule-custom-filename"
                   />
                 </div>
               </div>

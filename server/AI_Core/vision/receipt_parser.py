@@ -1,4 +1,4 @@
-﻿"""
+"""
 vision/receipt_parser.py - Receipt Field Extraction
 =====================================================
 
@@ -79,10 +79,16 @@ _IGNORE_ITEM_KEYWORDS = [
 ]
 
 
+# Normalizes multi-character whitespace into single spaces and strips margins.
+# Preprocesses raw optical character line strings for regular expression parsing.
+# Returns sanitized single-spaced text line strings.
 def _normalize_ws(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+# Parses numeric amounts and associated currency symbols from line text.
+# Cleans thousand separators and commas to construct standard float numbers.
+# Returns tuples of extracted float values, currency symbols, and raw strings.
 def _parse_amounts(text: str) -> List[Tuple[float, Optional[str], str]]:
     matches: List[Tuple[float, Optional[str], str]] = []
     for m in _AMOUNT_RE.finditer(text):
@@ -98,6 +104,9 @@ def _parse_amounts(text: str) -> List[Tuple[float, Optional[str], str]]:
     return matches
 
 
+# Inspects OCR lines for currency symbols to deduce the receipt transaction currency.
+# Matches currency signs including Indian rupee, US dollar, euro, and British pound.
+# Falls back to the provided currency hint or defaults to INR if unmatched.
 def _detect_currency(lines: List[OcrLine], currency_hint: str) -> str:
     joined = "\n".join(line.text for line in lines)
     if "\u20B9" in joined:
@@ -111,6 +120,9 @@ def _detect_currency(lines: List[OcrLine], currency_hint: str) -> str:
     return currency_hint or "INR"
 
 
+# Searches receipt text lines for standard date formats using regular expressions.
+# Employs fuzzy date parsing to convert matched strings into ISO date format.
+# Returns a tuple containing the formatted date string and line confidence score.
 def _parse_date(lines: List[OcrLine]) -> Tuple[Optional[str], float]:
     for line in lines:
         text = line.text
@@ -127,6 +139,9 @@ def _parse_date(lines: List[OcrLine]) -> Tuple[Optional[str], float]:
     return None, 0.0
 
 
+# Evaluates candidate lines in the header section to identify the vendor name.
+# Scores lines based on letter counts, casing, and absence of numeric noise.
+# Returns the best-matching merchant name string along with its confidence score.
 def _pick_vendor(lines: List[OcrLine]) -> Tuple[Optional[str], float]:
     candidates = lines[:8]
     best: Tuple[Optional[str], float] = (None, 0.0)
@@ -149,6 +164,9 @@ def _pick_vendor(lines: List[OcrLine]) -> Tuple[Optional[str], float]:
     return best
 
 
+# Locates monetary values associated with specific target keywords like total or tax.
+# Scans text lines matching given keyword phrases and extracts line maximums.
+# Returns the extracted numerical amount and associated line confidence score.
 def _find_keyword_amount(lines: List[OcrLine], keywords: List[str]) -> Tuple[Optional[float], float]:
     for kw in keywords:
         for line in lines:
@@ -164,6 +182,9 @@ def _find_keyword_amount(lines: List[OcrLine], keywords: List[str]) -> Tuple[Opt
     return None, 0.0
 
 
+# Finds the maximum numerical amount across all lines as a fallback total.
+# Used when explicit total or balance keywords cannot be identified in receipt.
+# Returns the highest detected float value and its line confidence rating.
 def _fallback_max_amount(lines: List[OcrLine]) -> Tuple[Optional[float], float]:
     best_val: Optional[float] = None
     best_conf = 0.0
@@ -178,6 +199,9 @@ def _fallback_max_amount(lines: List[OcrLine]) -> Tuple[Optional[float], float]:
     return best_val, best_conf
 
 
+# Extracts itemized purchase descriptions and amounts from receipt body lines.
+# Filters out noise keywords, totals, tax entries, and tender payment lines.
+# Returns lists of parsed item dictionaries and associated line confidences.
 def _extract_items(lines: List[OcrLine]) -> Tuple[List[Dict], List[Dict]]:
     items: List[Dict] = []
     item_conf: List[Dict] = []
@@ -215,6 +239,9 @@ def _extract_items(lines: List[OcrLine]) -> Tuple[List[Dict], List[Dict]]:
     return items, item_conf
 
 
+# Heuristically determines spending category from merchant and item descriptions.
+# Matches keywords against common spending classes like food, transit, and utilities.
+# Returns the inferred category title string or defaults to Other.
 def _suggest_category(vendor: Optional[str], items: List[Dict]) -> str:
     text = " ".join([vendor or ""] + [str(it.get("description", "")) for it in items]).lower()
 
@@ -234,6 +261,9 @@ def _suggest_category(vendor: Optional[str], items: List[Dict]) -> str:
     return "Other"
 
 
+# Coordinates heuristic extraction of vendor, date, totals, items, and tax.
+# Assembles parsed fields, computes individual confidences, and emits warnings.
+# Returns comprehensive structured receipt dictionary for downstream accounting.
 def extract_receipt(lines: List[OcrLine], *, currency_hint: str = "INR") -> Dict:
     """
     Heuristic receipt parsing from OCR lines.

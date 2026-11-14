@@ -23,6 +23,9 @@ import type { ToolCall } from "@/types/ai.types";
 
 import { apiClient } from "./core";
 
+// Encapsulates the dry-run analysis and preview returned from tool simulation.
+// Evaluates execution risk classifications and user confirmation requirements.
+// Supplies synthetic outcome representations prior to mutating real account data.
 /** Response from the tool simulation (dry-run) endpoint. */
 export type ToolSimulateResponse = {
   ok: true;
@@ -34,6 +37,9 @@ export type ToolSimulateResponse = {
   request_id?: string;
 };
 
+// Initiates a read-only dry-run simulation of an AI-generated tool invocation.
+// Dispatches an authenticated POST request without triggering persistent side-effects.
+// Returns impact risk evaluations and projected data modifications for approval.
 /**
  * Simulate a tool call without side-effects.
  * Returns a risk assessment and preview so the UI can show the user
@@ -46,6 +52,9 @@ export async function simulateToolCall(toolCall: ToolCall): Promise<ToolSimulate
   });
 }
 
+// Encapsulates the execution result payload following an authorized tool run.
+// Identifies execution records, tool call identifiers, and idempotency status.
+// Supplies raw operational outputs returned from the executed financial action.
 /** Response from actually executing a tool call on the server. */
 export type ToolExecuteResponse = {
   ok: true;
@@ -58,6 +67,9 @@ export type ToolExecuteResponse = {
   request_id?: string;
 };
 
+// Executes a confirmed AI tool call applying live mutations to account systems.
+// Dispatches an authenticated POST request with confirmation flags and replay keys.
+// Returns execution metrics confirming the application of persistent financial actions.
 /**
  * Execute a tool call on the server, applying real financial side-effects.
  * `confirm` must be true for high-risk tools; `idempotency_key` prevents

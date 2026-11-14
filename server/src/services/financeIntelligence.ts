@@ -82,14 +82,27 @@ import MerchantModel from "../models/merchantModel";
 import OrganizationModel from "../models/organizationModel";
 import RecurringRuleModel from "../models/recurringRuleModel";
 import TransactionModel from "../models/transactionModel";
-import { cacheGet, cacheSet } from "../config/redis";
+import { cacheDel, cacheGet, cacheSet } from "../config/redis";
+import {
+  CURRENCY_SYMBOLS,
+  FX_RATES_TO_USD,
+  SUPPORTED_CURRENCIES,
+  convertUsdToCurrency,
+  normalizeCurrency,
+} from "../utils/currencyFx";
 
+// Parses and constrains a numeric parameter within defined upper and lower integer bounds.
+// Defaults safely to the fallback value when encountering invalid or non-numeric arguments.
+// Prevents out-of-range integer parameters from corrupting downstream financial queries.
 const clampInt = (value: unknown, fallback: number, min: number, max: number) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(parsed)));
 };
 
+// Validates and parses a YYYY-MM period key into UTC year, month, start, and end dates.
+// Ensures months fall strictly between 1 and 12, throwing descriptive errors on failure.
+// Computes start-of-month and start-of-next-month timestamps for range-based database queries.
 export const parsePeriodKey = (value: string) => {
   const match = /^(\d{4})-(\d{2})$/.exec(String(value || "").trim());
   if (!match) {
@@ -105,6 +118,9 @@ export const parsePeriodKey = (value: string) => {
   return { year, month, start, end };
 };
 
+// Represents a single category row within a budget envelope reconciliation report.
+// Tracks planned allocations, actual expenditures, remaining surplus/deficit, and transaction counts.
+// Flags unbudgeted categories where expenses occurred without predefined allocations.
 export type BudgetEnvelopeRow = {
   category: string;
   planned: number;
@@ -115,10 +131,15 @@ export type BudgetEnvelopeRow = {
   unbudgeted: boolean;
 };
 
+// Encapsulates organization-wide budget envelope reconciliation data for a billing period.
+// Supplies converted monetary totals, FX conversion rates, and per-category envelope lists.
+// Powers dashboard budget tracking widgets and financial coach alert engines.
 export type BudgetEnvelopesResult = {
   org_id: string;
   period_key: string;
   currency: string;
+  fx_rate?: number;
+  currency_symbol?: string;
   totals: {
     planned: number;
     spent: number;
@@ -128,18 +149,32 @@ export type BudgetEnvelopesResult = {
   envelopes: BudgetEnvelopeRow[];
 };
 
+// Compares planned category budget allocations against actual transaction expenditures.
+// Aggregates expenses by category and identifies unbudgeted or overspent allocations.
+// Supports multi-currency FX conversions and caches reconciled envelope results in Redis.
 export const getBudgetEnvelopes = async (params: {
   orgId: mongoose.Types.ObjectId;
   periodKey: string;
+  currency?: string;
+  fresh?: boolean;
 }) : Promise<BudgetEnvelopesResult> => {
-  const cacheKey = `env:${params.orgId.toString()}:${params.periodKey}`;
-  const cached = await cacheGet<BudgetEnvelopesResult>(cacheKey);
+  const targetCurrency = params.currency ? normalizeCurrency(params.currency) : undefined;
+  const isFxConversion = Boolean(targetCurrency);
+  const fxRate = targetCurrency ? (FX_RATES_TO_USD[targetCurrency] ?? 1.0) : 1.0;
+  const currencySymbol = targetCurrency ? (CURRENCY_SYMBOLS[targetCurrency] ?? "$") : undefined;
+
+  const cacheKey = targetCurrency
+    ? `env:${params.orgId.toString()}:${params.periodKey}:${targetCurrency}`
+    : `env:${params.orgId.toString()}:${params.periodKey}`;
+
+  const cached = params.fresh ? null : await cacheGet<BudgetEnvelopesResult>(cacheKey);
   if (cached) return cached;
 
   const { start, end } = parsePeriodKey(params.periodKey);
 
   const org = await OrganizationModel.findById(params.orgId).select({ currency: 1 }).lean();
-  const currency = String((org as any)?.currency || "USD");
+  const baseCurrency = String((org as any)?.currency || "USD");
+  const currency = isFxConversion ? targetCurrency! : baseCurrency;
 
   const allocations = await BudgetAllocationModel.find({ orgId: params.orgId, periodKey: params.periodKey })
     .select({ category: 1, amount: 1, currency: 1 })
@@ -187,7 +222,7 @@ export const getBudgetEnvelopes = async (params: {
       planned,
       spent,
       remaining,
-      currency: String(allocation.currency || currency),
+      currency: String(allocation.currency || baseCurrency),
       tx_count: Math.max(0, Number(match.tx_count || 0)),
       unbudgeted: false,
     });
@@ -201,7 +236,7 @@ export const getBudgetEnvelopes = async (params: {
       planned: 0,
       spent,
       remaining: -spent,
-      currency,
+      currency: baseCurrency,
       tx_count: Math.max(0, Number(match.tx_count || 0)),
       unbudgeted: true,
     });
@@ -225,28 +260,53 @@ export const getBudgetEnvelopes = async (params: {
     { planned: 0, spent: 0, remaining: 0, unbudgeted_spent: 0 }
   );
 
+  const convertedEnvelopes = envelopes.map((row) => {
+    const planned = isFxConversion ? convertUsdToCurrency(row.planned, targetCurrency!) : Math.round(row.planned * 100) / 100;
+    const spent = isFxConversion ? convertUsdToCurrency(row.spent, targetCurrency!) : Math.round(row.spent * 100) / 100;
+    const remaining = isFxConversion
+      ? (targetCurrency === "JPY" ? Math.round(planned - spent) : Math.round((planned - spent) * 100) / 100)
+      : Math.round(row.remaining * 100) / 100;
+    return {
+      ...row,
+      planned,
+      spent,
+      remaining,
+      currency: isFxConversion ? targetCurrency! : row.currency,
+    };
+  });
+
+  const convertedTotals = {
+    planned: isFxConversion ? convertUsdToCurrency(totals.planned, targetCurrency!) : Math.round(totals.planned * 100) / 100,
+    spent: isFxConversion ? convertUsdToCurrency(totals.spent, targetCurrency!) : Math.round(totals.spent * 100) / 100,
+    remaining: isFxConversion
+      ? (targetCurrency === "JPY"
+          ? Math.round(convertUsdToCurrency(totals.planned, targetCurrency!) - convertUsdToCurrency(totals.spent, targetCurrency!))
+          : Math.round((convertUsdToCurrency(totals.planned, targetCurrency!) - convertUsdToCurrency(totals.spent, targetCurrency!)) * 100) / 100)
+      : Math.round(totals.remaining * 100) / 100,
+    unbudgeted_spent: isFxConversion ? convertUsdToCurrency(totals.unbudgeted_spent, targetCurrency!) : Math.round(totals.unbudgeted_spent * 100) / 100,
+  };
+
   const result: BudgetEnvelopesResult = {
     org_id: params.orgId.toString(),
     period_key: params.periodKey,
     currency,
-    totals: {
-      planned: Math.round(totals.planned * 100) / 100,
-      spent: Math.round(totals.spent * 100) / 100,
-      remaining: Math.round(totals.remaining * 100) / 100,
-      unbudgeted_spent: Math.round(totals.unbudgeted_spent * 100) / 100,
-    },
-    envelopes: envelopes.map((row) => ({
-      ...row,
-      planned: Math.round(row.planned * 100) / 100,
-      spent: Math.round(row.spent * 100) / 100,
-      remaining: Math.round(row.remaining * 100) / 100,
-    })),
+    ...(isFxConversion ? { fx_rate: fxRate, currency_symbol: currencySymbol } : {}),
+    totals: convertedTotals,
+    envelopes: convertedEnvelopes,
   };
 
-  await cacheSet(cacheKey, result, 300); // 5 min TTL
+  if (!params.fresh) await cacheSet(cacheKey, result, 300);
   return result;
 };
 
+export async function invalidateBudgetEnvelopes(orgId: string, date: Date): Promise<void> {
+  const prefix = `env:${orgId}:${date.toISOString().slice(0, 7)}`;
+  await Promise.all([cacheDel(prefix), ...SUPPORTED_CURRENCIES.map(currency => cacheDel(`${prefix}:${currency}`))]);
+}
+
+// Cleanses transaction descriptions to generate canonical keys for recurring clustering.
+// Removes numeric identifiers, collapses extra whitespace, and strips special characters.
+// Groups recurring subscriptions accurately despite minor variation in descriptor strings.
 const normalizeRecurringKey = (value: string) => {
   const lower = String(value || "").trim().toLowerCase();
   if (!lower) return "";
@@ -257,6 +317,9 @@ const normalizeRecurringKey = (value: string) => {
   return stripped.trim().slice(0, 160);
 };
 
+// Computes the statistical median value from an array of numeric intervals or amounts.
+// Sorts values numerically and resolves the middle element or average of midpoints.
+// Provides robust central tendency estimation resistant to outlier transaction timings.
 const median = (values: number[]) => {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -265,16 +328,28 @@ const median = (values: number[]) => {
   return (sorted[mid - 1]! + sorted[mid]!) / 2;
 };
 
+// Converts an unknown numeric money value to a non-negative absolute number.
+// Gracefully handles non-numeric or invalid inputs by returning zero.
+// Guarantees clean currency amounts for transaction arithmetic and variance computations.
 const safeAbsMoney = (value: unknown) => {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
   return Math.abs(n);
 };
 
+// Computes the absolute calendar day difference between two JavaScript Date timestamps.
+// Normalizes millisecond epoch offsets into standard 24-hour day multiples.
+// Used to analyze intervals between transaction occurrences during cadence detection.
 const dayDiff = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / (24 * 60 * 60 * 1000));
 
+// Generates a hexadecimal SHA256 digest string from an arbitrary input value.
+// Produces deterministic candidate identifiers based on normalized transaction signatures.
+// Ensures consistent and unique identification keys across recurring detection sweeps.
 const sha256Hex = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
 
+// Models a detected recurring transaction cluster representing an unmanaged subscription.
+// Captures cadence frequencies (weekly or monthly), interval medians, and confidence scores.
+// Formulates suggested cron schedules and automated recurring rule definitions.
 export type RecurringCandidate = {
   candidate_id: string;
   cadence: "weekly" | "monthly";
@@ -305,6 +380,9 @@ export type RecurringCandidate = {
   rationale: string[];
 };
 
+// Analyzes historical transactions to uncover recurring subscription charges and bills.
+// Clusters transactions by merchant and description, evaluating interval and amount consistency.
+// Cross-references existing active rules and returns ranked recurring candidate suggestions.
 export const detectRecurringCandidates = async (params: {
   orgId: mongoose.Types.ObjectId;
   daysBack?: number;
@@ -523,11 +601,17 @@ export const detectRecurringCandidates = async (params: {
   };
 };
 
+// Represents a single category breakdown row in a forward-looking financial forecast.
+// Captures category naming alongside normalized monthly average expense estimates.
+// Enables comparative category-level expense visualization in predictive charts.
 export type ForecastCategoryRow = {
   category: string;
   expense_monthly_avg: number;
 };
 
+// Encapsulates projected budget burn pressure for a specific spending category.
+// Computes burn rate percentages and projected month-end budget variance overshoots.
+// Classifies severity into watch, at-risk, or over-budget diagnostic tiers.
 export type ForecastBudgetPressureRow = {
   category: string;
   planned: number;
@@ -540,6 +624,9 @@ export type ForecastBudgetPressureRow = {
   unbudgeted: boolean;
 };
 
+// Defines a structured financial risk alert generated from forecast projections.
+// Details severity, descriptive titles, monetary amounts, and recommended remedies.
+// Alerts users to upcoming cashflow gaps, depleted runway, or runaway spending.
 export type ForecastRiskAlert = {
   id: string;
   severity: "info" | "warning" | "critical";
@@ -550,6 +637,9 @@ export type ForecastRiskAlert = {
   amount?: number;
 };
 
+// Details an actionable financial recommendation to optimize forward cashflow.
+// Prioritizes suggestions by urgency and estimates dollar impact on monthly savings.
+// Provides concrete steps for users to close cashflow gaps and stabilize budgets.
 export type ForecastActionItem = {
   id: string;
   priority: "high" | "medium" | "low";
@@ -558,9 +648,14 @@ export type ForecastActionItem = {
   impact_estimate: number | null;
 };
 
+// Models a complete multi-month financial forecast and cashflow projection result.
+// Combines historical baselines, recurring obligations, budget pressure, and risk alerts.
+// Computes overall financial health scores, projected cash balances, and runway months.
 export type ForecastResult = {
   org_id: string;
   currency: string;
+  fx_rate?: number;
+  currency_symbol?: string;
   period_key: string;
   months: number;
   baseline: {
@@ -609,14 +704,29 @@ export type ForecastResult = {
   recommended_actions: ForecastActionItem[];
 };
 
+// Formats a Date object into a canonical YYYY-MM period identifier string.
+// Zero-pads calendar months to guarantee lexicographically sorted consistency.
+// Used throughout forecast projection loops to index sequential monthly periods.
 const periodKeyFromDate = (date: Date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 
+// Computes a future or past date offset by an exact number of calendar months in UTC.
+// Pins day to the first of the month to avoid irregular month-end clipping discrepancies.
+// Generates sequential monthly intervals for forward-looking forecast timeline models.
 const addMonthsUtc = (date: Date, months: number) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1, 0, 0, 0, 0));
 
+// Rounds a floating point currency figure to exactly two decimal cent places.
+// Eliminates IEEE floating point inaccuracies in displayed financial totals.
+// Standardizes currency precision across projection outputs and budget reports.
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
 
+// Rounds a floating point ratio or factor to three decimal places of precision.
+// Maintains numerical accuracy for elapsed month ratios and statistical coefficients.
+// Prevents lengthy decimal representations in serialized forecast responses.
 const roundRatio = (value: number) => Math.round(value * 1000) / 1000;
 
+// Constrains a computed financial health score between zero and one hundred.
+// Rounds fractional score contributions to whole integer values.
+// Ensures composite scores remain within valid standardized percentage bounds.
 const clampScore = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
 
 const severityRank: Record<ForecastBudgetPressureRow["severity"], number> = {
@@ -625,6 +735,9 @@ const severityRank: Record<ForecastBudgetPressureRow["severity"], number> = {
   watch: 1,
 };
 
+// Evaluates budget envelope spend progression relative to elapsed calendar time.
+// Extrapolates projected month-end category spending based on current daily burn rates.
+// Flags categories tracking ahead of budget allocations and tallies total overshoots.
 const buildBudgetPressure = (envelopesResult: BudgetEnvelopesResult, periodKey: string, now: Date) => {
   const { start, end } = parsePeriodKey(periodKey);
   const totalMs = Math.max(1, end.getTime() - start.getTime());
@@ -696,12 +809,21 @@ const buildBudgetPressure = (envelopesResult: BudgetEnvelopesResult, periodKey: 
   };
 };
 
+// Assembles multi-month predictive cashflow projections based on historical transactions.
+// Combines baseline averages, recurring rules, budget pressure, and liquid cash balances.
+// Delivers projected cash balances, health scores, risk alerts, and optimization actions.
 export const buildForecast = async (params: {
   orgId: mongoose.Types.ObjectId;
   periodKey?: string;
   months?: number;
   topCategories?: number;
+  currency?: string;
 }) : Promise<ForecastResult> => {
+  const targetCurrency = params.currency ? normalizeCurrency(params.currency) : undefined;
+  const isFxConversion = Boolean(targetCurrency);
+  const fxRate = targetCurrency ? (FX_RATES_TO_USD[targetCurrency] ?? 1.0) : 1.0;
+  const currencySymbol = targetCurrency ? (CURRENCY_SYMBOLS[targetCurrency] ?? "$") : undefined;
+
   const now = new Date();
   const periodKey = params.periodKey?.trim() || periodKeyFromDate(now);
   parsePeriodKey(periodKey);
@@ -710,7 +832,8 @@ export const buildForecast = async (params: {
   const topCategories = clampInt(params.topCategories, 8, 0, 50);
 
   const org = await OrganizationModel.findById(params.orgId).select({ currency: 1 }).lean();
-  const currency = String((org as any)?.currency || "USD");
+  const baseCurrency = String((org as any)?.currency || "USD");
+  const currency = isFxConversion ? targetCurrency! : baseCurrency;
 
   const daysCovered = 90;
   const cutoff = new Date(Date.now() - daysCovered * 24 * 60 * 60 * 1000);
@@ -731,10 +854,16 @@ export const buildForecast = async (params: {
   const totals = (totalsRows?.[0] || {}) as any;
 
   const scale = 30 / daysCovered;
-  const incomeMonthlyAvg = Number(totals.income || 0) * scale;
-  const expenseMonthlyAvg = Number(totals.expense || 0) * scale;
-  const netMonthlyAvg = Number(totals.net || 0) * scale;
+  const rawIncomeAvg = Number(totals.income || 0) * scale;
+  const rawExpenseAvg = Number(totals.expense || 0) * scale;
+  const rawNetAvg = Number(totals.net || 0) * scale;
   const transactionCount = Number(totals.transaction_count || 0);
+
+  const incomeMonthlyAvg = isFxConversion ? convertUsdToCurrency(rawIncomeAvg, targetCurrency!) : rawIncomeAvg;
+  const expenseMonthlyAvg = isFxConversion ? convertUsdToCurrency(rawExpenseAvg, targetCurrency!) : rawExpenseAvg;
+  const netMonthlyAvg = isFxConversion
+    ? (targetCurrency === "JPY" ? Math.round(incomeMonthlyAvg - expenseMonthlyAvg) : Math.round((incomeMonthlyAvg - expenseMonthlyAvg) * 100) / 100)
+    : rawNetAvg;
 
   const categoryRows = topCategories
     ? await TransactionModel.aggregate([
@@ -750,10 +879,15 @@ export const buildForecast = async (params: {
       ])
     : [];
 
-  const topCats: ForecastCategoryRow[] = categoryRows.map((row: any) => ({
-    category: String(row?._id || "Other"),
-    expense_monthly_avg: Math.round(Number(row?.expense || 0) * scale * 100) / 100,
-  }));
+  const topCats: ForecastCategoryRow[] = categoryRows.map((row: any) => {
+    const rawVal = Number(row?.expense || 0) * scale;
+    return {
+      category: String(row?._id || "Other"),
+      expense_monthly_avg: isFxConversion
+        ? convertUsdToCurrency(rawVal, targetCurrency!)
+        : Math.round(rawVal * 100) / 100,
+    };
+  });
 
   const recurringRules = await RecurringRuleModel.find({ orgId: params.orgId, status: "active" })
     .select({ category: 1, amountMin: 1, amountMax: 1 })
@@ -776,12 +910,18 @@ export const buildForecast = async (params: {
   const recurringByCategory = Array.from(expectedByCategory.entries())
     .map(([category, amount]) => ({
       category,
-      expense_expected_monthly: Math.round(amount * 100) / 100,
+      expense_expected_monthly: isFxConversion
+        ? convertUsdToCurrency(amount, targetCurrency!)
+        : Math.round(amount * 100) / 100,
     }))
     .sort((a, b) => b.expense_expected_monthly - a.expense_expected_monthly)
     .slice(0, 20);
 
-  const expenseMonthlyForecast = Math.max(expenseMonthlyAvg, recurringTotal);
+  const convertedRecurringTotal = isFxConversion
+    ? convertUsdToCurrency(recurringTotal, targetCurrency!)
+    : recurringTotal;
+
+  const expenseMonthlyForecast = Math.max(expenseMonthlyAvg, convertedRecurringTotal);
   const netMonthlyForecast = incomeMonthlyAvg - expenseMonthlyForecast;
 
   const liquidityAccounts = await AccountModel.find({
@@ -814,7 +954,7 @@ export const buildForecast = async (params: {
     liquidityRows.map((row: any) => [String(row?._id), Number(row?.transaction_total || 0)])
   );
 
-  const liquidityBalance =
+  const rawLiquidityBalance =
     liquidityAccounts.length > 0
       ? roundMoney(
           (liquidityAccounts as any[]).reduce((sum, account) => {
@@ -824,7 +964,14 @@ export const buildForecast = async (params: {
         )
       : null;
 
-  const envelopesResult = await getBudgetEnvelopes({ orgId: params.orgId, periodKey });
+  const liquidityBalance =
+    rawLiquidityBalance === null
+      ? null
+      : isFxConversion
+        ? convertUsdToCurrency(rawLiquidityBalance, targetCurrency!)
+        : rawLiquidityBalance;
+
+  const envelopesResult = await getBudgetEnvelopes({ orgId: params.orgId, periodKey, currency: params.currency });
   const budgetPressure = buildBudgetPressure(envelopesResult, periodKey, now);
   const hasBudgetAllocations = envelopesResult.envelopes.some((row) => Number(row.planned || 0) > 0);
 
@@ -845,18 +992,29 @@ export const buildForecast = async (params: {
   const projection = Array.from({ length: months }).map((_, idx) => {
     const monthDate = addMonthsUtc(baseDate, idx);
     cumulativeNet += netMonthlyForecast;
+    const roundedNet = targetCurrency === "JPY" ? Math.round(netMonthlyForecast) : Math.round(netMonthlyForecast * 100) / 100;
+    const roundedCumulative = targetCurrency === "JPY" ? Math.round(cumulativeNet) : roundMoney(cumulativeNet);
     return {
       period_key: periodKeyFromDate(monthDate),
-      income: Math.round(incomeMonthlyAvg * 100) / 100,
-      expense: Math.round(expenseMonthlyForecast * 100) / 100,
-      net: Math.round(netMonthlyForecast * 100) / 100,
-      cumulative_net: roundMoney(cumulativeNet),
-      projected_cash_balance: liquidityBalance === null ? null : roundMoney(liquidityBalance + cumulativeNet),
+      income: targetCurrency === "JPY" ? Math.round(incomeMonthlyAvg) : Math.round(incomeMonthlyAvg * 100) / 100,
+      expense: targetCurrency === "JPY" ? Math.round(expenseMonthlyForecast) : Math.round(expenseMonthlyForecast * 100) / 100,
+      net: roundedNet,
+      cumulative_net: roundedCumulative,
+      projected_cash_balance:
+        liquidityBalance === null
+          ? null
+          : targetCurrency === "JPY"
+            ? Math.round(liquidityBalance + cumulativeNet)
+            : roundMoney(liquidityBalance + cumulativeNet),
     };
   });
 
   const projectedEndBalance =
-    liquidityBalance === null ? null : roundMoney(liquidityBalance + projection.reduce((sum, row) => sum + row.net, 0));
+    liquidityBalance === null
+      ? null
+      : targetCurrency === "JPY"
+        ? Math.round(liquidityBalance + projection.reduce((sum, row) => sum + row.net, 0))
+        : roundMoney(liquidityBalance + projection.reduce((sum, row) => sum + row.net, 0));
 
   const dataQuality: string[] = [];
   if (transactionCount < 8) {
@@ -1034,18 +1192,19 @@ export const buildForecast = async (params: {
   return {
     org_id: params.orgId.toString(),
     currency,
+    ...(isFxConversion ? { fx_rate: fxRate, currency_symbol: currencySymbol } : {}),
     period_key: periodKey,
     months,
     baseline: {
       days_covered: daysCovered,
       transaction_count: transactionCount,
-      income_monthly_avg: Math.round(incomeMonthlyAvg * 100) / 100,
-      expense_monthly_avg: Math.round(expenseMonthlyAvg * 100) / 100,
-      net_monthly_avg: Math.round(netMonthlyAvg * 100) / 100,
+      income_monthly_avg: targetCurrency === "JPY" ? Math.round(incomeMonthlyAvg) : Math.round(incomeMonthlyAvg * 100) / 100,
+      expense_monthly_avg: targetCurrency === "JPY" ? Math.round(expenseMonthlyAvg) : Math.round(expenseMonthlyAvg * 100) / 100,
+      net_monthly_avg: targetCurrency === "JPY" ? Math.round(netMonthlyAvg) : Math.round(netMonthlyAvg * 100) / 100,
     },
     recurring_rules: {
       active_rules: recurringRules.length,
-      expense_expected_monthly: Math.round(recurringTotal * 100) / 100,
+      expense_expected_monthly: targetCurrency === "JPY" ? Math.round(convertedRecurringTotal) : Math.round(convertedRecurringTotal * 100) / 100,
       by_category: recurringByCategory,
     },
     top_categories: topCats,

@@ -39,11 +39,17 @@ import { ApiError } from "@/lib/apiError";
 import { fetchConversationInsights } from "@/services/chatApi";
 import type { ActionItem } from "@/types/ai.types";
 
+// Property structure definition for the cross-conversation insights card.
+// Configures condensed presentation layouts via the compact boolean flag.
+// Accommodates supplemental CSS class names for responsive container styling.
 type ConversationInsightsPanelProps = {
   compact?: boolean;
   className?: string;
 };
 
+// Specialized Markdown renderer formatting conversational synthesis responses.
+// Maps heading elements down to consistent header ranks to preserve page hierarchy.
+// Supports GitHub-Flavored Markdown tables, checklists, and bulleted lists.
 function InsightMarkdown({ children }: { children: string }) {
   return <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
     h1: ({ children }) => <h3>{children}</h3>,
@@ -51,6 +57,9 @@ function InsightMarkdown({ children }: { children: string }) {
   }}>{children}</ReactMarkdown>;
 }
 
+// Flattens and filters structured action items across 7-day, 30-day, and 12-month buckets.
+// Combines short-term tactical steps and long-term milestones into a unified sequence.
+// Bounds the extracted recommendation collection to a specified maximum item count.
 const collectActionItems = (plan?: {
   actions?: {
     next_7_days?: ActionItem[];
@@ -67,6 +76,9 @@ const collectActionItems = (plan?: {
   ].slice(0, limit);
 };
 
+// Displays synthesized intelligence and recommendations derived across all user chats.
+// Renders active agent badges, conversation counts, and formatted action lists.
+// Provides manual refresh triggers to request up-to-date financial synthesis.
 export function ConversationInsightsPanel({
   compact = false,
   className,

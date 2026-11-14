@@ -32,6 +32,9 @@ const roleRank: Record<"member" | "admin" | "owner", number> = {
   owner: 3,
 };
 
+// Enforces administrative privilege verification for API key management actions.
+// Asserts tenant presence and confirms caller role level satisfies admin criteria.
+// Throws an unauthorized or access denied exception when authorization checks fail.
 const requireOrgAdmin = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -42,6 +45,9 @@ const requireOrgAdmin = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Retrieves all configured API keys provisioned for the tenant organization.
+// Projects key prefixes, assigned authorization scopes, and usage timestamps.
+// Returns an array of API key metadata records masking sensitive raw secret values.
 export const listApiKeys = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
 
@@ -64,6 +70,9 @@ export const listApiKeys = async (req: Request, res: Response) => {
   });
 };
 
+// Generates a cryptographically secure API key tied to specific access scopes.
+// Records creator identity and returns the raw secret string once during creation.
+// Responds with the newly generated secret key and associated permission parameters.
 export const createApiKeyForOrg = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgAdmin(req);
@@ -89,6 +98,9 @@ export const createApiKeyForOrg = async (req: Request, res: Response) => {
   });
 };
 
+// Revokes an active API key by assigning an immediate invalidation timestamp.
+// Enforces tenant boundary isolation to prevent cross-tenant key deactivations.
+// Marks the targeted API key as revoked and confirms revocation to the client.
 export const revokeApiKey = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const id = String((req as any).params?.id || "");

@@ -97,52 +97,32 @@ const SLOW_REQUEST_THRESHOLD_MS = 2000;
  * @param {Response} res - Express response object
  * @param {NextFunction} next - Express next function
  */
+// Binds request-scoped child loggers and instruments HTTP response lifecycle completion timing.
+// Emits structured logs categorizing standard, degraded slow request, and server failure states.
 export const requestLogger = (req: Request, res: Response, next: NextFunction) => {
   // Create a child logger with request context and attach it to the request
   req.log = createRequestLogger(req);
 
   const startTime = process.hrtime.bigint();
 
-  // Log request start at debug level
-  req.log.debug(
-    {
-      method: req.method,
-      path: req.originalUrl || req.url,
-      query: Object.keys(req.query).length > 0 ? req.query : undefined,
-    },
-    "Request started",
-  );
-
-  // Listen for the response finish event to log request completion
+  // Completion logging for every request (info/warn/error by status) is done once by
+  // pino-http (`httpLogger` in config/logger.ts). This middleware only binds
+  // `req.log` and adds the one signal pino-http lacks: a slow-request warning.
   res.on("finish", () => {
-    const durationNs = process.hrtime.bigint() - startTime;
-    const durationMs = Number(durationNs) / 1_000_000;
-    const statusCode = res.statusCode;
-
-    const logPayload = {
-      method: req.method,
-      path: req.originalUrl || req.url,
-      statusCode,
-      duration_ms: Math.round(durationMs * 100) / 100,
-    };
-
-    // Log at error level for 5xx responses
-    if (statusCode >= 500) {
-      req.log.error(logPayload, "Request completed with server error");
-      return;
-    }
-
-    // Log at warn level for slow requests
-    if (durationMs > SLOW_REQUEST_THRESHOLD_MS) {
+    const durationMs = Number(process.hrtime.bigint() - startTime) / 1_000_000;
+    if (durationMs > SLOW_REQUEST_THRESHOLD_MS && res.statusCode < 500) {
       req.log.warn(
-        { ...logPayload, slow: true, threshold_ms: SLOW_REQUEST_THRESHOLD_MS },
+        {
+          method: req.method,
+          path: req.originalUrl || req.url,
+          statusCode: res.statusCode,
+          duration_ms: Math.round(durationMs * 100) / 100,
+          slow: true,
+          threshold_ms: SLOW_REQUEST_THRESHOLD_MS,
+        },
         "Slow request detected",
       );
-      return;
     }
-
-    // Log at info level for normal requests
-    req.log.info(logPayload, "Request completed");
   });
 
   next();

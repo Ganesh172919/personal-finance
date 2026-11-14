@@ -23,6 +23,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/ToolTip";
 
+// Configuration constants defining default sidebar dimensions and state cookie keys.
+// Configures desktop, mobile, and collapsed icon widths alongside shortcut keys.
+// Sets cookie expiration durations for persistent sidebar expansion preferences.
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
@@ -30,6 +33,9 @@ const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
+// Context value shape for controlling sidebar expansion and responsiveness.
+// Tracks desktop open/collapsed states, mobile sheet toggles, and screen size flags.
+// Supplies toggleSidebar action handler for global accessibility triggers.
 type SidebarContextProps = {
   state: "expanded" | "collapsed";
   open: boolean;
@@ -40,8 +46,14 @@ type SidebarContextProps = {
   toggleSidebar: () => void;
 };
 
+// React context instance providing sidebar state and controller methods.
+// Initialized to null to catch invalid consumption outside SidebarProvider.
+// Read by all nested sidebar subcomponents to synchronize layouts and tooltips.
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
 
+// Custom hook to consume the active sidebar context and controller functions.
+// Throws an error when invoked outside an active SidebarProvider tree.
+// Returns current open states, mobile flags, and toggle helper functions.
 function useSidebar() {
   const context = React.useContext(SidebarContext);
   if (!context) {
@@ -51,6 +63,9 @@ function useSidebar() {
   return context;
 }
 
+// Root state provider managing sidebar expansion, cookies, and keyboard shortcuts.
+// Binds meta+b / ctrl+b keyboard shortcuts to toggle sidebar visibility.
+// Supports controlled and uncontrolled modes with cookie-backed persistence.
 const SidebarProvider = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> & {
@@ -160,6 +175,9 @@ const SidebarProvider = React.forwardRef<
 );
 SidebarProvider.displayName = "SidebarProvider";
 
+// Main collapsible sidebar component supporting desktop panels and mobile sheets.
+// Adapts dynamically between offcanvas, icon-collapsed, and fully expanded modes.
+// Renders responsive Sheet drawers on mobile and fixed side navigation on desktop.
 const Sidebar = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> & {
@@ -267,6 +285,9 @@ const Sidebar = React.forwardRef<
 );
 Sidebar.displayName = "Sidebar";
 
+// Action button toggling expansion of the desktop sidebar and mobile sheet.
+// Renders PanelLeft icon with accessible sr-only label for assistive tech.
+// Integrates with useSidebar to flip current expansion status on click.
 const SidebarTrigger = React.forwardRef<
   React.ElementRef<typeof Button>,
   React.ComponentProps<typeof Button>
@@ -293,6 +314,9 @@ const SidebarTrigger = React.forwardRef<
 });
 SidebarTrigger.displayName = "SidebarTrigger";
 
+// Invisible resize and toggle edge rail placed on the outer border of the sidebar.
+// Displays subtle resize cursors and toggles sidebar expansion on click.
+// Aids quick mouse-based expansion without requiring precise trigger clicks.
 const SidebarRail = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<"button">
@@ -322,6 +346,9 @@ const SidebarRail = React.forwardRef<
 });
 SidebarRail.displayName = "SidebarRail";
 
+// Main content viewport wrapper rendered alongside the application sidebar.
+// Adjusts margins, borders, and corner radii when sidebar inset variant is used.
+// Forwards standard HTML main element attributes to the container.
 const SidebarInset = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"main">
@@ -340,6 +367,9 @@ const SidebarInset = React.forwardRef<
 });
 SidebarInset.displayName = "SidebarInset";
 
+// Text input control formatted specifically for search bars inside sidebars.
+// Removes default box shadows and sets customized focus ring colors.
+// Forwards DOM references to the underlying styled Input component.
 const SidebarInput = React.forwardRef<
   React.ElementRef<typeof Input>,
   React.ComponentProps<typeof Input>
@@ -358,6 +388,9 @@ const SidebarInput = React.forwardRef<
 });
 SidebarInput.displayName = "SidebarInput";
 
+// Top header container for brand logos, workspace switchers, and user profiles.
+// Applies vertical flex column layout with consistent padding inside the sidebar.
+// Forwards standard HTML div attributes to the container element.
 const SidebarHeader = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div">
@@ -373,6 +406,9 @@ const SidebarHeader = React.forwardRef<
 });
 SidebarHeader.displayName = "SidebarHeader";
 
+// Bottom footer section of the sidebar housing settings and account actions.
+// Automatically anchored at the base of the sidebar layout hierarchy.
+// Forwards standard HTML div attributes to the container element.
 const SidebarFooter = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div">
@@ -388,6 +424,9 @@ const SidebarFooter = React.forwardRef<
 });
 SidebarFooter.displayName = "SidebarFooter";
 
+// Styled horizontal rule dividing sections within the application sidebar.
+// Uses dedicated sidebar border colors with inset horizontal margins.
+// Forwards DOM references to the underlying Separator primitive.
 const SidebarSeparator = React.forwardRef<
   React.ElementRef<typeof Separator>,
   React.ComponentProps<typeof Separator>
@@ -403,6 +442,9 @@ const SidebarSeparator = React.forwardRef<
 });
 SidebarSeparator.displayName = "SidebarSeparator";
 
+// Scrollable body container hosting navigation menus, groups, and lists.
+// Automatically hides overflow when collapsed into compact icon mode.
+// Forwards DOM references to the inner scroll container div element.
 const SidebarContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div">
@@ -421,6 +463,9 @@ const SidebarContent = React.forwardRef<
 });
 SidebarContent.displayName = "SidebarContent";
 
+// Logical section container grouping related navigation links and actions.
+// Manages vertical layout, internal spacing, and relative positioning.
+// Forwards DOM references to the outer grouping div element.
 const SidebarGroup = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div">
@@ -436,6 +481,9 @@ const SidebarGroup = React.forwardRef<
 });
 SidebarGroup.displayName = "SidebarGroup";
 
+// Section header label communicating category titles inside sidebar groups.
+// Automatically animates opacity and margin when transitioning to icon mode.
+// Supports polymorphic rendering via Radix Slot when asChild is true.
 const SidebarGroupLabel = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> & { asChild?: boolean }
@@ -457,6 +505,9 @@ const SidebarGroupLabel = React.forwardRef<
 });
 SidebarGroupLabel.displayName = "SidebarGroupLabel";
 
+// Quick action button positioned at the top right of a sidebar group header.
+// Hidden automatically when the sidebar collapses into compact icon mode.
+// Expands touch hit area on mobile viewports for enhanced usability.
 const SidebarGroupAction = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<"button"> & { asChild?: boolean }
@@ -480,6 +531,9 @@ const SidebarGroupAction = React.forwardRef<
 });
 SidebarGroupAction.displayName = "SidebarGroupAction";
 
+// Content wrapper rendering navigation items within a sidebar group.
+// Sets full container width and default small typography sizing.
+// Forwards DOM references to the inner content div element.
 const SidebarGroupContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div">
@@ -493,6 +547,9 @@ const SidebarGroupContent = React.forwardRef<
 ));
 SidebarGroupContent.displayName = "SidebarGroupContent";
 
+// Unordered list container organizing navigation menu buttons and items.
+// Formats vertical flex column with tight gap spacing between items.
+// Forwards DOM references to the underlying ul list element.
 const SidebarMenu = React.forwardRef<
   HTMLUListElement,
   React.ComponentProps<"ul">
@@ -506,6 +563,9 @@ const SidebarMenu = React.forwardRef<
 ));
 SidebarMenu.displayName = "SidebarMenu";
 
+// Individual list item wrapping a navigation button and its contextual actions.
+// Serves as relative positioning anchor for badges, actions, and submenus.
+// Forwards DOM references to the underlying li list item element.
 const SidebarMenuItem = React.forwardRef<
   HTMLLIElement,
   React.ComponentProps<"li">
@@ -519,6 +579,9 @@ const SidebarMenuItem = React.forwardRef<
 ));
 SidebarMenuItem.displayName = "SidebarMenuItem";
 
+// Styling variants for sidebar menu action buttons using class-variance-authority.
+// Supports default and outline visual variants alongside sm, default, and lg sizes.
+// Configures hover colors, active states, and icon-collapsed dimension limits.
 const sidebarMenuButtonVariants = cva(
   "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
   {
@@ -541,6 +604,9 @@ const sidebarMenuButtonVariants = cva(
   }
 );
 
+// Interactive navigation button linking to routes or triggering actions in sidebar.
+// Integrates with Tooltip to reveal labels when sidebar is collapsed to icons.
+// Supports polymorphic rendering via Radix Slot when asChild is true.
 const SidebarMenuButton = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<"button"> & {
@@ -600,6 +666,9 @@ const SidebarMenuButton = React.forwardRef<
 );
 SidebarMenuButton.displayName = "SidebarMenuButton";
 
+// Accessory action button nested within a SidebarMenuItem for item menus or pins.
+// Reveals on hover when showOnHover is enabled and hides in icon-collapsed mode.
+// Forwards DOM references to the underlying button or Slot element.
 const SidebarMenuAction = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<"button"> & {
@@ -631,6 +700,9 @@ const SidebarMenuAction = React.forwardRef<
 });
 SidebarMenuAction.displayName = "SidebarMenuAction";
 
+// Notification counter badge positioned on the right edge of a sidebar menu item.
+// Displays tabular numeric counts or status indicators in compact pill styling.
+// Automatically hides when the sidebar is collapsed into icon mode.
 const SidebarMenuBadge = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div">
@@ -652,6 +724,9 @@ const SidebarMenuBadge = React.forwardRef<
 ));
 SidebarMenuBadge.displayName = "SidebarMenuBadge";
 
+// Loading placeholder component simulating a sidebar navigation menu button.
+// Renders animated skeleton boxes for menu icons and variable-width text bars.
+// Eliminates layout jumpiness while sidebar navigation items load asynchronously.
 const SidebarMenuSkeleton = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> & {
@@ -690,6 +765,9 @@ const SidebarMenuSkeleton = React.forwardRef<
 });
 SidebarMenuSkeleton.displayName = "SidebarMenuSkeleton";
 
+// Nested unordered list container for secondary child navigation links.
+// Applies a left border guideline indicating hierarchy below parent items.
+// Automatically hides when the sidebar collapses into icon mode.
 const SidebarMenuSub = React.forwardRef<
   HTMLUListElement,
   React.ComponentProps<"ul">
@@ -707,12 +785,18 @@ const SidebarMenuSub = React.forwardRef<
 ));
 SidebarMenuSub.displayName = "SidebarMenuSub";
 
+// List item component wrapping a secondary child navigation button.
+// Forwards DOM references to the underlying li list item element.
+// Maintains clean semantic list structure inside nested submenus.
 const SidebarMenuSubItem = React.forwardRef<
   HTMLLIElement,
   React.ComponentProps<"li">
 >(({ ...props }, ref) => <li ref={ref} {...props} />);
 SidebarMenuSubItem.displayName = "SidebarMenuSubItem";
 
+// Secondary navigation link button within a nested sidebar submenu.
+// Supports small and medium sizes with active highlights and hover styles.
+// Automatically hides when the parent sidebar collapses into icon mode.
 const SidebarMenuSubButton = React.forwardRef<
   HTMLAnchorElement,
   React.ComponentProps<"a"> & {

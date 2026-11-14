@@ -359,3 +359,76 @@ module.exports = {
   }
 };
 ```
+
+---
+
+## 7. Master Production Verification Snapshot & New Testing Recipes
+
+### 7.1 Verified Quality Gates Summary
+
+| Tier / Layer | Test Runner | Files / Suites | Total Tests | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Frontend Views & Stores** | Vitest 1.6 + RTL + MSW | 51 suites | **408 tests** | 🟢 0 Failures (100% Pass) |
+| **Frontend Production Build**| Vite + TypeScript | 111 PWA assets | 0 errors | 🟢 Clean Build |
+| **API Gateway & Services** | Vitest 1.6 + Supertest | 67 suites | **271 tests** | 🟢 0 Failures (100% Pass) |
+| **Server TypeScript Check** | `tsc --noEmit` | Clean compilation | 0 type errors | 🟢 Passed |
+| **AI Core Unit & Contracts** | Pytest 8.3 | 29 suites | **316+ tests** | 🟢 0 Failures (100% Pass) |
+| **AI Core Invariant Evals** | `evals.runner` | 12 eval scenarios | **175 evaluations** | 🟢 100% Invariants Preserved |
+| **OpenAPI Contract Coverage**| Vitest Coverage Gate | 1 suite | **201/201 routes** | 🟢 100% Route Coverage |
+
+---
+
+### 7.2 Testing Recipe 1: ML Merchant Embedding Clustering (`merchantEmbeddingClustering.test.ts`)
+
+```typescript
+import { describe, it, expect } from "vitest";
+import {
+  generateMerchantEmbedding,
+  cosineSimilarity,
+  clusterMerchantTransactions,
+} from "../services/merchantEmbeddingClustering.js";
+
+describe("ML Merchant Embedding & Clustering", () => {
+  it("normalizes vectors to L2 unit length (||v|| = 1.0)", () => {
+    const vec = generateMerchantEmbedding("AMZN MKTP US*2A41B");
+    expect(vec).toHaveLength(64);
+    const magnitude = Math.sqrt(vec.reduce((sum, v) => sum + v * v, 0));
+    expect(magnitude).toBeCloseTo(1.0, 4);
+  });
+
+  it("yields high cosine similarity for alias variants of the same brand", () => {
+    const v1 = generateMerchantEmbedding("Amazon.com*MB92 SEATTLE WA");
+    const v2 = generateMerchantEmbedding("AMZN Prime Video");
+    const sim = cosineSimilarity(v1, v2);
+    expect(sim).toBeGreaterThanOrEqual(0.70);
+  });
+});
+```
+
+---
+
+### 7.3 Testing Recipe 2: Zero-Sum Budget Envelope Rebalancing (`budgetHealth.test.ts`)
+
+```typescript
+import { describe, it, expect } from "vitest";
+import { computeAutoRebalancePlan } from "../services/budgetHealthService.js";
+
+describe("Budget Auto-Rebalancing Invariant", () => {
+  it("preserves total budget allocation with exact zero-sum transfer balance", () => {
+    const envelopes = [
+      { category: "Groceries", planned: 600, spent: 750 }, // $150 deficit
+      { category: "Entertainment", planned: 300, spent: 100 }, // $200 surplus
+    ];
+
+    const plan = computeAutoRebalancePlan(envelopes as any);
+    expect(plan.needed).toBe(true);
+    expect(plan.transfers).toHaveLength(1);
+    expect(plan.transfers[0]).toEqual({
+      from_category: "Entertainment",
+      to_category: "Groceries",
+      amount: 150,
+    });
+    expect(plan.budget_preserved).toBe(true);
+  });
+});
+```

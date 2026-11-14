@@ -124,6 +124,9 @@ from utils import create_llm
 logger = logging.getLogger(__name__)
 
 
+# Content generation agent for personalized user financial newsletters.
+# Compiles deterministic spending analytics and budget alert summaries.
+# Generates contextual tips and actionable recommendations via LLM queries.
 class NewsletterAgent:
     """Generates personalized daily newsletter content.
 
@@ -131,6 +134,9 @@ class NewsletterAgent:
     LLM is used only for financial_tip and action_items.
     """
 
+    # Initializes the newsletter agent with dedicated LLM runtime models.
+    # Configures system instructions emphasizing friendly financial coaching.
+    # Restricts generation boundaries away from formal tax or legal advice.
     def __init__(self):
         self.llm = create_llm("newsletter")
         self.system_prompt = SystemMessage(
@@ -144,6 +150,9 @@ class NewsletterAgent:
             )
         )
 
+    # Generates all active newsletter sections based on context and preferences.
+    # Selects between deterministic metrics and language model outputs dynamically.
+    # Returns structured dictionaries matching client presentation requirements.
     def generate(
         self,
         financial_context: Dict[str, Any],
@@ -190,6 +199,9 @@ class NewsletterAgent:
 
     # ── Deterministic Builders ────────────────────────────────────────
 
+    # Constructs standardized spending summary structures from transaction records.
+    # Calculates net cash flows, category distributions, and activity counts.
+    # Formats deterministic financial telemetry for recipient email digests.
     @staticmethod
     def _build_spending_summary(spending: Dict[str, Any]) -> Dict[str, Any]:
         """Build a clean spending summary from raw data."""
@@ -202,6 +214,9 @@ class NewsletterAgent:
             "currency": spending.get("currency", "USD"),
         }
 
+    # Provides default baseline financial health metrics when data is sparse.
+    # Supplies welcoming starter scores and encouragement for new accounts.
+    # Prevents newsletter rendering errors during user onboarding phases.
     @staticmethod
     def _default_health_score() -> Dict[str, Any]:
         """Return a neutral health score when data is unavailable."""
@@ -213,6 +228,9 @@ class NewsletterAgent:
 
     # ── LLM-Generated Sections ───────────────────────────────────────
 
+    # Generates customized financial guidance tips tailored to user context.
+    # Analyzes recent cash flow constraints, budget limits, and bill due dates.
+    # Falls back gracefully to heuristic educational templates on network issues.
     def _generate_financial_tip(self, ctx: Dict[str, Any]) -> Dict[str, Any]:
         """Generate a financial tip using the LLM with fallback."""
         spending = ctx.get("spending_summary", {})
@@ -259,6 +277,9 @@ Body: <2-3 sentence tip, practical and actionable>
             logger.warning("LLM tip generation failed, using fallback: %s", e)
             return self._fallback_tip(ctx)
 
+    # Produces tailored high-impact action recommendations for the upcoming week.
+    # Prompts users regarding critical payment windows and budget thresholds.
+    # Yields structured fallback action items if model inference fails.
     def _generate_action_items(self, ctx: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate action items using the LLM with fallback."""
         alerts = ctx.get("budget_alerts", [])
@@ -314,6 +335,9 @@ Separate items with a blank line. Keep it concise.
 
     # ── Response Parsing ──────────────────────────────────────────────
 
+    # Parses raw LLM text responses into structured tip title, body, and tags.
+    # Normalizes string tokens and extracts category labels from response lines.
+    # Applies field length caps to maintain clean email template layouts.
     @staticmethod
     def _parse_tip_response(text: str) -> Dict[str, Any]:
         """Parse LLM tip response into structured format."""
@@ -350,6 +374,9 @@ Separate items with a blank line. Keep it concise.
             "category": category[:30],
         }
 
+    # Extracts multiple structured action items from formatted LLM text output.
+    # Identifies title, description, priority, and categorization tags per item.
+    # Enforces hard upper limits on item counts for newsletter readability.
     @staticmethod
     def _parse_action_items(text: str) -> List[Dict[str, Any]]:
         """Parse LLM action items response into structured format."""
@@ -403,6 +430,9 @@ Separate items with a blank line. Keep it concise.
 
     # ── Fallback Content ──────────────────────────────────────────────
 
+    # Generates rule-based fallback tips when LLM services are inaccessible.
+    # Selects contextual guidance for negative cash flow or zero-spend days.
+    # Ensures reliable tip delivery without external service dependencies.
     @staticmethod
     def _fallback_tip(ctx: Dict[str, Any]) -> Dict[str, Any]:
         """Generate a fallback financial tip when LLM is unavailable."""
@@ -439,6 +469,9 @@ Separate items with a blank line. Keep it concise.
             "category": "General",
         }
 
+    # Generates deterministic fallback action recommendations from local state.
+    # Scans for exceeded budget limits and imminent bill maturity deadlines.
+    # Provides default goal review actions when no critical alerts are active.
     @staticmethod
     def _fallback_action_items(ctx: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate fallback action items when LLM is unavailable."""

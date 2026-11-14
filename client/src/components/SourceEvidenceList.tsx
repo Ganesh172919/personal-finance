@@ -4,6 +4,9 @@ import { Button } from "@/components/ui/Button";
 import { evidenceFilePath } from "@/lib/fileReferences";
 import type { EvidenceItem } from "@/types/evidence.types";
 
+// Collapsible source evidence list displaying citations supporting AI responses.
+// Prioritizes extracted document text chunks over general financial context records.
+// Provides direct deep-links navigating to the original file and page references.
 export function SourceEvidenceList({ items, returnTo }: { items: EvidenceItem[]; returnTo?: string | null }) {
   const [expanded, setExpanded] = useState(false);
   const listId = useId();

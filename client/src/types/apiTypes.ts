@@ -22,11 +22,20 @@
  * @module types/apiTypes
  */
 
+// Generic record dictionary supporting arbitrary key-value mapping structures.
+// Provides open-ended typing to permit backward-compatible API response extension.
+// Intersected with known domain models to safely absorb server additions.
 type AnyRecord = { [key: string]: any };
 
+// Encapsulates authentication session response payloads for logged-in accounts.
+// Carries active user profile attributes, credentials, and request tracing IDs.
+// Validates identity boundaries across secured client application views.
 export type AuthUserResponse = AnyRecord & { request_id?: string };
 export type LogoutResponse = AnyRecord & { request_id?: string };
 
+// Defines parameters for initiating subscription checkout flows with payment providers.
+// Specifies chosen subscription tier, billing period, seat allocations, and redirect URLs.
+// Directs users toward external payment gateways to complete account upgrades.
 export type BillingCheckoutRequest = AnyRecord & {
   plan_tier?: string;
   billing_cycle?: "monthly" | "annual";
@@ -37,10 +46,16 @@ export type BillingCheckoutRequest = AnyRecord & {
 export type BillingCheckoutResponse = AnyRecord & { url?: string; request_id?: string };
 export type BillingPortalResponse = AnyRecord & { url?: string; request_id?: string };
 
+// Structures one-off top-up requests for specialized AI or scenario usage credits.
+// Specifies the predefined credit pack identifier targeted for user account purchase.
+// Triggers transactional billing flows to allocate immediate feature capacities.
 export type PurchaseCreditsRequest = {
   pack_id: "ai_pack_250" | "ocr_pack_100" | "scenarios_pack_100" | "flex_bundle";
 };
 
+// Conveys confirmation and receipt details following a successful credit purchase.
+// Returns the activated pack profile, granted credit allocations, and audit IDs.
+// Refreshes client-side balance counters to reflect updated computational allowances.
 export type PurchaseCreditsResponse = {
   success: boolean;
   pack: {
@@ -54,11 +69,17 @@ export type PurchaseCreditsResponse = {
   request_id?: string;
 };
 
+// Models subscription tier pricing structures, feature limits, and entitlements.
+// Represents individual feature quotas and complete catalog payloads from billing endpoints.
+// Informs pricing matrices, upgrade modals, and client-side capability gates.
 export type PlanLimit = AnyRecord & { key?: string; value?: number | null };
 export type PlansResponse = AnyRecord & { plans?: AnyRecord[]; request_id?: string };
 export type EntitlementsMeResponse = AnyRecord & { request_id?: string };
 export type AppConfigResponse = AnyRecord & { request_id?: string };
 
+// Represents developer API credentials and programmatic access token management.
+// Encompasses permission scopes, key metadata rows, generation payloads, and revocations.
+// Facilitates secure client-side configuration of external developer integrations.
 export type ApiKeyScope = string;
 export type ApiKeyRow = AnyRecord & {
   id: string;
@@ -73,6 +94,9 @@ export type CreateApiKeyResponse = AnyRecord & { api_key: string; request_id?: s
 export type ListApiKeysResponse = AnyRecord & { api_keys: ApiKeyRow[]; request_id?: string };
 export type RevokeApiKeyResponse = AnyRecord & { revoked?: boolean; request_id?: string };
 
+// Models background data export job lifecycles, states, and retrieval payloads.
+// Tracks asynchronous generation progress across CSV, PDF, and archive export jobs.
+// Provides polling endpoints the status metadata required for download delivery.
 export type ExportJobStatus = "queued" | "running" | "succeeded" | "failed" | string;
 export type ExportJobType = string;
 export type ExportJob = AnyRecord & {
@@ -89,6 +113,9 @@ export type CreateExportResponse = AnyRecord & { queued?: boolean; job?: ExportJ
 export type ListExportsResponse = AnyRecord & { exports: ExportJob[]; request_id?: string };
 export type GetExportResponse = AnyRecord & { job?: ExportJob; request_id?: string };
 
+// Defines payloads for interacting with automated finance autopilot runs.
+// Handles run approval actions, state queries, and automated plan execution loops.
+// Facilitates user confirmation when autonomous agents propose financial mutations.
 export type AutopilotPlanRequest = AnyRecord;
 export type AutopilotRunIdRequest = AnyRecord & { run_id?: string };
 export type AutopilotApproveRequest = AnyRecord & { run_id?: string };
@@ -97,6 +124,9 @@ export type AutopilotRunResponse = AnyRecord & {
   request_id?: string;
 };
 
+// Models multi-tenant organization structures, roles, and invitation handling.
+// Captures organization profile summaries, seat allocations, and localized settings.
+// Powers team workspace management, role assignments, and tenant switching.
 export type AcceptOrgInviteResponse = AnyRecord & { accepted?: boolean; request_id?: string };
 
 export type OrgRole = "owner" | "admin" | "member" | string;
@@ -128,14 +158,25 @@ export type UpdateOrgSettingsRequest = AnyRecord & {
 };
 export type UpdateOrgSettingsResponse = AnyRecord & { request_id?: string };
 
+// Conveys aggregated telemetry and event catalog entries for system automations.
+// Delivers analytics overview rollups and supported automation event manifests.
+// Powers monitoring dashboards and custom automation rule configuration screens.
 export type AnalyticsOverviewResponse = AnyRecord & { request_id?: string };
 export type AutomationEventEmitRequest = AnyRecord;
 export type AutomationEventEmitResponse = AnyRecord & { accepted?: boolean; request_id?: string };
 export type AutomationEventsCatalogResponse = AnyRecord & { events?: AnyRecord[]; request_id?: string };
+
+// Manages system feature flag definitions, toggles, and rollout configurations.
+// Enables dynamic runtime enablement of preview features and platform capabilities.
+// Supplies administrative interfaces the tools to inspect and modify toggle states.
 export type FeatureFlagDeleteResponse = AnyRecord & { request_id?: string };
 export type FeatureFlagUpsertRequest = AnyRecord;
 export type FeatureFlagUpsertResponse = AnyRecord & { request_id?: string };
 export type FeatureFlagsListResponse = AnyRecord & { flags?: AnyRecord[]; request_id?: string };
+
+// Structures synchronization commands and connection histories for external providers.
+// Manages active connector registrations, sync job execution, and historical audit logs.
+// Provides status indicators for bank links, third-party accounting, and data syncs.
 export type IntegrationSyncRequest = AnyRecord;
 export type IntegrationSyncResponse = AnyRecord & {
   run?: AnyRecord & { id?: string; status?: string };
@@ -143,16 +184,26 @@ export type IntegrationSyncResponse = AnyRecord & {
 };
 export type IntegrationHistoryResponse = AnyRecord & { history: AnyRecord[]; request_id?: string };
 export type IntegrationsListResponse = AnyRecord & { connectors: AnyRecord[]; request_id?: string };
+
+// Governs plugin marketplace interactions, installation commands, and catalog queries.
+// Encapsulates extension package metadata, installed runtime states, and operations.
+// Enables modular extension discovery and lifecycle management across workspaces.
 export type MarketplaceInstallRequest = AnyRecord & { plugin_key: string; version?: string };
 export type MarketplaceInstallResponse = AnyRecord & { install?: AnyRecord; request_id?: string };
 export type MarketplaceCatalogResponse = AnyRecord & { plugins: AnyRecord[]; request_id?: string };
 export type PluginOperationResponse = AnyRecord & { plugin?: AnyRecord; request_id?: string };
 export type PluginsListResponse = AnyRecord & { plugins: AnyRecord[]; request_id?: string };
 
+// Handles referral reward program interactions and redemption verification requests.
+// Delivers reward balances, referral code histories, and claim transaction summaries.
+// Drives growth marketing reward programs and user referral status displays.
 export type ReferralRedeemRequest = AnyRecord;
 export type ReferralRedeemResponse = AnyRecord & { request_id?: string };
 export type ReferralsMeResponse = AnyRecord & { request_id?: string };
 
+// Details granular consumption accounting across AI tokens, OCR pages, and features.
+// Breaks down cost attribution, consumed units, and computational resource billing.
+// Supplies users and administrators transparent accounting of resource expenditure.
 export type UsageLedgerRow = AnyRecord & {
   feature: string;
   units: number;
@@ -162,6 +213,9 @@ export type UsageLedgerRow = AnyRecord & {
 };
 export type UsageLedgerResponse = AnyRecord & { ledger: UsageLedgerRow[]; period_key?: string; request_id?: string };
 
+// Defines event, cron, manual, and webhook triggers for automated workflows.
+// Specifies the initiating conditions that cause automation sequences to fire.
+// Enforces valid trigger payload configurations within workflow creation editors.
 export type TaskPriority = "low" | "medium" | "high" | string;
 export type TaskKind = "cashflow" | "budget" | "debt" | "invest" | "goal" | "education" | "generic" | string;
 
@@ -176,6 +230,9 @@ export type WorkflowTrigger =
   | WorkflowTriggerWebhook
   | (AnyRecord & { type: string });
 
+// Outlines configurable action steps and conditional filters executed by workflows.
+// Supports task generation, notification dispatches, report exports, and delays.
+// Validates step definitions and evaluation rules within automation orchestration.
 export type WorkflowConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "contains";
 export type WorkflowActionCondition = {
   field: string;
@@ -220,14 +277,24 @@ export type WorkflowActionExportReportOther = AnyRecord & {
   params?: AnyRecord;
   condition?: WorkflowActionCondition;
 };
+export type WorkflowActionDelay = AnyRecord & {
+  type: "delay";
+  duration_seconds: number;
+  description?: string;
+  condition?: WorkflowActionCondition;
+};
 export type WorkflowAction =
   | WorkflowActionCreateTask
   | WorkflowActionSendNotification
   | WorkflowActionExportReportMonthly
   | WorkflowActionExportReportCsv
   | WorkflowActionExportReportOther
+  | WorkflowActionDelay
   | (AnyRecord & { type: string });
 
+// Encapsulates end-to-end automation workflow definitions and runtime requests.
+// Handles workflow creation, persistence, query listings, and manual trigger executions.
+// Directs backend automation engines when orchestrating scheduled user routines.
 export type CreateWorkflowRequest = AnyRecord & {
   name: string;
   enabled?: boolean;
@@ -249,6 +316,9 @@ export type RunWorkflowRequest = AnyRecord;
 export type RunWorkflowResponse = AnyRecord & { run?: AnyRecord; request_id?: string };
 
 // Blogs
+// Classifies educational personal finance articles, authorship, and content metadata.
+// Models published blog articles, categorical tags, SEO attributes, and pagination.
+// Powers article exploration, reader engagement metrics, and community search views.
 export type BlogPostCategory = 'investing' | 'budgeting' | 'tax-planning' | 'debt-management' | 'retirement' | 'insurance' | 'real-estate' | 'market-news' | 'personal-growth';
 export type IBlogPost = AnyRecord & {
   _id: string;
@@ -285,6 +355,9 @@ export type ListBlogsResponse = AnyRecord & {
 export type GetBlogResponse = AnyRecord & { post: IBlogPost };
 
 // Growth Stories
+// Captures verified personal finance transformation narratives and community journeys.
+// Encompasses quantitative metrics, strategic milestones, difficulties, and summaries.
+// Supplies educational case study catalogs to inspire user financial goal achievement.
 export type GrowthStoryCategory = 'debt-freedom' | 'wealth-building' | 'early-retirement' | 'side-hustle' | 'tax-optimization' | 'family-finance' | 'student-finance';
 export type GrowthStoryDifficulty = 'beginner' | 'intermediate' | 'advanced';
 export type IGrowthStory = AnyRecord & {

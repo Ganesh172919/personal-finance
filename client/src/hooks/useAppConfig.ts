@@ -20,6 +20,9 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getMyConfig, type AppConfig } from "@/lib/apiClient";
 
+// Custom React Query hook fetching merged user and organization configuration state.
+// Configures automated caching with a 30-second stale time to avoid redundant roundtrips.
+// Supplies locale, currency, feature flags, and subscription tier limits to UI components.
 /**
  * Fetches the current user's app configuration.
  *

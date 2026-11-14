@@ -69,11 +69,26 @@ import {
   getAccountBalances,
   getCategoryTrends,
   getIncomeExpenseSummary,
+  getMultiCurrencySummary,
   getSpendingHeatmap,
   getTopMerchants,
   type IncomeExpenseMonth,
 } from "@/lib/api/v1/analytics";
+import {
+  CURRENCY_SYMBOLS,
+  FX_RATES_TO_USD,
+  formatBillingCurrency,
+  type SupportedCurrency,
+} from "@/lib/currencyFx";
 
+// List of supported international currency codes available in the analytics dashboard.
+// Enables multi-currency conversions and localized reporting across major currencies.
+// Used to populate the currency switcher selector dropdown on analytics charts.
+const SUPPORTED_CURRENCIES: SupportedCurrency[] = ["USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY"];
+
+// HSL color palette sequence utilized for category pie charts and bar visualizations.
+// Provides accessible, visually distinguishable hues across diverse data categories.
+// Maintained consistently across Recharts series markers and legend swatches.
 const CHART_COLORS = [
   "hsl(160 68% 42%)",
   "hsl(204 86% 56%)",
@@ -85,17 +100,30 @@ const CHART_COLORS = [
   "hsl(173 61% 39%)",
 ];
 
+// Converts a YYYY-MM formatted date string into an abbreviated month and year string.
+// Splits year and month numerals to instantiate a localized Date object.
+// Formats x-axis category tick labels across multi-month analytics trend charts.
 function formatMonth(monthStr: string): string {
   const [year, month] = monthStr.split("-");
   const date = new Date(Number.parseInt(year, 10), Number.parseInt(month, 10) - 1);
   return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 }
 
-function AnalyticsTooltip({ active, payload, label }: any) {
+// Custom interactive tooltip component for Recharts analytics graphs.
+// Renders colored legend dots, series labels, and localized currency amounts.
+// Respects the user's active currency selection with dynamic FX conversions.
+function AnalyticsTooltip({ active, payload, label, selectedCurrency, baseCurrency }: any) {
   const { formatMoney } = useOrgFormatters();
   if (!active || !payload?.length) {
     return null;
   }
+
+  const formatVal = (val: number) => {
+    if (selectedCurrency && selectedCurrency !== baseCurrency) {
+      return formatBillingCurrency(val, selectedCurrency);
+    }
+    return formatMoney(val);
+  };
 
   return (
     <div className="rounded-xl border border-border/70 bg-popover/95 p-3 text-sm shadow-xl backdrop-blur">
@@ -105,7 +133,7 @@ function AnalyticsTooltip({ active, payload, label }: any) {
           <div key={`${entry.name}-${index}`} className="flex items-center gap-2 text-xs">
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: entry.color }} />
             <span className="text-muted-foreground">{entry.name}</span>
-            <span className="font-medium text-foreground">{formatMoney(entry.value)}</span>
+            <span className="font-medium text-foreground">{formatVal(entry.value)}</span>
           </div>
         ))}
       </div>
@@ -113,6 +141,9 @@ function AnalyticsTooltip({ active, payload, label }: any) {
   );
 }
 
+// Financial metric summary card displaying top-level totals, trends, and tone glows.
+// Formats financial indicators with custom icon badges and directional arrows.
+// Configures entrance animation delays to create an orchestrated dashboard cascade.
 function AnalyticsStatCard({
   title,
   value,
@@ -198,6 +229,9 @@ function AnalyticsStatCard({
   );
 }
 
+// Full-page skeleton placeholder rendered while analytics data sets load.
+// Replicates the layout of top metric stat cards and dual chart canvases.
+// Displays shimmering loading states to prevent cumulative layout shifts.
 function AnalyticsLoadingState() {
   return (
     <div className="space-y-6">
@@ -215,34 +249,71 @@ function AnalyticsLoadingState() {
   );
 }
 
+// Main financial analytics dashboard page presenting interactive charts and metrics.
+// Displays income vs expense trends, category breakdowns, merchants, and balances.
+// Supports multi-currency conversion toggles and adjustable historical lookback spans.
 export default function Analytics() {
   const [timeRange, setTimeRange] = useState(12);
   const { formatMoney, currency } = useOrgFormatters();
-  const formatCurrency = (amount: number) => formatMoney(amount);
-  const formatCompactCurrency = (amount: number) =>
-    formatMoney(amount, { notation: "compact", maximumFractionDigits: 1 });
+  const [selectedCurrency, setSelectedCurrency] = useState<string>(() => currency || "USD");
+
+  const handleCurrencyChange = (newCurrency: string) => {
+    setSelectedCurrency(newCurrency);
+  };
+
+  const formatCurrency = (amount: number) => {
+    if (selectedCurrency === currency) {
+      return formatMoney(amount);
+    }
+    return formatBillingCurrency(amount, selectedCurrency);
+  };
+
+  const formatCompactCurrency = (amount: number) => {
+    if (selectedCurrency === currency) {
+      return formatMoney(amount, { notation: "compact", maximumFractionDigits: 1 });
+    }
+    return formatBillingCurrency(amount, selectedCurrency);
+  };
 
   const incomeExpenseQuery = useQuery({
-    queryKey: ["analytics", "income-expense", timeRange],
-    queryFn: () => getIncomeExpenseSummary(timeRange),
+    queryKey: ["analytics", "income-expense", timeRange, selectedCurrency],
+    queryFn: () =>
+      selectedCurrency !== currency
+        ? getIncomeExpenseSummary(timeRange, selectedCurrency)
+        : getIncomeExpenseSummary(timeRange),
     staleTime: 60_000,
   });
 
   const categoryQuery = useQuery({
-    queryKey: ["analytics", "category-trends", timeRange],
-    queryFn: () => getCategoryTrends(timeRange),
+    queryKey: ["analytics", "category-trends", timeRange, selectedCurrency],
+    queryFn: () =>
+      selectedCurrency !== currency
+        ? getCategoryTrends(timeRange, selectedCurrency)
+        : getCategoryTrends(timeRange),
     staleTime: 60_000,
   });
 
   const balancesQuery = useQuery({
-    queryKey: ["analytics", "account-balances"],
-    queryFn: () => getAccountBalances(),
+    queryKey: ["analytics", "account-balances", selectedCurrency],
+    queryFn: () =>
+      selectedCurrency !== currency
+        ? getAccountBalances(selectedCurrency)
+        : getAccountBalances(),
     staleTime: 60_000,
   });
 
   const merchantsQuery = useQuery({
-    queryKey: ["analytics", "top-merchants", timeRange],
-    queryFn: () => getTopMerchants({ limit: 8, months: timeRange }),
+    queryKey: ["analytics", "top-merchants", timeRange, selectedCurrency],
+    queryFn: () =>
+      selectedCurrency !== currency
+        ? getTopMerchants({ limit: 8, months: timeRange, currency: selectedCurrency })
+        : getTopMerchants({ limit: 8, months: timeRange }),
+    staleTime: 60_000,
+  });
+
+  const multiCurrencyQuery = useQuery({
+    queryKey: ["analytics", "multi-currency-summary", selectedCurrency],
+    queryFn: () => getMultiCurrencySummary(selectedCurrency),
     staleTime: 60_000,
   });
 
@@ -259,8 +330,10 @@ export default function Analytics() {
         )
       : 0;
   const accounts = balancesQuery.data?.accounts ?? [];
-  const chartAccounts = accounts.filter(account => account.currency === currency);
-  const hasOtherCurrencies = chartAccounts.length !== accounts.length;
+  const chartAccounts = selectedCurrency === currency
+    ? accounts.filter(account => account.currency === currency)
+    : accounts;
+  const hasOtherCurrencies = selectedCurrency === currency && chartAccounts.length !== accounts.length;
   const netWorth = balancesQuery.data?.summary?.net_worth ?? 0;
 
   const categoryData = categoryQuery.data?.data ?? [];
@@ -302,8 +375,11 @@ export default function Analytics() {
   const [heatmapRange, setHeatmapRange] = useState(90);
 
   const heatmapQuery = useQuery({
-    queryKey: ["analytics", "spending-heatmap", heatmapRange],
-    queryFn: () => getSpendingHeatmap(heatmapRange),
+    queryKey: ["analytics", "spending-heatmap", heatmapRange, selectedCurrency],
+    queryFn: () =>
+      selectedCurrency !== currency
+        ? getSpendingHeatmap(heatmapRange, selectedCurrency)
+        : getSpendingHeatmap(heatmapRange),
     staleTime: 60_000,
   });
 
@@ -433,6 +509,21 @@ export default function Analytics() {
           ]}
           actions={
             <>
+              <div className="flex items-center gap-2">
+                <select
+                  data-testid="select-analytics-currency"
+                  aria-label="Select reporting currency"
+                  value={selectedCurrency}
+                  onChange={(e) => handleCurrencyChange(e.target.value)}
+                  className="rounded-xl border border-border/70 bg-background/80 px-3 py-2 text-xs font-semibold text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {SUPPORTED_CURRENCIES.map((curr) => (
+                    <option key={curr} value={curr}>
+                      {curr} ({CURRENCY_SYMBOLS[curr]})
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="flex items-center gap-1 rounded-2xl border border-border/70 bg-background/80 p-1">
                 {[3, 6, 12].map((range) => (
                   <button
@@ -455,6 +546,57 @@ export default function Analytics() {
             </>
           }
         />
+
+        {/* Multi-Currency FX Normalization Cockpit */}
+        <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+          <Card className="surface-panel border-border/70 p-4 shadow-[0_18px_45px_-34px_rgba(15,23,42,0.45)]" data-testid="card-currency-normalization">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Reporting Currency:</span>
+                  <Badge variant="outline" data-testid="badge-analytics-reporting-currency" className="text-xs font-semibold">
+                    {selectedCurrency} ({CURRENCY_SYMBOLS[selectedCurrency as SupportedCurrency] || "$"})
+                  </Badge>
+                  {selectedCurrency !== "USD" && (
+                    <Badge variant="secondary" data-testid="badge-analytics-fx-rate" className="text-xs font-semibold bg-primary/10 text-primary">
+                      1 USD = {FX_RATES_TO_USD[selectedCurrency as SupportedCurrency] ?? 1.0} {selectedCurrency}
+                    </Badge>
+                  )}
+                  {multiCurrencyQuery.data?.converted_summary && (
+                    <span className="text-xs text-muted-foreground ml-1" data-testid="text-normalized-net-worth">
+                      Normalized Net Worth: <strong className="text-foreground">{formatCurrency(multiCurrencyQuery.data.converted_summary.net_worth)}</strong>
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Switch currency to normalize income, expenses, category spending, burn velocity, and net worth across global accounts.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5" data-testid="currency-chips-group">
+                {SUPPORTED_CURRENCIES.map((curr) => {
+                  const isCurrent = curr === selectedCurrency;
+                  return (
+                    <button
+                      key={curr}
+                      type="button"
+                      onClick={() => handleCurrencyChange(curr)}
+                      data-testid={`btn-currency-${curr.toLowerCase()}`}
+                      className={`flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-all ${
+                        isCurrent
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "border border-border/70 bg-background/80 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      }`}
+                    >
+                      <span>{CURRENCY_SYMBOLS[curr]}</span>
+                      <span>{curr}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </Card>
+        </motion.div>
 
         {isLoading ? (
           <AnalyticsLoadingState />
@@ -555,7 +697,7 @@ export default function Analytics() {
                             className="fill-muted-foreground"
                             tickFormatter={(value) => formatCompactCurrency(value)}
                           />
-                          <Tooltip content={<AnalyticsTooltip />} />
+                          <Tooltip content={<AnalyticsTooltip selectedCurrency={selectedCurrency} baseCurrency={currency} />} />
                           <Legend />
                           <Area
                             type="monotone"
@@ -624,7 +766,7 @@ export default function Analytics() {
                               />
                             ))}
                           </Pie>
-                          <Tooltip content={<AnalyticsTooltip />} />
+                          <Tooltip content={<AnalyticsTooltip selectedCurrency={selectedCurrency} baseCurrency={currency} />} />
                         </PieChart>
                       </ResponsiveContainer>
                     ) : (
@@ -773,7 +915,7 @@ export default function Analytics() {
                             className="fill-muted-foreground"
                             width={132}
                           />
-                          <Tooltip content={<AnalyticsTooltip />} />
+                          <Tooltip content={<AnalyticsTooltip selectedCurrency={selectedCurrency} baseCurrency={currency} />} />
                           <Bar dataKey="Balance" radius={[0, 5, 5, 0]}>
                             {chartAccounts.map((account, index) => (
                               <Cell

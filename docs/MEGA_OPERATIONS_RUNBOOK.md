@@ -244,6 +244,15 @@ AI Core metrics:
 - `GET /metrics` (token-protected)
 - Enabled by `AI_CORE_METRICS_TOKEN` env.
 
+Additional operational facts:
+- `METRICS_ENABLED=true` without `METRICS_TOKEN` makes the gateway refuse to boot.
+- nginx returns 404 for `/api/metrics`; Prometheus scrapes the replicas directly (`deploy/observability/prometheus.yml`).
+- The gateway and AI Core both export `finwise_ai_core_request_duration_ms` (different labels); select by `job`.
+- Some metrics are defined but not yet wired into application code; see
+  [OBSERVABILITY.md](./OBSERVABILITY.md#defined-but-unwired).
+- SLOs, burn-rate alerts and the incident runbook: [CAPACITY_AND_SLOS.md](./CAPACITY_AND_SLOS.md). Prometheus rules and the
+  Grafana dashboard: `deploy/observability/`.
+
 ### 7.3 Tracing (OpenTelemetry)
 
 Server tracing:
@@ -318,6 +327,14 @@ Without Redis:
 Operational guidance:
 - Use Redis in multi-replica production.
 - Treat Redis outages as degraded mode, not necessarily full outage.
+
+Redis-down behavior (from `server/src/config/rateLimitStore.ts` and `redis.ts`):
+- Rate-limit counters fall back to per-process memory after a 250 ms command timeout and re-probe Redis every 10 s
+  (logs `rate_limit_store_fallback` with `alert: true`, then `rate_limit_store_recovered`). Effective limits become `limit x replicas`.
+- `cacheGet`/`cacheSet` degrade to misses/no-ops. AI Core's LLM cache degrades to its in-process LRU.
+- The gateway client stops reconnecting after 5 retries (about 3 s of backoff). If `finwise_redis_up` stays 0 after Redis is back,
+  restart the gateway replicas. This is read from the code, not tested.
+- Full procedure: [CAPACITY_AND_SLOS.md](./CAPACITY_AND_SLOS.md#redis-down).
 
 ---
 
@@ -751,6 +768,14 @@ AI Core:
 - Use concurrency limits to avoid stampedes.
 - Monitor circuit breaker and fallback rates.
 
+Concrete sizing for ~150 users / ~50 rps / ~75 AI requests per minute (and the gaps between that plan and the shipped defaults,
+for example `AI_MAX_CONCURRENCY` default 8 vs 24, `MONGO_MAX_POOL_SIZE` default 20 vs 30, one uvicorn process per AI Core replica)
+is in [CAPACITY_AND_SLOS.md](./CAPACITY_AND_SLOS.md#2-capacity-model). Keep the worker at a single replica: job claims are atomic,
+but the workflow scheduler tick is not leader-elected.
+
+Load and chaos tests: `loadtest/k6/` (smoke, load, spike, SSE soak, replica-kill script). CI runs the smoke test on every push
+(`.github/workflows/test.yml`) and the heavier suites nightly (`.github/workflows/nightly-load.yml`).
+
 
 ## Documentation mind map
 
@@ -793,7 +818,9 @@ FinWise Operations Runbook (Mega)
         |
         v
 [Record the change and refresh this document]
-``````mermaid
+```
+
+```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#dc2626', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#b91c1c', 'lineColor': '#ef4444', 'secondaryColor': '#f59e0b', 'tertiaryColor': '#10b981'}}}%%
 mindmap
   root((🚨 FinWise Production Operations))

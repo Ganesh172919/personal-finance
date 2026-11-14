@@ -4,27 +4,25 @@
  * Displays clickable suggestion cards when a chat session has no messages.
  * Provides common financial questions to help users get started.
  *
- * LOCALIZATION:
- * Uses useOrgFormatters to format currency amounts in the suggestions
- * according to the user's org settings (e.g., "₹1,00,000" vs "$100,000").
+ * Suggestions avoid invented personal amounts and remain keyboard accessible.
  *
  * @module features/chat/ChatSuggestions
  */
 
 import { motion } from "framer-motion";
 import { Sparkles, PiggyBank, TrendingUp, Calculator } from "lucide-react";
-import { Card } from "@/components/ui/Card";
-import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
+// Properties configuring the empty conversation suggestions panel.
+// Accepts an onSelect callback receiving the clicked prompt query string.
+// Links starter prompts to composer dispatch routines for fast interaction.
 interface ChatSuggestionsProps {
   onSelect: (suggestion: string) => void;
 }
 
+// Presents starter prompt tiles and onboarding recommendations for empty threads.
+// Renders financial topic recommendations covering savings, investments, and audits.
+// Dispatches chosen sample inquiries directly into the message submission pipeline.
 export function ChatSuggestions({ onSelect }: ChatSuggestionsProps) {
-  const { formatMoney } = useOrgFormatters();
-  const vacation = formatMoney(100000, { maximumFractionDigits: 0 });
-  const phone = formatMoney(50000, { maximumFractionDigits: 0 });
-
   const suggestions = [
     {
       icon: TrendingUp,
@@ -33,7 +31,7 @@ export function ChatSuggestions({ onSelect }: ChatSuggestionsProps) {
     },
     {
       icon: PiggyBank,
-      text: `Can I afford a ${vacation} vacation in 6 months?`,
+      text: "How much should I save each month for my goals?",
       gradient: "from-green-500 to-emerald-500",
     },
     {
@@ -43,7 +41,7 @@ export function ChatSuggestions({ onSelect }: ChatSuggestionsProps) {
     },
     {
       icon: Sparkles,
-      text: `What if I buy a new phone for ${phone}?`,
+      text: "Suggest one next step from my saved activity",
       gradient: "from-orange-500 to-red-500",
     },
   ];
@@ -60,7 +58,7 @@ export function ChatSuggestions({ onSelect }: ChatSuggestionsProps) {
         </div>
         <h2 className="mb-2 text-xl font-bold sm:text-2xl">How can I help you today?</h2>
         <p className="max-w-xl text-sm text-muted-foreground">
-          Ask a finance question, upload supporting files in the composer, and let the multi-agent workflow build a grounded answer.
+          Ask about your saved finances, or attach a document to explore its contents.
         </p>
       </motion.div>
 
@@ -72,8 +70,9 @@ export function ChatSuggestions({ onSelect }: ChatSuggestionsProps) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
           >
-            <Card
-              className="group cursor-pointer border-2 p-3.5 transition-all duration-200 hover:border-primary/50 hover:shadow-lg"
+            <button
+              type="button"
+              className="group w-full cursor-pointer rounded-lg border-2 bg-card p-3.5 text-left transition-all duration-200 hover:border-primary/50 hover:shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
               onClick={() => onSelect(suggestion.text)}
             >
               <div className="flex items-start gap-3">
@@ -84,7 +83,7 @@ export function ChatSuggestions({ onSelect }: ChatSuggestionsProps) {
                   {suggestion.text}
                 </p>
               </div>
-            </Card>
+            </button>
           </motion.div>
         ))}
       </div>

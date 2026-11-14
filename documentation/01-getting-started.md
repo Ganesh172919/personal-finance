@@ -98,7 +98,7 @@ personal-finance/
 │   │   ├── services/           # 60 business-logic services (retrieval, newsletter)
 │   │   ├── modules/            # Domain modules (plugins, queue, realtime)
 │   │   ├── connectors/         # External service connectors
-│   │   ├── worker/             # BullMQ background worker
+│   │   ├── worker/             # MongoDB polling background worker
 │   │   ├── scripts/            # Migration, chunk backfill, and seed scripts
 │   │   └── test/               # 34 integration test files (in-memory Mongo)
 │   ├── AI_Core/                # Python FastAPI AI Core (Port 8001)
@@ -131,7 +131,7 @@ personal-finance/
 | **Server** | Express 5 + TypeScript | 3000 | REST API, authentication, background workers, SSE |
 | **AI Core** | Python 3.11+ + FastAPI + LangGraph | 8001 | Multi-agent DAG orchestration, RAG, subagents, OCR |
 | **MongoDB** | MongoDB 7+ | 27017 | Primary datastore (52 models, GridFS) |
-| **Redis** | Redis 7+ | 6379 | Rate limiting, BullMQ queues, DLQ, caching |
+| **Redis** | Redis 7+ | 6379 | Optional caching |
 
 ---
 
@@ -406,7 +406,7 @@ npm run dev
 cd server/AI_Core
 python api_service.py
 
-# Background Worker (BullMQ processor)
+# Background Worker (MongoDB polling processor)
 cd server
 npm run worker:dev
 ```
@@ -434,8 +434,8 @@ npx serve ../client/dist -l 5173
 | `npm run start` | Start in production mode (`node dist/server.js`) |
 | `npm run build` | Compile TypeScript (`tsc --noEmit && node scripts/build.mjs`) |
 | `npm run check` | Type-check without emitting (`tsc --noEmit`) |
-| `npm run worker:dev` | Start BullMQ background worker with hot reload |
-| `npm run worker:start` | Start BullMQ background worker in production mode |
+| `npm run worker:dev` | Start MongoDB polling worker with hot reload |
+| `npm run worker:start` | Start MongoDB polling worker in production mode |
 | `npm test` | Run tests with Vitest |
 | `npm run test:watch` | Run tests in interactive watch mode |
 | `npm run test:ci` | Run tests once (CI mode: `vitest run`) |
@@ -661,8 +661,8 @@ mindmap
     📦 Environment Setup
       Server .env
         JWT_SECRET & REFRESH_SECRET
-        DATABASE_URL & REDIS_URL
-        AI_CORE_URL http://localhost:8001
+        MONGO_URI & REDIS_URL
+        PYTHON_API_URL http://localhost:8001
       Client .env
         VITE_API_URL /api/v1
         VITE_SOCKET_URL ws://localhost:3000
@@ -700,15 +700,15 @@ mindmap
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │ 🟡 STEP 2: INFRASTRUCTURE BOOTSTRAP                                   │
-│    $ docker-compose up -d mongodb redis                               │
+│    $ docker compose up -d mongo redis                                  │
 │    ► Mongo: localhost:27017 (Data & Audit Logs)                        │
-│    ► Redis: localhost:6379 (BullMQ Queues & Caching)                   │
+│    ► Redis: localhost:6379 (optional caching)                          │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │ 🟣 STEP 3: ENVIRONMENT CONFIGURATION (.env)                           │
-│    ► server/.env ── JWT_SECRET, DATABASE_URL, REDIS_URL, AI_CORE_URL  │
+│    ► server/.env ── JWT_SECRET, MONGO_URI, REDIS_URL, PYTHON_API_URL  │
 │    ► client/.env ── VITE_API_URL=/api/v1                               │
 │    ► server/AI_Core/.env ── GROQ_API_KEY / GEMINI_API_KEY / OLLAMA     │
 └───────────────────────────────────┬────────────────────────────────────┘
@@ -770,7 +770,7 @@ export const envSchema = z.object({
   MONGO_URI: z.string().min(1, "MONGO_URI is required"),
   REDIS_URL: z.string().min(1, "REDIS_URL is required"),
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
-  AI_CORE_URL: z.string().url().default("http://localhost:8001"),
+  PYTHON_API_URL: z.string().url().default("http://localhost:8001"),
   AI_CORE_INTERNAL_TOKEN: z.string().min(16)
 });
 ```
@@ -843,3 +843,39 @@ if (require.main === module) {
   checkNodeEngine();
 }
 ```
+
+---
+
+## 9. 2026 Enterprise Capabilities Tour & Development Quickstart
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0284c7', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0369a1', 'lineColor': '#0ea5e9', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((Quickstart Tour))
+    ML Merchant Clustering
+      Ingest Raw Feed
+      Generate 64-D Unit Embeddings
+      Review in Cockpit (Confidence < 0.70)
+    Multi-Modal RAG
+      Upload PDF / 10-K Statements
+      Form Feed \f Physical Page Extraction
+      Verify Grounding Score G >= 0.70
+    AI Canary Invariants
+      Validate Accounting Truth
+      Zero-Sum Shifts sum dB = 0
+      Inspect in AiStatusDialog Modal
+```
+
+### 9.1 Quickstart: Testing the 64-D Merchant Classifier
+To test transaction clustering locally:
+
+```bash
+# In the server directory:
+npm run test:unit src/test/merchantEmbeddingClustering.test.ts
+```
+
+### 9.2 Quickstart: Inspecting AI System Health & Canary Invariants
+1. Start the platform: `npm run dev`
+2. Open your browser to `http://localhost:5173`
+3. Click the **AI Status Chip** in the navigation header to open [`AiStatusDialog.tsx`](file:///c:/Users/RAVIPRAKASH/personal-finance/client/src/components/AiStatusDialog.tsx)
+4. Switch to the **Canary Invariants** tab to view live mathematical proofs for number safety, zero-sum rebalancing, and balance sheet identities!

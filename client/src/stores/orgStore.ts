@@ -22,6 +22,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 /** Organization store state and actions */
+// Contract defining reactive state and updater actions for organization context.
+// Stores the active organization identifier driving multi-tenant scoping.
+// Facilitates tenant-aware API header injection across authenticated requests.
 interface OrgStore {
   /** Currently active organization ID */
   activeOrgId: string | null;
@@ -34,6 +37,9 @@ interface OrgStore {
  * Survives page refreshes so users don't need to re-select their org.
  * The API client (core.ts) reads this to inject X-Org-Id on every request.
  */
+// Zustand store persisting active organization selection across page reloads.
+// Serializes tenant preferences to local storage under the finwise-org key.
+// Read by API clients to populate X-Org-Id headers on tenant-scoped calls.
 export const useOrgStore = create<OrgStore>()(
   persist(
     (set) => ({

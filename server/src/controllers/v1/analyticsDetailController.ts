@@ -38,6 +38,9 @@ import {
 
 // ─── Helpers ────────────────────────────────────────────
 
+// Validates tenant organization and user authentication on analytics requests.
+// Extracts verified MongoDB ObjectIds representing the organization and caller.
+// Throws an unauthorized HTTP exception if required context parameters are absent.
 const requireContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -54,6 +57,9 @@ const requireContext = (req: Request) => {
 
 // ─── Spending Heatmap ───────────────────────────────────
 // Returns daily spending totals for a date range (default: last 365 days)
+// Aggregates daily expense expenditures across a configurable historical window.
+// Computes daily aggregate totals and transaction counts via MongoDB pipelines.
+// Formats currency conversions and returns daily datapoints for heatmap rendering.
 export const getSpendingHeatmap = async (req: Request, res: Response) => {
   const { orgId, userId } = requireContext(req);
   const targetCurrency = normalizeCurrency(typeof req.query.currency === "string" ? req.query.currency : undefined);
@@ -108,6 +114,9 @@ export const getSpendingHeatmap = async (req: Request, res: Response) => {
 
 // ─── Category Trends ────────────────────────────────────
 // Returns monthly totals per category for the last N months
+// Computes multi-month category expenditure totals to visualize spending trends.
+// Groups monthly expense aggregations by assigned transaction categorization tags.
+// Reshapes aggregations into chronological monthly matrices for charting widgets.
 export const getCategoryTrends = async (req: Request, res: Response) => {
   const { orgId, userId } = requireContext(req);
   const targetCurrency = normalizeCurrency(typeof req.query.currency === "string" ? req.query.currency : undefined);
@@ -173,6 +182,9 @@ export const getCategoryTrends = async (req: Request, res: Response) => {
 
 // ─── Income vs Expense Summary ──────────────────────────
 // Returns monthly income vs expense totals + savings rate
+// Evaluates monthly income versus expenditure totals and derives net savings rates.
+// Aggregates positive cash inflows against outbound expenses across past months.
+// Calculates savings percentage efficiency ratios localized to requested currencies.
 export const getIncomeExpenseSummary = async (req: Request, res: Response) => {
   const { orgId, userId } = requireContext(req);
   const targetCurrency = normalizeCurrency(typeof req.query.currency === "string" ? req.query.currency : undefined);
@@ -243,6 +255,9 @@ export const getIncomeExpenseSummary = async (req: Request, res: Response) => {
 
 // ─── Account Balances Snapshot ───────────────────────────
 // Returns computed "balance" per account from transaction totals
+// Computes real-time balance snapshots across all active financial ledger accounts.
+// Sums opening account balances with historical transaction activity in storage.
+// Calculates total assets, liabilities, and consolidated net worth in target FX.
 export const getAccountBalances = async (req: Request, res: Response) => {
   const { orgId, userId } = requireContext(req);
   const requestedCurrency = typeof req.query.currency === "string" ? req.query.currency : undefined;
@@ -316,6 +331,9 @@ export const getAccountBalances = async (req: Request, res: Response) => {
 
 // ─── Top Merchants ──────────────────────────────────────
 // Returns top N merchants by spending amount
+// Identifies highest-volume merchant payees ranked by total expenditure values.
+// Aggregates spending totals, average transaction sizes, and frequency counts.
+// Joins merchant directory documents to deliver merchant identity information.
 export const getTopMerchants = async (req: Request, res: Response) => {
   const { orgId, userId } = requireContext(req);
   const targetCurrency = normalizeCurrency(typeof req.query.currency === "string" ? req.query.currency : undefined);
@@ -379,6 +397,9 @@ export const getTopMerchants = async (req: Request, res: Response) => {
 
 // ─── Multi-Currency Summary & FX Rates Matrix ────────────
 // Returns converted net worth and multi-currency conversion table across 7 global currencies
+// Calculates localized asset, liability, and net worth balances across global currencies.
+// Computes converted balance valuations against real-time foreign exchange matrices.
+// Returns comprehensive multi-currency comparative tables across major global currencies.
 export const getMultiCurrencySummary = async (req: Request, res: Response) => {
   const { orgId, userId } = requireContext(req);
   const targetCurrency = normalizeCurrency(typeof req.query.currency === "string" ? req.query.currency : undefined);

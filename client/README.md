@@ -230,3 +230,48 @@ npm test
 # 4. Production build & type check verification
 npm run build -- --noEmit
 ```
+
+---
+
+## Latest Client Cockpit Innovations (2026 Enterprise Release)
+
+### 1. Machine Learning Merchant Clustering Cockpit (`TransactionReviewQueue.tsx`)
+- Displays 64-D L2-normalized vector clusters of messy card descriptions (e.g. `AMZN MKTP US*2A41B`, `Amazon Prime Video`).
+- Renders semantic similarity match percentage badges (`badge-cluster-similarity`), statement variant chips, and prototype category predictions.
+- One-click batch normalization button (`btn-cluster-apply`) applies clean merchant names and category rules across all ledger transactions simultaneously.
+
+### 2. Multi-Modal Grounded RAG Search Cockpit (`Files.tsx`)
+- Interactive document evidence search querying 64-D vector embeddings with dense cosine + BM25 lexical hybrid ranking.
+- Displays grounding confidence score badges (`badge-grounding-score`, threshold $G \ge 0.70$) and extracted financial entity pills (amounts, currencies, merchants, dates).
+- Direct deep navigation drawer links to verified physical PDF statement pages (`\f`).
+
+### 3. Drag-and-Drop Visual Workflow Node Canvas (`Workflows.tsx`)
+- Interactive node graph editor supporting sequential drag-and-drop action reordering with accessible Move Up/Down controls.
+- Configures multi-step delay timers ($1\text{s}$ to $30\text{d}$) and token-authenticated inbound webhooks (`POST /api/workflows/webhook/:token`).
+- In-place branch filter builder evaluating context payload conditions (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `contains`) with `{{field}}` runtime variable interpolation.
+
+### 4. Financial Journal Offline Stroke Sync & 64-D Vector Search (`Notes.tsx`)
+- HTML5 canvas capturing handwritten stylus strokes with local draft caching in `localStorage`.
+- Automatic network reconnect synchronization via `POST /api/financial-journal/entries/batch-sync` with idempotent `clientDraftId` deduplication.
+- Dense 64-D semantic vector search drawer with cosine similarity badges and concept tag filtering (#savings, #investing, #taxes).
+
+### 5. Multi-Currency Global FX Normalization Cockpit
+- Standardized ISO 4217 conversions across 7 global currencies (`USD`, `EUR`, `GBP`, `INR`, `CAD`, `AUD`, `JPY`).
+- Localized reporting across Analytics, Portfolios, Transactions, Budgets, and Calendar with JPY integer rounding.
+- Cross-border Dividend Withholding Tax (WHT) and Double Tax Treaty (DTAA) relief modeling.
+
+### 6. Peer Spending Benchmarking & Auto-Rebalancing (`BudgetHealthCard.tsx`)
+- Household cohort IQR spending benchmarks displaying frugal vs. elevated categories.
+- One-click budget rebalance modal executing zero-sum envelope transfers satisfying the invariant $\sum \Delta B_i = 0$.
+
+### 7. AI System Diagnostics Cockpit (`AiStatusDialog.tsx`)
+- 4-tab operational diagnostic dialog accessible via Command Bar (`Cmd+K`) or the status indicator pill in the primary navigation header.
+- **Overview Tab**: Displays overall system operational status, active primary LLM provider, p50 and p95 latency percentiles, and rolling request counts.
+- **KeyPool Health Tab**: Displays individual API keys, token usage buckets, rotation strategies (`health_weighted`, `round_robin`), cooldown timers, and circuit breaker status (`CLOSED`, `OPEN`, `HALF-OPEN`).
+- **Model Catalog Tab**: Lists capability matrices, supported modalities (text, vision, tabular), maximum context tokens, and pricing tiers across foundation models.
+- **Canary Invariants Tab**: Real-time pass/fail rates for each of the 5 mathematical identities, along with an interactive probe runner to simulate and audit synthetic transactions on demand.
+
+### 8. Financial Calendar & RFC 5545 Live iCal Subscription Feed (`FinancialCalendar.tsx`)
+- Interactive calendar rendering recurring bills, debt payment deadlines, tax filings, and custom financial alerts.
+- Auto-detects recurring payment cadences with monthly and quarterly cadence detection.
+- Generates RFC 5545 `.ics` subscription URLs (`webcal://`) and live file downloads with pop-up and audio `VALARM` notifications.

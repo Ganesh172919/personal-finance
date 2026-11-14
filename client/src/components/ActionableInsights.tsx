@@ -30,6 +30,9 @@ import { IAgentOutput } from "@/types";
 import { useLocation } from "wouter";
 import { InsightDetailModal } from "./InsightDetailModal"; // Make sure this is imported
 
+// Dashboard widget highlighting top prioritized AI recommendations and opportunities.
+// Fetches personalized agent outputs, categorizing entries by urgency and target domain.
+// Offers direct deep-linking action dispatchers and expandable full-report modals.
 export function ActionableInsights() {
   const { user } = useAuth();
   const userId = user?.id || localStorage.getItem("userId");

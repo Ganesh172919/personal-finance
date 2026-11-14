@@ -424,3 +424,166 @@ AGENT_REGISTRY["tax_strategy"] = tax_strategy_node
 #   "aggregator": ["tax_strategy", "budget_planner"]
 # }
 ```
+
+---
+
+## 6. Blueprint 5: Extending Machine Learning Vector Dimensions (64-D to 128-D Subword Embeddings)
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4f46e5', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#3730a3', 'lineColor': '#6366f1', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((Vector Expansion))
+    Architecture
+      64-D Base Hypersphere
+      Expand to 128-D Hypersphere
+    Taxonomy Allocation
+      Dims 0-23: Expanded Sector Anchors
+      Dims 24-55: Global Brand Anchors
+      Dims 56-127: Subword 3-Gram & 4-Gram Hashing
+    Invariant Check
+      Norm Assertion ||v||2 == 1.0
+      Dot Product Cosine Equivalence
+```
+
+When scaling the platform to accommodate millions of global merchants, expand the embedding space from 64 dimensions to 128 dimensions in `server/src/services/merchantEmbeddingClustering.ts`:
+
+```typescript
+export function generate128DMerchantEmbedding(rawMerchant: string): number[] {
+  const vec = new Array<number>(128).fill(0);
+  const clean = rawMerchant.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').trim();
+  const tokens = clean.split(/\s+/);
+
+  // Dims 0-23: Extended Global Sector Anchors (Healthcare, Utilities, SaaS, etc.)
+  for (const token of tokens) {
+    if (EXTENDED_SECTOR_ANCHORS[token] !== undefined) {
+      vec[EXTENDED_SECTOR_ANCHORS[token]] += 2.5;
+    }
+  }
+
+  // Dims 24-55: Global Brand Anchor Signatures
+  // Dims 56-127: 3-gram and 4-gram FNV-1a Subword Hash Space
+  for (let i = 0; i <= clean.length - 3; i++) {
+    const gram = clean.substring(i, i + 3);
+    const hash = createHash('sha256').update(gram).digest().readUInt32BE(0);
+    const dim = 56 + (hash % 72);
+    vec[dim] += 1.0;
+  }
+
+  // Enforce L2 Unit Normalization: ||vec||2 = 1.0
+  const norm = Math.sqrt(vec.reduce((sum, v) => sum + v * v, 0));
+  return norm > 0 ? vec.map(v => v / norm) : vec;
+}
+```
+
+---
+
+## 7. Blueprint 6: Adding a Custom Visual Workflow Action Node (Multi-Channel Webhook)
+
+To add a new visual workflow action node (e.g., dispatching an incident webhook to Slack, Discord, or an external ERP):
+
+1. **Extend Node Type Union in Contracts** (`packages/contracts/src/workflows.ts`):
+   ```typescript
+   export type WorkflowActionType = 'send_email' | 'rebalance_budget' | 'dispatch_webhook';
+   ```
+
+2. **Implement Node Execution Handler** (`server/src/services/workflows.ts`):
+   ```typescript
+   if (node.type === 'action' && node.config.actionType === 'dispatch_webhook') {
+     const targetUrl = node.config.webhookUrl;
+     const payload = {
+       event: 'finwise.workflow.action',
+       orgId: run.orgId,
+       workflowId: run.workflowId,
+       context: run.context,
+       dispatchedAt: new Date().toISOString()
+     };
+
+     await fetch(targetUrl, {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json', 'x-signature': signPayload(payload) },
+       body: JSON.stringify(payload)
+     });
+   }
+   ```
+
+---
+
+## 8. Blueprint 7: Registering a New Currency in the Multi-Currency FX Engine
+
+To support an additional fiat currency (e.g., Swiss Franc `CHF` or Singapore Dollar `SGD`):
+
+1. **Update Currency Union & Rate Table** (`server/src/utils/currencyFx.ts`):
+   ```typescript
+   export type SupportedCurrency = 'USD' | 'EUR' | 'GBP' | 'INR' | 'CAD' | 'AUD' | 'JPY' | 'CHF' | 'SGD';
+
+   export const FX_RATES_TO_USD: Record<SupportedCurrency, number> = {
+     // ...existing rates...
+     CHF: 1.145, // 1 CHF = 1.145 USD
+     SGD: 0.760  // 1 SGD = 0.760 USD
+   };
+   ```
+
+2. **Configure Formatting Rules**:
+   Ensure decimal precision is enforced (CHF uses 2 decimal places with standard 0.05 Swiss rounding if cash cashflow, or standard 0.01 for digital ledgers).
+
+
+---
+
+## 9. Blueprint 8: Adding a New Mathematical Invariant to the AI Canary Engine
+
+To add a new mathematical audit rule (e.g. Savings Rate Invariant: $\text{Savings Rate} = (\text{Income} - \text{Expenses}) / \text{Income}$):
+
+1. **Extend Invariant Interface (`server/src/services/aiCanaryService.ts`)**:
+   ```typescript
+   export interface CanaryValidationRequest {
+     // ...existing fields...
+     savingsRateCheck?: { income: number; expenses: number; claimedSavingsRate: number };
+   }
+   ```
+
+2. **Implement Evaluation Logic (`server/src/services/aiCanaryService.ts`)**:
+   ```typescript
+   if (req.savingsRateCheck) {
+     const { income, expenses, claimedSavingsRate } = req.savingsRateCheck;
+     if (income > 0) {
+       const trueRate = (income - expenses) / income;
+       if (Math.abs(trueRate - claimedSavingsRate) > 0.005) {
+         violations.push(`Savings Rate Mismatch: Claimed ${claimedSavingsRate}, calculated ${trueRate.toFixed(4)}`);
+       }
+     }
+   }
+   ```
+
+3. **Mirror in Python AI Core Validator (`server/AI_Core/evals/canary_validator.py`)**:
+   Add corresponding verification in the Pydantic validator model and execute test suite: `pytest server/AI_Core/tests/test_canary_validator.py`.
+
+---
+
+## 10. Blueprint 9: Adding a Custom Data Source Silo to the Cross-Silo Unified Context Engine
+
+To connect a new data silo (e.g. Investment Holdings or Recurring Debts):
+
+1. **Extend Source Union (`server/src/services/unifiedContextRetrievalService.ts`)**:
+   ```typescript
+   export type UnifiedContextSourceType = 'memory' | 'file' | 'transaction' | 'holding';
+   ```
+
+2. **Implement Silo Retrieval & Scoring Function**:
+   ```typescript
+   async function scoreHoldingCandidates(orgId: Types.ObjectId, queryEmbedding: number[], terms: string[]) {
+     const holdings = await HoldingModel.find({ orgId }).lean();
+     return holdings.map(h => ({
+       item: {
+         id: String(h._id),
+         sourceType: 'holding' as const,
+         title: `${h.ticker} (${h.quantity} shares)`,
+         snippet: `${h.ticker} · Value: $${(h.quantity * h.currentPrice).toFixed(2)}`,
+         metadata: { ticker: h.ticker, value: h.quantity * h.currentPrice }
+       },
+       sourceScore: computeHoldingRelevance(h, queryEmbedding, terms)
+     }));
+   }
+   ```
+
+3. **Register in Reciprocal Rank Fusion (RRF)**:
+   Add `rankSource(holdingCandidates, 'holding')` inside `retrieveUnifiedContext`.

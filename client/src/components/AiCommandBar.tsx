@@ -43,10 +43,16 @@ import { IWorkflowTraceEntry } from "@/types";
 import type { Plan, ToolCall } from "@/types/ai.types";
 import { AiStatusDialog } from "@/components/AiStatusDialog";
 
+// Property structure definition for the quick AI command input bar.
+// Supplies an optional callback invoked following successful query dispatch.
+// Facilitates integration across application dashboards and workspace views.
 interface AICommandBarProps {
   onCommand?: (command: string) => void;
 }
 
+// Structural specification representing a completed AI analysis response payload.
+// Encapsulates Markdown text, action plans, tool calls, and execution metadata.
+// Houses telemetry traces, feedback ratings, and request identifiers for audits.
 interface AIResponse {
   response: string;
   plan?: Plan;
@@ -62,6 +68,9 @@ interface AIResponse {
   timestamp: Date;
 }
 
+// Interactive natural language financial assistant bar with dynamic suggestions.
+// Submits analytical commands to multi-agent AI pipelines and renders rich markdown.
+// Embeds interactive tool approvals, plan metric cards, and agent workflow traces.
 export function AICommandBar({ onCommand }: AICommandBarProps) {
   const [command, setCommand] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);

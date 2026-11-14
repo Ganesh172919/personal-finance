@@ -325,3 +325,18 @@ if (require.main === module) {
   inspectAndRecoverDLQ().then(() => process.exit(0));
 }
 ```
+
+
+---
+
+## 8. 2026 Maintainer Runbook: Subsystem Health & Invariants
+
+### 8.1 Monitoring Continuous AI Canary Invariants
+- Query the Prometheus gauge `canary_pass_rate` or fetch `GET /api/v1/ai/canary/status`.
+- If pass rate dips below 98%, inspect recent violations in the `violations` array to identify rogue prompts or malformed transactions.
+
+### 8.2 Inspecting Cross-Silo Unified Context Retrieval
+- Query `GET /api/v1/unified-context/query?q=test` to verify that memory records, document chunks, and ledger transactions are fusing correctly with Reciprocal Rank Fusion ($k = 60$).
+
+### 8.3 Maintaining 64-D Merchant Vector Embeddings
+- If new merchant categories or brand aliases are added to `merchantEmbeddingClustering.ts`, execute `POST /api/transactions/merchant-clusters` to regenerate centroids and verify cluster linkage ($C_{\text{sim}} \ge 0.70$).

@@ -72,6 +72,9 @@ import {
   CreditCard,
 } from "lucide-react";
 
+// Property structure defining add-on credit pack booster options.
+// Configures pack identifiers, pricing tiers, feature highlights, and badge styles.
+// Displayed in the credit pack purchase marketplace to augment monthly plan quotas.
 interface CreditPackOption {
   id: "ai_pack_250" | "ocr_pack_100" | "scenarios_pack_100" | "flex_bundle";
   name: string;
@@ -83,6 +86,9 @@ interface CreditPackOption {
   badgeVariant?: "default" | "secondary" | "outline";
 }
 
+// Catalog of available one-time booster packs for on-demand resource extensions.
+// Includes add-on packs for extra AI queries, document OCR scans, and scenario stress tests.
+// Available across subscription tiers to supplement monthly entitlement allowances.
 const CREDIT_PACKS: CreditPackOption[] = [
   {
     id: "ai_pack_250",
@@ -126,6 +132,9 @@ const CREDIT_PACKS: CreditPackOption[] = [
   },
 ];
 
+// Subscription management page handling plan tiers, usage meters, and invoices.
+// Supports upgrading plans, purchasing credit boosters, and Stripe Customer Portal access.
+// Displays active dunning grace period warnings and multi-currency billing options.
 export default function Billing() {
   const queryClient = useQueryClient();
   const configQuery = useAppConfig();
@@ -138,8 +147,11 @@ export default function Billing() {
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
 
   const entitlements = configQuery.data?.entitlements;
-  const currentPlan = (entitlements?.plan || "free").toLowerCase();
   const planStatus = entitlements?.status || "active";
+  // The recorded subscription tier is historical after cancellation/payment failure;
+  // compare cards against the effective limits, not that former paid tier.
+  const currentPlan = (planStatus === "active" || planStatus === "trialing"
+    ? entitlements?.plan || "free" : "free").toLowerCase();
 
   const orgCurrency = normalizeCurrency(configQuery.data?.org?.currency);
   const [selectedCurrency, setSelectedCurrency] = useState<SupportedCurrency>(orgCurrency);
@@ -340,7 +352,9 @@ export default function Billing() {
   });
 
   return (
-    <div className="p-6 space-y-8 max-w-5xl mx-auto" data-testid="billing-page">
+    // w-full: inside AppShell's flex-column <main>, `mx-auto` alone shrink-wraps the page to its
+    // widest unbreakable child (the invoice table), pushing cards past the 390px viewport.
+    <div className="p-6 space-y-8 max-w-5xl mx-auto w-full min-w-0" data-testid="billing-page">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -498,7 +512,7 @@ export default function Billing() {
               <span className="font-semibold">{quotaWarnings.map((w) => `${w.label} (${w.pct}%)`).join(", ")}</span>.
             </div>
             <div className="text-[11px] opacity-90">
-              Need extra volume without switching your monthly subscription? Choose an instant on-demand Credit Pack below or upgrade your tier for sustained limits.
+Need additional capacity? Upgrading your tier may increase monthly limits. One-time credit packs are not available while verified payment processing is being integrated.
             </div>
           </AlertDescription>
         </Alert>
@@ -595,10 +609,11 @@ export default function Billing() {
           >
             <span>Annual Billing</span>
             <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] px-1.5 py-0" data-testid="badge-annual-savings">
-              Save 20%
+              Preview only
             </Badge>
           </Button>
         </div>
+        {billingCycle === "annual" && <p className="text-xs text-muted-foreground" role="status">Illustrative annual pricing only. Annual checkout is unavailable.</p>}
       </div>
 
       {/* Plan Tier Comparison Grid */}
@@ -686,7 +701,7 @@ export default function Billing() {
                     {selectedCurrency === "USD" ? "$15" : formatBillingCurrency(15, selectedCurrency)}{" "}
                     <span className="text-xs font-normal text-muted-foreground">/ month</span>
                     <span className="block text-xs font-normal text-emerald-600 dark:text-emerald-400 mt-0.5">
-                      {selectedCurrency === "USD" ? "$180" : formatBillingCurrency(180, selectedCurrency)} billed annually (Save {selectedCurrency === "USD" ? "$48/yr" : `${formatBillingCurrency(48, selectedCurrency)}/yr`})
+                      Illustrative annual total: {selectedCurrency === "USD" ? "$180" : formatBillingCurrency(180, selectedCurrency)} (not available for checkout)
                     </span>
                   </>
                 ) : (
@@ -733,11 +748,11 @@ export default function Billing() {
             <Button
               className="w-full text-xs"
               variant={currentPlan === "pro" ? "outline" : "default"}
-              disabled={currentPlan === "pro" || busy !== null}
+              disabled={currentPlan === "pro" || busy !== null || billingCycle === "annual"}
               onClick={() => checkoutMutation.mutate("pro")}
               data-testid="button-upgrade-pro"
             >
-              {busy === "pro" ? "Upgrading…" : currentPlan === "pro" ? "Current Plan" : "Upgrade to Pro"}
+              {busy === "pro" ? "Upgrading…" : currentPlan === "pro" ? "Current Plan" : billingCycle === "annual" ? "Annual checkout unavailable" : "Upgrade to Pro"}
             </Button>
           </CardFooter>
         </Card>
@@ -763,7 +778,7 @@ export default function Billing() {
                     {selectedCurrency === "USD" ? "$39" : formatBillingCurrency(39, selectedCurrency)}{" "}
                     <span className="text-xs font-normal text-muted-foreground">/ month</span>
                     <span className="block text-xs font-normal text-emerald-600 dark:text-emerald-400 mt-0.5">
-                      {selectedCurrency === "USD" ? "$468" : formatBillingCurrency(468, selectedCurrency)} billed annually (Save {selectedCurrency === "USD" ? "$120/yr" : `${formatBillingCurrency(120, selectedCurrency)}/yr`})
+                      Illustrative annual total: {selectedCurrency === "USD" ? "$468" : formatBillingCurrency(468, selectedCurrency)} (not available for checkout)
                     </span>
                   </>
                 ) : (
@@ -810,11 +825,11 @@ export default function Billing() {
             <Button
               className="w-full text-xs"
               variant={currentPlan === "team" ? "outline" : "secondary"}
-              disabled={currentPlan === "team" || busy !== null}
+              disabled={currentPlan === "team" || busy !== null || billingCycle === "annual"}
               onClick={() => checkoutMutation.mutate("team")}
               data-testid="button-upgrade-team"
             >
-              {busy === "team" ? "Upgrading…" : currentPlan === "team" ? "Current Plan" : "Upgrade to Team"}
+              {busy === "team" ? "Upgrading…" : currentPlan === "team" ? "Current Plan" : billingCycle === "annual" ? "Annual checkout unavailable" : "Upgrade to Team"}
             </Button>
           </CardFooter>
         </Card>
@@ -827,11 +842,11 @@ export default function Billing() {
             <Coins className="w-5 h-5 text-primary" />
             <h2 className="text-xl font-bold text-foreground">On-Demand Credit Packs</h2>
             <Badge variant="outline" className="text-xs border-primary/40 text-primary">
-              Non-Expiring Boosters
+              Not available for purchase
             </Badge>
           </div>
           <p className="text-muted-foreground text-xs">
-            Instantly extend your organization capacity without altering your recurring subscription plan. Credits stack directly on top of your plan allowance and remain active until fully utilized.
+These examples are not currently offered for sale. Credit packs will remain unavailable until payment verification and credit delivery are implemented.
           </p>
         </div>
 
@@ -868,12 +883,11 @@ export default function Billing() {
                 <Button
                   variant={pack.id === "flex_bundle" ? "default" : "outline"}
                   className="w-full text-xs h-8"
-                  onClick={() => setSelectedPack(pack)}
-                  disabled={creditsMutation.isPending}
+                  disabled
                   data-testid={`button-buy-${pack.id}`}
                 >
                   <PackagePlus className="w-3.5 h-3.5 mr-1.5" />
-                  Buy Pack ({selectedCurrency === "USD" ? `$${pack.price}` : formatBillingCurrency(pack.price, selectedCurrency)})
+                  Unavailable
                 </Button>
               </div>
             </div>

@@ -3,9 +3,15 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// Resolves file system path of the executing script in ES module environment.
+// Converts module import meta URL to absolute platform path.
+// Facilitates resolving output paths relative to docs directory.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Generates sample Statement of Purpose (SOP) reference template PDF document.
+// Uses PDFKit to stream stylized applicant sections, paragraph bodies, and word count footers.
+// Saves generated reference PDF into repository docs folder for candidate guidance.
 function createSOPSamplePdf(): void {
   const doc = new PDFDocument({ size: "A4", margin: 54 });
   const outputPath = path.join(__dirname, "../../../docs/SOP_Sample_Template.pdf");
@@ -86,4 +92,7 @@ function createSOPSamplePdf(): void {
   });
 }
 
+// Script execution triggering generation of the SOP sample template PDF.
+// Creates write stream and compiles formatted pages.
+// Emits completion log or reports disk writing errors.
 createSOPSamplePdf();

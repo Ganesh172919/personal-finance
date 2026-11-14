@@ -23,6 +23,9 @@ import AuditEventModel from "../../models/auditEventModel";
 import { HttpError } from "../../middleware/httpError";
 import { getUserAuditLog, getOrgAuditLog } from "../../services/auditService";
 
+// Validates caller membership and administrative privileges within the organization.
+// Confirms that the organization identifier conforms to valid ObjectId syntax.
+// Rejects unauthorized or non-admin requests with appropriate HTTP error codes.
 const requireOrgContext = (req: Request) => {
   const org = (req as any).org;
   const orgIdRaw = String(org?.orgId || "");
@@ -38,6 +41,9 @@ const requireOrgContext = (req: Request) => {
   return { orgId: new mongoose.Types.ObjectId(orgIdRaw), role };
 };
 
+// Lists historical audit events recorded for administrative and security actions.
+// Supports filtering by specific action strings and limits output to prevent load.
+// Responds with serialized audit event records containing actor and correlation IDs.
 export const listAuditEvents = async (req: Request, res: Response) => {
   const { orgId } = requireOrgContext(req);
 
@@ -78,6 +84,9 @@ export const listAuditEvents = async (req: Request, res: Response) => {
  * GET /api/v1/security/audit-log
  * Returns the authenticated user's security audit log.
  */
+// Retrieves personal security audit events associated with the authenticated user.
+// Filters security log events such as logins, password updates, and token issues.
+// Returns formatted audit trails providing personal account security transparency.
 export const getUserSecurityAuditLog = async (req: Request, res: Response) => {
   const userId = (req as any).user?._id;
   if (!userId) {
@@ -104,6 +113,9 @@ export const getUserSecurityAuditLog = async (req: Request, res: Response) => {
  * GET /api/v1/orgs/audit-log
  * Returns the organization's audit log (admin only).
  */
+// Queries organization-wide security audit records filtered by event severity levels.
+// Restricts access to organization administrators to protect security event privacy.
+// Returns an extensive log of administrative events and security status transitions.
 export const getOrgSecurityAuditLog = async (req: Request, res: Response) => {
   const orgId = (req as any).org?.orgId;
   if (!orgId) {

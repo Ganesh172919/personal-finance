@@ -8,18 +8,27 @@ _STOP_WORDS = set("the and for from that this with what which where when does ha
 _DOCUMENT_QUESTION = re.compile(r"\b(?:my|this|that|the|attached|uploaded)\b.*\b(?:pdf|file|document|statement|agreement|contract|receipt)\b|\b(?:attached|uploaded)\b", re.I)
 
 
+# Evaluates whether user query explicitly requests document text lookup.
+# Matches keywords referring to files, contracts, statements, or receipts.
+# Returns boolean flag indicating requirement for extractive document search.
 def wants_document_lookup(question: str) -> bool:
     query = str(question or "").split("\n\nAttached workspace files:", 1)[0]
     return bool(_DOCUMENT_QUESTION.search(query)
                 and re.search(r"\b(?:what|quote|show|find)\b", query, re.I)
-                and re.search(r"\b(?:fee|amount|target|progress|deadline|rate|payment|balance|savings)\b", query, re.I))
+                and re.search(r"\b(?:fee|amount|target|progress|deadline|rate|payment|balance|savings|income|expenses?|spending)\b", query, re.I))
 
 
+# Escapes markdown punctuation marks to treat file text strictly as literal data.
+# Prevents accidental rendering of markdown or HTML contained in documents.
+# Returns sanitized string safe for quoted inclusion in markdown responses.
 def _literal_markdown(value: str) -> str:
     # Treat file contents as quoted data, including embedded markdown/HTML.
     return re.sub(r"([\\`*_{}\[\]()<>#!|])", r"\\\1", value)
 
 
+# Extracts and formats exact verbatim quotes from retrieved document passages.
+# Scores lines based on query term overlap while strictly preserving wording.
+# Returns formatted markdown blockquote citations or fallback clarification.
 def document_passage_answer(question: str, finance_context: dict[str, Any] | None) -> str:
     query = str(question or "").split("\n\nAttached workspace files:", 1)[0]
     if not _DOCUMENT_QUESTION.search(query):

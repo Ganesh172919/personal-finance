@@ -2,6 +2,9 @@
 
 > Your intelligent, local-first financial workspace. Track, analyze, optimize, and automate your finances with deterministic mathematical rigor and multi-agent AI intelligence.
 
+> [!WARNING]
+> This documentation book is retained as historical design material. It contains outdated BullMQ, configuration, and connector examples. For the current operational contract, use `README.md`, `server/src/config/env.ts`, `server/src/routes/routeRegistry.ts`, `server/src/worker/worker.ts`, and `packages/contracts/openapi/v1/openapi.yaml`.
+
 ## 2026 Platform Release Update
 
 This documentation suite provides complete coverage for the latest FinWise architecture, reflecting major enhancements across all tiers:
@@ -14,7 +17,7 @@ This documentation suite provides complete coverage for the latest FinWise archi
 - **Financial Health Score System**: Dynamic composite scoring (0–100) aggregating savings rate, debt-to-income balance, emergency runway, and budget adherence (`HealthScore.ts`, `healthScoreService.ts`), backed by trend and chart visualization routes.
 - **Automated Newsletter Engine**: Preference-driven scheduled newsletter dispatches (`newsletterPreferenceModel.ts`, `newsletterRoutes.ts`, `newsletterService.ts`, `newsletterScheduler.ts`) featuring spending summaries, budget alerts, 7-day bill horizons, health score metrics, and LLM-crafted tips.
 - **Server-Side PDF Document Generation**: High-fidelity PDF compilation from workspace text files or direct prompts (`pdfController.ts`, `pdfRequestServer.ts`, `PDFKit`) streamed directly from GridFS.
-- **Resilience & Queue Isolation**: BullMQ queue orchestration paired with Dead Letter Queue (`deadLetterQueue.ts`) for poison-pill job quarantining and administrative inspection.
+- **Resilience & Background Work**: MongoDB-backed worker records with stale-job recovery; the diagnostic dead-letter helper is bounded in process.
 - **FinanceOS Cockpit & Review Workflows**: Command Center, Budget Health vitals, and Transaction Review Queue with batch approval and one-click "always categorize" rule creation.
 - **Strict Node 24+ Runtime**: Server engine specification aligned with Node `>=24.14.1 <25` and npm `>=11` across native and Docker environments (`compose.yaml`).
 - **Custom CSV Export Column Selection**: Interactive column selection chips in Exports preserving user-defined projection order (`Exports.tsx`, `exports.ts`).
@@ -25,6 +28,15 @@ This documentation suite provides complete coverage for the latest FinWise archi
 - **Finance OS Auto-Budget Roll-Forward & Predictive Spending Caps**: Month-stepping navigator with inflation buffers (+5%, +10%) and live envelope burn bars (`FinanceOS.tsx`).
 - **What-If Multi-Scenario Comparison Matrix & Monte Carlo Bounds**: 4-scenario side-by-side comparison with stochastic volatility simulation ($P_{10}, P_{50}, P_{90}$) and progressive marginal tax estimation (`Scenarios.tsx`).
 - **Private Session Boundaries & Cache Coalescing**: Per-user QueryClient lifecycle, stream abort on context change, and MongoDB snapshot caching with request coalescing (`AuthContext.tsx`, `conversationInsightsCache.ts`).
+- **Machine Learning Merchant Embedding Clustering**: 64-dimensional L2-normalized vector space (`merchantEmbeddingClustering.ts`) with sector taxonomy projections (dims 0-11), brand anchor aliases (dims 12-27), and FastText subword character n-gram FNV-1a hashing (dims 28-63). Hierarchical agglomerative cosine centroid clustering ($C_{\text{sim}} \ge 0.70$) groups noisy bank descriptions into canonical entities with 1-click batch categorization rules.
+- **Multi-Modal Grounded RAG Knowledge Engine**: Bounded window document chunking (1800 chars / 260 chars overlap) preserving physical PDF pages (`\f`), 64-D dense semantic embedding indexing, and hybrid dense cosine + BM25 lexical ranking ($G \ge 0.70$) with interactive `[docId:chunkIndex]` citations and deep navigation drawers (`retrievalService.ts`, `Files.tsx`).
+- **Enterprise AI Core Resumable Sessions & KeyPool**: Multi-key provider pools with token-bucket rate limiting, cooldown tracking, and circuit breakers (CLOSED -> OPEN -> HALF-OPEN). Resumable SQLite session checkpoints for LangGraph multi-agent DAGs across routing, planning, execution, and synthesis phases (`key_pool.py`, `session_manager.py`).
+- **Visual Workflow Node Graph Canvas & Delay Timers**: Interactive drag-and-drop node graph canvas with multi-step delay timers ($1\text{s}$ to $30\text{d}$), token-authenticated inbound webhooks (`POST /api/workflows/webhook/:token`), and conditional branch rules with runtime `{{field}}` variable interpolation (`Workflows.tsx`, `workflows.ts`).
+- **Global Multi-Currency FX Engine**: Standardized ISO 4217 conversions across 7 global currencies (`USD`, `EUR`, `GBP`, `INR`, `CAD`, `AUD`, `JPY`) with JPY zero-decimal integer rounding and localized cross-border Dividend Withholding Tax (WHT) / Double Tax Treaty (DTAA) modeling (`currencyFx.ts`).
+- **Financial Journal Offline Stroke Sync & 64-D Vector Search**: Stylus handwriting canvas notes with `localStorage` draft queuing, idempotent `clientDraftId` batch synchronization (`POST /api/financial-journal/entries/batch-sync`), and 64-D semantic vector similarity search (`Notes.tsx`, `journalEntryModel.ts`).
+- **Inbound Real-Time Bank Connector Webhook Feed**: Automated webhook ingestion (`POST /api/transactions/bank-feed`) with `externalId` deduplication, heuristic confidence evaluation, and an interactive in-app test simulator.
+- **Historical Macro Crisis Replay & Real-Time Linked Account Stress Testing**: Replays 5 historical market shocks (2008 GFC, 2020 COVID, 1970s Stagflation, 2000 Dot-Com, 2022 Rate Shock) with portfolio Beta sensitivity tuning, capital buffer deficit calculation, and liquidation waterfall simulation (`Scenarios.tsx`).
+- **Peer Spending Benchmarks & Zero-Sum Auto-Rebalancing**: Household cohort IQR benchmarks, peer alignment index, and automated zero-sum envelope transfers satisfying the mathematical invariant $\sum \Delta B_i = 0$ (`budgetHealthService.ts`, `BudgetHealthCard.tsx`).
 
 ### Recommended Reading Paths
 
@@ -104,7 +116,7 @@ mindmap
       Dual Auth JWT & SHA-256 API Keys
       Multi-Tenant OrgScopePlugin
       60 Domain Business Services
-      BullMQ Async Queues & DLQ
+      MongoDB Async Worker & Recovery
       RAG Phase 2 BM25 Chunker
     AI Core - Port 8001
       FastAPI + Uvicorn Runtime
@@ -144,7 +156,7 @@ mindmap
 │    ├─► 🔍 RAG Phase 2: Bounded Window Chunking (500 tokens) & Lexical BM25 Retrieval Engine     │
 │    ├─► 📰 Newsletter Engine: Scheduled digest generation, preference management, email dispatch  │
 │    ├─► 📄 PDF Generation: Server-side text-to-PDF rendering with PDFKit via GridFS streaming     │
-│    └─► ⚙️ Async Queues: BullMQ + Redis for exports, workflows, newsletters, and DLQ             │
+│    └─► ⚙️ Async Work: MongoDB records for workflows and exports                                  │
 └───────────────────────┬─────────────────────────────────────────┬───────────────────────────────┘
                         │                                         │
         💾 Read / Write Operations                       ⚡ Internal IPC / HTTP
@@ -157,7 +169,7 @@ mindmap
 │  │   • Compound B-Tree Query Indexes         │  │  ├─► Aggregator (Number Safety Synthesis)    │
 │  ├─► Redis 7.0                               │  │  ├─► Newsletter Agent (Weekly Digest Engine) │
 │  │   • Distributed Rate Limiting             │  │  ├─► KeyPool Multi-Key Provider Failover     │
-│  │   • BullMQ Queues & Dead Letter Queue     │  │  ├─► Pydantic V2 Output Contracts            │
+│  │   • MongoDB worker records & recovery     │  │  ├─► Pydantic V2 Output Contracts            │
 │  │   • L1/L2 Cache with TTL Invalidation     │  │  ├─► Deterministic Financial Calculators     │
 │  └─► GridFS & SQLite                         │  │  ├─► Resumable Sessions & SQLite Memory      │
 │      • Large Document & PDF Blob Storage     │  │  └─► Evaluation Harness & LoRA Fine-Tuning   │
@@ -189,7 +201,7 @@ mindmap
 | **Workflows & Automation** | Autonomous rule triggers and cron schedules for recurring financial tasks |
 | **Task Management** | 7/30/365-day bucket task system for actionable financial habits |
 | **Analytics & Heatmaps** | Multi-dimensional spending heatmaps, category trend lines, and cash-flow comparisons |
-| **Data Exports** | High-throughput asynchronous exports in CSV, PDF, and XLSX formats via BullMQ |
+| **Data Exports** | Asynchronous CSV and PDF exports delivered through MongoDB job records |
 | **Financial Journaling** | Reflective financial entries with mood ratings, tags, and handwriting scan ingestion |
 | **Multi-Tenant Organizations**| Role-based workspace sharing (Owner, Admin, Member, Viewer) with seat management |
 | **PWA & Offline Support** | Progressive Web App installable on desktop and mobile with Workbox offline caching |
@@ -236,7 +248,7 @@ mindmap
 | Framework | Express | 5.2.1 with TypeScript |
 | Runtime | Node.js | `>=24.14.1 <25` (executed with `tsx`) |
 | Primary Datastore | MongoDB | 7.0 via Mongoose 8.2.3 (52 models) |
-| Cache & Queue | Redis | 7.0 via `ioredis` 5.10 and `bullmq` 5.70 |
+| Cache | Redis | Optional cache/rate-limit backing via `ioredis` |
 | Validation | Zod | Zod 4 with strict schemas on body, query, params |
 | Authentication | Passport.js | JWT Bearer cookies + Google OAuth 2.0 + TOTP 2FA |
 | Security | Helmet | Content Security Policy, rate limiting, NoSQL sanitizer |
@@ -390,7 +402,7 @@ The FinWise platform provides 12 comprehensive chapters covering every dimension
 | **04** | [**Database Schema**](./04-database-schema.md) | All 52 Mongoose models and stores | Models, compound indexes, multi-tenancy, GridFS, SQLite |
 | **05** | [**AI System**](./05-ai-system.md) | Multi-agent LangGraph engine | Task decomposer, subagents, aggregator, evals, contracts |
 | **06** | [**Security**](./06-security.md) | Authentication, authorization, and defense | JWT, TOTP, OrgScope, rate limiting, DLQ, audit logs |
-| **07** | [**Performance**](./07-performance.md) | Caching, optimization, and scaling | 4-layer cache, BM25 indexing, BullMQ, virtual lists |
+| **07** | [**Performance**](./07-performance.md) | Caching, optimization, and scaling | 4-layer cache, BM25 indexing, virtual lists |
 | **08** | [**Deployment**](./08-deployment.md) | Production Docker, cloud, and runbooks | Compose specs, reverse proxy, SSL, health checks, backups |
 | **09** | [**Testing**](./09-testing.md) | Testing strategies across all three tiers | Vitest, Supertest, Pytest, eval harness, invariants |
 | **10** | [**Troubleshooting**](./10-troubleshooting.md) | Diagnostics, common errors, and runbook fixes | DB connection errors, AI timeouts, OCR issues, auth debugging |

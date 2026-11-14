@@ -50,18 +50,27 @@ import type { MutationSource } from "../types/provenance"; // Tracks where a tra
  * Generates a SHA-256 hex hash. Used for deterministic external IDs and import IDs.
  * SHA-256 is chosen for its collision resistance (not for security).
  */
+// Generates a SHA-256 cryptographic hexadecimal hash string for input data.
+// Used for deterministic external IDs, idempotency keys, and content digests.
+// Guarantees reliable deduplication across transaction import processing.
 const sha256Hex = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
 
 /**
  * Truncates external IDs to 120 chars. MongoDB indexes perform better with
  * shorter keys, and 120 chars of hex is more than sufficient for uniqueness.
  */
+// Truncates external identifier strings to a maximum length of 120 characters.
+// Optimizes database index memory footprint and query lookups in MongoDB.
+// Ensures uniform key boundaries across disparate banking data feeds.
 const clampExternalId = (value: string) => value.trim().slice(0, 120);
 
 /**
  * Normalizes whitespace: trims leading/trailing and collapses internal runs to single spaces.
  * CSV data often has inconsistent spacing that would break string comparisons.
  */
+// Collapses runs of internal whitespace characters into single space tokens.
+// Strips leading and trailing space padding from raw CSV cell strings.
+// Sanitizes transaction descriptions and categories before evaluation.
 const normalizeWhitespace = (value: string) => value.trim().replace(/\s+/g, " ");
 
 /**
@@ -72,6 +81,9 @@ const normalizeWhitespace = (value: string) => value.trim().replace(/\s+/g, " ")
  *
  * This ensures "Starbucks #1234" and "STARBUCKS" and "starbucks." all match.
  */
+// Standardizes raw merchant names by removing punctuation and casing variances.
+// Preserves critical alphanumeric tokens and common brand connector symbols.
+// Facilitates fuzzy matching and entity resolution across transaction feeds.
 const normalizeMerchantName = (value: string) => {
   const trimmed = normalizeWhitespace(value).toLowerCase();
   const stripped = trimmed.replace(/[^a-z0-9 &.-]+/g, "");
@@ -91,6 +103,9 @@ const normalizeMerchantName = (value: string) => {
  * @param {string} rawValue - Raw string value from CSV
  * @returns {number | null} Parsed number or null if unparseable
  */
+// Parses arbitrary currency and accounting strings into numeric values.
+// Handles negative sign representations including parentheses and debit flags.
+// Strips international currency symbols, commas, and space separators.
 const parseMoney = (rawValue: string) => {
   const raw = String(rawValue || "").trim();
   if (!raw) return null;
@@ -135,6 +150,9 @@ const parseMoney = (rawValue: string) => {
  * @param {string} rawValue - Raw date string from CSV
  * @returns {Date | null} Parsed Date (at UTC noon) or null if unparseable
  */
+// Parses heterogeneous date formats into normalized UTC noon timestamps.
+// Handles ISO formats, US slash notations, and international calendar styles.
+// Avoids date shift edge cases across differing timezone boundaries.
 const parseDateToUtcMidday = (rawValue: string): Date | null => {
   const raw = String(rawValue || "").trim();
   if (!raw) return null;
@@ -179,6 +197,9 @@ const parseDateToUtcMidday = (rawValue: string): Date | null => {
  * - Expenses and investments = negative
  * This ensures consistent sign handling across the application.
  */
+// Enforces standard accounting polarities across transaction monetary amounts.
+// Treats income transactions as positive ledger credits.
+// Converts expenses and investments to negative ledger debits.
 const normalizeTransactionAmount = (amount: number, type: "income" | "expense" | "investment") => {
   const absoluteAmount = Math.abs(Number(amount));
   return type === "income" ? absoluteAmount : -absoluteAmount;
@@ -188,6 +209,9 @@ const normalizeTransactionAmount = (amount: number, type: "income" | "expense" |
  * Normalizes transaction type strings. Falls back to inferring from the
  * sign of the amount when the type column is empty or unrecognized.
  */
+// Resolves raw transaction type strings into supported domain enum variants.
+// Recognizes income, expense, and investment categories explicitly.
+// Infers default transaction types from numeric amounts when omitted.
 const normalizeTxType = (raw: string, amount: number): "income" | "expense" | "investment" => {
   const t = String(raw || "").trim().toLowerCase();
   if (t === "income" || t === "expense" || t === "investment") return t;
@@ -198,6 +222,9 @@ const normalizeTxType = (raw: string, amount: number): "income" | "expense" | "i
  * Checks if a category value is effectively "uncategorized".
  * Used to decide whether to apply merchant-based or rule-based category suggestions.
  */
+// Checks whether a category string represents an unassigned placeholder.
+// Matches against empty values and generic categories like misc and other.
+// Triggers automatic categorization rule evaluation for unassigned transactions.
 const isUncategorizedCategory = (value: string) => {
   const normalized = String(value || "").trim().toLowerCase();
   return !normalized || normalized === "other" || normalized === "uncategorized" || normalized === "misc";
@@ -207,8 +234,14 @@ const isUncategorizedCategory = (value: string) => {
  * Escapes special regex characters in a string so it can be used safely
  * in a regular expression. Used when building MongoDB $regex queries from user input.
  */
+// Escapes special regular expression metacharacters within input strings.
+// Prevents regex injection and search syntax errors in dynamic Mongo queries.
+// Ensures safe literal substring searching across merchant databases.
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// Specifies the column mapping between source CSV headers and schema fields.
+// Maps file column names to amount, date, description, category, and merchant.
+// Guides the parsing engine during multi-column tabular data extraction.
 export type CsvImportMapping = {
   amount: string;
   date: string;
@@ -218,6 +251,9 @@ export type CsvImportMapping = {
   merchant?: string;
 };
 
+// Represents a single preview row processed during dry-run CSV ingestion.
+// Displays extracted amounts, dates, review flags, and merchant associations.
+// Provides feedback on potential duplicate transactions or validation issues.
 export type CsvImportPreviewRow = {
   row_index: number;
   status: "ready" | "duplicate" | "invalid";
@@ -244,18 +280,27 @@ export type CsvImportPreviewRow = {
   };
 };
 
+// Groups conflicting CSV rows that collide on duplicate external keys.
+// Identifies duplicate row indexes and provides explanatory conflict reasons.
+// Informs users regarding skipped duplicate records in import summaries.
 export type CsvImportDuplicateGroup = {
   duplicate_key: string;
   row_indexes: number[];
   reason: string;
 };
 
+// Details specific row-level validation errors encountered during CSV ingestion.
+// Highlights invalid row indices, erroneous column fields, and error messages.
+// Helps users identify and rectify malformed data in uploaded CSV files.
 export type CsvImportRowError = {
   row: number;
   field?: string;
   message: string;
 };
 
+// Comprehensive summary returned upon concluding a CSV transaction import.
+// Reports parsed counts, inserted transactions, duplicate counts, and previews.
+// Indicates whether execution was conducted in dry-run or live database mode.
 export type CsvImportResult = {
   ok: true;
   import_id: string;
@@ -275,6 +320,9 @@ export type CsvImportResult = {
   account_id?: string | null;
 };
 
+// Internal intermediate representation of a normalized CSV transaction row.
+// Holds raw and parsed representations of dates, amounts, and merchant names.
+// Collects validation errors and structural issues prior to database writes.
 type PreparedCsvRow = {
   row_index: number;
   amount_raw: string;
@@ -298,6 +346,9 @@ type PreparedCsvRow = {
  *
  * @returns {string} A deterministic, collision-resistant external ID
  */
+// Generates a deterministic external identifier for an incoming transaction.
+// Hashes tenant scope, account, date, amount, and description fields.
+// Enables idempotent imports and prevents duplicate insertions in the ledger.
 const buildExternalId = (params: {
   orgId: mongoose.Types.ObjectId;
   accountId?: mongoose.Types.ObjectId;
@@ -331,6 +382,9 @@ const buildExternalId = (params: {
  * @param {object} params - Rows from PapaParse and the user's column mapping
  * @returns {PreparedCsvRow[]} Normalized rows with validation issues
  */
+// Maps raw parsed CSV records into normalized intermediate row representations.
+// Applies user column mappings, parses dates and amounts, and normalizes text.
+// Populates issue arrays for rows with invalid or unparseable input data.
 const prepareCsvRows = (params: {
   rows: Record<string, unknown>[];
   mapping: CsvImportMapping;
@@ -399,6 +453,9 @@ const prepareCsvRows = (params: {
  * @param {number} [params.previewLimit] - Max preview rows to return (default 12)
  * @returns {Promise<CsvImportResult>} Import results with counts, preview, and duplicate info
  */
+// Orchestrates the complete end-to-end import pipeline for CSV financial transactions.
+// Parses raw CSV streams, deduplicates against existing records, and suggests categories.
+// Supports dry-run validation previews and transactional bulk MongoDB insertions.
 export const importTransactionsCsv = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -873,6 +930,9 @@ export const importTransactionsCsv = async (params: {
  * @param {number} [params.limit] - Max results (default 20, capped at 100)
  * @returns {Promise<Array>} Matching merchants with id, name, and category default
  */
+// Searches registered merchant entities across names, normalized names, and aliases.
+// Enforces tenant organization boundaries and applies case-insensitive regex filters.
+// Returns matching merchant records along with their default assigned categories.
 export const lookupMerchantsByQuery = async (params: {
   orgId: mongoose.Types.ObjectId;
   q: string;

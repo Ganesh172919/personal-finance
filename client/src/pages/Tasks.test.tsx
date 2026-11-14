@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,6 +11,10 @@ const api = vi.hoisted(() => ({
   createTask: vi.fn(),
   getTaskWebhookToken: vi.fn(),
   dispatchTasksWebhook: vi.fn(),
+  getFollowThroughRecommendations: vi.fn(),
+  recordFollowThroughFeedback: vi.fn(),
+  getFollowThroughPreferences: vi.fn(),
+  updateFollowThroughPreferences: vi.fn(),
   apiClient: vi.fn(),
 }));
 
@@ -99,6 +103,20 @@ function selectTab(name: string) {
 }
 
 describe("TasksPage", () => {
+  it("updates the open detail sheet after a confirmed completion", async () => {
+    let current: Omit<typeof mockOpenTasks[number], "status"> & { status: "open" | "completed" } = { ...mockOpenTasks[0] };
+    api.getTaskById.mockImplementation(async () => ({ task: current }));
+    api.updateTaskStatus.mockImplementation(async () => {
+      current = { ...current, status: "completed" };
+      return { task: current };
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: `View task: ${current.title}` }));
+    const sheet = await screen.findByTestId("task-detail-sheet");
+    fireEvent.click(within(sheet).getByRole("button", { name: "Mark completed" }));
+    expect(await within(sheet).findByText(/^completed$/i)).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Mark completed" })).toBeDisabled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     api.getTasks.mockImplementation(async ({ status }: { status: string }) => {
@@ -136,6 +154,54 @@ describe("TasksPage", () => {
         bucket: 30,
         status: "open",
       },
+    });
+    api.getFollowThroughRecommendations.mockResolvedValue({
+      totalSignals: 5,
+      learnedAffinities: { debt: 0.45, budget: -0.2 },
+      preferences: {
+        focusDomains: { debt: 1.2, budget: 1.0, goal: 1.0, task: 1.0, reminder: 1.0 },
+        riskTolerance: "moderate",
+        preferredCadence: "weekly",
+      },
+      items: [
+        {
+          id: "debt:card_1",
+          domain: "debt",
+          title: "Pay Down High APR Credit Card",
+          description: "Balance $4,200 at 24.5% APR.",
+          priorityScore: 88.5,
+          priorityTier: "critical",
+          urgency: 0.9,
+          impact: 0.85,
+          actionUrl: "/goals-debts",
+          isOverdue: false,
+          dueDate: null,
+          rank: 1,
+        },
+        {
+          id: "task:overdue_1",
+          domain: "task",
+          title: "Overdue Utility Payment",
+          description: "Avoid service disconnection.",
+          priorityScore: 82.0,
+          priorityTier: "critical",
+          urgency: 0.95,
+          impact: 0.7,
+          actionUrl: "/tasks",
+          isOverdue: true,
+          dueDate: "2026-10-25",
+          rank: 2,
+        },
+      ],
+    });
+    api.recordFollowThroughFeedback.mockResolvedValue({
+      message: "Feedback recorded successfully",
+      feedbackHistoryCount: 1,
+    });
+    api.updateFollowThroughPreferences.mockResolvedValue({
+      focusDomains: { debt: 1.4, budget: 1.0 },
+      riskTolerance: "aggressive",
+      preferredCadence: "daily",
     });
   });
 
@@ -354,6 +420,15 @@ describe("TasksPage", () => {
   });
 
   it("supports batch and single calendar sync via apiClient /calendar-reminders", async () => {
+    api.apiClient.mockImplementation(async (path, options) => {
+      if (path === "/calendar-reminders" && options?.method === "POST") {
+        const body = JSON.parse(options.body);
+        expect(Object.keys(body).sort()).toEqual(["date", "description", "title"]);
+        expect(body.title.length).toBeLessThanOrEqual(200);
+        expect(body.description.length).toBeLessThanOrEqual(500);
+      }
+      return {};
+    });
     renderPage();
 
     await screen.findByText("Schedule recurring transfer to emergency fund");
@@ -626,7 +701,7 @@ describe("TasksPage", () => {
         target: "linear",
         webhook_url: "https://api.linear.app/v1/webhook",
         task_ids: ["task-1", "task-2"],
-        headers: { Authorization: "Bearer test_linear_token" },
+        authorization: "Bearer test_linear_token",
       });
     });
 
@@ -704,5 +779,84 @@ describe("TasksPage", () => {
 
     expect(await screen.findByTestId("dialog-task-sync-integrations")).toBeInTheDocument();
     expect(screen.getByText(/Exporting 1 task/i)).toBeInTheDocument();
+  });
+
+  describe("Personalized Follow-Through & Ranking Engine", () => {
+    it("renders Adaptive Follow-Through tab and displays ranked recommendations with priority scores", async () => {
+      renderPage();
+
+      // Click Follow-Through tab
+      selectTab("Follow-Through");
+
+      // Verify cockpit presence
+      expect(await screen.findByTestId("card-follow-through-cockpit")).toBeInTheDocument();
+      expect(screen.getByText("Personalized Follow-Through & Signal Ranking Engine")).toBeInTheDocument();
+
+      // Check ranked items
+      expect(await screen.findByText("Pay Down High APR Credit Card")).toBeInTheDocument();
+      expect(screen.getByTestId("badge-priority-score-debt:card_1")).toHaveTextContent("Score: 88.5/100");
+      expect(screen.getAllByTestId("badge-tier-critical").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByTestId("badge-overdue-task:overdue_1")).toHaveTextContent("Overdue");
+      expect(screen.getByTestId("badge-affinity-debt")).toHaveTextContent("+0.45");
+      expect(screen.getByTestId("metric-total-signals")).toHaveTextContent("5");
+    });
+
+    it("triggers feedback mutation when clicking Prioritize button", async () => {
+      renderPage();
+
+      selectTab("Follow-Through");
+
+      await screen.findByText("Pay Down High APR Credit Card");
+      const prioritizeBtn = screen.getByTestId("btn-feedback-upvote-debt:card_1");
+      fireEvent.click(prioritizeBtn);
+
+      await waitFor(() => {
+        expect(api.recordFollowThroughFeedback).toHaveBeenCalledWith({
+          signalId: "debt:card_1",
+          domain: "debt",
+          action: "upvote",
+        });
+      });
+    });
+
+    it("triggers dismissal mutation when clicking Dismiss button", async () => {
+      renderPage();
+
+      selectTab("Follow-Through");
+
+      await screen.findByText("Pay Down High APR Credit Card");
+      const dismissBtn = screen.getByTestId("btn-feedback-dismiss-debt:card_1");
+      fireEvent.click(dismissBtn);
+
+      await waitFor(() => {
+        expect(api.recordFollowThroughFeedback).toHaveBeenCalledWith({
+          signalId: "debt:card_1",
+          domain: "debt",
+          action: "dismiss",
+        });
+      });
+    });
+
+    it("adjusts focus domain multiplier and saves preferences", async () => {
+      renderPage();
+
+      selectTab("Follow-Through");
+
+      await screen.findByText("Pay Down High APR Credit Card");
+      await screen.findByTestId("card-follow-through-preferences");
+      const incDebtBtn = screen.getByTestId("btn-inc-focus-debt");
+      fireEvent.click(incDebtBtn);
+
+      const saveBtn = await screen.findByTestId("btn-save-follow-through-prefs");
+      fireEvent.click(saveBtn);
+
+      await waitFor(() => {
+        expect(api.updateFollowThroughPreferences).toHaveBeenCalledWith({
+          focusDomains: expect.objectContaining({
+            debt: 1.4,
+          }),
+        });
+      });
+    });
   });
 });

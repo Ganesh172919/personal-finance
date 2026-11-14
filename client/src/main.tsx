@@ -34,13 +34,22 @@ import { installChunkRecovery } from "./lib/chunkRecovery.ts";
 
 // Install global error listeners BEFORE React renders
 // This catches unhandled errors and promise rejections that React doesn't see
+// Initializes global client error reporting and chunk crash recovery handlers.
+// Captures uncaught exceptions and dynamic asset fetch failures before mount.
+// Ensures client-side resilience and telemetry capture across the browser runtime.
 errorReporting.install();
 installChunkRecovery();
 
 // Install dev-only network request logger (zero cost in production)
+// Attaches network inspection and request tracing hooks during development.
+// Logs outbound API queries and response status codes to the browser console.
+// Compiles into a no-op routine in production builds to eliminate overhead.
 installNetworkLogger();
 
 // Create React 18 concurrent root and render the application
+// Bootstraps the concurrent React 18 DOM tree at the root element anchor.
+// Wraps the application hierarchy within StrictMode and top-level error boundaries.
+// Mounts the primary App component to initiate the client user experience.
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     {/* AppErrorBoundary catches React rendering errors (prevents white screen) */}

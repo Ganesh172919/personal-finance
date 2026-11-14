@@ -16,6 +16,9 @@ let httpBaseUrl = "";
 let httpToken = "";
 let httpTimeoutMs = 0;
 
+// Lazily initializes and reuses a singleton Axios client for plugin runtime RPC.
+// Monitors changes to PLUGIN_RUNTIME_URL, auth token, and timeout configuration.
+// Recreates the client instance if target endpoint or credentials change.
 const getHttp = () => {
   const env = getEnv();
   const baseUrl = env.PLUGIN_RUNTIME_URL || "";
@@ -49,9 +52,15 @@ const getHttp = () => {
   return http;
 };
 
+// Type guard validating whether a value represents a non-null, non-array plain object.
+// Casts valid record structures to a generic key-value dictionary type.
+// Returns null when passed primitive values, arrays, or nullish variables.
 const asPlainObject = (value: unknown) =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 
+// Queries external Python plugin runtime sandbox for registered tools and connectors.
+// Passes distributed tracing request ID and validates API response structure.
+// Returns registry response or null if runtime is unreachable or unconfigured.
 export const fetchPluginRuntimeRegistry = async (params: { requestId?: string }): Promise<PluginRuntimeRegistryResponse | null> => {
   const http = getHttp();
   if (!http) {
@@ -73,6 +82,9 @@ export const fetchPluginRuntimeRegistry = async (params: { requestId?: string })
   }
 };
 
+// Dispatches dry-run simulation of a plugin tool call to the plugin sandbox.
+// Passes organization context, actor role, tool call parameters, and request ID.
+// Yields risk assessment, required confirmation status, and diff previews.
 export const simulatePluginTool = async (params: {
   orgId: string;
   userId: string;
@@ -102,6 +114,9 @@ export const simulatePluginTool = async (params: {
   return data as PluginRuntimeSimulateResponse;
 };
 
+// Transmits live execution command for a plugin tool to the Python runtime daemon.
+// Propagates tenant organization context, caller permissions, and tracing headers.
+// Returns execution results or throws if plugin runtime responds with errors.
 export const executePluginTool = async (params: {
   orgId: string;
   userId: string;
@@ -131,6 +146,9 @@ export const executePluginTool = async (params: {
   return data as PluginRuntimeExecuteResponse;
 };
 
+// Dispatches data sync command for a plugin-managed financial connector.
+// Forwards connector key, sync options, authentication IDs, and request headers.
+// Returns processed record counts and sync result metadata from sandbox.
 export const syncPluginConnector = async (params: {
   orgId: string;
   userId: string;

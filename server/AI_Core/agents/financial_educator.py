@@ -1,112 +1,26 @@
-r"""
-financial_educator.py - Financial Educator Agent
-==================================================
+"""Financial education with deterministic concept extraction and safe fallback.
 
-The ``FinancialEducatorAgent`` explains financial concepts (e.g. "what is
-compound interest?") in plain language.  Unlike the other specialist agents,
-this agent **does** make an LLM call (via ``invoke_with_fallback``) because
-educational content benefits from natural language generation.
-
-Key responsibilities
---------------------
-- Extract the core concept from the user's question (deterministic regex).
-- Check an in-memory LRU cache to avoid redundant LLM calls for the
-  same concept.
-- Invoke the LLM with a system prompt that constrains the response to
-  definitions, explanations, and simple examples (no personalised advice).
-- Fall back to a deterministic explanation if the LLM is unavailable.
-
-MINDMAP FLOW
-------------
-::
-
-    FinancialEducatorAgent
-    ├── 1. Concept Extraction & Parsing
-    │   ├── Deterministic Regex Prefix Stripping ("what is", "how does", etc.)
-    │   └── Topic Normalization (lowercase, trimmed keyword)
-    ├── 2. In-Memory LRU Cache Check
-    │   ├── Key: Normalized Concept String
-    │   ├── TTL Verification (30-minute expiration window)
-    │   ├── Max Capacity Clamp (256 entries with LRU eviction)
-    │   └── Immediate Return on Valid Cache Hit
-    ├── 3. LLM Educational Synthesis
-    │   ├── System Prompt: Educational Clarity & Objective Explanation
-    │   ├── Guardrails: Prohibit Individual Specific Advice or Speculation
-    │   └── Multi-Provider Failover LLM Execution
-    └── 4. Graceful Fallback & Result Delivery
-        ├── Fallback to Pre-written Deterministic Educational Definitions
-        ├── Update LRU Cache with Fresh Response
-        └── Structured Output Formatting for Chat & Master Agent
-
-ASCII FLOW
-----------
-::
-
-    +---------------------------------------------------------------+
-    |             Input: user_input ("What is SIP?")                |
-    +-------------------------------+-------------------------------+
-                                    |
-                                    v
-    +---------------------------------------------------------------+
-    |              Concept Extraction via Regex                     |
-    |  - Strip conversational preamble                              |
-    |  - Extract key topic: e.g., "sip", "compound interest"        |
-    +-------------------------------+-------------------------------+
-                                    |
-                                    v
-    +---------------------------------------------------------------+
-    |                 Query In-Memory LRU Cache                     |
-    +-------------------------------+-------------------------------+
-                                    |
-                       [Is Cached & Non-Expired?]
-                               /          \
-                             YES           NO
-                             /              \
-                            v                v
-     +-------------------------------+   +-----------------------------+
-     | Return Cached Educational     |   | Invoke LLM with System      |
-     | Markdown Response             |   | Educational Prompt          |
-     +-------------------------------+   +--------------+--------------+
-                                                        |
-                                                [LLM Call Succeeded?]
-                                                       /      \
-                                                     YES       NO
-                                                     /          \
-                                                    v            v
-                                      +------------------+  +------------------+
-                                      | Use LLM Prose    |  | get_fallback_    |
-                                      | & formatting     |  | response()       |
-                                      +--------+---------+  +--------+---------+
-                                               \                    /
-                                                \                  /
-                                                 v                v
-                                         +-----------------------------+
-                                         | Cache Entry (TTL 30 mins)   |
-                                         | Return Result Dictionary    |
-                                         +-----------------------------+
-
-Design decisions
-----------------
-- The concept cache uses an ``OrderedDict`` with TTL-based eviction
-  (30 minutes, max 256 entries) to reduce cost for repeated queries.
-- Concept extraction is simple keyword matching + prefix stripping --
-  no LLM call is needed for this step.
-- The agent explicitly avoids personalised financial advice; it only
-  provides general education.
+The question and optional profile enter the model prompt. Do not cache an answer
+by extracted concept: two people can ask about the same concept while supplying
+different private financial context. Reuse, when safe, belongs to the separate
+tenant-scoped LLM cache keyed on the full prompt.
 """
 
 import logging
-from collections import OrderedDict
-from time import time
-from typing import Any, Dict, Optional, Tuple
+import re
+from typing import Any, Dict, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from utils import create_llm, get_fallback_response
+from registry import get_exemplars, get_prompt, render_prompt
+from utils import create_llm
 
 logger = logging.getLogger(__name__)
 
 
+# Educational AI agent explaining financial literacy concepts and terminology.
+# Leverages natural language models with bounded provider failover resilience.
+# Contextualizes explanations using user age, profile goals, and financial stage.
 class FinancialEducatorAgent:
     """Explains financial concepts clearly with optional request-context relevance.
 
@@ -114,53 +28,69 @@ class FinancialEducatorAgent:
     language generation).  All other agents are fully deterministic.
     """
 
-    _CACHE_MAX_SIZE = 256
-    _CACHE_TTL_SECONDS = 30 * 60
-
+    # Initializes educator agent with specialized natural language generation LLM.
+    # Sets up fallback model routing and configurable system prompt overrides.
+    # Maintains local state for dynamic runtime prompt registry resolution.
     def __init__(self):
         self.llm = create_llm("educator")
-        self.system_prompt = SystemMessage(
-            content=(
-                "You are a clear and concise Financial Educator. "
-                "Explain concepts simply with short practical examples. "
-                "Do not provide personalized financial advice."
-            )
-        )
+        # Resolved through the artifact registry at call time (baked-in default
+        # when empty); assigning ``system_prompt`` overrides it.
+        self._system_prompt_override: Optional[SystemMessage] = None
 
-        # In-memory (process-local) cache keyed by extracted concept.
-        # Value: (inserted_at_epoch_seconds, response_payload)
-        self._concept_cache: "OrderedDict[str, Tuple[float, Dict[str, Any]]]" = OrderedDict()
+    # Resolves educational system prompt guidelines from artifact registry.
+    # Defines pedagogy, tone, clarity principles, and factual bounds.
+    # Returns LangChain SystemMessage instance ready for LLM invocation.
+    @property
+    def system_prompt(self) -> SystemMessage:
+        override = getattr(self, "_system_prompt_override", None)
+        if override is not None:
+            return override
+        return SystemMessage(content=get_prompt("educator.system"))
 
+    @system_prompt.setter
+    def system_prompt(self, value: SystemMessage) -> None:
+        self._system_prompt_override = value
+
+    # Formats few-shot question and answer exemplars into a prompt text block.
+    # Retrieves high-quality stylistic exemplars from the prompt registry.
+    # Returns an empty string if no relevant exemplars are registered.
+    @staticmethod
+    def _exemplar_block() -> str:
+        examples = get_exemplars("educator.explain")
+        if not examples:
+            return ""
+        lines = ["", "Examples of the expected style (illustrative wording only):"]
+        for example in examples:
+            lines.append(f"Q: {example.input}")
+            lines.append(f"A: {example.output}")
+        return chr(10).join(lines) + chr(10)
+
+    # Produces clear, accessible financial explanations for user questions.
+    # Blends extracted financial concepts with user profile context and few-shot exemplars.
+    # Executes LLM generation with multi-provider fallbacks and route telemetry tracking.
     def explain_concept(self, user_input: str, user_profile: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        """Explain a concept with one LLM call and guaranteed fallback."""
+        """Explain a concept with bounded provider failover."""
         logger.info("Explaining financial concept (input_length=%s)", len(user_input or ""))
 
         concept = self._simple_concept_extraction(user_input)
-        cached = self._cache_get(concept)
-        if cached is not None:
-            return cached
-
+        # Never reuse an answer keyed only by concept: the full question and
+        # profile may contain another tenant's private financial details.
         profile_context = self._get_profile_context(user_profile)
 
-        prompt = f"""
-Explain the concept: "{concept}"
+        prompt = render_prompt(
+            get_prompt("educator.explain"),
+            concept=concept,
+            profile_context=profile_context,
+            user_input=user_input,
+        )
+        if not re.search(r"\b(?:one|two|three|1|2|3)\s+(?:(?:short|brief)\s+)?(?:sentences?|bullets?)\b", user_input, re.I):
+            prompt += self._exemplar_block()
 
-User context (for relevance only, not advice):
-{profile_context}
-
-Original question:
-"{user_input}"
-
-Return a short response with:
-1) Definition
-2) Why it matters
-3) Simple example
-"""
-
-        fallback = get_fallback_response("financial_education")
+        fallback = "The explanation service is temporarily unavailable. Try your question again in a moment."
         response, fallback_used = self.llm.invoke_with_fallback(
             [self.system_prompt, HumanMessage(content=prompt)],
             fallback,
+            max_attempts=4,
         )
 
         explanation = response.content.strip() if hasattr(response, "content") else str(response)
@@ -172,35 +102,17 @@ Return a short response with:
             "llm_route": self.llm.get_route_metadata(),
         }
 
-        self._cache_set(concept, payload)
         return payload
 
-    def _cache_get(self, concept: str) -> Optional[Dict[str, Any]]:
-        entry = self._concept_cache.get(concept)
-        if entry is None:
-            return None
-
-        inserted_at, payload = entry
-        if time() - inserted_at > self._CACHE_TTL_SECONDS:
-            del self._concept_cache[concept]
-            return None
-
-        self._concept_cache.move_to_end(concept)
-        return dict(payload)
-
-    def _cache_set(self, concept: str, payload: Dict[str, Any]) -> None:
-        self._concept_cache[concept] = (time(), dict(payload))
-        self._concept_cache.move_to_end(concept)
-
-        while len(self._concept_cache) > self._CACHE_MAX_SIZE:
-            self._concept_cache.popitem(last=False)
-
+    # Deterministically extracts the core financial concept keyword from user text.
+    # Checks keyword dictionary and strips common conversational question prefixes.
+    # Avoids expensive model fanout for straightforward vocabulary lookups.
     def _simple_concept_extraction(self, user_input: str) -> str:
         """Simple deterministic concept extraction without LLM fan-out."""
         financial_terms = [
             "tax", "budget", "investment", "stocks", "bonds", "mutual funds", "etf",
             "savings", "debt", "loan", "credit card", "mortgage", "retirement",
-            "insurance", "inflation", "interest", "compound interest", "income", "expense",
+            "insurance", "inflation", "compound interest", "interest", "income", "expense",
             "emergency fund", "net worth", "portfolio", "diversification", "dividends",
         ]
 
@@ -216,6 +128,9 @@ Return a short response with:
 
         return user_input[:60] if user_input else "personal finance"
 
+    # Extracts relevant personalization metadata from the user profile.
+    # Formats user age and active goal descriptions into a compact context string.
+    # Returns safe placeholder when no profile information is available.
     def _get_profile_context(self, user_profile: Optional[Dict[str, Any]]) -> str:
         if user_profile is None:
             return "No personal context provided."

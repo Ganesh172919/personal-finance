@@ -49,6 +49,9 @@ except Exception:
     pass
 
 
+# Validates whether upstream AI provider API credentials are configured.
+# Checks environment keys and falls back to deterministic execution if missing.
+# Returns a boolean status indicating whether Gemini features are active.
 def _validate_provider_config() -> bool:
     """Check whether at least one LLM API key is configured.
 
@@ -64,6 +67,9 @@ def _validate_provider_config() -> bool:
         return False
 
 
+# Constructs a LangChain classification chain using Google Gemini models.
+# Distinguishes between personalized financial requests and general queries.
+# Returns an executable classification chain or None if credentials fail.
 def _build_router_chain(gemini_available: bool, logger) -> Optional[object]:
     """Build a Gemini-based query classifier (user_specific vs general).
 
@@ -97,6 +103,9 @@ Question: {question}"""
         return None
 
 
+# Instantiates a mock user financial profile with transactions and goals.
+# Supplies sample incomes, expenses, debts, and risk tolerance attributes.
+# Returns a populated UserProfile dataclass instance for demo execution.
 def create_sample_user_profile() -> UserProfile:
     goals = [
         FinancialGoal(name="Emergency Fund", target=15000, timeline_months=12, priority=1),
@@ -132,6 +141,9 @@ def create_sample_user_profile() -> UserProfile:
     )
 
 
+# Serves as the interactive CLI application entry point and REPL loop.
+# Initializes multi-agent workflows, parses terminal inputs, and prints plans.
+# Dispatches prompts to LangGraph workflows and formats agent output responses.
 def main():
     logger = setup_logging()
     gemini_available = _validate_provider_config()
@@ -208,5 +220,8 @@ def main():
         logger.error(f"Initialization error: {exc}")
 
 
+# Executes the command-line interface when invoked directly as a script.
+# Initiates logging, environment configurations, and the main interaction loop.
+# Serves as the primary local terminal entry point for the AI Core engine.
 if __name__ == "__main__":
     main()

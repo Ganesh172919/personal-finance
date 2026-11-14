@@ -43,6 +43,9 @@ import { createFinancialStoryShare } from "@/lib/apiClient";
 import { apiClient } from "@/lib/api/core";
 
 // Helper to get the correct icon for milestones
+// Maps milestone category tags to corresponding Lucide icons for visual identity.
+// Provides visual distinction for budgeting, debt, investing, and education achievements.
+// Falls back to a standard star icon when no specialized icon is defined.
 const milestoneIcons: { [key: string]: typeof Star } = {
   master: Star,
   budget_planner: BarChart3,
@@ -54,6 +57,9 @@ const milestoneIcons: { [key: string]: typeof Star } = {
 };
 
 // Helper to format dates
+// Formats historical milestone timestamps into relative time descriptions.
+// Returns human-friendly text like Today, days ago, months ago, or years ago.
+// Computes elapsed duration relative to current client timestamp.
 const formatMilestoneDate = (dateString: string | Date) => {
   const date = new Date(dateString);
   const now = new Date();
@@ -66,6 +72,9 @@ const formatMilestoneDate = (dateString: string | Date) => {
   return `${Math.floor(diffDays / 365)} years ago`;
 };
 
+// Renders the user's interactive financial story and transformation timeline.
+// Highlights financial vitals, active savings goals, and achieved milestones.
+// Supports sharing milestones externally via cryptographically secured share links.
 export default function FinancialStory() {
   const { user } = useAuth();
   const userId = user?.id || localStorage.getItem("userId");
@@ -124,14 +133,14 @@ export default function FinancialStory() {
 
   const { totalTarget, totalCurrent } = goals.reduce(
     (acc, goal) => {
-      acc.totalTarget += goal.target;
-      acc.totalCurrent += goal.current;
+      acc.totalTarget += Number(goal.target) || 0;
+      acc.totalCurrent += Number(goal.current) || 0;
       return acc;
     },
     { totalTarget: 0, totalCurrent: 0 }
   );
 
-  const healthPercentage = totalTarget > 0 ? Math.round((totalCurrent / totalTarget) * 100) : 0;
+  const healthPercentage = totalTarget > 0 ? Math.min(100, Math.round((totalCurrent / totalTarget) * 100)) : 0;
   const totalAssets = (profile?.savings || 0) + totalCurrent;
   
   const formatCurrency = (value: number) => formatMoney(value, { maximumFractionDigits: 0 });
@@ -199,11 +208,13 @@ export default function FinancialStory() {
         {/* Goal Details -  Dynamic */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           {goals.map((goal: IFinancialGoal, index: number) => {
-            const progress = (goal.current / goal.target) * 100;
-            const daysToDeadline = Math.ceil(
-              (new Date(goal.deadline).getTime() - new Date().getTime()) /
-                (1000 * 60 * 60 * 24)
-            );
+            const goalTarget = Number(goal.target) || 0;
+            const goalCurrent = Number(goal.current) || 0;
+            const isAchieved = goalTarget > 0 && goalCurrent >= goalTarget;
+            const progress = goalTarget > 0 ? Math.min(100, (goalCurrent / goalTarget) * 100) : 0;
+            const msToDeadline = new Date(goal.deadline).getTime() - Date.now();
+            // Same month length as the Goals & Debts pacing math (365.25 / 12 days).
+            const monthsToDeadline = Math.ceil(msToDeadline / (1000 * 60 * 60 * 24 * 30.4375));
 
             return (
               <motion.div
@@ -220,8 +231,10 @@ export default function FinancialStory() {
                     <h4 className="font-semibold text-foreground">{goal.name}</h4>
                     <div className="text-xs text-muted-foreground flex items-center">
                       <Clock className="w-3 h-3 mr-1" />
-                      {daysToDeadline > 0
-                        ? `${Math.ceil(daysToDeadline / 30)} months left`
+                      {isAchieved
+                        ? "Achieved"
+                        : monthsToDeadline > 0
+                        ? `${monthsToDeadline} ${monthsToDeadline === 1 ? "month" : "months"} left`
                         : "Overdue"}
                     </div>
                   </div>
@@ -240,7 +253,9 @@ export default function FinancialStory() {
                   <div className="space-y-2">
                     <div className="text-sm font-medium text-foreground">Story Update:</div>
                     <div className="text-sm text-muted-foreground">
-                      {progress > 80
+                      {isAchieved
+                        ? "Goal reached! Consider redirecting contributions to your next goal."
+                        : progress > 80
                         ? "You're almost there! Keep up the great work."
                         : progress > 50
                         ? "Great progress! You're more than halfway to your goal."

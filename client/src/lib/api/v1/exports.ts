@@ -39,6 +39,9 @@ import type {
 
 export type { ExportJob, ExportJobStatus, ExportJobType, ListExportsResponse };
 
+// Retrieves all asynchronous data export jobs filtered by processing status.
+// Formulates query parameters for execution status and maximum record limits.
+// Dispatches an authenticated GET request returning past and pending export jobs.
 /** List export jobs, optionally filtered by status and limited in count. */
 export async function listExports(query?: { status?: ExportJobStatus; limit?: number }): Promise<ListExportsResponse> {
   const params = new URLSearchParams();
@@ -49,6 +52,9 @@ export async function listExports(query?: { status?: ExportJobStatus; limit?: nu
   return apiClient(endpoint);
 }
 
+// Initiates an asynchronous server-side data export job for requested financial domains.
+// Serializes export parameters including formats, date ranges, and categories.
+// Dispatches an authenticated POST request queuing the background generation task.
 /** Create a new export job (processed asynchronously on the server). */
 export async function createExport(body: CreateExportRequest): Promise<CreateExportResponse> {
   return apiClient("/exports", {
@@ -57,11 +63,17 @@ export async function createExport(body: CreateExportRequest): Promise<CreateExp
   });
 }
 
+// Fetches the current processing status and download metadata for an export job.
+// Inspects progression states from pending through completed or failed.
+// Dispatches an authenticated GET request addressing the specific export identifier.
 /** Fetch the status and metadata of a single export job. */
 export async function getExportById(id: string): Promise<GetExportResponse> {
   return apiClient(`/exports/${id}`);
 }
 
+// Extracts the encoded attachment filename from a response Content-Disposition header.
+// Supports standard quoted strings and RFC-5987 UTF-8 percent-encoded filename variants.
+// Returns the decoded string or null if no valid filename attribute is present.
 /**
  * Parse a filename from the Content-Disposition header.
  * Handles both `filename="foo.csv"` and `filename*=UTF-8''foo%20bar.csv` forms.
@@ -78,6 +90,9 @@ const parseFilenameFromContentDisposition = (value: string | null) => {
   }
 };
 
+// Downloads the completed binary export file as an in-memory Blob object.
+// Attaches active organization authentication headers while bypassing default JSON parsing.
+// Extracts content types and attachment filenames directly from response headers.
 /**
  * Download the export file as a Blob.
  * Uses raw `fetch` instead of `apiClient` because the response is binary
@@ -111,6 +126,9 @@ export async function downloadExportFile(id: string): Promise<{ blob: Blob; file
   };
 }
 
+// Triggers native browser file download handling for an in-memory binary Blob.
+// Creates a temporary anchor element pointing to an ephemeral object URL.
+// Revokes the allocated object URL immediately following anchor dispatch.
 /**
  * Trigger a browser download dialog for a Blob.
  * Creates a temporary object URL and hidden <a> element, clicks it,
@@ -131,11 +149,17 @@ export const triggerBrowserDownload = (params: { blob: Blob; filename: string })
   }
 };
 
+// Defines supported external delivery targets for automated recurring export jobs.
+// Supports direct email dispatch, external webhook streaming, and cloud bucket uploads.
+// Guides outbound transport adapter configuration during scheduled report dispatch.
 export type ScheduledExportDestination = "email" | "webhook" | "cloud_storage";
 
+// Encapsulates configuration parameters for remote automated export destinations.
+// Defines webhook endpoints, cloud storage bucket names, regions, and custom filenames.
+// Secures transport parameters for external delivery to Amazon S3 or Google Cloud Storage.
 export interface ScheduledExportDestinationConfig {
   webhook_url?: string;
-  auth_header?: string;
+  has_auth_header?: boolean;
   cloud_provider?: "s3" | "gcs";
   bucket_name?: string;
   bucket_region?: string;
@@ -143,6 +167,9 @@ export interface ScheduledExportDestinationConfig {
   custom_filename?: string;
 }
 
+// Represents a persistent scheduled export rule with automated cadence configuration.
+// Tracks execution frequency, target destinations, delivery audit logs, and error states.
+// Drives scheduled export administration and recurring report management dashboards.
 export interface ScheduledExport {
   id: string;
   name: string;
@@ -151,7 +178,7 @@ export interface ScheduledExport {
   destination?: ScheduledExportDestination;
   destination_config?: ScheduledExportDestinationConfig;
   delivery_email?: string;
-  status: "active" | "paused";
+  status: "active" | "paused" | "running";
   params: Record<string, unknown>;
   last_run_at: string | null;
   next_run_at: string | null;
@@ -162,11 +189,17 @@ export interface ScheduledExport {
   updated_at?: string | null;
 }
 
+// Encapsulates the response payload containing active scheduled export rules.
+// Delivers scheduled export collections alongside tracking request identifiers.
+// Powers administration tables displaying automated recurring export jobs.
 export interface ListScheduledExportsResponse {
   schedules: ScheduledExport[];
   request_id?: string;
 }
 
+// Defines parameters required to establish a new recurring data export schedule.
+// Encapsulates export format types, frequency cadences, and destination parameters.
+// Submits automation specifications to register recurring data extraction jobs.
 export interface CreateScheduledExportRequest {
   name: string;
   type: "transactions_csv" | "monthly_summary_pdf";
@@ -177,6 +210,9 @@ export interface CreateScheduledExportRequest {
   params?: Record<string, unknown>;
 }
 
+// Defines mutable attributes for modifying an existing scheduled export configuration.
+// Allows partial updates for delivery destinations, cadence frequencies, or pause states.
+// Validates modified schedule parameters prior to persisting rule updates.
 export interface UpdateScheduledExportRequest {
   name?: string;
   frequency?: "weekly" | "monthly";
@@ -187,10 +223,16 @@ export interface UpdateScheduledExportRequest {
   params?: Record<string, unknown>;
 }
 
+// Queries all recurring scheduled export jobs configured for the active organization.
+// Dispatches an authenticated GET request loading active and paused export schedules.
+// Powers overview tables displaying recurring report automation rules.
 export async function listScheduledExports(): Promise<ListScheduledExportsResponse> {
   return apiClient("/exports/schedules");
 }
 
+// Registers a new automated recurring export rule for transactions or monthly summaries.
+// Dispatches an authenticated POST request with scheduling and delivery criteria.
+// Returns the newly provisioned scheduled export entity with calculated run times.
 export async function createScheduledExport(
   body: CreateScheduledExportRequest,
 ): Promise<{ schedule: ScheduledExport; request_id?: string }> {
@@ -200,6 +242,9 @@ export async function createScheduledExport(
   });
 }
 
+// Modifies parameters or toggles active status on an existing export schedule by ID.
+// Dispatches an authenticated PATCH request transmitting updated destination or timing rules.
+// Returns the updated schedule definition to sync client automation state.
 export async function updateScheduledExport(
   id: string,
   body: UpdateScheduledExportRequest,
@@ -210,6 +255,9 @@ export async function updateScheduledExport(
   });
 }
 
+// Permanently removes a scheduled recurring export rule identified by its ID.
+// Dispatches an authenticated DELETE request unlinking the automated schedule.
+// Cancels future automated report generation and cleans up recurring timers.
 export async function deleteScheduledExport(
   id: string,
 ): Promise<{ success: boolean; deleted_id: string; request_id?: string }> {
@@ -218,6 +266,9 @@ export async function deleteScheduledExport(
   });
 }
 
+// Triggers an immediate ad-hoc execution run of a configured export schedule.
+// Dispatches an authenticated POST request initiating export compilation and delivery.
+// Returns delivery confirmation metrics, generated file checksums, and job references.
 export async function triggerScheduledExportNow(id: string): Promise<{
   result: {
     success: boolean;

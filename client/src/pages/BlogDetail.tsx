@@ -38,6 +38,9 @@ import { ReadingProgressBar } from "@/components/ReadingProgressBar";
 import { LazyImage } from "@/components/LazyImage";
 import { resolveAuthorAvatar, resolveBlogCoverImage } from "@/lib/media";
 
+// Color styling map assigning distinct chart theme badges to blog categories.
+// Associates investing, budgeting, taxes, debts, and retirement with palette tokens.
+// Powers visual category pill tags on blog detail and summary cards.
 const CATEGORY_COLORS: Record<string, string> = {
   'investing': 'bg-chart-1 text-chart-1-foreground',
   'budgeting': 'bg-chart-2 text-chart-2-foreground',
@@ -46,10 +49,16 @@ const CATEGORY_COLORS: Record<string, string> = {
   'retirement': 'bg-chart-5 text-chart-5-foreground',
 };
 
+// Formats a hyphenated category slug into capitalized human-readable text.
+// Splits slug segments and transforms them into title-cased words.
+// Generates clear category headers for blog article navigation.
 const getCategoryLabel = (cat: string) => {
     return cat.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
+// Blog article detail page rendering full markdown content with GFM formatting.
+// Features reading progress indicator, like count mutation, and link sharing.
+// Resolves responsive cover images and links to related financial articles.
 export default function BlogDetail() {
   const [, params] = useRoute("/blogs/:slug");
   const slug = params?.slug;

@@ -199,6 +199,39 @@ describe("FinanceOS", () => {
       );
     });
   });
+  it("refetches envelopes after an upsert so remaining reflects the new allocation", async () => {
+    api.upsertBudgetAllocation.mockResolvedValue({ allocation: { id: "alloc-2", category: "Groceries", amount: 120.5 } });
+    api.getBudgetEnvelopes
+      .mockResolvedValueOnce({
+        envelopes: [{ category: "Groceries", planned: 0, spent: 99.99, remaining: -99.99, unbudgeted: true }],
+        totals: { planned: 0, spent: 99.99, remaining: -99.99, unbudgeted_spent: 99.99 },
+      })
+      .mockResolvedValue({
+        envelopes: [{ category: "Groceries", planned: 120.5, spent: 99.99, remaining: 20.51, unbudgeted: false }],
+        totals: { planned: 120.5, spent: 99.99, remaining: 20.51, unbudgeted_spent: 0 },
+      });
+
+    renderPage("?tab=budgets");
+    expect(await screen.findByTestId("text-budget-remaining")).toHaveTextContent("-99.99");
+
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "Groceries" } });
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "120.50" } });
+    fireEvent.click(screen.getByRole("button", { name: "Upsert allocation" }));
+
+    await waitFor(() => expect(screen.getByTestId("text-budget-remaining")).toHaveTextContent("20.51"));
+  });
+
+  it("rejects an empty budget amount instead of saving a zero allocation", async () => {
+    renderPage("?tab=budgets");
+    await screen.findByRole("cell", { name: "Housing" });
+
+    fireEvent.change(screen.getByLabelText("Category"), { target: { value: "Travel" } });
+    fireEvent.click(screen.getByRole("button", { name: "Upsert allocation" }));
+
+    expect(api.upsertBudgetAllocation).not.toHaveBeenCalled();
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Invalid amount" }));
+  });
+
   it("steps monthly budget periods using previous and next month buttons", async () => {
     renderPage("?tab=budgets");
 
@@ -254,7 +287,8 @@ describe("FinanceOS", () => {
       );
       expect(api.upsertBudgetAllocation).toHaveBeenCalledWith(
         "2026-10",
-        expect.objectContaining({ category: "Utilities", amount: 158 })
+        // 150 * 1.05 = 157.50 — cents are preserved instead of rounding to whole units.
+        expect.objectContaining({ category: "Utilities", amount: 157.5 })
       );
     });
 
@@ -267,6 +301,8 @@ describe("FinanceOS", () => {
 
   it("opens Smart Budget Recommendations dialog and applies calculated spending caps", async () => {
     api.getForecast.mockResolvedValue({
+      currency: "USD",
+      baseline: { days_covered: 90, transaction_count: 12 },
       top_categories: [
         { category: "Groceries", expense_monthly_avg: 400 },
         { category: "Dining", expense_monthly_avg: 250 },
@@ -301,6 +337,53 @@ describe("FinanceOS", () => {
     );
   });
 
+  it("does not invent caps from defaults or current-period envelopes when history is empty", async () => {
+    api.getForecast.mockResolvedValue({ currency: "USD", baseline: { days_covered: 90, transaction_count: 0 }, top_categories: [] });
+    api.getBudgetEnvelopes.mockResolvedValue({ totals: { planned: 1500, spent: 1500, remaining: 0, unbudgeted_spent: 0 }, envelopes: [{ category: "Housing", planned: 1500, spent: 1500, remaining: 0, currency: "USD", tx_count: 1, unbudgeted: false }] });
+    renderPage("?tab=budgets");
+    fireEvent.click(await screen.findByTestId("auto-budget-suggest-btn"));
+    const dialog = await screen.findByTestId("dialog-smart-budget-suggestions");
+    expect(await within(dialog).findByTestId("smart-budget-no-history")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(within(dialog).getByTestId("confirm-apply-smart-suggestions-btn")).toBeDisabled();
+    expect(api.upsertBudgetAllocation).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Set a budget manually" }));
+    await waitFor(() => expect(screen.queryByTestId("dialog-smart-budget-suggestions")).not.toBeInTheDocument());
+  });
+
+  it("blocks recommendations on history failure and supports retry without fictional fallbacks", async () => {
+    api.getForecast.mockRejectedValue(new Error("History unavailable"));
+    renderPage("?tab=budgets");
+    fireEvent.click(await screen.findByTestId("auto-budget-suggest-btn"));
+    const dialog = await screen.findByTestId("dialog-smart-budget-suggestions");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Could not load your spending history");
+    expect(within(dialog).getByTestId("confirm-apply-smart-suggestions-btn")).toBeDisabled();
+    api.getForecast.mockResolvedValue({ currency: "USD", baseline: { days_covered: 90, transaction_count: 0 }, top_categories: [] });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry spending history" }));
+    expect(await within(dialog).findByTestId("smart-budget-no-history")).toBeInTheDocument();
+    expect(api.upsertBudgetAllocation).not.toHaveBeenCalled();
+  });
+
+  it("preserves cents, native history currency and deselection when the buffer changes", async () => {
+    api.getForecast.mockResolvedValue({ currency: "EUR", baseline: { days_covered: 90, transaction_count: 12 }, top_categories: [
+      { category: "Groceries", expense_monthly_avg: 123.45 },
+      { category: "Dining", expense_monthly_avg: 50 },
+    ] });
+    api.upsertBudgetAllocation.mockResolvedValue({ allocation: { id: "real-history" } });
+    renderPage("?tab=budgets");
+    fireEvent.click(await screen.findByTestId("auto-budget-suggest-btn"));
+    const dialog = await screen.findByTestId("dialog-smart-budget-suggestions");
+    const dining = await within(dialog).findByRole("checkbox", { name: "Apply Dining cap" });
+    fireEvent.click(dining);
+    fireEvent.click(within(dialog).getByRole("button", { name: "+5% Buffer" }));
+    expect(dining).toHaveAttribute("aria-checked", "false");
+    expect(within(dialog).getByText("129.62 EUR")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByTestId("confirm-apply-smart-suggestions-btn"));
+    await waitFor(() => expect(api.upsertBudgetAllocation).toHaveBeenCalledWith(expect.any(String), { category: "Groceries", amount: 129.62, currency: "EUR" }));
+    expect(api.upsertBudgetAllocation).toHaveBeenCalledTimes(1);
+    expect(api.getForecast).toHaveBeenCalledWith(expect.not.objectContaining({ currency: expect.any(String) }));
+  });
+
   it("renders live envelope spend, remaining balance, and burn indicators", async () => {
     api.getBudgetEnvelopes.mockResolvedValue({
       totals: { planned: 1950, spent: 1600, remaining: 350, unbudgeted_spent: 0 },
@@ -317,5 +400,79 @@ describe("FinanceOS", () => {
     expect(screen.getByText("-100.00 over")).toBeInTheDocument();
     expect(screen.getByText("OVER")).toBeInTheDocument();
     expect(screen.getByText("150.00 left")).toBeInTheDocument();
+  });
+  it("switches multi-currency reporting to EUR and JPY with active FX rate badges and localized allocations", async () => {
+    api.getBudgetEnvelopes.mockImplementation((_period, curr) => {
+      if (curr === "EUR") {
+        return Promise.resolve({
+          currency: "EUR",
+          fx_rate: 0.92,
+          currency_symbol: "€",
+          totals: { planned: 1794, spent: 1472, remaining: 322, unbudgeted_spent: 0 },
+          envelopes: [
+            { category: "Housing", planned: 1380, spent: 1472, remaining: -92, currency: "EUR", tx_count: 1, unbudgeted: false },
+            { category: "Groceries", planned: 414, spent: 276, remaining: 138, currency: "EUR", tx_count: 3, unbudgeted: false },
+          ],
+        });
+      }
+      return Promise.resolve({
+        currency: "USD",
+        totals: { planned: 1950, spent: 1600, remaining: 350, unbudgeted_spent: 0 },
+        envelopes: [
+          { category: "Housing", planned: 1500, spent: 1600, remaining: -100, currency: "USD", tx_count: 1, unbudgeted: false },
+          { category: "Groceries", planned: 450, spent: 300, remaining: 150, currency: "USD", tx_count: 3, unbudgeted: false },
+        ],
+      });
+    });
+
+    api.listBudgetAllocations.mockImplementation((_period, params) => {
+      if (params?.currency === "EUR") {
+        return Promise.resolve({
+          currency: "EUR",
+          fx_rate: 0.92,
+          currency_symbol: "€",
+          allocations: [
+            { id: "alloc-1", period_key: "2026-10", category: "Housing", amount: 1380, currency: "EUR" },
+            { id: "alloc-2", period_key: "2026-10", category: "Groceries", amount: 414, currency: "EUR" },
+          ],
+        });
+      }
+      return Promise.resolve({ allocations: mockAllocations });
+    });
+
+    renderPage("?tab=budgets");
+
+    // 1. Initial USD state
+    expect(await screen.findByTestId("card-envelope-currency-normalization")).toBeInTheDocument();
+    expect(screen.getByTestId("badge-budget-reporting-currency")).toHaveTextContent("Reporting: USD ($)");
+
+    // 2. Click EUR button
+    const eurBtn = screen.getByTestId("btn-budget-currency-EUR");
+    fireEvent.click(eurBtn);
+
+    // 3. Verify reporting currency badge and FX rate badge
+    await waitFor(() => {
+      expect(screen.getByTestId("badge-budget-reporting-currency")).toHaveTextContent("Reporting: EUR (€)");
+      expect(screen.getByTestId("badge-envelope-fx-rate")).toHaveTextContent("1 USD = 0.92 EUR");
+    });
+
+    // 4. Verify API called with EUR
+    await waitFor(() => {
+      expect(api.listBudgetAllocations).toHaveBeenCalledWith(expect.any(String), { limit: 300, currency: "EUR" });
+      expect(api.getBudgetEnvelopes).toHaveBeenCalledWith(expect.any(String), "EUR");
+    });
+
+    // 5. Verify localized spend and remaining
+    expect(await screen.findByTestId("text-budget-spent")).toHaveTextContent("1472.00 EUR");
+    expect(screen.getByTestId("text-budget-remaining")).toHaveTextContent("322.00 EUR");
+
+    // 6. Test select-budget-currency dropdown for JPY
+    const currencySelect = screen.getByTestId("select-budget-currency");
+    fireEvent.change(currencySelect, { target: { value: "JPY" } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("badge-budget-reporting-currency")).toHaveTextContent("Reporting: JPY (¥)");
+      expect(screen.getByTestId("badge-envelope-fx-rate")).toHaveTextContent("1 USD = 155 JPY");
+    });
   });
 });

@@ -24,9 +24,8 @@
 
 import type { RequestHandler } from "express";
 
-/**
- * Configuration options for the security headers middleware.
- */
+// Configuration options parameter interface customizing HTTP defense-in-depth security headers.
+// Controls HTTP Strict Transport Security duration, CSP directives, and frame ancestor rules.
 export interface SecurityHeadersOptions {
   /** Enable HSTS header (set true for production behind HTTPS) */
   hsts?: boolean;
@@ -38,15 +37,8 @@ export interface SecurityHeadersOptions {
   frameAncestors?: string;
 }
 
-/**
- * Creates a middleware that sets security-related HTTP headers.
- *
- * This is a factory function that returns a middleware configured with
- * the provided options. This pattern allows per-environment configuration.
- *
- * @param options - Security header configuration
- * @returns Express middleware function
- */
+// Factory generating Express middleware that applies defensive HTTP security headers to all responses.
+// Sets Content-Security-Policy, anti-clickjacking headers, MIME sniff guards, and cache controls.
 export function securityHeaders(options: SecurityHeadersOptions = {}): RequestHandler {
   const {
     hsts = false,                    // HSTS disabled by default (only for HTTPS)

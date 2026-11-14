@@ -145,7 +145,9 @@ File structure
 - ``if __name__ == "__main__"`` runner
 """
 
+import asyncio
 import hashlib
+import hmac
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -155,7 +157,7 @@ from uuid import uuid4
 
 import pandas as pd  # Used by _simplify_for_json to handle Series/DataFrame objects
 import uvicorn
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Body, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -176,8 +178,11 @@ from utils import (
     setup_logging,
 )
 from utils.agent_helpers import get_currency_code
+from utils.concurrency import get_work_gate, offload
 from utils.finwise_server import FinWiseServerHttpError, simulate_tool_call
+from utils.llm_cache import get_llm_cache, set_cache_scope
 from utils.prometheus_metrics import FALLBACK_TOTAL, LLM_CALLS_TOTAL, REQUEST_DURATION_MS
+from utils.request_ids import parse_traceparent, sanitize_request_id
 from vision.engine import get_vision_dependency_status, ocr_image_to_lines
 from vision.errors import VisionDependencyError
 from vision.handwriting_parser import extract_handwriting
@@ -207,11 +212,15 @@ logger = setup_logging()
 # the entire memory subsystem is silently disabled.
 _memory_store = None
 _extract_memories = None
+_reciprocal_rank_fusion = None
 try:
-    from memory import MemoryStore
+    from memory import MemoryStore, reciprocal_rank_fusion
     from memory import extract_memories as _extract_memories
 
-    _memory_store = MemoryStore(db_path=settings.MEMORY_DB_PATH)
+    _reciprocal_rank_fusion = reciprocal_rank_fusion
+    # Backend (mongo | sqlite | memory) comes from AI_CORE_STATE_BACKEND; the
+    # SQLite file path (settings.MEMORY_DB_PATH) is only used for the sqlite backend.
+    _memory_store = MemoryStore()
 except Exception as _mem_exc:
     try:
         logger.warning("AI Core memory store disabled (%s)", str(_mem_exc)[:200])
@@ -219,8 +228,12 @@ except Exception as _mem_exc:
         pass
     _memory_store = None
     _extract_memories = None
+    _reciprocal_rank_fusion = None
 
 
+# Generates a deterministic truncated SHA-256 identifier from an action seed.
+# Enables idempotent tool call execution across repeated client invocations.
+# Returns a compact twelve-character hexadecimal digest string.
 def _tool_id(seed: str) -> str:
     """Generate a deterministic, short tool-call identifier from a human-readable seed.
 
@@ -232,6 +245,9 @@ def _tool_id(seed: str) -> str:
     return digest[:12]
 
 
+# Constructs deterministic low-risk automation tool recommendations from metrics.
+# Synthesizes review habits, emergency buffers, debt alerts, and budget checks.
+# Returns a bounded list of tool calls requiring user confirmation before execution.
 def _build_default_tool_calls(plan: Plan, user_profile: Dict[str, Any]) -> List[ToolCall]:
     """
     Build deterministic, low-risk tool calls to improve retention and execution.
@@ -456,16 +472,38 @@ except ValueError as e:
 # FastAPI's ``lifespan`` context-manager replaces the deprecated
 # ``@app.on_event("startup")`` pattern.  The code before ``yield`` runs once
 # at startup; the code after ``yield`` runs once at shutdown.
+_DRAINING = False
+
+
+# Manages FastAPI application startup and graceful shutdown lifecycles.
+# Instantiates singleton financial workflows and sets up state backend indexes.
+# Drains in-flight requests before terminating processes to prevent dropped jobs.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global workflow
+    global workflow, _DRAINING
     logger.info("Initializing FinWise AI Core...")
+    _DRAINING = False
     # Create the LangGraph multi-agent workflow (expensive: instantiates all
-    # specialist agents and compiles the state graph).
-    workflow = create_financial_workflow()
+    # specialist agents and compiles the state graph).  Built in a worker
+    # thread so startup does not block the event loop.
+    workflow = await offload(create_financial_workflow)
+    # Idempotent state-backend index creation (TTL + tenant-scoped indexes); fails soft.
+    try:
+        from memory.state_store import init_state_backend
+
+        await offload(init_state_backend)
+    except Exception as exc:
+        logger.warning("state_backend_init_skipped: %s", str(exc)[:200])
     logger.info("AI Core ready!")
     yield
-    logger.info("Shutting down FinWise AI Core...")
+    # Flip /ready to 503 first so load balancers stop sending new work, then
+    # give in-flight requests a bounded window to finish.
+    _DRAINING = True
+    logger.info("Shutting down FinWise AI Core (draining %d in-flight)...", get_work_gate().inflight)
+    drain_deadline = perf_counter() + float(os.getenv("AI_CORE_DRAIN_SECONDS", "60"))
+    gate = get_work_gate()
+    while gate.inflight > 0 and perf_counter() < drain_deadline:
+        await asyncio.sleep(0.25)
 
 
 # --- FastAPI application ---
@@ -488,15 +526,97 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from api.learning_routes import router as learning_router  # noqa: E402
+
+app.include_router(learning_router)
+
 
 # --- Internal auth middleware ---
 # Protects API endpoints from direct access.  The Node.js backend must send
 # ``X-Internal-Token`` matching ``AI_CORE_INTERNAL_TOKEN``.  Health and
 # metrics endpoints are excluded so external probes still work.
 _INTERNAL_TOKEN = (os.getenv("AI_CORE_INTERNAL_TOKEN") or "").strip()
-_PUBLIC_PATHS = {"/health", "/healthz", "/metrics", "/docs", "/openapi.json"}
+_PUBLIC_PATHS = {"/health", "/healthz", "/ready", "/readyz", "/metrics", "/docs", "/openapi.json"}
+
+if os.getenv("NODE_ENV", "").lower() == "production" and not _INTERNAL_TOKEN:
+    raise RuntimeError("AI_CORE_INTERNAL_TOKEN is required when NODE_ENV=production")
 
 
+# Extracts and validates mandatory organizational and user actor headers.
+# Verifies tenant identities from gateway proxy headers for session management.
+# Raises an HTTP 403 Forbidden exception if identity context is missing.
+def _require_session_actor(request: Request) -> tuple[str, str]:
+    """Return the authenticated Node-side actor for an AI session request.
+
+    Session IDs are opaque but must never be treated as authorization.  The
+    gateway supplies this context only after resolving the caller's org
+    membership; every session read or resume below verifies it again.
+    """
+    org_id = (request.headers.get("x-internal-org-id") or "").strip()
+    user_id = (request.headers.get("x-internal-user-id") or "").strip()
+    if not org_id or not user_id:
+        raise HTTPException(status_code=403, detail="AI session actor context is required")
+    return org_id, user_id
+
+
+# Evaluates environment settings to determine if tenant actor headers are mandatory.
+# Inspects AI_CORE_REQUIRE_ACTOR_HEADERS configuration flag for strict enforcement.
+# Returns a boolean indicating whether gateway actor headers must be present.
+def _actor_headers_required() -> bool:
+    """Whether routes must carry the gateway-supplied actor headers.
+
+    Evaluated per call so it can be toggled via ``AI_CORE_REQUIRE_ACTOR_HEADERS``
+    (``1``/``true``) once every gateway caller sends ``X-Internal-Org-Id`` and
+    ``X-Internal-User-Id``.
+    """
+    return (os.getenv("AI_CORE_REQUIRE_ACTOR_HEADERS") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+# Resolves authenticated tenant context by comparing header claims against inputs.
+# Enforces strict isolation by rejecting mismatches between headers and payloads.
+# Returns verified organization and user identifier tuples for data isolation.
+def _resolve_actor(
+    request: Request,
+    claimed_org_id: Optional[str] = None,
+    claimed_user_id: Optional[str] = None,
+    *,
+    require_headers: Optional[bool] = None,
+) -> tuple[str, str]:
+    """Resolve the tenant actor for a request, never trusting body/query ids alone.
+
+    * If the gateway actor headers are present they are authoritative, and any
+      org/user id supplied in the body or query must match them (else 403).
+    * If they are absent: reject with 403 when headers are required (strict
+      mode); otherwise fall back to the claimed ids for backward compatibility.
+    """
+    header_org = (request.headers.get("x-internal-org-id") or "").strip()
+    header_user = (request.headers.get("x-internal-user-id") or "").strip()
+    claimed_org = (claimed_org_id or "").strip()
+    claimed_user = (claimed_user_id or "").strip()
+
+    if header_org and header_user:
+        if (claimed_org and claimed_org != header_org) or (claimed_user and claimed_user != header_user):
+            logger.warning(
+                "tenant_mismatch",
+                extra={
+                    "event": "tenant_mismatch",
+                    "path": request.url.path,
+                    "header_org_id": header_org,
+                    "claimed_org_id": claimed_org,
+                },
+            )
+            raise HTTPException(status_code=403, detail="Actor does not match the supplied org/user")
+        return header_org, header_user
+
+    strict = _actor_headers_required() if require_headers is None else require_headers
+    if strict:
+        raise HTTPException(status_code=403, detail="AI actor context is required")
+    return claimed_org, claimed_user
+
+
+# Intercepts incoming requests to validate internal service authentication tokens.
+# Compares X-Internal-Token against configured application secrets using HMAC.
+# Permits unauthenticated access solely to designated public health endpoints.
 @app.middleware("http")
 async def verify_internal_token(request: Request, call_next):
     """Reject requests to protected endpoints without a valid internal token.
@@ -506,7 +626,7 @@ async def verify_internal_token(request: Request, call_next):
     """
     if _INTERNAL_TOKEN and request.url.path not in _PUBLIC_PATHS:
         token = (request.headers.get("x-internal-token") or "").strip()
-        if token != _INTERNAL_TOKEN:
+        if not hmac.compare_digest(token, _INTERNAL_TOKEN):
             logger.warning(
                 "auth_failure",
                 extra={
@@ -523,62 +643,15 @@ async def verify_internal_token(request: Request, call_next):
     return await call_next(request)
 
 
-# --- Per-user rate limiting ---
-# Limits each user to 30 requests per minute on AI endpoints.
-# The Node.js backend passes X-User-Id for authenticated requests.
-_user_rate_limits: Dict[str, list] = {}
-_USER_RPM = 30
-_USER_WINDOW = 60  # seconds
+# NOTE: The former in-process per-user limiter was removed. It keyed off an
+# ``X-User-Id`` header the gateway never sent (so it never fired), and a
+# per-process counter is meaningless once AI Core runs several workers or
+# replicas. Per-user limits are enforced at the gateway (Redis-backed).
 
 
-def _check_user_rate_limit(user_id: str) -> bool:
-    """Return True if the user is within rate limits, False if throttled."""
-    import time
-    now = time.time()
-    cutoff = now - _USER_WINDOW
-
-    # Clean old entries
-    timestamps = _user_rate_limits.get(user_id, [])
-    timestamps = [t for t in timestamps if t > cutoff]
-
-    if len(timestamps) >= _USER_RPM:
-        _user_rate_limits[user_id] = timestamps
-        return False
-
-    timestamps.append(now)
-    _user_rate_limits[user_id] = timestamps
-    return True
-
-
-@app.middleware("http")
-async def per_user_rate_limit(request: Request, call_next):
-    """Per-user rate limiting on AI processing endpoints.
-
-    Uses X-User-Id header from the Node.js backend.  Health, metrics,
-    and non-API paths are exempt.
-    """
-    path = request.url.path
-    if path in _PUBLIC_PATHS or not path.startswith("/api/"):
-        return await call_next(request)
-
-    user_id = (request.headers.get("x-user-id") or "").strip()
-    if user_id and not _check_user_rate_limit(user_id):
-        logger.warning(
-            "rate_limit_hit",
-            extra={
-                "event": "rate_limit_hit",
-                "method": request.method,
-                "path": request.url.path,
-                "user_id": user_id,
-            },
-        )
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Rate limit exceeded. Try again shortly."},
-        )
-    return await call_next(request)
-
-
+# Serves Prometheus metric telemetry scrapes to authorized monitoring clients.
+# Enforces bearer token authentication against the AI_CORE_METRICS_TOKEN secret.
+# Returns formatted Prometheus counters, gauges, and histograms.
 @app.get("/metrics")
 async def metrics(authorization: Optional[str] = Header(default=None)):
     """Prometheus scrape endpoint.
@@ -598,6 +671,9 @@ async def metrics(authorization: Optional[str] = Header(default=None)):
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
+# Injects distributed request tracking identifiers and records telemetry metrics.
+# Initializes thread-local request metrics and updates Prometheus histograms.
+# Measures execution latency and tracks cumulative language model token usages.
 @app.middleware("http")
 async def attach_request_id(request: Request, call_next):
     """Request-id middleware with Prometheus metric recording.
@@ -612,14 +688,29 @@ async def attach_request_id(request: Request, call_next):
     5. Emits structured ``request_started`` / ``request_completed`` log
        events for observability.
     """
-    request_id = request.headers.get("x-request-id") or str(uuid4())
+    # Validate the inbound id: malformed values are replaced (never echoed).
+    request_id, id_replaced = sanitize_request_id(request.headers.get("x-request-id"))
     request.state.request_id = request_id
+    trace_ctx = parse_traceparent(request.headers.get("traceparent"))
+    trace_id = trace_ctx[0] if trace_ctx else None
+    request.state.trace_id = trace_id
     begin_request_metrics(request_id)
 
     started_at = perf_counter()
+    if id_replaced:
+        logger.warning(
+            "request_id_rejected",
+            extra={"event": "request_id_rejected", "request_id": request_id, "path": request.url.path},
+        )
     logger.info(
         "request_started",
-        extra={"event": "request_started", "method": request.method, "path": request.url.path},
+        extra={
+            "event": "request_started",
+            "method": request.method,
+            "path": request.url.path,
+            "request_id": request_id,
+            "trace_id": trace_id,
+        },
     )
 
     try:
@@ -636,6 +727,8 @@ async def attach_request_id(request: Request, call_next):
                 "path": request.url.path,
                 "status": 500,
                 "duration_ms": elapsed_ms,
+                "request_id": request_id,
+                "trace_id": trace_id,
             },
         )
         raise
@@ -656,6 +749,8 @@ async def attach_request_id(request: Request, call_next):
             "path": request.url.path,
             "status": response.status_code,
             "duration_ms": elapsed_ms,
+            "request_id": request_id,
+            "trace_id": trace_id,
         },
     )
 
@@ -677,6 +772,9 @@ async def attach_request_id(request: Request, call_next):
     return response
 
 
+# Recursively transforms complex object hierarchies into JSON-compliant structures.
+# Handles Pydantic models, NumPy scalars, Pandas dataframes, and nested dictionaries.
+# Ensures that all payload attributes can be serialized without type errors.
 def _simplify_for_json(obj: Any) -> Any:
     """Recursively convert an arbitrary object tree into JSON-safe primitives.
 
@@ -729,6 +827,9 @@ def _simplify_for_json(obj: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
+# Validates user-submitted financial goal targets within request payloads.
+# Defines required goal name, target monetary value, duration, and priority.
+# Serialized into Pydantic models for structured multi-agent goal planning.
 class FinancialGoalRequest(BaseModel):
     """A single financial goal submitted by the caller (e.g. "emergency fund")."""
 
@@ -738,6 +839,9 @@ class FinancialGoalRequest(BaseModel):
     priority: int = 1
 
 
+# Encapsulates liability details submitted for debt optimization workflows.
+# Tracks outstanding loan balance, annual interest rate, and minimum due amount.
+# Provides structured schema validation for borrower debt repayment schedules.
 class DebtRequest(BaseModel):
     """A single debt entry (credit card, loan, etc.)."""
 
@@ -747,6 +851,9 @@ class DebtRequest(BaseModel):
     minimum_payment: float
 
 
+# Represents individual historical banking transactions passed in user profiles.
+# Captures transaction value, categorical spending class, description, and date.
+# Enables financial agents to analyze past spending patterns and cash flows.
 class TransactionRequest(BaseModel):
     """A single financial transaction."""
 
@@ -757,6 +864,9 @@ class TransactionRequest(BaseModel):
     type: Optional[str] = None
 
 
+# Represents the comprehensive user financial snapshot submitted to AI agents.
+# Aggregates income, expenses, debts, goals, transactions, and risk attributes.
+# Serves as the primary data model for personalized financial recommendations.
 class UserProfileRequest(BaseModel):
     """Complete financial profile of the requesting user.
 
@@ -779,6 +889,9 @@ class UserProfileRequest(BaseModel):
     timezone: Optional[str] = None
 
 
+# Represents a single message exchange in multi-turn conversational contexts.
+# Tracks dialog role attribution alongside textual message contents.
+# Feeds conversational memory into downstream LLM prompt synthesis layers.
 class ConversationMessage(BaseModel):
     """A single message in a multi-turn conversation."""
 
@@ -786,6 +899,9 @@ class ConversationMessage(BaseModel):
     content: str
 
 
+# Configures operational flags and execution toggles for financial workflows.
+# Controls narrative generation, LLM decomposition, and evidence inclusion.
+# Allows clients to balance response richness against computation latency.
 class ProcessOptions(BaseModel):
     """Options that tweak workflow behaviour.
 
@@ -806,6 +922,9 @@ class ProcessOptions(BaseModel):
     task_type: Literal["finance", "conversation_insights"] = "finance"
 
 
+# Primary request payload model for the core multi-agent processing pipeline.
+# Packages user query, profile data, conversation history, and session context.
+# Directs workflow execution across specialized financial reasoning agents.
 class ProcessRequest(BaseModel):
     """Payload for the main ``/api/agents/process`` endpoint.
 
@@ -826,6 +945,9 @@ class ProcessRequest(BaseModel):
     options: ProcessOptions = Field(default_factory=ProcessOptions)
 
 
+# Specifies macroeconomic parameters and duration for what-if simulation modeling.
+# Constrains projection horizons and defines expected returns and inflation rates.
+# Informs deterministic financial projections with user-defined market variables.
 class ScenarioAssumptions(BaseModel):
     """Macro assumptions for what-if scenario modelling.
 
@@ -839,6 +961,9 @@ class ScenarioAssumptions(BaseModel):
     inflation_pct: Optional[float] = Field(default=None, ge=-50, le=100)
 
 
+# Augments conversational session summaries with grounded financial context.
+# Formats budget status, recurring signals, tasks, reminders, and file snippets.
+# Appends structured context block to the session summary for agent grounding.
 def _append_finance_context_to_summary(
     session_summary: Optional[str],
     finance_context: Optional[Dict[str, Any]],
@@ -929,6 +1054,9 @@ def _append_finance_context_to_summary(
     return (base + "\n\n" + context_block).strip() if base else context_block
 
 
+# Extracts and normalizes evidence items attached to the incoming financial context.
+# Standardizes identifier keys, citation labels, snippets, and page references.
+# Returns sanitized list of grounded evidence items for inclusion in responses.
 def _extract_request_evidence(finance_context: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not finance_context or not isinstance(finance_context, dict):
         return []
@@ -954,6 +1082,9 @@ def _extract_request_evidence(finance_context: Optional[Dict[str, Any]]) -> List
     return normalized
 
 
+# Retrieves confidence score mappings from the provided financial context payload.
+# Sanitizes nested confidence dictionaries using recursive JSON simplification.
+# Returns clean dictionary of confidence metrics or an empty dictionary fallback.
 def _extract_request_confidence(finance_context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not finance_context or not isinstance(finance_context, dict):
         return {}
@@ -963,6 +1094,9 @@ def _extract_request_confidence(finance_context: Optional[Dict[str, Any]]) -> Di
     return _simplify_for_json(confidence)
 
 
+# Enriches response text with relevant source document citations and excerpts.
+# Queries document passage utilities based on user prompts and file retrieval.
+# Prepends formatted reference passages to the generated analysis response.
 def _add_document_passages(response_text: str, request: ProcessRequest) -> str:
     from utils.document_answers import document_passage_answer
 
@@ -972,6 +1106,9 @@ def _add_document_passages(response_text: str, request: ProcessRequest) -> str:
     return f"{passages}\n\n{response_text}" if passages and passages != response_text else response_text
 
 
+# Validates parameters for deterministic what-if financial scenario simulations.
+# Captures user profile, scenario category, delta amounts, and assumptions.
+# Powers comparative projections for income adjustments, expenses, and returns.
 class WhatIfScenarioRequest(BaseModel):
     """Request body for ``/api/agents/what-if-scenario``.
 
@@ -988,6 +1125,9 @@ class WhatIfScenarioRequest(BaseModel):
     assumptions: ScenarioAssumptions = Field(default_factory=ScenarioAssumptions)
 
 
+# Responds to liveness probes from orchestration layers and load balancers.
+# Returns basic service health status, application uptime, and running versions.
+# Operates without authentication to facilitate unhindered infrastructure checks.
 @app.get("/health")
 async def health_check(request: Request):
     """Liveness probe endpoint.
@@ -996,6 +1136,10 @@ async def health_check(request: Request):
     vision dependency status.  Used by container orchestrators (Docker,
     Kubernetes) and load balancers to decide whether this instance is ready
     to receive traffic.
+
+    Deliberately independent of the workflow, the LLM and the work gate: it
+    must answer in milliseconds even while every worker slot is busy.  Use
+    ``/ready`` for traffic-routing decisions.
     """
     vision_status = get_vision_dependency_status()
     from utils.provider_registry import _resolve_provider_name, get_provider_config, resolve_provider_chain
@@ -1013,6 +1157,32 @@ async def health_check(request: Request):
     }
 
 
+# Evaluates comprehensive readiness across workflow compilation and worker queues.
+# Checks that graph workers are initialized, state backends are reachable, and not draining.
+# Returns HTTP 200 when ready to receive traffic or HTTP 503 during warmup and drain.
+@app.get("/ready")
+@app.get("/readyz")
+async def readiness_check():
+    """Readiness probe: 200 only when the workflow is built and we are not draining."""
+    gate = get_work_gate().stats()
+    ready = globals().get("workflow") is not None and not _DRAINING
+    body = {"ready": ready, "draining": _DRAINING, **gate}
+    try:
+        from memory.state_store import state_backend_health
+
+        state = await offload(state_backend_health)
+        body["state_backend"] = state
+        if not state.get("ok") and os.getenv("AI_CORE_READY_REQUIRES_STATE", "").strip().lower() in {"1", "true", "yes", "on"}:
+            ready = False
+            body["ready"] = False
+    except Exception as exc:
+        body["state_backend"] = {"ok": False, "error": str(exc)[:200]}
+    return JSONResponse(status_code=200 if ready else 503, content=body)
+
+
+# Lists all configured LLM providers along with operational statuses and models.
+# Queries provider registries to enumerate supported backends like Gemini and OpenAI.
+# Returns a structured dictionary containing available provider metadata.
 @app.get("/api/providers")
 async def list_llm_providers(request: Request):
     """List all available LLM providers and their status."""
@@ -1025,6 +1195,9 @@ async def list_llm_providers(request: Request):
     }
 
 
+# Gathers holistic system diagnostics across all AI Core subcomponents and pools.
+# Aggregates provider chains, key health, catalog statistics, cache metrics, and canaries.
+# Returns comprehensive JSON diagnostics snapshot for operational monitoring.
 @app.get("/api/ai/status")
 async def get_ai_status(request: Request):
     """Comprehensive AI system diagnostics endpoint.
@@ -1113,6 +1286,14 @@ async def get_ai_status(request: Request):
     except Exception:
         pass
 
+    # 10. Number safety and continuous production canary telemetry
+    canary = {}
+    try:
+        from evals.canary_validator import production_canary_engine
+        canary = production_canary_engine.get_health_status().to_dict()
+    except Exception as e:
+        canary = {"status": "unknown", "error": str(e)[:200]}
+
     return {
         "status": "healthy",
         "service": "FinWise AI Core",
@@ -1128,14 +1309,20 @@ async def get_ai_status(request: Request):
         "model_health": model_health,
         "sessions": session_stats,
         "rate_limiter": rate_limit_status,
+        "llm_cache": get_llm_cache().stats(),
+        "capacity": get_work_gate().stats(),
         "llm_usage": llm_usage,
         "last_route": last_route,
         "vision": vision_status,
         "memory": memory_status,
         "telemetry": telemetry,
+        "canary": canary,
     }
 
 
+# Lists resumable conversational sessions belonging to an authenticated actor.
+# Validates organizational and user identity scope against session actor headers.
+# Returns a serialized list of available sessions with execution progress details.
 @app.get("/api/ai/sessions")
 async def list_ai_sessions(
     request: Request,
@@ -1155,36 +1342,32 @@ async def list_ai_sessions(
 
     request_id = getattr(request.state, "request_id", str(uuid4()))
 
+    actor_org_id, actor_user_id = _require_session_actor(request)
+    if (org_id and org_id.strip() != actor_org_id) or (user_id and user_id.strip() != actor_user_id):
+        raise HTTPException(status_code=403, detail="AI session actor does not match requested scope")
+
     try:
         manager = get_session_manager()
-
-        if org_id and user_id:
-            sessions = manager.get_resumable_sessions(
-                org_id=org_id.strip(),
-                user_id=user_id.strip(),
-                limit=min(limit, 50),
-            )
-            return {
-                "success": True,
-                "sessions": [s.to_dict() for s in sessions],
-                "count": len(sessions),
-                "request_id": request_id,
-            }
-        else:
-            # Return overall stats if no user filter
-            stats = manager.get_stats()
-            return {
-                "success": True,
-                "stats": stats,
-                "message": "Provide org_id and user_id to list specific sessions",
-                "request_id": request_id,
-            }
+        sessions = manager.get_resumable_sessions(
+            org_id=actor_org_id,
+            user_id=actor_user_id,
+            limit=min(limit, 50),
+        )
+        return {
+            "success": True,
+            "sessions": [s.to_dict() for s in sessions],
+            "count": len(sessions),
+            "request_id": request_id,
+        }
 
     except Exception as e:
         logger.error(f"[requestId={request_id}] Error listing sessions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Fetches detailed session information and historical execution checkpoints.
+# Enforces tenant actor ownership before exposing session state documents.
+# Returns session configuration, memory snapshots, and recent checkpoints.
 @app.get("/api/ai/sessions/{session_id}")
 async def get_ai_session(session_id: str, request: Request):
     """
@@ -1194,11 +1377,13 @@ async def get_ai_session(session_id: str, request: Request):
 
     request_id = getattr(request.state, "request_id", str(uuid4()))
 
+    actor_org_id, actor_user_id = _require_session_actor(request)
+
     try:
         manager = get_session_manager()
         session = manager.get_session(session_id)
 
-        if not session:
+        if not session or session.org_id != actor_org_id or session.user_id != actor_user_id:
             raise HTTPException(status_code=404, detail="Session not found")
 
         checkpoints = manager.get_checkpoints(session_id, limit=20)
@@ -1217,6 +1402,9 @@ async def get_ai_session(session_id: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Resumes an interrupted or paused session from its most recent checkpoint.
+# Validates session status to prevent resuming finished or expired executions.
+# Updates session state to in-progress and returns the restored checkpoint data.
 @app.post("/api/ai/sessions/{session_id}/resume")
 async def resume_ai_session(session_id: str, request: Request):
     """
@@ -1227,11 +1415,13 @@ async def resume_ai_session(session_id: str, request: Request):
 
     request_id = getattr(request.state, "request_id", str(uuid4()))
 
+    actor_org_id, actor_user_id = _require_session_actor(request)
+
     try:
         manager = get_session_manager()
         session = manager.get_session(session_id)
 
-        if not session:
+        if not session or session.org_id != actor_org_id or session.user_id != actor_user_id:
             raise HTTPException(status_code=404, detail="Session not found")
 
         if session.status in (SessionStatus.COMPLETED, SessionStatus.EXPIRED):
@@ -1262,6 +1452,9 @@ async def resume_ai_session(session_id: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Admin endpoint to prune stale and expired sessions from persistent storage.
+# Invokes session manager cleanup routines to evict overdue session documents.
+# Returns the total count of successfully expired sessions freed from storage.
 @app.post("/api/ai/sessions/cleanup")
 async def cleanup_expired_sessions(request: Request):
     """
@@ -1287,6 +1480,9 @@ async def cleanup_expired_sessions(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Queries the model catalog for available AI models matching search criteria.
+# Supports filtering by provider names and functional capability attributes.
+# Returns catalog entries with latency tiers, costs, and token limits.
 @app.get("/api/ai/models")
 async def list_ai_models(
     request: Request,
@@ -1350,6 +1546,9 @@ async def list_ai_models(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Validates and normalizes requested language codes for computer vision OCR.
+# Compares requested language against permitted vision language sets.
+# Returns the active language string along with any fallback warning messages.
 def _normalize_vision_lang(lang: Optional[str]) -> tuple[str, List[str]]:
     warnings: List[str] = []
     requested = (lang or "").strip() or settings.VISION_LANG_DEFAULT
@@ -1360,6 +1559,9 @@ def _normalize_vision_lang(lang: Optional[str]) -> tuple[str, List[str]]:
     return requested, warnings
 
 
+# Reads and verifies incoming raw binary payloads for computer vision requests.
+# Validates presence of binary data and enforces maximum payload size limits.
+# Returns validated image bytes or raises an appropriate HTTP client exception.
 async def _read_image_payload(request: Request) -> bytes:
     body = await request.body()
     if not body:
@@ -1369,6 +1571,9 @@ async def _read_image_payload(request: Request) -> bytes:
     return body
 
 
+# Processes image uploads through OCR and deterministic receipt parsing logic.
+# Offloads CPU-intensive optical recognition routines to concurrency workers.
+# Returns structured expense data including vendor, dates, totals, and line items.
 @app.post("/api/vision/receipts/parse")
 async def parse_receipt_image(request: Request, lang: Optional[str] = None, currencyHint: str = "USD"):
     """OCR + receipt field extraction from an uploaded image."""
@@ -1378,7 +1583,8 @@ async def parse_receipt_image(request: Request, lang: Optional[str] = None, curr
         image_bytes = await _read_image_payload(request)
         resolved_lang, warnings = _normalize_vision_lang(lang)
 
-        lines = ocr_image_to_lines(image_bytes, lang=resolved_lang)
+        # OCR is CPU-bound and synchronous: gate it and keep the loop free.
+        lines = await get_work_gate().run(ocr_image_to_lines, image_bytes, lang=resolved_lang)
         parsed = extract_receipt(lines, currency_hint=(currencyHint or "USD"))
 
         return {
@@ -1398,6 +1604,9 @@ async def parse_receipt_image(request: Request, lang: Optional[str] = None, curr
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Extracts handwritten notes, financial targets, and goals from image uploads.
+# Runs image through OCR preprocessing and unstructured handwriting parsers.
+# Returns recognized text alongside extracted financial values and goals.
 @app.post("/api/vision/handwriting/recognize")
 async def recognize_handwriting_image(request: Request, lang: Optional[str] = None):
     """Handwriting recognition + intent extraction from an uploaded image."""
@@ -1407,7 +1616,8 @@ async def recognize_handwriting_image(request: Request, lang: Optional[str] = No
         image_bytes = await _read_image_payload(request)
         resolved_lang, warnings = _normalize_vision_lang(lang)
 
-        lines = ocr_image_to_lines(image_bytes, lang=resolved_lang)
+        # OCR is CPU-bound and synchronous: gate it and keep the loop free.
+        lines = await get_work_gate().run(ocr_image_to_lines, image_bytes, lang=resolved_lang)
         parsed = extract_handwriting(lines)
 
         return {
@@ -1428,6 +1638,9 @@ async def recognize_handwriting_image(request: Request, lang: Optional[str] = No
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Performs generic optical character recognition on uploaded document images.
+# Normalizes extracted text lines and calculates line-level confidence scores.
+# Returns recognized text paragraphs and individual detected text spans.
 @app.post("/api/vision/ocr/extract")
 async def extract_generic_image_text(request: Request, lang: Optional[str] = None):
     """Generic OCR endpoint for arbitrary image uploads."""
@@ -1437,7 +1650,8 @@ async def extract_generic_image_text(request: Request, lang: Optional[str] = Non
         image_bytes = await _read_image_payload(request)
         resolved_lang, warnings = _normalize_vision_lang(lang)
 
-        lines = ocr_image_to_lines(image_bytes, lang=resolved_lang)
+        # OCR is CPU-bound and synchronous: gate it and keep the loop free.
+        lines = await get_work_gate().run(ocr_image_to_lines, image_bytes, lang=resolved_lang)
         normalized_lines = [
             {
                 "text": line.text,
@@ -1467,6 +1681,9 @@ async def extract_generic_image_text(request: Request, lang: Optional[str] = Non
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Exposes real-time token bucket capacity and rate limiting consumption stats.
+# Queries internal rate limiters to observe current throttling thresholds.
+# Returns structured telemetry on token refill rates and remaining tokens.
 @app.get("/api/rate-limit/status")
 async def rate_limit_status(request: Request):
     """Get current rate limiter status - useful for monitoring API usage"""
@@ -1483,6 +1700,9 @@ async def rate_limit_status(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Resets in-memory rate limiting counters and refills token consumption buckets.
+# Clears historical rate limiting penalties for testing and recovery operations.
+# Returns an operational acknowledgment confirmation payload.
 @app.post("/api/rate-limit/reset")
 async def rate_limit_reset(request: Request):
     """Reset the rate limiter (useful after quota reset or for testing)"""
@@ -1498,8 +1718,634 @@ async def rate_limit_reset(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ── Continuous Production Canary & Number Safety Invariants ────────────────
+
+
+# Retrieves real-time validation telemetry from the canary evaluation engine.
+# Reports production accuracy metrics, mathematical checks, and invariants status.
+# Returns structured health summaries for financial numerical accuracy monitoring.
+@app.get("/api/canary/number-safety")
+async def get_canary_number_safety(request: Request):
+    """Retrieve continuous production canary validation status and invariant telemetry."""
+    from evals.canary_validator import production_canary_engine
+
+    summary = production_canary_engine.get_health_status()
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "canary": summary.to_dict(),
+    }
+
+
+# Validates candidate financial statements against core mathematical invariants.
+# Asserts numerical consistency across balance sheets, cash flows, and budgets.
+# Returns comprehensive invariant pass or fail verdicts and diagnostic details.
+@app.post("/api/canary/number-safety/validate")
+async def validate_canary_invariants(request: Request):
+    """Ad-hoc evaluation of candidate outputs or allocations against mathematical invariants."""
+    from evals.canary_validator import production_canary_engine
+
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    results = []
+    source = body.get("source", "api_validation")
+
+    # 1. Number safety invariant check
+    if "candidate" in body and "reference" in body:
+        res = production_canary_engine.evaluate_candidate_narrative(
+            candidate=str(body["candidate"]),
+            reference=str(body["reference"]),
+            source=source,
+        )
+        results.append(res.to_dict())
+
+    # 2. Budget rebalance invariant check
+    if "initial_allocations" in body and "proposed_allocations" in body:
+        res = production_canary_engine.evaluate_budget_rebalancing(
+            initial_allocations=body["initial_allocations"],
+            proposed_allocations=body["proposed_allocations"],
+            source=source,
+        )
+        results.append(res.to_dict())
+
+    # 3. Balance sheet invariant check
+    if "assets" in body and "liabilities" in body and "net_worth" in body:
+        res = production_canary_engine.evaluate_balance_sheet(
+            assets=float(body["assets"]),
+            liabilities=float(body["liabilities"]),
+            net_worth=float(body["net_worth"]),
+            source=source,
+        )
+        results.append(res.to_dict())
+
+    # 4. Cash flow invariant check
+    if "income" in body and "expenses" in body and "net_cashflow" in body:
+        res = production_canary_engine.evaluate_cashflow(
+            income=float(body["income"]),
+            expenses=float(body["expenses"]),
+            net_cashflow=float(body["net_cashflow"]),
+            source=source,
+        )
+        results.append(res.to_dict())
+
+    if not results:
+        raise HTTPException(
+            status_code=400,
+            detail="No valid invariant parameters provided (candidate/reference, initial_allocations/proposed_allocations, assets/liabilities/net_worth, or income/expenses/net_cashflow)",
+        )
+
+    all_passed = all(r.get("passed", False) for r in results)
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "all_passed": all_passed,
+        "results": results,
+        "canary_health": production_canary_engine.get_health_status().to_dict(),
+    }
+
+
+# Triggers on-demand synthetic invariant probe suites against AI model outputs.
+# Tests candidate financial allocations and equations against edge conditions.
+# Returns detailed test execution reports with pass counts and violation traces.
+@app.post("/api/canary/number-safety/run-probes")
+async def run_canary_probes(request: Request):
+    """Trigger the synthetic canary probe suite on demand and return execution audit."""
+    from evals.canary_validator import production_canary_engine
+
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    sample_size = None
+    try:
+        body = await request.json()
+        if isinstance(body, dict) and "sample_size" in body:
+            sample_size = int(body["sample_size"])
+    except Exception:
+        pass
+
+    report = production_canary_engine.run_canary_probe_suite(sample_size=sample_size)
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "report": report,
+    }
+
+
+# ============================================================================
+# Document Q&A Evaluation Endpoints
+# ============================================================================
+
+
+# Fetches latest benchmark evaluation metrics for the document QA subsystem.
+# Runs test suites verifying accuracy of citations and factual retrieval responses.
+# Returns structured score summaries and test case diagnostic outputs.
+@app.get("/api/evals/document-qa/status")
+async def get_document_qa_eval_status(request: Request):
+    """Retrieve Document Q&A evaluation benchmark metrics and case catalog."""
+    from evals.document_qa_evaluator import DocumentQAEvaluator
+
+    evaluator = DocumentQAEvaluator()
+    report = evaluator.run_suite()
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "evaluation": report,
+    }
+
+
+# Executes on-demand benchmark evaluation runs for document QA capabilities.
+# Evaluates answer generation and citation precision across benchmark datasets.
+# Returns comprehensive evaluation reports containing individual test outcomes.
+@app.post("/api/evals/document-qa/run")
+async def run_document_qa_eval_run(request: Request):
+    """Trigger Document Q&A benchmark suite execution on-demand."""
+    from evals.document_qa_evaluator import DocumentQAEvaluator
+
+    evaluator = DocumentQAEvaluator()
+    report = evaluator.run_suite()
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "evaluation": report,
+    }
+
+
+# ============================================================================
+# Document Creation & Authorship Evaluation Endpoints
+# ============================================================================
+
+
+# Retrieves evaluation metrics and case catalogs for document creation agents.
+# Measures synthesis quality, structure adherence, and authorship benchmarks.
+# Returns detailed evaluation run metrics and scenario validation reports.
+@app.get("/api/evals/document-creation/status")
+async def get_document_creation_eval_status(request: Request):
+    """Retrieve Document Creation evaluation benchmark metrics and case catalog."""
+    from evals.document_creation_evaluator import DocumentCreationEvaluator
+
+    evaluator = DocumentCreationEvaluator()
+    report = evaluator.run_suite()
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "evaluation": report,
+    }
+
+
+
+
+
+
+
+
+
+# Dispatches an ad-hoc benchmark run for financial document authoring agents.
+# Validates generated reports against established structural and domain rules.
+# Returns test execution results and benchmark score distributions.
+@app.post("/api/evals/document-creation/run")
+async def run_document_creation_eval_run(request: Request):
+    """Trigger Document Creation benchmark suite execution on-demand."""
+    from evals.document_creation_evaluator import DocumentCreationEvaluator
+
+    evaluator = DocumentCreationEvaluator()
+    report = evaluator.run_suite()
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "evaluation": report,
+    }
+
+
+
+
+
+
+
+
+
+
+
+# Gathers evaluation metrics measuring user follow-through recommendation accuracy.
+# Checks score boundedness, overdue invariant satisfaction, and decay rates.
+# Returns a structured summary of follow-through ranking benchmark metrics.
+@app.get("/api/evals/follow-through/status")
+async def get_follow_through_eval_status(request: Request):
+    """Retrieve Follow-Through evaluation benchmark metrics and case catalog."""
+    from evals.follow_through_evaluator import FollowThroughEvaluator
+
+    evaluator = FollowThroughEvaluator()
+    result = evaluator.evaluate_all()
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "evaluation": {
+            "total_cases": result.total_cases,
+            "passed_cases": result.passed_cases,
+            "failed_cases": result.failed_cases,
+            "all_scores_bounded": result.all_scores_bounded,
+            "overdue_invariance_satisfied": result.overdue_invariance_satisfied,
+            "preference_learning_effective": result.preference_learning_effective,
+            "decay_attenuation_verified": result.decay_attenuation_verified,
+            "details": result.details,
+        },
+    }
+
+
+# Initiates on-demand benchmark testing of follow-through ranking algorithms.
+# Tests signal scoring, preference learning effectiveness, and decay behaviors.
+# Returns updated test case results and evaluation pass rate figures.
+@app.post("/api/evals/follow-through/run")
+async def run_follow_through_eval_run(request: Request):
+    """Trigger Follow-Through benchmark suite execution on-demand."""
+    from evals.follow_through_evaluator import FollowThroughEvaluator
+
+    evaluator = FollowThroughEvaluator()
+    result = evaluator.evaluate_all()
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "evaluation": {
+            "total_cases": result.total_cases,
+            "passed_cases": result.passed_cases,
+            "failed_cases": result.failed_cases,
+            "all_scores_bounded": result.all_scores_bounded,
+            "overdue_invariance_satisfied": result.overdue_invariance_satisfied,
+            "preference_learning_effective": result.preference_learning_effective,
+            "decay_attenuation_verified": result.decay_attenuation_verified,
+            "details": result.details,
+        },
+    }
+
+
+# Ranks activity signals according to learned user preferences and time decay.
+# Filters dismissed activities and prioritizes high-affinity focus domains.
+# Returns ranked activity items to guide user financial task follow-through.
+@app.post("/api/follow-through/rank")
+async def rank_follow_through_endpoint(request: Request, body: Dict[str, Any] = Body(...)):
+    """Rank activity signals using learned user preferences and exponential time decay."""
+    from utils.activity_signals import extract_activity_signals
+    from utils.follow_through_ranking import rank_follow_through_signals
+    from utils.preference_learning import learn_preferences_from_feedback
+
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    context = body.get("context") or {}
+    profile = body.get("profile") or {}
+    feedback_history = body.get("feedback_history") or []
+    focus_domains = body.get("focus_domains") or (profile.get("preferences") or {}).get("focus_domains")
+    limit = int(body.get("limit") or 15)
+
+    signals = body.get("signals")
+    if not isinstance(signals, list):
+        signals = extract_activity_signals(context, profile)
+
+    pref_info = learn_preferences_from_feedback(feedback_history, current_time_iso=context.get("as_of"))
+    ranked = rank_follow_through_signals(
+        signals=signals,
+        domain_affinities=pref_info.get("domain_affinities"),
+        focus_domains=focus_domains,
+        dismissed_signal_ids=pref_info.get("dismissed_signal_ids"),
+        include_dismissed=bool(body.get("include_dismissed")),
+        limit=limit,
+    )
+
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "data": {
+            "items": ranked,
+            "total_signals": len(signals),
+            "ranked_count": len(ranked),
+            "learned_affinities": pref_info.get("domain_affinities", {}),
+        },
+    }
+
+
+# Retrieves current benchmark status for conversation summarization and narration.
+# Compares generated summaries against golden test suites to check invariants.
+# Returns pass rate metrics and evaluation audit details for summary models.
+@app.get("/api/evals/conversation-summary/status")
+async def get_conversation_summary_eval_status(request: Request):
+    """Retrieve status of the Conversation Summary & Narration Sign-Off benchmark suite."""
+    from evals.conversation_summary_evaluator import (
+        GOLDEN_SUMMARY_CASES,
+        conversation_summary_evaluator,
+    )
+
+    result = conversation_summary_evaluator.evaluate_all()
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "eval_type": "conversation_summary_narration_signoff",
+        "total_golden_cases": len(GOLDEN_SUMMARY_CASES),
+        "evaluation": result,
+    }
+
+
+# Triggers an on-demand evaluation suite for conversation summary narration.
+# Checks generated narrations against invariant rules and golden benchmarks.
+# Returns detailed pass rates and sign-off verification scores.
+@app.post("/api/evals/conversation-summary/run")
+async def run_conversation_summary_eval(request: Request):
+    """Run full Conversation Summary & Narration Sign-Off benchmark evaluation."""
+    from evals.conversation_summary_evaluator import conversation_summary_evaluator
+
+    result = conversation_summary_evaluator.evaluate_all()
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    return {
+        "status": result["status"],
+        "request_id": request_id,
+        "pass_rate": result["pass_rate"],
+        "evaluation": result,
+    }
+
+
+# Evaluates candidate conversation narrations against production invariants.
+# Checks length, factual alignment, and absence of hallucinated metrics.
+# Returns invariant compliance status and sign-off eligibility determinations.
+@app.post("/api/summary/evaluate-narration")
+async def evaluate_summary_narration_candidate(request: Request, body: Dict[str, Any] = Body(...)):
+    """Evaluate and sign off a candidate conversation narration against production invariants."""
+    from evals.conversation_summary_evaluator import ConversationSummaryEvaluator
+
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    candidate = str(body.get("candidate") or "")
+    reference_context = body.get("reference_context") or {}
+
+    invariants = ConversationSummaryEvaluator.verify_invariants(candidate, reference_context)
+    all_passed = all(invariants.values())
+    signoff_status = "signed_off_provider" if all_passed else "signed_off_fallback"
+    failed_invariants = [inv for inv, ok in invariants.items() if not ok]
+
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "signoff_status": signoff_status,
+        "invariants": invariants,
+        "failed_invariants": failed_invariants,
+        "word_count": len(candidate.split()),
+        "all_invariants_met": all_passed,
+    }
+
+
+# ============================================================================
+# Memory Store & Unified Ranking Endpoints
+# ============================================================================
+
+
+# Fetches and ranks persistent user memories from the active memory store.
+# Supports semantic queries, reciprocal rank fusion, and confidence thresholds.
+# Returns serialized memory items containing keys, values, and relevance scores.
+@app.get("/api/memory")
+async def get_user_memories(
+    request: Request,
+    org_id: str = Query(..., description="Organization identifier"),
+    user_id: str = Query(..., description="User identifier"),
+    query: Optional[str] = Query(None, description="Optional search/ranking query"),
+    limit: int = Query(15, ge=1, le=100, description="Max memories to return"),
+    min_confidence: float = Query(0.0, ge=0.0, le=1.0, description="Minimum confidence threshold"),
+):
+    """Retrieve or rank persistent per-user memories."""
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    # The gateway never calls these routes, so actor headers are always required.
+    org_id, user_id = _resolve_actor(request, org_id, user_id, require_headers=True)
+    if _memory_store is None:
+        return {
+            "status": "disabled",
+            "request_id": request_id,
+            "org_id": org_id,
+            "user_id": user_id,
+            "query": query,
+            "total": 0,
+            "memories": [],
+        }
+
+    if query and query.strip():
+        ranked = _memory_store.search_ranked(
+            org_id=org_id,
+            user_id=user_id,
+            query=query,
+            limit=limit,
+            min_confidence=min_confidence,
+        )
+        memories = [
+            {
+                "key": r.key,
+                "value": r.value,
+                "confidence": r.confidence,
+                "source": r.source,
+                "updated_at": r.updated_at,
+                "score": r.score,
+                "rank": r.rank,
+                "rrf_score": r.rrf_score,
+            }
+            for r in ranked
+        ]
+    else:
+        all_recs = _memory_store.get_all(org_id=org_id, user_id=user_id, limit=limit)
+        memories = [
+            {
+                "key": r.key,
+                "value": r.value,
+                "confidence": r.confidence,
+                "source": r.source,
+                "updated_at": r.updated_at,
+                "score": 10.0,
+                "rank": idx,
+                "rrf_score": round(1.0 / (60.0 + idx), 6),
+            }
+            for idx, r in enumerate(all_recs, start=1)
+            if r.confidence >= min_confidence
+        ]
+
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "org_id": org_id,
+        "user_id": user_id,
+        "query": query,
+        "total": len(memories),
+        "memories": memories,
+    }
+
+
+# Inserts or updates an individual user memory key-value record in the store.
+# Validates tenant identity headers and persists confidence alongside source type.
+# Returns operation status and serialized record details upon completion.
+@app.post("/api/memory/upsert")
+async def upsert_user_memory(request: Request):
+    """Insert or update a user memory record."""
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    if _memory_store is None:
+        raise HTTPException(status_code=503, detail="Memory store is disabled")
+
+    body = await request.json()
+    org_id, user_id = _resolve_actor(
+        request,
+        str(body.get("org_id") or ""),
+        str(body.get("user_id") or ""),
+        require_headers=True,
+    )
+    key = str(body.get("key") or "").strip()
+    value = str(body.get("value") or "").strip()
+    confidence = float(body.get("confidence", 0.8))
+    source = str(body.get("source", "explicit")).strip()
+
+    if not org_id or not user_id or not key or not value:
+        raise HTTPException(status_code=400, detail="Missing required fields: org_id, user_id, key, value")
+
+    upserted = _memory_store.upsert_many(
+        org_id=org_id,
+        user_id=user_id,
+        records=[(key, value, confidence, source)],
+    )
+
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "upserted": upserted,
+        "record": {
+            "key": key,
+            "value": value,
+            "confidence": confidence,
+            "source": source,
+        },
+    }
+
+
+# Fuses heterogeneous candidates across memories, files, and transactions.
+# Applies reciprocal rank fusion with custom source weights to produce ranking.
+# Returns unified ranked results up to the requested result limit.
+@app.post("/api/memory/unified-rank")
+async def unified_rank_candidates(request: Request):
+    """Fuse heterogeneous candidate items (memories, files, transactions) using Reciprocal Rank Fusion."""
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    body = await request.json()
+    query = str(body.get("query") or "").strip()
+    candidates = body.get("candidates") or []
+    limit = max(1, min(100, int(body.get("limit", 15))))
+    weights = body.get("weights") or {}
+
+    if not isinstance(candidates, list):
+        raise HTTPException(status_code=400, detail="candidates must be a list")
+
+    # Group candidates by source_type to establish per-source rankings
+    grouped: dict[str, List[dict]] = {}
+    for c in candidates:
+        if isinstance(c, dict):
+            src = str(c.get("source_type") or "default")
+            grouped.setdefault(src, []).append(c)
+
+    # Sort each source list by its local score descending
+    ranked_lists = []
+    for src, items in grouped.items():
+        items_sorted = sorted(items, key=lambda x: float(x.get("score", 0.0)), reverse=True)
+        ranked_lists.append(items_sorted)
+
+    from memory.store import reciprocal_rank_fusion
+
+    fused_results = reciprocal_rank_fusion(ranked_lists, k=60, weights=weights)
+    limited = fused_results[:limit]
+
+    return {
+        "status": "success",
+        "request_id": request_id,
+        "query": query,
+        "total": len(fused_results),
+        "results": limited,
+    }
+
+
+# Primary HTTP endpoint dispatching financial requests to the agent workflow.
+# Resolves tenant actors and controls concurrency admission via the work gate.
+# Returns structured ProcessResponse containing plans, metrics, and actions.
 @app.post("/api/agents/process", response_model=ProcessResponse)
 async def process_financial_request(request: ProcessRequest, http_request: Request):
+    """Admission-controlled entry point for ``/api/agents/process``.
+
+    Resolves the tenant actor (a 403 must reach the caller), then runs the
+    blocking workflow in a worker thread under the process-wide work gate.
+    A full gate sheds load with ``503 + Retry-After`` rather than queueing.
+    """
+    actor = _resolve_actor(http_request, request.org_id, request.user_id)
+    return await get_work_gate().run(_process_financial_request_sync, request, http_request, actor)
+
+
+# Initializes execution context for continuous offline reinforcement learning.
+# Captures active prompt registry versions, routing configs, and actor context.
+# Returns an initialized learning context instance or None if disabled.
+def _learning_begin(http_request: Request, actor: tuple[str, str], request_id: str) -> Any:
+    """Open the per-request learning context (artifact versions, verification, LLM calls)."""
+    try:
+        from registry.context import begin_context
+
+        opt_out = (http_request.headers.get("x-internal-learning-opt-out") or "").strip() == "1"
+        return begin_context(actor[0], actor[1], str(request_id), opt_out=opt_out, agent_output_id=str(request_id))
+    except Exception:  # learning must never break a request
+        return None
+
+
+# Finalizes request learning context and queues telemetry for offline training.
+# Injects prompt and routing version identifiers into detailed analysis metadata.
+# Safely records run statistics without interfering with client response delivery.
+def _learning_finish(
+    ctx: Any,
+    *,
+    request: ProcessRequest,
+    detailed_analysis: Any,
+    analysis_type: Any,
+    agents_involved: Any,
+    llm_route: Any,
+    fallback_used: bool,
+    response_text: Any,
+) -> None:
+    """Attach the version summary to the response and queue the run row."""
+    if ctx is None:
+        return
+    try:
+        versions = ctx.versions()
+        summary = ctx.llm_summary()
+        if isinstance(detailed_analysis, dict):
+            detailed_analysis["learning"] = {
+                "agentOutputId": ctx.agent_output_id,
+                "promptVersion": versions["promptVersion"],
+                "routingVersion": versions["routingVersion"],
+                "cacheHit": bool(ctx.cache_hit),
+            }
+        from learning.run_store import capture_run
+
+        capture_run(
+            ctx,
+            route=str(analysis_type or "comprehensive"),
+            node_trace=list(agents_involved or []) + list(ctx.nodes),
+            tokens=summary["tokens"],
+            latency_ms=summary["latencyMs"],
+            provider=str((llm_route or {}).get("active_provider") or summary["provider"] or ""),
+            model=str((llm_route or {}).get("active_model") or summary["model"] or ""),
+            fallback_used=bool(fallback_used or ctx.fallback_used),
+            input_text=request.user_input or "",
+            output_text=str(response_text or ""),
+            task_class=summary["taskClass"],
+        )
+    except Exception as exc:
+        logger.debug("learning_capture_failed: %s", exc)
+
+
+# Executes synchronous financial planning workflow under background worker pools.
+# Orchestrates multi-agent analysis, memory enrichment, tool building, and validation.
+# Synthesizes comprehensive action plans and formats client response contracts.
+def _process_financial_request_sync(
+    request: ProcessRequest, http_request: Request, actor: tuple[str, str]
+) -> ProcessResponse:
     """Main endpoint to process financial requests through the multi-agent system.
 
     High-level flow:
@@ -1521,6 +2367,12 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
     for the caller to handle -- the error is logged server-side).
     """
     request_id = getattr(http_request.state, "request_id", str(uuid4()))
+    # The actor was resolved by the async wrapper *before* this body runs: a
+    # 403 must reach the caller instead of being swallowed into the
+    # safe-fallback response below.
+    actor_org_id, actor_user_id = actor
+    set_cache_scope(actor_org_id)
+    learning_ctx = _learning_begin(http_request, actor, request_id)
 
     try:
         logger.info(
@@ -1573,8 +2425,8 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
         )
         options = request.options.model_dump() if request.options else {"narrative": False}
 
-        org_id = (request.org_id or "").strip() if hasattr(request, "org_id") else ""
-        user_id = (request.user_id or "").strip() if hasattr(request, "user_id") else ""
+        org_id = actor_org_id
+        user_id = actor_user_id
 
         session_summary = request.session_summary
         if _memory_store is not None and _extract_memories is not None and org_id and user_id:
@@ -1669,8 +2521,6 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             fallback_used = bool(result.get("fallback_used"))
             llm_route = result.get("llm_route") if isinstance(result.get("llm_route"), dict) else None
 
-        response_text = _add_document_passages(str(response_text), request)
-
         # Determine agents involved
         agents_involved = []
         if result.get("income_analysis"):
@@ -1721,7 +2571,12 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
         )
 
         # Build structured plan (always present)
-        if plan_dict is not None:
+        if analysis_type == "financial_education":
+            plan = Plan(executive_summary="")
+            action_type = None
+            response_evidence = []
+            response_confidence = {}
+        elif plan_dict is not None:
             plan = Plan.model_validate(plan_dict)
         else:
             plan = build_plan(
@@ -1739,6 +2594,9 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
 
         if not str(response_text).strip():
             response_text = render_plan_markdown(plan, currency_code=currency_code)
+
+        if analysis_type != "financial_education":
+            response_text = _add_document_passages(str(response_text), request)
 
         trace_simplified = _simplify_for_json(workflow_trace)
         trace_models: List[WorkflowTraceEntry] = []
@@ -1758,7 +2616,7 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
                 except Exception:
                     continue
 
-        if analysis_type not in {"activity_review", "document_lookup", "conversation_summarizer"} and not tool_call_models and profile_data_for_workflow and isinstance(profile_data_for_workflow, dict):
+        if analysis_type not in {"activity_review", "document_lookup", "conversation_summarizer", "financial_education"} and not tool_call_models and profile_data_for_workflow and isinstance(profile_data_for_workflow, dict):
             try:
                 tool_call_models = _build_default_tool_calls(plan, profile_data_for_workflow)
             except Exception:
@@ -1852,6 +2710,17 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
         elif result.get("session_id"):
             session_status = "in_progress"
 
+        _learning_finish(
+            learning_ctx,
+            request=request,
+            detailed_analysis=detailed_analysis,
+            analysis_type=analysis_type,
+            agents_involved=agents_involved,
+            llm_route=llm_route,
+            fallback_used=bool(fallback_used),
+            response_text=response_text,
+        )
+
         return ProcessResponse(
             success=True,
             final_output=str(response_text),
@@ -1918,8 +2787,18 @@ async def process_financial_request(request: ProcessRequest, http_request: Reque
             session_status="failed",
             workflow_phase="error",
         )
+    finally:
+        try:
+            from registry.context import clear_context
+
+            clear_context()
+        except Exception:
+            pass
 
 
+# Evaluates deterministic financial what-if scenarios across horizons.
+# Computes baseline versus altered surplus, runway changes, and target impacts.
+# Returns structured delta projections and actionable category budget shifts.
 @app.post("/api/agents/what-if-scenario")
 async def process_what_if_scenario(request: WhatIfScenarioRequest, http_request: Request):
     """Process what-if financial scenarios (deterministic, no LLM call).
@@ -2056,6 +2935,9 @@ async def process_what_if_scenario(request: WhatIfScenarioRequest, http_request:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Standalone endpoint running budget planner agents directly without full workflows.
+# Evaluates spending profiles against standard budgeting frameworks and targets.
+# Returns structured categorical budget allocation plans and recommendations.
 @app.post("/api/agents/budget")
 async def get_budget_recommendations(request: UserProfileRequest):
     """Standalone budget recommendation endpoint.
@@ -2075,6 +2957,9 @@ async def get_budget_recommendations(request: UserProfileRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Standalone endpoint running investment advisor agents directly on user profiles.
+# Formulates asset allocation strategies based on horizon and risk tolerance.
+# Returns customized investment guidance and recommended portfolio distributions.
 @app.post("/api/agents/investment")
 async def get_investment_advice(request: UserProfileRequest):
     """Standalone investment advice endpoint.
@@ -2093,6 +2978,9 @@ async def get_investment_advice(request: UserProfileRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Standalone endpoint calculating optimized debt repayment waterfall schedules.
+# Evaluates avalanche and snowball strategies against liability interest rates.
+# Returns structured debt reduction plans with interest savings calculations.
 @app.post("/api/agents/debt")
 async def optimize_debt(request: UserProfileRequest):
     """Standalone debt optimization endpoint.
@@ -2112,6 +3000,9 @@ async def optimize_debt(request: UserProfileRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Request model defining parameters for personalized financial newsletter generation.
+# Carries user financial context data and category preference toggles.
+# Validates payloads before dispatching to automated newsletter authoring agents.
 class NewsletterRequest(BaseModel):
     """Request body for the newsletter content generation endpoint."""
 
@@ -2119,6 +3010,9 @@ class NewsletterRequest(BaseModel):
     content_preferences: Dict[str, bool] = {}
 
 
+# Generates personalized financial newsletters based on user transactions and goals.
+# Dispatches context to the newsletter agent to assemble tips and highlights.
+# Returns structured newsletter sections tailored for user communication channels.
 @app.post("/api/agents/newsletter")
 async def generate_newsletter_content(request: NewsletterRequest):
     """Newsletter content generation endpoint.
@@ -2140,6 +3034,9 @@ async def generate_newsletter_content(request: NewsletterRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Streams real-time workflow phase transitions and incremental response tokens.
+# Emits Server-Sent Events delivering routing, agent trace, and final responses.
+# Enables interactive user interfaces with continuous progress feedback indicators.
 @app.post("/api/agents/process/stream")
 async def process_financial_request_stream(request: ProcessRequest, http_request: Request):
     """SSE streaming variant of ``/api/agents/process``.
@@ -2165,8 +3062,31 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
     from starlette.responses import StreamingResponse
 
     request_id = getattr(http_request.state, "request_id", str(uuid4()))
+    # Resolve the actor before streaming begins; once the 200 headers are sent a
+    # 403 can no longer be returned.
+    actor_org_id, actor_user_id = _resolve_actor(http_request, request.org_id, request.user_id)
+
+    # Admission control happens before the 200 headers go out so a full gate is
+    # a real 503 the gateway can retry.  The slot is held for the stream's
+    # whole lifetime and released exactly once (generator end, client abort or
+    # response teardown, whichever comes first).
+    gate = get_work_gate()
+    gate.claim()
+    released = {"done": False}
+
+    def release_once() -> None:
+        if not released["done"]:
+            released["done"] = True
+            gate.release()
 
     async def event_generator():
+        try:
+            async for chunk in _stream_events():
+                yield chunk
+        finally:
+            release_once()
+
+    async def _stream_events():
         # 1️⃣ Routing phase
         yield f"data: {_json.dumps({'phase': 'routing', 'request_id': request_id})}\n\n"
 
@@ -2207,8 +3127,8 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                 [msg.model_dump() for msg in request.conversation_history] if request.conversation_history else []
             )
             options = request.options.model_dump() if request.options else {"narrative": False}
-            org_id = (request.org_id or "").strip() if hasattr(request, "org_id") else ""
-            user_id = (request.user_id or "").strip() if hasattr(request, "user_id") else ""
+            org_id = actor_org_id
+            user_id = actor_user_id
             session_summary = request.session_summary
 
             # Memory retrieval
@@ -2244,8 +3164,11 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
             # 2️⃣ Yield a trace event for workflow start
             yield f"data: {_json.dumps({'phase': 'trace', 'entry': {'agent': 'master', 'startedAt': nowIso(), 'status': 'running'}})}\n\n"
 
-            # Process through workflow (the heavy computation)
-            result = workflow.process_request(
+            set_cache_scope(org_id)
+            # Process through workflow (the heavy computation) in a worker
+            # thread so the event loop keeps serving /health and other streams.
+            result = await offload(
+                workflow.process_request,
                 request.user_input,
                 profile_data_for_workflow,
                 org_id=org_id or None,
@@ -2333,7 +3256,12 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                 str(analysis_raw).split(".")[-1].lower() if hasattr(analysis_raw, "name") else str(analysis_raw).lower()
             )
 
-            if plan_dict is not None:
+            if analysis_type == "financial_education":
+                plan = Plan(executive_summary="")
+                action_type = None
+                response_evidence = []
+                response_confidence = {}
+            elif plan_dict is not None:
                 plan = Plan.model_validate(plan_dict)
             else:
                 plan = build_plan(
@@ -2352,7 +3280,8 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
             if not str(response_text).strip():
                 response_text = render_plan_markdown(plan, currency_code=currency_code)
 
-            response_text = _add_document_passages(str(response_text), request)
+            if analysis_type != "financial_education":
+                response_text = _add_document_passages(str(response_text), request)
 
             # 4️⃣ Complete event with full result
             complete_payload = {
@@ -2397,17 +3326,24 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
             yield f"data: {_json.dumps(error_payload)}\n\n"
             yield "data: [DONE]\n\n"
 
+    from starlette.background import BackgroundTask
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
             "X-Request-Id": request_id,
         },
+        background=BackgroundTask(release_once),
     )
 
 
+# Generates an ISO 8601 formatted timestamp string in Coordinated Universal Time.
+# Provides standard UTC timestamps for event logs, telemetry, and traces.
+# Returns a standardized timezone-aware ISO string representation.
 def nowIso() -> str:
     """Return current UTC time as ISO 8601 string."""
     from datetime import datetime, timezone
@@ -2418,6 +3354,9 @@ def nowIso() -> str:
 # --- Direct execution ---
 # When run as ``python api_service.py``, start a Uvicorn server on port 8001.
 # In production, the process is typically started via ``uvicorn api_service:app``.
+# Serves as the script entry point when running api_service directly in local dev.
+# Spawns a Uvicorn ASGI server instance bound to the configured service port.
+# Facilitates local manual debugging of FinWise AI Core HTTP service endpoints.
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)
 

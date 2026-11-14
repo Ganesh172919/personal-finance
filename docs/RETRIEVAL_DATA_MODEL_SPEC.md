@@ -1,11 +1,13 @@
-# FinWise Retrieval Data Model Spec
+# FinWise Retrieval Data Model Specification & RAG Phase 2 Reference
 
-This document proposes the retrieval-oriented data model needed to move
-FinWise from "grounded AI with file summaries" to a real chunk-based knowledge
-and RAG system.
+> **Production Engineering Specification: Multi-Modal Knowledge Chunking, 64-D Vector Embeddings, Entity Extraction, and Tenant-Scoped Indexing**  
+> **Source Code:** [`server/src/models/workspaceKnowledgeChunkModel.ts`](../server/src/models/workspaceKnowledgeChunkModel.ts) · [`server/src/services/retrievalService.ts`](../server/src/services/retrievalService.ts)  
+> **Test Suite:** [`server/src/test/retrievalMultiModal.test.ts`](../server/src/test/retrievalMultiModal.test.ts) · [`server/src/test/documentQA.test.ts`](../server/src/test/documentQA.test.ts)
 
-It is intentionally a documentation artifact first, so the team can agree on
-shape and ownership before implementation.
+This document details the production retrieval-oriented data model implemented in
+FinWise. It covers the schema, compound B-tree and text indexes, multi-modal chunking
+lifecycle, 64-dimensional L2-normalized vector embeddings, financial entity extraction,
+and citation synthesis.
 
 ## 1. Current model gap
 
@@ -36,25 +38,24 @@ Suggested fields:
 
 | Field | Type | Notes |
 | -- | -- | -- |
-| `orgId` | ObjectId | Required for tenant isolation |
-| `userId` | ObjectId | Required for ownership scoping |
-| `workspaceFileId` | ObjectId | Link to `WorkspaceFileModel` document |
-| `fileId` | ObjectId | Link to underlying GridFS file id |
-| `chunkIndex` | number | Stable order inside one file |
-| `text` | string | Canonical retrievable chunk text |
-| `textPreview` | string | Shortened preview for UI/debugging |
-| `tokenCountEstimate` | number | Useful for prompt budgeting |
-| `charCount` | number | Cheap fallback metric |
-| `sectionTitle` | string optional | Best-effort heading or sheet name |
-| `pageNumber` | number optional | Important for PDFs |
-| `sourceKind` | enum | `document`, `spreadsheet`, `image`, `code`, `data`, `archive`, `other` |
-| `embedding` | number[] optional | Vector embedding when available |
-| `embeddingModel` | string optional | Embedding model identifier |
-| `embeddingStatus` | enum | `pending`, `ready`, `failed`, `skipped` |
-| `lexicalTerms` | string[] optional | Optional helper terms for retrieval/debugging |
-| `metadata` | mixed | Extra extraction context |
-| `createdAt` | date | Standard timestamp |
-| `updatedAt` | date | Standard timestamp |
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `orgId` | `Types.ObjectId` | Required multi-tenant organization boundary |
+| `userId` | `Types.ObjectId` | Owner user identifier |
+| `workspaceFileId` | `Types.ObjectId` | Reference link to parent `WorkspaceFile` document |
+| `fileId` | `Types.ObjectId` | Reference link to underlying GridFS binary bucket |
+| `chunkIndex` | `number` | Deterministic ordinal index within source document (0, 1, 2, ...) |
+| `text` | `string` | Canonical chunk text (target 1,800 characters with 260 ch overlap) |
+| `tokenCountEstimate` | `number` | Estimated token length for prompt budget accounting ($pprox 	ext{chars} / 4$) |
+| `sectionTitle` | `string` (optional) | Header, tax section, or spreadsheet sheet name |
+| `pageNumber` | `number` (optional) | Exact physical page number preserved from form-feed characters (`\f`) |
+| `sourceKind` | `string` | Extraction source kind (`"document"`, `"csv"`, `"image"`, `"receipt"`) |
+| `modality` | `ChunkModality` | Categorical modality (`"text"` \| `"table"` \| `"image_ocr"` \| `"structured_data"`) |
+| `embedding` | `number[]` (64-D) | 64-dimensional L2-normalized vector embedding for cosine similarity |
+| `entities` | `object` (optional) | Extracted financial entities: `{ merchants, amounts, dates, currencies }` |
+| `metadata` | `Record<string, unknown>` | Extra parser metadata (bounding boxes, OCR engine version, hash) |
+| `createdAt` | `Date` | Mongoose auto-managed creation timestamp |
+| `updatedAt` | `Date` | Mongoose auto-managed modification timestamp |
 
 ## 3. Suggested indexes
 
@@ -268,34 +269,67 @@ mindmap
 ## Production Implementation Blueprint: Workspace Knowledge Chunk Model (`server/src/models/workspaceKnowledgeChunkModel.ts`)
 
 ```typescript
-import mongoose, { Schema, Document, Model } from "mongoose";
-import { orgScopePlugin } from "../utils/orgScopePlugin";
+import { Document, Schema, Types, model } from "mongoose";
 
-export interface IWorkspaceKnowledgeChunk extends Document {
-  orgId: string;
-  userId: string;
-  fileId: mongoose.Types.ObjectId;
-  filename: string;
+export type ChunkModality = "text" | "table" | "image_ocr" | "structured_data";
+
+export interface IWorkspaceKnowledgeChunk {
+  orgId: Types.ObjectId;
+  userId: Types.ObjectId;
+  workspaceFileId: Types.ObjectId;
+  fileId: Types.ObjectId;
   chunkIndex: number;
-  pageNumber: number;
   text: string;
-  charLength: number;
-  tokenEstimate: number;
-  createdAt: Date;
-  updatedAt: Date;
+  tokenCountEstimate: number;
+  sectionTitle?: string;
+  pageNumber?: number;
+  sourceKind: string;
+  modality?: ChunkModality;
+  embedding?: number[];
+  entities?: {
+    merchants?: string[];
+    amounts?: number[];
+    dates?: string[];
+    currencies?: string[];
+  };
+  metadata?: Record<string, unknown>;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-const WorkspaceKnowledgeChunkSchema = new Schema<IWorkspaceKnowledgeChunk>(
+export type WorkspaceKnowledgeChunkDocument = Document<Types.ObjectId, unknown, IWorkspaceKnowledgeChunk> &
+  IWorkspaceKnowledgeChunk;
+
+const WorkspaceKnowledgeChunkSchema = new Schema<WorkspaceKnowledgeChunkDocument>(
   {
-    orgId: { type: String, required: true, index: true },
-    userId: { type: String, required: true, index: true },
-    fileId: { type: Schema.Types.ObjectId, ref: "WorkspaceFile", required: true, index: true },
-    filename: { type: String, required: true },
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
+    userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    workspaceFileId: { type: Schema.Types.ObjectId, ref: "WorkspaceFile", required: true, index: true },
+    fileId: { type: Schema.Types.ObjectId, required: true },
     chunkIndex: { type: Number, required: true },
-    pageNumber: { type: Number, required: true },
     text: { type: String, required: true },
-    charLength: { type: Number, required: true },
-    tokenEstimate: { type: Number, required: true },
+    tokenCountEstimate: { type: Number, required: true, default: 0 },
+    sectionTitle: { type: String, required: false },
+    pageNumber: { type: Number, required: false },
+    sourceKind: { type: String, required: true, default: "document" },
+    modality: {
+      type: String,
+      enum: ["text", "table", "image_ocr", "structured_data"],
+      default: "text",
+      index: true,
+    },
+    embedding: {
+      type: [Number],
+      required: false,
+      default: undefined,
+    },
+    entities: {
+      merchants: [{ type: String }],
+      amounts: [{ type: Number }],
+      dates: [{ type: String }],
+      currencies: [{ type: String }],
+    },
+    metadata: { type: Schema.Types.Mixed, default: {} },
   },
   {
     timestamps: true,
@@ -303,12 +337,22 @@ const WorkspaceKnowledgeChunkSchema = new Schema<IWorkspaceKnowledgeChunk>(
   }
 );
 
-// Compound indexes for sub-10ms scoped queries and lexical retrieval
-WorkspaceKnowledgeChunkSchema.index({ orgId: 1, fileId: 1, chunkIndex: 1 }, { unique: true });
-WorkspaceKnowledgeChunkSchema.index({ orgId: 1, text: "text" });
+// High-speed compound indexes for multi-tenant isolation and deterministic ordering
+WorkspaceKnowledgeChunkSchema.index(
+  { orgId: 1, userId: 1, workspaceFileId: 1, chunkIndex: 1 },
+  { unique: true }
+);
+WorkspaceKnowledgeChunkSchema.index({ orgId: 1, userId: 1, updatedAt: -1 });
+WorkspaceKnowledgeChunkSchema.index({ orgId: 1, modality: 1 });
 
-WorkspaceKnowledgeChunkSchema.plugin(orgScopePlugin);
+// Full-text lexical index supporting BM25-style relevance scoring
+WorkspaceKnowledgeChunkSchema.index(
+  { text: "text", sectionTitle: "text" },
+  { weights: { sectionTitle: 5, text: 1 }, name: "WorkspaceKnowledgeChunkTextIndex" }
+);
 
-export const WorkspaceKnowledgeChunkModel: Model<IWorkspaceKnowledgeChunk> =
-  mongoose.model<IWorkspaceKnowledgeChunk>("WorkspaceKnowledgeChunk", WorkspaceKnowledgeChunkSchema);
+export const WorkspaceKnowledgeChunkModel =
+  model<WorkspaceKnowledgeChunkDocument>("WorkspaceKnowledgeChunk", WorkspaceKnowledgeChunkSchema);
+
+export default WorkspaceKnowledgeChunkModel;
 ```

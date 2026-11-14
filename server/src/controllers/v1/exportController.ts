@@ -33,6 +33,9 @@ import { processExportJob } from "../../services/exports";
 import { assertGridFsOwnership, openGridFsDownloadStream } from "../../services/gridfs";
 import { getEnv } from "../../config/env";
 
+// Validates tenant organization presence on incoming export management requests.
+// Confirms that the organization identifier satisfies MongoDB ObjectId rules.
+// Aborts request handling with an unauthorized HTTP error when context is missing.
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -41,6 +44,9 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+// Parses and validates a path string parameter as a legitimate MongoDB ObjectId.
+// Prevents invalid format errors from propagating into database queries.
+// Returns the instantiated ObjectId or throws a bad request HTTP exception.
 const parseObjectIdParam = (value: string) => {
   if (!mongoose.Types.ObjectId.isValid(value)) {
     throw new HttpError(400, "INVALID_ID", "Invalid identifier format");
@@ -48,6 +54,9 @@ const parseObjectIdParam = (value: string) => {
   return new mongoose.Types.ObjectId(value);
 };
 
+// Formats internal export job documents into client-facing job descriptors.
+// Maps job status, generation timestamps, output byte counts, and file details.
+// Responds with sanitized job structures suitable for export monitoring UIs.
 const toPublicJob = (job: any) => ({
   id: String(job._id),
   type: String(job.type),
@@ -63,6 +72,9 @@ const toPublicJob = (job: any) => ({
   updated_at: job.updatedAt ? new Date(job.updatedAt).toISOString() : undefined,
 });
 
+// Retrieves a paginated history of data export jobs initiated by the caller.
+// Supports status filtering across queued, running, succeeded, and failed jobs.
+// Returns formatted export job descriptors alongside request correlation identifiers.
 export const listExports = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);
@@ -89,6 +101,9 @@ export const listExports = async (req: Request, res: Response) => {
   });
 };
 
+// Enqueues or immediately compiles a structured data export such as CSV or JSON.
+// Enforces export access feature limits and handles client idempotency deduplication.
+// Dispatches async worker processing or executes inline based on runtime environment.
 export const createExport = async (req: Request, res: Response) => {
   const env = getEnv();
   const user = req.user as IUserDocument;
@@ -166,6 +181,9 @@ export const createExport = async (req: Request, res: Response) => {
   return res.status(201).json({ export: toPublicJob(processed), queued: false, request_id: req.requestId });
 };
 
+// Resolves the progress state and metadata of a specific export task by ID.
+// Validates tenant and caller ownership boundaries before returning job status.
+// Returns the current export job model or throws a 404 not found exception.
 export const getExportById = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);
@@ -179,6 +197,9 @@ export const getExportById = async (req: Request, res: Response) => {
   return res.json({ export: toPublicJob(job), request_id: req.requestId });
 };
 
+// Streams completed export files from GridFS storage directly to the caller.
+// Asserts file ownership and configures attachment headers for browser downloading.
+// Pipes binary GridFS streams into the HTTP response or returns a 409 if not ready.
 export const downloadExport = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);

@@ -7,14 +7,29 @@ import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// Root slide-out panel sheet container managing open and closed state.
+// Built on Radix UI Dialog Primitive with off-canvas drawer animations.
+// Powers mobile menus, inspection drawers, and editing side-panels.
 const Sheet = SheetPrimitive.Root;
 
+// Interactive button trigger opening the slide-out sheet panel on click.
+// Re-exports Radix UI DialogPrimitive Trigger with WAI-ARIA popup attributes.
+// Automatically controls aria-expanded state and opens the sheet content.
 const SheetTrigger = SheetPrimitive.Trigger;
 
+// Interactive action button dismissing the active slide-out sheet panel.
+// Re-exports Radix UI DialogPrimitive Close with focus restoration.
+// Returns focus back to the triggering element upon sheet closure.
 const SheetClose = SheetPrimitive.Close;
 
+// Portal wrapper mounting slide-out sheet overlays into the document body.
+// Re-exports Radix UI DialogPrimitive Portal to break out of ancestor clipping.
+// Ensures off-canvas sheets render seamlessly over the entire viewport.
 const SheetPortal = SheetPrimitive.Portal;
 
+// Darkened backdrop overlay appearing behind the active slide-out sheet.
+// Fades in and out synchronously with sheet open and close lifecycle states.
+// Intercepts pointer events to dismiss the sheet on outside tap or click.
 const SheetOverlay = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof SheetPrimitive.Overlay>
@@ -30,6 +45,9 @@ const SheetOverlay = React.forwardRef<
 ));
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName;
 
+// Styling variants for slide-out sheets using class-variance-authority.
+// Supports four slide-in edge origins: top, bottom, left, and right.
+// Configures smooth enter and exit slide animations based on open state.
 const sheetVariants = cva(
   "fixed z-50 gap-4 bg-background p-6 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
   {
@@ -49,10 +67,16 @@ const sheetVariants = cva(
   }
 );
 
+// Props interface for the SheetContent sliding panel component.
+// Combines native dialog content attributes with sheet variant options.
+// Allows specifying the slide-in directional side and custom class overrides.
 interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
     VariantProps<typeof sheetVariants> {}
 
+// Slide-out panel container hosting headers, body content, and action footers.
+// Includes dismiss close button with X icon and directional animations.
+// Forwards DOM references to the underlying Radix Content primitive.
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
@@ -74,6 +98,9 @@ const SheetContent = React.forwardRef<
 ));
 SheetContent.displayName = SheetPrimitive.Content.displayName;
 
+// Layout wrapper structuring title and description headers inside the sheet.
+// Formats vertical flex column with text centering on mobile and left alignment.
+// Forwards standard HTML div attributes to the header container.
 const SheetHeader = ({
   className,
   ...props
@@ -88,6 +115,9 @@ const SheetHeader = ({
 );
 SheetHeader.displayName = "SheetHeader";
 
+// Action button container anchored at the bottom of the slide-out sheet.
+// Arranges action buttons in reverse vertical column on mobile and row on desktop.
+// Houses primary submission actions and secondary cancellation buttons.
 const SheetFooter = ({
   className,
   ...props
@@ -102,6 +132,9 @@ const SheetFooter = ({
 );
 SheetFooter.displayName = "SheetFooter";
 
+// Primary accessible heading element for the slide-out sheet panel.
+// Applies bold heading typography, large font size, and tight letter tracking.
+// Forwards DOM references to the underlying Radix Title primitive.
 const SheetTitle = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof SheetPrimitive.Title>
@@ -114,6 +147,9 @@ const SheetTitle = React.forwardRef<
 ));
 SheetTitle.displayName = SheetPrimitive.Title.displayName;
 
+// Subtitle description explaining sheet context and interactive instructions.
+// Styled with small font size and muted colors for visual hierarchy.
+// Forwards DOM references to the underlying Radix Description primitive.
 const SheetDescription = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Description>,
   React.ComponentPropsWithoutRef<typeof SheetPrimitive.Description>

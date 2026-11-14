@@ -19,6 +19,9 @@ import { z } from "zod";
 
 const objectIdRegex = /^[a-f\d]{24}$/i;
 
+// Validates incoming HTTP payloads reporting metered platform usage events.
+// Enforces tenant and user ObjectId formats, supported features, and positive unit counts.
+// Supports optional idempotency deduplication keys and unstructured metadata context.
 export const usageEventBodySchema = z
   .object({
     org_id: z.string().regex(objectIdRegex, "Invalid org id").optional(),

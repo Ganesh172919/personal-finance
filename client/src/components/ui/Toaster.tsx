@@ -8,6 +8,9 @@ import {
   ToastViewport,
 } from "@/components/ui/Toast";;
 
+// Global toast container mounted at the application root to render active notifications.
+// Subscribes to the useToast hook to map queued toasts into animated visual components.
+// Configures titles, descriptions, action elements, and dismiss buttons per toast.
 export function Toaster() {
   const { toasts } = useToast();
 

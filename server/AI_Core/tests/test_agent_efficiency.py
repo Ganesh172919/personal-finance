@@ -22,7 +22,7 @@ class CountingLLM:
     def __init__(self):
         self.calls = 0
 
-    def invoke_with_fallback(self, messages, reference):
+    def invoke_with_fallback(self, messages, reference, **_kwargs):
         self.calls += 1
         record_llm_call()
         record_llm_usage(model="test", prompt_tokens=20, completion_tokens=10)

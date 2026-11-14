@@ -86,19 +86,29 @@ import { motion } from "framer-motion";
 import { Crown, Calculator, TrendingUp, PiggyBank, GraduationCap, BrainCircuit } from "lucide-react";
 import { IWorkflowTraceEntry } from "@/types";
 
+// Component parameter specifications for the agent execution trace visualizer.
+// Supplies detailed trace step objects alongside fallback agent string lists.
+// Conveys telemetry summary metrics covering total LLM invocations and fallbacks.
 interface AgentWorkflowVisualizerProps {
   workflowTrace?: IWorkflowTraceEntry[];
   agentsInvolved?: string[];
   fallbackUsed?: boolean;
+  recoveredProvider?: boolean;
   llmCallCount?: number;
 }
 
+// Visual styling configuration associated with an AI specialist agent identity.
+// Specifies display title labels, Lucide icon components, and themed badge colors.
+// Governs consistent branding across pipeline execution steps in trace widgets.
 type AgentVisualConfig = {
   label: string;
   icon: typeof Crown;
   color: string;
 };
 
+// Registry mapping specialist agent identifiers to visual presentation tokens.
+// Encapsulates distinct iconography and theme colors for analyzers, planners, and advisors.
+// Provides visual differentiation when rendering multi-agent collaboration histories.
 const AGENT_VISUALS: Record<string, AgentVisualConfig> = {
   master_agent: { label: "Master Strategist", icon: Crown, color: "hsl(158 64% 52%)" },
   master_synthesis: { label: "Master Synthesis", icon: Crown, color: "hsl(158 64% 44%)" },
@@ -108,14 +118,21 @@ const AGENT_VISUALS: Record<string, AgentVisualConfig> = {
   investment_advisor: { label: "Investment Advisor", icon: TrendingUp, color: "hsl(46 95% 53%)" },
   debt_optimizer: { label: "Debt Optimizer", icon: PiggyBank, color: "hsl(0 84% 60%)" },
   financial_educator: { label: "Financial Educator", icon: GraduationCap, color: "hsl(134 61% 41%)" },
+  compound_interest_calculator: { label: "Compound interest calculator", icon: GraduationCap, color: "hsl(134 61% 41%)" },
   ai_core_client: { label: "AI Core Client", icon: BrainCircuit, color: "hsl(271 81% 56%)" },
 };
 
+// Sanitizes raw agent string identifiers for reliable dictionary key lookups.
+// Trims surrounding whitespace and converts casing to lowercase format.
+// Ensures consistent lookup resolution across divergent backend response payloads.
 const normalizeAgentKey = (agent: string) => {
   const key = agent.toLowerCase().trim();
   return key;
 };
 
+// Computes and formats the elapsed execution time for an individual agent step.
+// Calculates millisecond differences between execution start and end timestamps.
+// Returns a hyphen placeholder when timestamps are missing, invalid, or inverted.
 const formatDuration = (entry: IWorkflowTraceEntry) => {
   const started = new Date(entry.startedAt).getTime();
   const ended = new Date(entry.endedAt).getTime();
@@ -128,6 +145,9 @@ const formatDuration = (entry: IWorkflowTraceEntry) => {
   return `${duration}ms`;
 };
 
+// Generates a synthetic workflow trace list when detailed telemetry is absent.
+// Maps basic agent name strings into structured IWorkflowTraceEntry objects.
+// Preserves visualization consistency when communicating with legacy backend models.
 const buildFallbackTrace = (agentsInvolved: string[] = []): IWorkflowTraceEntry[] => {
   const timestamp = new Date().toISOString();
   return agentsInvolved.map(agent => ({
@@ -138,10 +158,14 @@ const buildFallbackTrace = (agentsInvolved: string[] = []): IWorkflowTraceEntry[
   }));
 };
 
+// Renders an animated step-by-step trace of multi-agent AI execution pipelines.
+// Visualizes specialist agent roles, elapsed computation times, and error notices.
+// Promotes transparency by detailing execution stages and fallback routing flags.
 export function AgentWorkflowVisualizer({
   workflowTrace = [],
   agentsInvolved = [],
   fallbackUsed = false,
+  recoveredProvider = false,
   llmCallCount = 0,
 }: AgentWorkflowVisualizerProps) {
   const trace = workflowTrace.length > 0 ? workflowTrace : buildFallbackTrace(agentsInvolved);
@@ -160,7 +184,7 @@ export function AgentWorkflowVisualizer({
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Agent Workflow Trace</h3>
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span>LLM calls: {llmCallCount}</span>
-          <span>{fallbackUsed ? "Fallback used" : "Primary path"}</span>
+          <span>{fallbackUsed ? "Fallback used" : recoveredProvider ? "Provider recovered" : llmCallCount === 0 ? "No model call" : "Primary path"}</span>
         </div>
       </div>
 

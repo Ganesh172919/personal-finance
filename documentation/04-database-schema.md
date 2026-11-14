@@ -1727,6 +1727,197 @@ mindmap
 
 ---
 
+---
+
+## 8. Latest Mongoose 8 Models & Subdocument Additions (2026 Architecture)
+
+### 8.1 Multi-Modal 64-D Vector Knowledge Chunks (`WorkspaceKnowledgeChunk`)
+Extends RAG storage with 64-dimensional dense semantic vectors, modality typing, and financial entity extraction:
+
+```typescript
+// server/src/models/workspaceKnowledgeChunkModel.ts
+export type ChunkModality = "text" | "table" | "image_ocr" | "structured_data";
+
+export interface IWorkspaceKnowledgeChunk extends Document {
+  orgId: mongoose.Types.ObjectId;
+  userId: mongoose.Types.ObjectId;
+  workspaceFileId: mongoose.Types.ObjectId;
+  fileId: mongoose.Types.ObjectId;
+  chunkIndex: number;
+  text: string;
+  pageNumber: number;
+  modality: ChunkModality;
+  embedding: number[]; // 64-dimensional float array
+  extractedEntities: {
+    merchants: string[];
+    amounts: number[];
+    dates: string[];
+    currencies: string[];
+  };
+  contentHash: string;
+}
+
+// Compound Idempotency Index
+WorkspaceKnowledgeChunkSchema.index(
+  { orgId: 1, userId: 1, workspaceFileId: 1, chunkIndex: 1 },
+  { unique: true }
+);
+```
+
+---
+
+### 8.2 Automated Dunning Recovery (`DunningRecord`)
+Tracks failed subscription billing charges, automated retry cadences, and 7-day grace period enforcement:
+
+```typescript
+// server/src/models/dunningModel.ts
+export interface IDunningRecord extends Document {
+  orgId: string;
+  userId: mongoose.Types.ObjectId;
+  subscriptionId: string;
+  amount: number;
+  currency: string;
+  status: "active" | "recovered" | "exhausted";
+  currentAttempt: number;
+  maxAttempts: number; // default: 3
+  gracePeriodExpiresAt: Date; // now + 7 days
+  nextRetryAt: Date;
+  lastFailureReason?: string;
+  retryHistory: Array<{
+    attemptNumber: number;
+    attemptedAt: Date;
+    success: boolean;
+    errorReason?: string;
+  }>;
+}
+
+DunningSchema.index({ orgId: 1, status: 1, nextRetryAt: 1 });
+```
+
+---
+
+### 8.3 Visual Workflows with Delay Timers & Branch Rules (`Workflow` & `WorkflowRun`)
+Supports external webhook ingestion, multi-step delay timers, conditional branch execution, and skipped action auditing:
+
+```typescript
+// server/src/models/workflowModel.ts
+export type WorkflowTriggerType = "manual" | "cron" | "event" | "webhook";
+export type WorkflowConditionOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "contains";
+
+export interface WorkflowActionCondition {
+  field: string;
+  operator: WorkflowConditionOperator;
+  value: string | number | boolean;
+}
+
+export interface IWorkflowAction {
+  type: "create_task" | "send_notification" | "export_report" | "delay";
+  config: Record<string, unknown>;
+  condition?: WorkflowActionCondition;
+  delayMs?: number; // 1000 to 2592000000 (30 days)
+}
+
+// In WorkflowRunModel:
+export interface IWorkflowRun extends Document {
+  workflowId: mongoose.Types.ObjectId;
+  triggerContext?: Record<string, unknown>;
+  actions_skipped?: Array<{ index: number; action_type: string; reason: string }>;
+  delays_executed?: Array<{ index: number; durationMs: number; executedAt: Date }>;
+  status: "pending" | "running" | "succeeded" | "failed";
+}
+```
+
+---
+
+### 8.4 Multi-Channel Scheduled Exports (`ScheduledExport`)
+Enables recurring transaction exports delivered to Email, Webhook Push, or Cloud Storage (AWS S3 & Google Cloud Storage GCS):
+
+```typescript
+// server/src/models/scheduledExportModel.ts
+export type ScheduledExportDestination = "email" | "webhook" | "cloud_storage";
+
+export interface IScheduledExportDestinationConfig {
+  webhookUrl?: string;
+  authHeader?: string;
+  cloudProvider?: "s3" | "gcs";
+  bucketName?: string;
+  bucketRegion?: string;
+  bucketPrefix?: string;
+  customFilename?: string;
+}
+
+export interface IScheduledExport extends Document {
+  orgId: string;
+  userId: mongoose.Types.ObjectId;
+  frequency: "weekly" | "monthly";
+  exportType: "csv" | "pdf";
+  destination: ScheduledExportDestination;
+  destinationConfig?: IScheduledExportDestinationConfig;
+  lastDeliveryDetails?: {
+    deliveredAt: Date;
+    destination: string;
+    sha256Checksum: string;
+    byteLength: number;
+    cloudUri?: string;
+  };
+}
+```
+
+---
+
+### 8.5 Recurring Tasks with Deterministic Auto-Renewal (`Task`)
+Adds recurring cadence policies and automated next-cycle instance provisioning:
+
+```typescript
+// server/src/models/taskModel.ts
+export type TaskRecurrenceCadence = "none" | "daily" | "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
+
+export interface ITaskRecurrence {
+  cadence: TaskRecurrenceCadence;
+  nextDueDate: Date;
+  parentTaskId?: mongoose.Types.ObjectId;
+  generation: number;
+}
+
+// Persisted inside Task document:
+TaskSchema.add({
+  recurrence: {
+    cadence: { type: String, enum: ["none", "daily", "weekly", "biweekly", "monthly", "quarterly", "yearly"], default: "none" },
+    nextDueDate: { type: Date },
+    parentTaskId: { type: Schema.Types.ObjectId, ref: "Task" },
+    generation: { type: Number, default: 1 }
+  }
+});
+```
+
+---
+
+### 8.6 Financial Journal with Offline Deduplication & 64-D Semantic Vector (`JournalEntry`)
+Accommodates offline handwriting stroke synchronization with idempotent draft keys and 64-D dense embeddings:
+
+```typescript
+// server/src/models/journalEntryModel.ts
+export interface IJournalEntry extends Document {
+  orgId: string;
+  userId: mongoose.Types.ObjectId;
+  title?: string;
+  content: string;
+  clientDraftId?: string;
+  tags: string[];
+  sentiment?: "optimistic" | "concerned" | "urgent" | "neutral";
+  embedding?: number[]; // 64-D normalized vector
+  syncStatus: "synced" | "pending";
+}
+
+// Sparse unique index guarantees idempotency for offline synchronization
+JournalEntrySchema.index(
+  { orgId: 1, userId: 1, clientDraftId: 1 },
+  { unique: true, sparse: true }
+);
+```
+
+---
+
 ## Production Implementation Blueprints
 
 ### 1. Multi-Tenant Query Scoping Invariant (`server/src/utils/orgScopePlugin.ts`)

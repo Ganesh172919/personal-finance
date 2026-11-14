@@ -37,14 +37,23 @@ import {
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { TaskApplyDialog } from "@/components/TaskApplyDialog";
 
+// Stable fallback array representing an empty task collection.
+// Prevents unnecessary component re-renders from array reference changes.
+// Used when server response is undefined or during initial loading states.
 const EMPTY_TASKS: Task[] = [];
 
+// Extracts a user-friendly error message from unknown error objects.
+// Appends the server request ID when available for diagnostic tracing.
+// Returns the provided fallback string when error is not an Error instance.
 const formatError = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
+// Dashboard card component listing open tasks split into time horizon buckets.
+// Supports optimistic updates for completing, dismissing, or applying tasks.
+// Feature-gated via application configuration with graceful fallback states.
 export function TasksWidget() {
   const queryClient = useQueryClient();
   const { toast } = useToast();

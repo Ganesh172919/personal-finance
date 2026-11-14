@@ -24,11 +24,17 @@ import { Moon, Sun } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import { cn } from "@/lib/utils";
 
+// Defines configuration properties for the ThemeToggle button group.
+// Supports custom styling classes and a compact view variant.
+// Omits text labels and narrows height when compact mode is active.
 type ThemeToggleProps = {
   className?: string;
   compact?: boolean;
 };
 
+// Renders an accessible interactive toggle pill between light and dark themes.
+// Visually highlights the active theme button and applies aria-pressed attributes.
+// Integrates with useTheme hook to trigger global application theme changes.
 export function ThemeToggle({ className, compact = false }: ThemeToggleProps) {
   const { theme, setTheme } = useTheme();
 

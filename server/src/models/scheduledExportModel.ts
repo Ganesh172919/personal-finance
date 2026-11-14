@@ -1,11 +1,17 @@
 import mongoose, { Document, Schema, Types } from "mongoose";
 
+// Defines status, frequency, destination, and file format classifications for scheduled exports.
+// Distinguishes export intervals, delivery targets (email, webhook, S3/GCS), and run states.
+// Used by scheduled background export processors and delivery status tracking.
 export type ScheduledExportType = "transactions_csv" | "monthly_summary_pdf";
 export type ScheduledExportFrequency = "weekly" | "monthly";
-export type ScheduledExportStatus = "active" | "paused";
+export type ScheduledExportStatus = "active" | "paused" | "running";
 export type ScheduledExportDeliveryStatus = "success" | "failed" | "none";
 export type ScheduledExportDestination = "email" | "webhook" | "cloud_storage";
 
+// Defines destination credentials and endpoints for external export delivery.
+// Stores webhook URLs, authorization headers, and cloud bucket parameters for S3 and GCS.
+// Enables automated data transport directly to user-managed infrastructure.
 export interface IScheduledExportDestinationConfig {
   webhookUrl?: string;
   authHeader?: string;
@@ -16,6 +22,9 @@ export interface IScheduledExportDestinationConfig {
   customFilename?: string;
 }
 
+// Defines the domain attributes for recurring data export configurations.
+// Tracks execution frequencies, filter parameters, next scheduled run dates, and delivery logs.
+// Serves as the configuration blueprint for automated periodic financial reporting.
 export interface IScheduledExport {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;
@@ -36,8 +45,14 @@ export interface IScheduledExport {
   updatedAt: Date;
 }
 
+// Combines scheduled export properties with Mongoose Document methods and lifecycle hooks.
+// Exposes database primary keys, document timestamps, and ODM update helpers.
+// Represents a persistent scheduled export document returned by database queries.
 export type IScheduledExportDocument = IScheduledExport & Document;
 
+// Configures the Mongoose schema mapping for the scheduled export configuration collection.
+// Enforces validation rules on export types, delivery destinations, and next run timestamps.
+// Automatically manages creation and modification timestamps across schedule changes.
 const scheduledExportSchema = new Schema<IScheduledExportDocument>(
   {
     orgId: {
@@ -87,7 +102,7 @@ const scheduledExportSchema = new Schema<IScheduledExportDocument>(
     },
     status: {
       type: String,
-      enum: ["active", "paused"],
+      enum: ["active", "paused", "running"],
       default: "active",
       index: true,
     },
@@ -123,9 +138,15 @@ const scheduledExportSchema = new Schema<IScheduledExportDocument>(
   }
 );
 
+// Configures compound database indexes for scheduled worker polling and user views.
+// Accelerates queries finding active exports scheduled for immediate execution.
+// Optimizes user dashboard queries fetching export configurations sorted chronologically.
 scheduledExportSchema.index({ orgId: 1, userId: 1, createdAt: -1 });
 scheduledExportSchema.index({ status: 1, nextRunAt: 1 });
 
+// Compiles or retrieves the existing Mongoose model for scheduled data exports.
+// Exposes data access methods to schedule, pause, resume, or execute report jobs.
+// Drives automated weekly and monthly recurring PDF and CSV financial exports.
 const ScheduledExportModel =
   mongoose.models.ScheduledExport ||
   mongoose.model<IScheduledExportDocument>("ScheduledExport", scheduledExportSchema);

@@ -13,8 +13,10 @@ import { clearTestDb, startTestDb, stopTestDb } from "./testDb";
 
 describe("Scheduled Recurring Exports & Automated Email Dispatch", () => {
   const app = createApp();
+  const originalWebhookCredentialsKey = process.env.WEBHOOK_CREDENTIALS_KEY;
 
   beforeAll(async () => {
+    process.env.WEBHOOK_CREDENTIALS_KEY = Buffer.alloc(32, 7).toString("base64");
     await startTestDb();
     await TransactionModel.init();
     await ExportJobModel.init();
@@ -23,7 +25,11 @@ describe("Scheduled Recurring Exports & Automated Email Dispatch", () => {
     configurePassport();
   });
 
-  afterAll(stopTestDb);
+  afterAll(async () => {
+    await stopTestDb();
+    if (originalWebhookCredentialsKey === undefined) delete process.env.WEBHOOK_CREDENTIALS_KEY;
+    else process.env.WEBHOOK_CREDENTIALS_KEY = originalWebhookCredentialsKey;
+  });
   beforeEach(clearTestDb);
 
   const getCsrf = async () => {
@@ -227,7 +233,7 @@ describe("Scheduled Recurring Exports & Automated Email Dispatch", () => {
           frequency: "monthly",
           destination: "webhook",
           destination_config: {
-            webhookUrl: "https://audit.example.com/api/v1/inbound-exports",
+            webhookUrl: "https://example.com/api/v1/inbound-exports",
             authHeader: "Bearer sec-token-audit-456",
           },
         });
@@ -235,9 +241,26 @@ describe("Scheduled Recurring Exports & Automated Email Dispatch", () => {
       expect(postRes.status).toBe(201);
       const schedule = postRes.body.schedule;
       expect(schedule.destination).toBe("webhook");
-      expect(schedule.destination_config?.webhook_url).toBe("https://audit.example.com/api/v1/inbound-exports");
+      expect(schedule.destination_config?.webhook_url).toBe("https://example.com/api/v1/inbound-exports");
+      expect(schedule.destination_config?.has_auth_header).toBe(true);
+      expect(schedule.destination_config?.auth_header).toBeUndefined();
 
       const scheduleId = schedule.id;
+
+      // Updating only the target must not erase the encrypted authorization.
+      const patchRes = await request(app)
+        .patch(`/api/exports/schedules/${scheduleId}`)
+        .set("Cookie", [auth.cookie, csrfCookie])
+        .set("X-CSRF-Token", csrfToken)
+        .set("X-Org-Id", String(orgId))
+        .send({
+          destination_config: {
+            webhook_url: "https://example.com/api/v1/inbound-exports",
+          },
+        });
+
+      expect(patchRes.status).toBe(200);
+      expect(patchRes.body.schedule.destination_config?.has_auth_header).toBe(true);
 
       // 2. Trigger on-demand
       const runRes = await request(app)
@@ -249,12 +272,12 @@ describe("Scheduled Recurring Exports & Automated Email Dispatch", () => {
       expect(runRes.status).toBe(200);
       expect(runRes.body.result.success).toBe(true);
       expect(runRes.body.result.destination).toBe("webhook");
-      expect(runRes.body.result.webhook_url).toBe("https://audit.example.com/api/v1/inbound-exports");
+      expect(runRes.body.result.webhook_url).toBe("https://example.com/api/v1/inbound-exports");
       expect(runRes.body.result.http_code).toBe(200);
       expect(runRes.body.result.checksum_sha256).toBeDefined();
 
       // Verify webhook dispatch payload and headers
-      expect(interceptedUrl).toBe("https://audit.example.com/api/v1/inbound-exports");
+      expect(interceptedUrl).toBe("https://example.com/api/v1/inbound-exports");
       expect(interceptedOptions.method).toBe("POST");
       expect(interceptedOptions.headers["Authorization"]).toBe("Bearer sec-token-audit-456");
       expect(interceptedOptions.headers["X-FinWise-Event"]).toBe("scheduled_export.delivered");
@@ -271,6 +294,8 @@ describe("Scheduled Recurring Exports & Automated Email Dispatch", () => {
       // Verify DB update
       const updated = (await ScheduledExportModel.findById(scheduleId).lean()) as any;
       expect(updated.lastDeliveryStatus).toBe("success");
+      expect(updated.destinationConfig?.authHeader).toMatch(/^v1\./);
+      expect(updated.destinationConfig?.authHeader).not.toContain("sec-token-audit-456");
       expect(updated.lastDeliveryDetails?.destination).toBe("webhook");
       expect(updated.lastDeliveryDetails?.http_code).toBe(200);
       expect(updated.lastDeliveryDetails?.checksum_sha256).toBe(runRes.body.result.checksum_sha256);
@@ -279,7 +304,7 @@ describe("Scheduled Recurring Exports & Automated Email Dispatch", () => {
     }
   });
 
-  it("creates, triggers on-demand, and verifies cloud storage bucket (S3 / GCS) push sync", async () => {
+  it("rejects unconfigured cloud storage instead of reporting a false delivery", async () => {
     const auth = await createAuthedUser();
     const { orgId } = await ensurePersonalOrgForUser(auth.user._id);
     const { csrfCookie, csrfToken } = await getCsrf();
@@ -291,7 +316,6 @@ describe("Scheduled Recurring Exports & Automated Email Dispatch", () => {
       status: "active",
     });
 
-    // 1. Create a cloud-storage-targeted schedule
     const postRes = await request(app)
       .post("/api/exports/schedules")
       .set("Cookie", [auth.cookie, csrfCookie])
@@ -311,34 +335,7 @@ describe("Scheduled Recurring Exports & Automated Email Dispatch", () => {
         },
       });
 
-    expect(postRes.status).toBe(201);
-    const schedule = postRes.body.schedule;
-    expect(schedule.destination).toBe("cloud_storage");
-    expect(schedule.destination_config?.bucket_name).toBe("compliance-exports-vault");
-    expect(schedule.destination_config?.cloud_provider).toBe("s3");
-
-    const scheduleId = schedule.id;
-
-    // 2. Trigger on-demand
-    const runRes = await request(app)
-      .post(`/api/exports/schedules/${scheduleId}/run`)
-      .set("Cookie", [auth.cookie, csrfCookie])
-      .set("X-CSRF-Token", csrfToken)
-      .set("X-Org-Id", String(orgId));
-
-    expect(runRes.status).toBe(200);
-    expect(runRes.body.result.success).toBe(true);
-    expect(runRes.body.result.destination).toBe("cloud_storage");
-    expect(runRes.body.result.cloud_uri).toBe("s3://compliance-exports-vault/financial-audits/weekly/transactions-ledger-weekly.csv");
-    expect(runRes.body.result.provider).toBe("s3");
-    expect(runRes.body.result.checksum_sha256).toBeDefined();
-    expect(runRes.body.result.size_bytes).toBeGreaterThan(0);
-
-    // Verify DB update
-    const updated = (await ScheduledExportModel.findById(scheduleId).lean()) as any;
-    expect(updated.lastDeliveryStatus).toBe("success");
-    expect(updated.lastDeliveryDetails?.destination).toBe("cloud_storage");
-    expect(updated.lastDeliveryDetails?.cloud_uri).toBe("s3://compliance-exports-vault/financial-audits/weekly/transactions-ledger-weekly.csv");
-    expect(updated.lastDeliveryDetails?.checksum_sha256).toBe(runRes.body.result.checksum_sha256);
+    expect(postRes.status).toBe(400);
+    expect(postRes.body.code).toBe("VALIDATION_ERROR");
   });
 });

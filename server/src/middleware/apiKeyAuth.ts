@@ -14,20 +14,16 @@ import ApiKeyModel from "../models/apiKeyModel";
 import { resolveApiKey } from "../services/apiKeys";
 import { fireAndForget } from "../services/deadLetterQueue";
 
-/**
- * Extract raw API key from request headers.
- * Checks Authorization: Bearer <key> and X-API-Key: <key> headers.
- */
+// Parses raw API key tokens from Bearer authorization headers or fallback x-api-key headers.
+// Returns the trimmed token string or an empty string if no API key header is present.
 export function extractRawApiKey(req: { header(name: string): string | undefined }): string {
   const header = String(req.header("authorization") || "");
   const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
   return token || String(req.header("x-api-key") || "").trim();
 }
 
-/**
- * Attach resolved API key metadata and org context to the request.
- * Shared by both apiKeyAuth and authAny middleware.
- */
+// Decorates the Express request object with validated API key metadata and synthetic org context.
+// Asynchronously triggers a fire-and-forget background update to refresh key lastUsedAt timestamps.
 export function attachApiKeyToRequest(req: any, key: any): void {
   req.apiKey = {
     id: String(key._id),
@@ -56,12 +52,8 @@ export function attachApiKeyToRequest(req: any, key: any): void {
   );
 }
 
-/**
- * API Key Authentication Middleware
- *
- * Extracts and validates API keys from request headers.
- * Rejects requests without a valid API key.
- */
+// Express middleware verifying that incoming requests supply a registered and unrevoked API key.
+// Returns 401 Unauthorized for missing or invalid keys and forwards valid requests to next handlers.
 export const apiKeyAuth: RequestHandler = async (req, res, next) => {
   try {
     const rawKey = extractRawApiKey(req);
@@ -82,12 +74,8 @@ export const apiKeyAuth: RequestHandler = async (req, res, next) => {
   }
 };
 
-/**
- * Middleware factory that requires a specific API key scope.
- *
- * If the request is authenticated via JWT (not API key), this middleware
- * passes through without checking scopes. Scopes only apply to API keys.
- */
+// Middleware factory generating scope verification guards for API key authenticated routes.
+// Rejects requests with 403 Forbidden if the authenticated API key lacks the required scope permission.
 export const requireApiKeyScope = (scope: string): RequestHandler => {
   return (req, res, next) => {
     const apiKey = (req as any).apiKey as { scopes?: string[] } | undefined;

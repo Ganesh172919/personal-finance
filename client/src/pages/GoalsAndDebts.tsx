@@ -19,10 +19,17 @@
  * from the sidebar under "Goals & Debts".
  */
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useState, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { AlertTriangle, Gift, Scale, Sparkles } from "lucide-react";
+import {
+  AlertTriangle,
+  Gift,
+  Globe,
+  Scale,
+  Sparkles,
+  Zap,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -51,7 +58,19 @@ import {
   updateGoal,
 } from "@/lib/apiClient";
 import type { IDebt, IFinancialGoal, IFinancialProfile } from "@/types";
+import { allocateByWeight, simulatePayoff, singleDebtPayoff } from "./goalsDebtsMath";
+import {
+  CURRENCY_LABELS,
+  CURRENCY_SYMBOLS,
+  FX_RATES_TO_USD,
+  SUPPORTED_CURRENCIES,
+  convertUsdToCurrency,
+  type SupportedCurrency,
+} from "@/lib/currencyFx";
 
+// Defines form field types for creating or editing savings goals.
+// Captures name, target amount, current progress, deadline, and priority ranking.
+// Maintains string representations for controlled form inputs prior to parsing.
 type GoalForm = {
   name: string;
   target: string;
@@ -60,6 +79,9 @@ type GoalForm = {
   priority: string;
 };
 
+// Defines input field types for tracking personal liabilities and debts.
+// Tracks outstanding balances, annual interest percentages, and minimum monthly payments.
+// Used in dialogs to configure mortgages, credit cards, auto loans, and student debt.
 type DebtForm = {
   name: string;
   balance: string;
@@ -68,6 +90,9 @@ type DebtForm = {
   type: string;
 };
 
+// Initial blank state for the savings goal creation and reset modal.
+// Provides sensible defaults with empty strings and default priority one.
+// Ensures consistent form state resetting upon submission or cancellation.
 const EMPTY_GOAL: GoalForm = {
   name: "",
   target: "",
@@ -76,6 +101,9 @@ const EMPTY_GOAL: GoalForm = {
   priority: "1",
 };
 
+// Initial blank values for the liability creation and editing modal.
+// Default debt type is initialized to standard loan with blank numeric inputs.
+// Guarantees clean state initialization whenever a new debt item is created.
 const EMPTY_DEBT: DebtForm = {
   name: "",
   balance: "",
@@ -84,86 +112,47 @@ const EMPTY_DEBT: DebtForm = {
   type: "Loan",
 };
 
-interface DebtSim {
-  id: string;
-  name: string;
-  balance: number;
-  apr: number;
-  minPayment: number;
-}
-
-function simulatePayoff(activeDebts: DebtSim[], extraMonthly: number, strategy: "avalanche" | "snowball" | "minimum") {
-  if (activeDebts.length === 0) {
-    return { months: 0, totalInterest: 0, negativeAmortization: false };
-  }
-
-  const debts = activeDebts.map(d => ({
-    ...d,
-    currentBalance: d.balance,
-  }));
-
-  let totalInterest = 0;
-  let months = 0;
-  const maxMonths = 360;
-  let negativeAmortization = false;
-
-  while (months < maxMonths) {
-    const remainingDebts = debts.filter(d => d.currentBalance > 0.01);
-    if (remainingDebts.length === 0) break;
-    months++;
-
-    for (const d of remainingDebts) {
-      const monthlyRate = (d.apr / 100) / 12;
-      const interest = d.currentBalance * monthlyRate;
-      totalInterest += interest;
-      d.currentBalance += interest;
-
-      if (strategy === "minimum" && d.minPayment <= interest) {
-        negativeAmortization = true;
-      }
-    }
-
-    let extraCash = extraMonthly;
-    for (const d of remainingDebts) {
-      const payment = Math.min(d.currentBalance, d.minPayment);
-      d.currentBalance -= payment;
-    }
-
-    if (strategy !== "minimum" && extraCash > 0) {
-      const sorted = [...debts.filter(d => d.currentBalance > 0.01)].sort((a, b) => {
-        if (strategy === "avalanche") {
-          return b.apr - a.apr;
-        }
-        return a.currentBalance - b.currentBalance;
-      });
-
-      for (const d of sorted) {
-        if (extraCash <= 0) break;
-        const extraPaid = Math.min(d.currentBalance, extraCash);
-        d.currentBalance -= extraPaid;
-        extraCash -= extraPaid;
-      }
-    }
-  }
-
-  return {
-    months: months >= maxMonths ? maxMonths : months,
-    totalInterest: Math.round(totalInterest),
-    negativeAmortization,
-  };
-}
-
+// Financial goals and debt payoff management dashboard with multi-currency support.
+// Calculates goal progress pacing, debt avalanche/snowball payoff timelines, and savings rules.
+// Provides interactive forms and visual projections for long-term wealth building.
 export default function GoalsAndDebts() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { formatMoney } = useOrgFormatters();
 
+  const [selectedReportingCurrency, setSelectedReportingCurrency] = useState<SupportedCurrency>("USD");
+  const [savingsRuleType, setSavingsRuleType] = useState<"surplus" | "roundup" | "debt_sweep" | "windfall">("surplus");
+  const [surplusSweepPct, setSurplusSweepPct] = useState<number>(50);
+  const [roundupIncrement, setRoundupIncrement] = useState<number>(1);
+  const [selectedTargetGoalId, setSelectedTargetGoalId] = useState<string>("");
+
   const { data: profile, isLoading, isError, refetch } = useQuery<IFinancialProfile>({
     queryKey: ["/api/financial-profiles/me"],
   });
 
-  const goals = useMemo(() => (profile?.goals || []) as IFinancialGoal[], [profile?.goals]);
-  const debts = useMemo(() => (profile?.debts || []) as IDebt[], [profile?.debts]);
+  const goals = useMemo(() => {
+    const rawGoals = (profile?.goals || []) as IFinancialGoal[];
+    if (selectedReportingCurrency === "USD" || profile?.currency === selectedReportingCurrency) {
+      return rawGoals;
+    }
+    return rawGoals.map((g) => ({
+      ...g,
+      target: convertUsdToCurrency(Number(g.target) || 0, selectedReportingCurrency),
+      current: convertUsdToCurrency(Number(g.current) || 0, selectedReportingCurrency),
+    }));
+  }, [profile?.goals, profile?.currency, selectedReportingCurrency]);
+
+  const debts = useMemo(() => {
+    const rawDebts = (profile?.debts || []) as IDebt[];
+    if (selectedReportingCurrency === "USD" || profile?.currency === selectedReportingCurrency) {
+      return rawDebts;
+    }
+    return rawDebts.map((d) => ({
+      ...d,
+      balance: convertUsdToCurrency(Number(d.balance) || 0, selectedReportingCurrency),
+      minimum_payment: convertUsdToCurrency(Number(d.minimum_payment) || 0, selectedReportingCurrency),
+    }));
+  }, [profile?.debts, profile?.currency, selectedReportingCurrency]);
 
   const [goalForm, setGoalForm] = useState<GoalForm>(EMPTY_GOAL);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
@@ -309,20 +298,25 @@ export default function GoalsAndDebts() {
     strategy: "avalanche" | "snowball",
     debt: IDebt,
     extraAmount: number,
-    monthsSaved: number,
-    interestSaved: number
+    monthsSaved: number | null,
+    interestSaved: number | null
   ) => {
     const strategyName = strategy === "avalanche" ? "Avalanche" : "Snowball";
+    const hasComparison = monthsSaved !== null && interestSaved !== null;
     createTaskMutation.mutate({
       title: `${strategyName} Plan: Pay extra ${formatCurrency(extraAmount)}/mo on ${debt.name}`,
-      why: `Applying an extra ${formatCurrency(extraAmount)}/mo reduces total payoff duration by ~${monthsSaved} months and saves ~${formatCurrency(interestSaved)} in interest.`,
+      why: hasComparison
+        ? `Applying an extra ${formatCurrency(extraAmount)}/mo reduces total payoff duration by ~${monthsSaved} months and saves ~${formatCurrency(interestSaved)} in interest.`
+        : `Minimum payments alone never clear these debts; applying an extra ${formatCurrency(extraAmount)}/mo puts them on a payoff path.`,
       steps: [
         `Set up recurring auto-pay of ${formatCurrency(Number(debt.minimum_payment || 0) + extraAmount)}/mo on ${debt.name}`,
         "Maintain required minimum payments on all remaining debts",
         "Re-evaluate payoff schedule in 30 days in FinWise",
       ],
       priority: "high",
-      expected_impact: `Saves ${formatCurrency(interestSaved)} in interest and eliminates debt ${monthsSaved} months sooner.`,
+      expected_impact: hasComparison
+        ? `Saves ${formatCurrency(interestSaved)} in interest and eliminates debt ${monthsSaved} months sooner.`
+        : "Stops balances from growing and establishes a debt-free date.",
       kind: "debt",
       bucket: 30,
       due_days: 14,
@@ -423,7 +417,21 @@ export default function GoalsAndDebts() {
     });
   };
 
-  const formatCurrency = (value: number) => formatMoney(value);
+  const activeCurrency = profile?.currency || selectedReportingCurrency;
+  const activeSymbol = CURRENCY_SYMBOLS[selectedReportingCurrency] || "$";
+  const formatCurrency = useCallback(
+    (value: number) => {
+      if (selectedReportingCurrency === "USD" && !profile?.currency) {
+        return formatMoney(value);
+      }
+      const rounded =
+        activeCurrency === "JPY"
+          ? Math.round(value).toLocaleString()
+          : Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return `${activeSymbol}${rounded}`;
+    },
+    [selectedReportingCurrency, profile?.currency, activeCurrency, formatMoney, activeSymbol]
+  );
 
   const goalsSummary = useMemo(() => {
     const totalTarget = goals.reduce((sum, g) => sum + (Number(g.target) || 0), 0);
@@ -545,18 +553,22 @@ export default function GoalsAndDebts() {
     const safeWindfall = Math.max(0, Number(windfallAmount) || 0);
 
     let allocatedMonthlySum = 0;
-    let allocatedWindfallSum = 0;
+    // Windfalls are written to goal balances, so split them to the cent (no rounding loss)
+    // and pass any amount above a goal's remaining balance on to the other goals.
+    const windfallAllocations = allocateByWeight(
+      safeWindfall,
+      goalWeights.map(item => ({ weight: item.weight, cap: item.remaining }))
+    );
+    const allocatedWindfallSum = Math.round(windfallAllocations.reduce((sum, v) => sum + v, 0) * 100) / 100;
 
-    const items = goalWeights.map(item => {
+    const items = goalWeights.map((item, index) => {
       const ratio = totalWeight > 0 ? item.weight / totalWeight : 1 / goalWeights.length;
 
       const unconstrainedMonthly = Math.round(safeSurplus * ratio);
       const monthlyAllocation = Math.min(item.remaining, unconstrainedMonthly);
       allocatedMonthlySum += monthlyAllocation;
 
-      const unconstrainedWindfall = Math.round(safeWindfall * ratio);
-      const windfallAllocation = Math.min(item.remaining, unconstrainedWindfall);
-      allocatedWindfallSum += windfallAllocation;
+      const windfallAllocation = windfallAllocations[index];
 
       const monthsToTarget = monthlyAllocation > 0 ? Math.ceil(item.remaining / monthlyAllocation) : item.diffMonths;
       const requiredMonthly = Math.ceil(item.remaining / item.diffMonths);
@@ -671,24 +683,162 @@ export default function GoalsAndDebts() {
       }));
   }, [debts]);
 
+  const activeTargetGoal = useMemo(() => {
+    if (selectedTargetGoalId) {
+      const found = goals.find((g) => String((g as any).id || (g as any)._id) === selectedTargetGoalId);
+      if (found) return found;
+    }
+    const sorted = [...goals].sort((a, b) => (Number(b.priority) || 1) - (Number(a.priority) || 1));
+    const active = sorted.find((g) => (Number(g.target) || 0) > (Number(g.current) || 0));
+    return active || sorted[0] || null;
+  }, [goals, selectedTargetGoalId]);
+
+  const dynamicSavingsSimulation = useMemo(() => {
+    const rawIncome =
+      Number((profile as any)?.monthlyIncome) ||
+      (Number(profile?.annual_income) ? Number(profile?.annual_income) / 12 : 5000);
+    const convertedIncome =
+      selectedReportingCurrency === "USD" || profile?.currency === selectedReportingCurrency
+        ? rawIncome
+        : convertUsdToCurrency(rawIncome, selectedReportingCurrency);
+
+    const rawExpenses =
+      Number(profile?.monthly_expenses) || Number((profile as any)?.monthlyExpenses) || 3200;
+    const convertedExpenses =
+      selectedReportingCurrency === "USD" || profile?.currency === selectedReportingCurrency
+        ? rawExpenses
+        : convertUsdToCurrency(rawExpenses, selectedReportingCurrency);
+
+    const monthlySurplus = Math.max(0, convertedIncome - convertedExpenses);
+
+    const targetGoal = activeTargetGoal;
+    const targetGoalName = targetGoal?.name || "Priority Savings Goal";
+    const targetRemaining = targetGoal
+      ? Math.max(0, (Number(targetGoal.target) || 0) - (Number(targetGoal.current) || 0))
+      : 5000;
+
+    let projectedMonthly = 0;
+    let ruleTitle = "";
+    let ruleDescription = "";
+    let ruleImpact = "";
+    let taskSteps: string[] = [];
+
+    if (savingsRuleType === "surplus") {
+      const baseSurplus = monthlySurplus > 0 ? monthlySurplus : 500;
+      projectedMonthly = Math.round((baseSurplus * surplusSweepPct) / 100);
+      const monthsToTarget = projectedMonthly > 0 ? Math.ceil(targetRemaining / projectedMonthly) : 0;
+      ruleTitle = `Surplus Sweeper (${surplusSweepPct}%)`;
+      ruleDescription = `Sweeps ${surplusSweepPct}% of monthly cash flow surplus (${formatCurrency(projectedMonthly)}/mo) automatically into ${targetGoalName}.`;
+      ruleImpact = `Accelerates ${targetGoalName} by ${formatCurrency(projectedMonthly * 12)}/year, reaching remaining balance in ~${monthsToTarget} months.`;
+      taskSteps = [
+        `Configure automatic monthly sweep of ${formatCurrency(projectedMonthly)} on salary deposit day`,
+        `Direct transferred funds to ${targetGoalName} dedicated reserve account`,
+        `Verify minimum liquidity buffer remains intact before executing sweep`,
+      ];
+    } else if (savingsRuleType === "roundup") {
+      const estimatedMonthlyTransactions = 45;
+      const baseIncrement = roundupIncrement || 1;
+      const convertedIncrement =
+        selectedReportingCurrency === "USD" || profile?.currency === selectedReportingCurrency
+          ? baseIncrement
+          : convertUsdToCurrency(baseIncrement, selectedReportingCurrency);
+      const avgRoundupPerTx = Math.max(0.5, convertedIncrement * 0.5);
+      projectedMonthly = Math.round(estimatedMonthlyTransactions * avgRoundupPerTx);
+      const monthsToTarget = projectedMonthly > 0 ? Math.ceil(targetRemaining / projectedMonthly) : 0;
+      ruleTitle = `Spare-Change Round-Up (${formatCurrency(convertedIncrement)} increment)`;
+      ruleDescription = `Rounds up everyday transactions to nearest ${formatCurrency(convertedIncrement)}, generating ~${formatCurrency(projectedMonthly)}/mo in effortless micro-savings.`;
+      ruleImpact = `Accumulates ${formatCurrency(projectedMonthly * 12)}/year in painless micro-savings towards ${targetGoalName}${monthsToTarget > 0 ? ` (~${monthsToTarget} mos to goal)` : ""}.`;
+      taskSteps = [
+        `Link checking account transaction feed to round-up micro-savings engine`,
+        `Set transaction rounding increment to ${formatCurrency(convertedIncrement)}`,
+        `Batch round-up transfers weekly to minimize bank ledger transactions`,
+      ];
+    } else if (savingsRuleType === "debt_sweep") {
+      const baseCapacity = debtsSummary.totalMinPayment > 0 ? debtsSummary.totalMinPayment : 350;
+      projectedMonthly = Math.round(baseCapacity * 0.75 + (monthlySurplus > 0 ? monthlySurplus * 0.25 : 100));
+      ruleTitle = "Dynamic Debt Sweep";
+      ruleDescription = `Sweeps freed-up cash flow (${formatCurrency(projectedMonthly)}/mo) directly towards high-rate debt amortization and wealth building.`;
+      ruleImpact = `Compresses debt amortization by channeling ${formatCurrency(projectedMonthly * 12)}/year into principal reduction.`;
+      taskSteps = [
+        `Direct extra monthly payment of ${formatCurrency(projectedMonthly)} to highest APR liability`,
+        `Upon liability payoff, immediately redirect payment volume to ${targetGoalName}`,
+        `Review debt amortization acceleration quarterly`,
+      ];
+    } else {
+      const baseWindfall = convertedIncome > 0 ? Math.round(convertedIncome * 0.4) : 1500;
+      projectedMonthly = Math.round((baseWindfall * 2) / 12);
+      ruleTitle = "Smart Windfall Auto-Router";
+      ruleDescription = `Automatically routes 70% of tax refunds, bonuses, and irregular windfalls (~${formatCurrency(baseWindfall)}) into targets.`;
+      ruleImpact = `Pre-commits lump sums to generate ~${formatCurrency(baseWindfall * 2)}/year in accelerated wealth accumulation without lifestyle inflation.`;
+      taskSteps = [
+        `Establish 70/20/10 windfall allocation rule (70% savings/debt, 20% future plans, 10% guilt-free spend)`,
+        `Pre-authorize routing instructions for upcoming bonus/refund deposits`,
+        `Deposit windfall portion directly into ${targetGoalName} within 48 hours of receipt`,
+      ];
+    }
+
+    const projectedAnnualSavings = projectedMonthly * 12;
+
+    return {
+      monthlySurplus,
+      projectedMonthly,
+      projectedAnnualSavings,
+      ruleTitle,
+      ruleDescription,
+      ruleImpact,
+      taskSteps,
+      targetGoal,
+    };
+  }, [
+    profile,
+    selectedReportingCurrency,
+    savingsRuleType,
+    surplusSweepPct,
+    roundupIncrement,
+    activeTargetGoal,
+    debtsSummary.totalMinPayment,
+    formatCurrency,
+  ]);
+
+  const handleScheduleSavingsRuleTask = () => {
+    if (!dynamicSavingsSimulation) return;
+    const { ruleTitle, ruleDescription, ruleImpact, taskSteps, projectedAnnualSavings } = dynamicSavingsSimulation;
+
+    createTaskMutation.mutate({
+      title: `Dynamic Savings Rule (${ruleTitle}): ${formatCurrency(projectedAnnualSavings)}/yr target`,
+      why: ruleDescription,
+      steps: taskSteps,
+      priority: "high",
+      expected_impact: ruleImpact,
+      kind: "goal",
+      bucket: 30,
+      due_days: 7,
+    });
+  };
+
   const simulation = useMemo(() => {
     if (activeDebtsSim.length === 0) return null;
     const baseline = simulatePayoff(activeDebtsSim, 0, "minimum");
     const avalanche = simulatePayoff(activeDebtsSim, extraPayment, "avalanche");
     const snowball = simulatePayoff(activeDebtsSim, extraPayment, "snowball");
 
+    // Savings are only meaningful when both the baseline and the strategy actually
+    // clear the debts; comparing against a 30-year capped, never-ending baseline
+    // would report absurd "interest saved" figures.
+    const compare = (strategy: typeof avalanche) => ({
+      ...strategy,
+      monthsSaved:
+        baseline.paidOff && strategy.paidOff ? Math.max(0, baseline.months - strategy.months) : null,
+      interestSaved:
+        baseline.paidOff && strategy.paidOff
+          ? Math.max(0, Math.round((baseline.totalInterest - strategy.totalInterest) * 100) / 100)
+          : null,
+    });
+
     return {
       baseline,
-      avalanche: {
-        ...avalanche,
-        monthsSaved: Math.max(0, baseline.months - avalanche.months),
-        interestSaved: Math.max(0, baseline.totalInterest - avalanche.totalInterest),
-      },
-      snowball: {
-        ...snowball,
-        monthsSaved: Math.max(0, baseline.months - snowball.months),
-        interestSaved: Math.max(0, baseline.totalInterest - snowball.totalInterest),
-      },
+      avalanche: compare(avalanche),
+      snowball: compare(snowball),
     };
   }, [activeDebtsSim, extraPayment]);
 
@@ -776,10 +926,7 @@ export default function GoalsAndDebts() {
       };
     }
 
-    const n = -Math.log(1 - (balance * monthlyRate) / minPayment) / Math.log(1 + monthlyRate);
-    const months = Math.ceil(n);
-    const totalPaid = months * minPayment;
-    const totalInterest = Math.max(0, totalPaid - balance);
+    const { months, totalInterest } = singleDebtPayoff(balance, apr, minPayment);
 
     return {
       status: "ok",
@@ -798,7 +945,7 @@ export default function GoalsAndDebts() {
           </p>
         </div>
 
-        {isLoading ? (
+        {isLoading && !profile ? (
           <div className="text-muted-foreground">Loading...</div>
         ) : isError && !profile ? (
           <div role="alert" className="space-y-3 rounded-lg border border-border p-4">
@@ -806,7 +953,243 @@ export default function GoalsAndDebts() {
             <Button onClick={() => void refetch()}>Try again</Button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-6">
+            {/* Global Multi-Currency FX Normalization Cockpit */}
+            <Card className="p-4 border-border/70 bg-card/60 backdrop-blur-sm" data-testid="card-goals-currency-normalization">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Globe className="w-4 h-4 text-primary" />
+                    <h3 className="text-sm font-semibold text-foreground">Global Currency Normalization Cockpit</h3>
+                    <Badge variant="outline" className="text-xs font-semibold" data-testid="badge-goals-reporting-currency">
+                      Reporting: {selectedReportingCurrency} ({CURRENCY_SYMBOLS[selectedReportingCurrency]})
+                    </Badge>
+                    {selectedReportingCurrency !== "USD" && (
+                      <Badge variant="secondary" className="text-xs font-mono" data-testid="badge-goals-fx-rate">
+                        1 USD = {FX_RATES_TO_USD[selectedReportingCurrency]} {selectedReportingCurrency}
+                      </Badge>
+                    )}
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground" data-testid="badge-goals-fx-status">
+                      Deterministic Real-Time FX Conversion Active
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Convert goals, liabilities, debt payoff models, and savings pacers into global reporting currencies.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <div className="flex flex-wrap items-center gap-1">
+                    {SUPPORTED_CURRENCIES.map((curr) => (
+                      <Button
+                        key={curr}
+                        type="button"
+                        variant={selectedReportingCurrency === curr ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs px-2.5 font-medium"
+                        data-testid={`btn-goals-currency-${curr}`}
+                        onClick={() => setSelectedReportingCurrency(curr)}
+                      >
+                        {curr}
+                      </Button>
+                    ))}
+                  </div>
+
+                  <select
+                    data-testid="select-goals-currency"
+                    value={selectedReportingCurrency}
+                    onChange={(e) => setSelectedReportingCurrency(e.target.value as SupportedCurrency)}
+                    className="h-7 text-xs rounded-md border border-input bg-background px-2 py-0.5 text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    {SUPPORTED_CURRENCIES.map((curr) => (
+                      <option key={curr} value={curr}>
+                        {CURRENCY_LABELS[curr]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </Card>
+
+            {/* Automated Dynamic Savings Transfer Simulator & Rules Engine */}
+            <Card className="p-5 border-border/70 bg-card/60 backdrop-blur-sm space-y-4" data-testid="card-dynamic-savings-transfer">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    <h3 className="text-sm font-semibold text-foreground">
+                      Automated Dynamic Savings Transfer Simulator & Rules Engine
+                    </h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Model automated cash flow sweeps, micro-savings, and windfall rules to compress milestone timelines.
+                  </p>
+                </div>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  data-testid="btn-schedule-savings-rule"
+                  onClick={handleScheduleSavingsRuleTask}
+                  disabled={createTaskMutation.isPending}
+                  className="shrink-0 flex items-center gap-1.5 font-medium"
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-300" />
+                  <span>+ Schedule Dynamic Savings Rule Task</span>
+                </Button>
+              </div>
+
+              {/* Rule Selector Pills */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/40">
+                <span className="text-xs font-medium text-muted-foreground mr-1">Rule Model:</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={savingsRuleType === "surplus" ? "default" : "outline"}
+                  className="h-7 text-xs px-3"
+                  data-testid="btn-rule-surplus"
+                  onClick={() => setSavingsRuleType("surplus")}
+                >
+                  Surplus Sweeper
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={savingsRuleType === "roundup" ? "default" : "outline"}
+                  className="h-7 text-xs px-3"
+                  data-testid="btn-rule-roundup"
+                  onClick={() => setSavingsRuleType("roundup")}
+                >
+                  Spare-Change Round-Up
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={savingsRuleType === "debt_sweep" ? "default" : "outline"}
+                  className="h-7 text-xs px-3"
+                  data-testid="btn-rule-debt-sweep"
+                  onClick={() => setSavingsRuleType("debt_sweep")}
+                >
+                  Dynamic Debt Sweep
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={savingsRuleType === "windfall" ? "default" : "outline"}
+                  className="h-7 text-xs px-3"
+                  data-testid="btn-rule-windfall"
+                  onClick={() => setSavingsRuleType("windfall")}
+                >
+                  Smart Windfall Router
+                </Button>
+              </div>
+
+              {/* Rule Configuration Controls */}
+              <div className="p-3.5 rounded-lg bg-accent/40 border border-border/50 flex flex-wrap items-center gap-4 text-xs">
+                {savingsRuleType === "surplus" && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Label htmlFor="surplus-sweep-pct" className="text-xs font-medium">Sweep Rate:</Label>
+                    <Input
+                      id="surplus-sweep-pct"
+                      data-testid="input-surplus-sweep-pct"
+                      type="number"
+                      min="10"
+                      max="100"
+                      step="5"
+                      value={surplusSweepPct}
+                      onChange={(e) => setSurplusSweepPct(Math.min(100, Math.max(10, Number(e.target.value) || 50)))}
+                      className="h-7 w-16 text-xs text-center"
+                    />
+                    <span className="text-muted-foreground">%</span>
+                    <div className="flex items-center gap-1">
+                      {[25, 50, 75, 100].map((pct) => (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => setSurplusSweepPct(pct)}
+                          className={`px-2 py-0.5 text-[11px] rounded border transition-colors ${
+                            surplusSweepPct === pct
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-muted/50 hover:bg-muted border-border text-muted-foreground"
+                          }`}
+                        >
+                          {pct}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {savingsRuleType === "roundup" && (
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="roundup-increment" className="text-xs font-medium">Rounding Increment:</Label>
+                    <select
+                      id="roundup-increment"
+                      data-testid="select-roundup-increment"
+                      value={roundupIncrement}
+                      onChange={(e) => setRoundupIncrement(Number(e.target.value) || 1)}
+                      className="h-7 text-xs rounded-md border border-input bg-background px-2 text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      <option value={1}>{formatCurrency(1)} increment</option>
+                      <option value={2}>{formatCurrency(2)} increment</option>
+                      <option value={5}>{formatCurrency(5)} increment</option>
+                      <option value={10}>{formatCurrency(10)} increment</option>
+                    </select>
+                  </div>
+                )}
+
+                {goals.length > 0 && (
+                  <div className="flex items-center gap-2 ml-auto">
+                    <Label htmlFor="savings-target-goal" className="text-xs font-medium">Destination Goal:</Label>
+                    <select
+                      id="savings-target-goal"
+                      data-testid="select-savings-target-goal"
+                      value={selectedTargetGoalId || (activeTargetGoal ? String((activeTargetGoal as any).id || (activeTargetGoal as any)._id) : "")}
+                      onChange={(e) => setSelectedTargetGoalId(e.target.value)}
+                      className="h-7 text-xs rounded-md border border-input bg-background px-2 text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-ring max-w-[200px]"
+                    >
+                      {goals.map((g, idx) => {
+                        const gid = String((g as any).id || (g as any)._id || idx);
+                        return (
+                          <option key={gid} value={gid}>
+                            {g.name} (P{g.priority})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Metrics Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 rounded-lg bg-card border border-border/70 space-y-1">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+                    Projected Annual Savings
+                  </div>
+                  <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400" data-testid="metric-projected-annual-savings">
+                    {formatCurrency(dynamicSavingsSimulation.projectedAnnualSavings)}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground" data-testid="metric-rule-horizon">
+                    ~{formatCurrency(dynamicSavingsSimulation.projectedMonthly)} / month
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-lg bg-card border border-border/70 space-y-1 sm:col-span-2">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+                    Rule Velocity & Automated Impact
+                  </div>
+                  <div className="text-xs text-foreground font-medium" data-testid="metric-rule-impact">
+                    {dynamicSavingsSimulation.ruleImpact}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground line-clamp-1">
+                    {dynamicSavingsSimulation.ruleDescription}
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="p-6">
               <h2 className="text-xl font-semibold mb-4">Goals</h2>
 
@@ -1316,17 +1699,36 @@ export default function GoalsAndDebts() {
                         </div>
                       </div>
 
+                      {!simulation.baseline.paidOff && (
+                        <div
+                          role="note"
+                          data-testid="payoff-baseline-warning"
+                          className="text-[11px] text-amber-600 dark:text-amber-400"
+                        >
+                          Minimum payments alone never clear these debts (at least one minimum doesn&apos;t cover its
+                          interest), so interest savings versus minimum payments can&apos;t be calculated.
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
                         <div className="p-2.5 rounded-md bg-emerald-500/5 border border-emerald-500/20 space-y-1.5">
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-semibold text-emerald-600 dark:text-emerald-400">Avalanche Payoff</span>
                             <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-500/30">
-                              Saves {formatCurrency(simulation.avalanche.interestSaved)}
+                              {simulation.avalanche.interestSaved !== null
+                                ? `Saves ${formatCurrency(simulation.avalanche.interestSaved)}`
+                                : simulation.avalanche.paidOff
+                                ? "Clears debts"
+                                : "Not paid off"}
                             </Badge>
                           </div>
                           <div className="text-[11px] text-muted-foreground">
-                            Debt-free in <span className="font-semibold text-foreground">{simulation.avalanche.months} mos</span>
-                            {simulation.avalanche.monthsSaved > 0 && (
+                            {simulation.avalanche.paidOff ? (
+                              <>Debt-free in <span className="font-semibold text-foreground">{simulation.avalanche.months} mos</span></>
+                            ) : (
+                              <>Not debt-free within 30 years at this extra amount</>
+                            )}
+                            {simulation.avalanche.monthsSaved !== null && simulation.avalanche.monthsSaved > 0 && (
                               <span className="text-emerald-600 dark:text-emerald-400 font-medium"> ({simulation.avalanche.monthsSaved} mos sooner)</span>
                             )}
                           </div>
@@ -1356,12 +1758,20 @@ export default function GoalsAndDebts() {
                           <div className="flex items-center justify-between text-xs">
                             <span className="font-semibold text-blue-600 dark:text-blue-400">Snowball Payoff</span>
                             <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-500/30">
-                              Saves {formatCurrency(simulation.snowball.interestSaved)}
+                              {simulation.snowball.interestSaved !== null
+                                ? `Saves ${formatCurrency(simulation.snowball.interestSaved)}`
+                                : simulation.snowball.paidOff
+                                ? "Clears debts"
+                                : "Not paid off"}
                             </Badge>
                           </div>
                           <div className="text-[11px] text-muted-foreground">
-                            Debt-free in <span className="font-semibold text-foreground">{simulation.snowball.months} mos</span>
-                            {simulation.snowball.monthsSaved > 0 && (
+                            {simulation.snowball.paidOff ? (
+                              <>Debt-free in <span className="font-semibold text-foreground">{simulation.snowball.months} mos</span></>
+                            ) : (
+                              <>Not debt-free within 30 years at this extra amount</>
+                            )}
+                            {simulation.snowball.monthsSaved !== null && simulation.snowball.monthsSaved > 0 && (
                               <span className="text-blue-600 dark:text-blue-400 font-medium"> ({simulation.snowball.monthsSaved} mos sooner)</span>
                             )}
                           </div>
@@ -1442,6 +1852,7 @@ export default function GoalsAndDebts() {
                 </div>
               )}
             </Card>
+          </div>
           </div>
         )}
 

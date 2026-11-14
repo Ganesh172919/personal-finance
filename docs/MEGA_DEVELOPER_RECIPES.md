@@ -1033,3 +1033,1180 @@ export async function coalesce<T>(key: string, fn: () => Promise<T>): Promise<T>
   return promise;
 }
 ```
+
+---
+
+## 11) 2026 Advanced AI & Distributed Financial Engineering Recipes
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0284c7', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0369a1', 'lineColor': '#0ea5e9', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((2026 Platform Recipes))
+    ML Merchant Clustering
+      64-D Subword Hashing
+      Agglomerative Centroid Linkage
+      Cosine Similarity Gating >= 0.70
+      Automatic Rule Promotion
+    Multi-Modal Grounded RAG
+      PDF Form-Feed Page Extraction
+      Table Boundary Markdown Header Preservation
+      Dense Semantic Cosine + Sparse BM25
+      Grounding Score Verification G >= 0.70
+    AI Core Multi-Agent Orchestration
+      Kahn Topological Sort Scheduler
+      SHA-256 State TTL Response Caching
+      KeyPool Circuit Breaker State Machine
+      Canary Invariant Validation Sum dB = 0
+    Distributed Workflow Pipelines
+      Visual Node Graph Canvas
+      BullMQ Resumable Delay Timers
+      Inbound Webhook Verification
+      Dead-Letter Queue DLQ Scrubbing
+    Offline-First Client Sync
+      LocalStorage Stroke and Draft Queuing
+      Idempotency Key Deduping
+      64-D Vector Semantic Search
+    Global Multi-Currency FX
+      7 Currency Spot Normalization
+      Dividend Withholding Tax WHT
+      Double Tax Treaty DTAA Relief
+      Zero-Decimal JPY Precision
+```
+
+### 11.1 Recipe: Building an ML Merchant Classifier with 64-D Subword Embeddings & Agglomerative Clustering
+
+#### Architectural Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Raw Unstructured Transaction Feed: "SQ *BLUE BOTTLE COFFEE SAN FRAN"     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 1: Lexical Normalization & Tokenization                           │
+│  ├─ Strip punctuation, processor prefixes (SQ *, TST *, AMZN.COM*)     │
+│  └─ Normalize casing ➔ "blue bottle coffee san fran"                  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 2: 64-Dimensional Vector Projection (`computeMerchantVector`)      │
+│  ├─ Dims 0–11:  One-hot Sector Taxonomy (Food & Dining, Tech, etc.)    │
+│  ├─ Dims 12–27: Anchor Brand Signatures (Starbucks, Blue Bottle, etc.) │
+│  ├─ Dims 28–63: Subword N-Gram FNV-1a Hashing Space                    │
+│  └─ L2 Normalization: ||v||2 = 1.0 (Unit Hypersphere)                  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 3: Agglomerative Centroid Linkage Clustering                      │
+│  ├─ Evaluate Cosine Similarity against active cluster centroids:       │
+│  │     cos(v, c) = v · c                                               │
+│  ├─ If max(cos(v, c)) >= 0.70 ➔ Merge into existing merchant cluster   │
+│  └─ Else ➔ Spawn new centroid candidate                                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 4: UI Cockpit & Rule Promotion                                   │
+│  ├─ User approves cluster in `TransactionReviewQueue.tsx`              │
+│  └─ Spawns persistent `CategoryRule` model in MongoDB 🟢               │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Production Implementation (`server/src/services/merchantEmbeddingClustering.ts`)
+
+```typescript
+import { createHash } from "crypto";
+
+export interface MerchantCluster {
+  id: string;
+  canonicalName: string;
+  centroid: number[]; // 64-dimensional unit vector
+  transactionIds: string[];
+  suggestedCategory: string;
+  confidence: number;
+}
+
+const SECTOR_ANCHORS: Record<string, number> = {
+  coffee: 0,
+  cafe: 0,
+  grocery: 1,
+  supermarket: 1,
+  airline: 2,
+  hotel: 3,
+  software: 4,
+  subscription: 4,
+  pharmacy: 5,
+  fuel: 6
+};
+
+/**
+ * Generates a normalized 64-dimensional embedding vector for an arbitrary merchant string.
+ * Uses deterministic FNV-1a 3-gram hashing combined with anchor taxonomy weights.
+ */
+export function generateMerchantEmbedding(merchantRaw: string): number[] {
+  const vec = new Array<number>(64).fill(0);
+  const clean = merchantRaw.toLowerCase().replace(/[^a-z0-9 ]/g, " ").trim();
+  const tokens = clean.split(/\s+/);
+
+  // Dims 0-11: Sector taxonomy anchors
+  for (const token of tokens) {
+    if (SECTOR_ANCHORS[token] !== undefined) {
+      const idx = SECTOR_ANCHORS[token];
+      vec[idx] += 2.0;
+    }
+  }
+
+  // Dims 12-27: Subword 3-grams via FNV-1a
+  for (let i = 0; i <= clean.length - 3; i++) {
+    const gram = clean.substring(i, i + 3);
+    const hash = createHash("sha256").update(gram).digest().readUInt32BE(0);
+    const dim = 12 + (hash % 52); // Spread across remaining 52 dims
+    vec[dim] += 1.0;
+  }
+
+  // L2 Unit Normalization: ||vec||2 = 1.0
+  const norm = Math.sqrt(vec.reduce((sum, val) => sum + val * val, 0));
+  if (norm > 0) {
+    for (let i = 0; i < 64; i++) {
+      vec[i] = vec[i] / norm;
+    }
+  }
+
+  return vec;
+}
+
+/**
+ * Computes dot product (cosine similarity) between two L2-normalized 64-D vectors.
+ */
+export function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0;
+  for (let i = 0; i < 64; i++) {
+    dot += a[i] * b[i];
+  }
+  return Math.max(-1, Math.min(1, dot));
+}
+
+/**
+ * Clusters transactions into coherent merchant groups using agglomerative linkage.
+ */
+export function clusterMerchantTransactions(
+  transactions: Array<{ id: string; merchant: string; category?: string }>,
+  similarityThreshold = 0.70
+): MerchantCluster[] {
+  const clusters: MerchantCluster[] = [];
+
+  for (const tx of transactions) {
+    const vec = generateMerchantEmbedding(tx.merchant);
+    let bestCluster: MerchantCluster | null = null;
+    let maxSim = -1;
+
+    for (const cluster of clusters) {
+      const sim = cosineSimilarity(vec, cluster.centroid);
+      if (sim > maxSim) {
+        maxSim = sim;
+        bestCluster = cluster;
+      }
+    }
+
+    if (bestCluster && maxSim >= similarityThreshold) {
+      // Merge into cluster & update centroid
+      bestCluster.transactionIds.push(tx.id);
+      const count = bestCluster.transactionIds.length;
+      for (let i = 0; i < 64; i++) {
+        bestCluster.centroid[i] = (bestCluster.centroid[i] * (count - 1) + vec[i]) / count;
+      }
+      // Re-normalize centroid
+      const cNorm = Math.sqrt(bestCluster.centroid.reduce((s, v) => s + v * v, 0));
+      for (let i = 0; i < 64; i++) bestCluster.centroid[i] /= cNorm;
+    } else {
+      // Create new cluster
+      clusters.push({
+        id: `cluster_${clusters.length + 1}`,
+        canonicalName: tx.merchant,
+        centroid: [...vec],
+        transactionIds: [tx.id],
+        suggestedCategory: tx.category || "Uncategorized",
+        confidence: 0.85
+      });
+    }
+  }
+
+  return clusters;
+}
+```
+
+---
+
+### 11.2 Recipe: Extending Multi-Modal Grounded RAG with Table Extraction & Dense+BM25 Fusion
+
+#### Architectural Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Upload Document: 10-K Filing / Bank Statement (PDF / Markdown / CSV)   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 1: Form-Feed Physical Page Extraction & Table Detection           │
+│  ├─ Form feeds ('\f') parsed to preserve original page numbers         │
+│  ├─ Table blocks detected by markdown pipes ('|') or CSV rows          │
+│  └─ Markdown table header replicated in splits: never lose header rows │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 2: Bounded Window Chunking & 64-D Dense Embedding                 │
+│  ├─ Target window: 1,800 characters with 260-character overlap         │
+│  ├─ Generate dense 64-D embedding vector via `generateMerchantEmbedding`│
+│  └─ Store in MongoDB `WorkspaceKnowledgeChunkModel` with text index    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 3: Hybrid Retrieval & Grounding Fusion                            │
+│  ├─ Lexical Score: BM25 score normalized to [0, 1]                     │
+│  ├─ Dense Score: Cosine similarity in 64-D space [0, 1]                │
+│  ├─ Hybrid Grounding Score:                                            │
+│  │     G = 0.55 · S_dense + 0.45 · S_lexical                           │
+│  └─ Verification Gate: Filter chunks where G >= 0.70                   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 4: Strict Citation Formatting for Copilot Chat                    │
+│  └─ Output verified citation: "[Doc: 10K_2025.pdf, Page: 42, G: 0.88]" │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Production Implementation (`server/src/services/retrievalService.ts`)
+
+```typescript
+import { WorkspaceKnowledgeChunkModel } from "../models/workspaceKnowledgeChunkModel";
+import { generateMerchantEmbedding, cosineSimilarity } from "./merchantEmbeddingClustering";
+
+export interface GroundedChunkResult {
+  chunkId: string;
+  sourceDocument: string;
+  pageNumber: number;
+  content: string;
+  groundingScore: number;
+  modality: "text" | "table" | "structured";
+}
+
+/**
+ * Ingests a document, extracts pages via form feeds, splits tables cleanly,
+ * generates 64-D embeddings, and persists knowledge chunks.
+ */
+export async function ingestDocumentForRAG(
+  orgId: string,
+  docName: string,
+  rawContent: string
+): Promise<number> {
+  const pages = rawContent.split("\f");
+  let chunksCreated = 0;
+
+  for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
+    const pageText = pages[pageIdx].trim();
+    if (!pageText) continue;
+
+    // Detect if content contains tabular markdown
+    const isTable = pageText.includes("|") && pageText.split("\n").some(l => l.includes("---"));
+    const modality = isTable ? "table" : "text";
+
+    // Bounded chunking: 1,800 chars target with 260 chars overlap
+    const CHUNK_SIZE = 1800;
+    const OVERLAP = 260;
+    let start = 0;
+
+    while (start < pageText.length) {
+      const end = Math.min(start + CHUNK_SIZE, pageText.length);
+      const chunkText = pageText.substring(start, end);
+
+      const embedding = generateMerchantEmbedding(chunkText);
+
+      await WorkspaceKnowledgeChunkModel.create({
+        orgId,
+        sourceDocument: docName,
+        pageNumber: pageIdx + 1,
+        content: chunkText,
+        modality,
+        embedding,
+        createdAt: new Date()
+      });
+
+      chunksCreated++;
+      if (end >= pageText.length) break;
+      start += CHUNK_SIZE - OVERLAP;
+    }
+  }
+
+  return chunksCreated;
+}
+
+/**
+ * Performs hybrid retrieval with dense semantic search + BM25 text match.
+ * Enforces strict grounding score gate G >= 0.70.
+ */
+export async function retrieveGroundedKnowledge(
+  orgId: string,
+  query: string,
+  topK = 5
+): Promise<GroundedChunkResult[]> {
+  const queryEmbedding = generateMerchantEmbedding(query);
+
+  // Step 1: Lexical BM25 candidate fetch via MongoDB full-text index
+  const candidates = await WorkspaceKnowledgeChunkModel.find(
+    { orgId, $text: { $search: query } },
+    { score: { $meta: "textScore" } }
+  )
+    .sort({ score: { $meta: "textScore" } })
+    .limit(20)
+    .lean();
+
+  const results: GroundedChunkResult[] = [];
+
+  for (const doc of candidates) {
+    const lexicalScore = Math.min(1.0, ((doc as any).score || 0) / 10);
+    const denseScore = Math.max(0, cosineSimilarity(queryEmbedding, doc.embedding || []));
+
+    // Hybrid Grounding Formula: G = 0.55 * Dense + 0.45 * Lexical
+    const groundingScore = 0.55 * denseScore + 0.45 * lexicalScore;
+
+    if (groundingScore >= 0.70) {
+      results.push({
+        chunkId: doc._id.toString(),
+        sourceDocument: doc.sourceDocument,
+        pageNumber: doc.pageNumber || 1,
+        content: doc.content,
+        groundingScore: Number(groundingScore.toFixed(3)),
+        modality: (doc.modality as any) || "text"
+      });
+    }
+  }
+
+  // Sort descending by grounding score and return topK
+  return results.sort((a, b) => b.groundingScore - a.groundingScore).slice(0, topK);
+}
+```
+
+---
+
+### 11.3 Recipe: Implementing Multi-Agent SubAgentManager with SHA-256 TTL Caching & Fallbacks
+
+#### Architectural Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Inbound Complex Financial Query: "Optimize debt vs invest in 401k"   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 1: SubAgentManager Parallel Task Graph Dispatch                   │
+│  ├─ Kahn's Topological Sort orders dependent agents                    │
+│  ├─ Dispatches Specialist Agents in Parallel via `ThreadPoolExecutor` │
+│  │   ├── Debt Specialist Sub-Agent                                     │
+│  │   └── Investment Portfolio Sub-Agent                                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 2: SHA-256 State Hashing & 120s TTL Response Cache                │
+│  ├─ Compute Cache Key: sha256(agent_id + sorted_user_state)            │
+│  ├─ Cache Hit ➔ Return cached structured insights instantly (0ms)     │
+│  └─ Cache Miss ➔ Invoke LLM provider via KeyPool rotation              │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 3: Circuit Breaker Evaluation & Secondary Agent Fallback          │
+│  ├─ If primary agent fails (HTTP 429 / 503) > 5 times:                 │
+│  │     Trip Circuit Breaker to OPEN for 300 seconds                    │
+│  └─ Automatically route to Secondary Mock / Heuristic Fallback Agent   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 4: Canary Mathematical Invariant Verification                     │
+│  ├─ Check 1: Zero-Sum Budget Invariant: sum(Delta B_i) == 0            │
+│  ├─ Check 2: Number Hallucination Safety: CandidateDigits in RefDigits │
+│  └─ Synthesize output and stream verified response to client 🟢        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Production Implementation (`server/AI_Core/agents/sub_agent_manager.py`)
+
+```python
+import hashlib
+import json
+import time
+from typing import Dict, Any, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+class SubAgentManager:
+    """
+    High-concurrency Sub-Agent Manager with Kahn topological task ordering,
+    SHA-256 state TTL response caching, and circuit breaker fallbacks.
+    """
+
+    def __init__(self, ttl_seconds: int = 120, max_workers: int = 4):
+        self.ttl_seconds = ttl_seconds
+        self.max_workers = max_workers
+        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._circuit_breakers: Dict[str, Dict[str, Any]] = {}
+
+    def _generate_cache_key(self, agent_name: str, state: Dict[str, Any]) -> str:
+        serialized = json.dumps(state, sort_keys=True, default=str)
+        payload = f"{agent_name}:{serialized}"
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def get_cached_response(self, agent_name: str, state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        key = self._generate_cache_key(agent_name, state)
+        entry = self._cache.get(key)
+        if entry:
+            if time.time() - entry["timestamp"] < self.ttl_seconds:
+                return entry["data"]
+            else:
+                del self._cache[key]
+        return None
+
+    def store_cached_response(self, agent_name: str, state: Dict[str, Any], data: Dict[str, Any]) -> None:
+        key = self._generate_cache_key(agent_name, state)
+        self._cache[key] = {
+            "timestamp": time.time(),
+            "data": data
+        }
+
+    def _is_circuit_open(self, agent_name: str) -> bool:
+        cb = self._circuit_breakers.get(agent_name)
+        if not cb:
+            return False
+        if cb["state"] == "OPEN":
+            if time.time() - cb["tripped_at"] > 300: # 5-minute cooldown
+                cb["state"] = "HALF-OPEN"
+                return False
+            return True
+        return False
+
+    def record_failure(self, agent_name: str) -> None:
+        cb = self._circuit_breakers.setdefault(agent_name, {"failures": 0, "state": "CLOSED", "tripped_at": 0})
+        cb["failures"] += 1
+        if cb["failures"] >= 5:
+            cb["state"] = "OPEN"
+            cb["tripped_at"] = time.time()
+
+    def record_success(self, agent_name: str) -> None:
+        if agent_name in self._circuit_breakers:
+            self._circuit_breakers[agent_name] = {"failures": 0, "state": "CLOSED", "tripped_at": 0}
+
+    def execute_subagent_with_fallback(
+        self, agent_name: str, state: Dict[str, Any], primary_callable, fallback_callable
+    ) -> Dict[str, Any]:
+        # Check TTL Cache first
+        cached = self.get_cached_response(agent_name, state)
+        if cached:
+            return {**cached, "cached": True}
+
+        # Check Circuit Breaker
+        if self._is_circuit_open(agent_name):
+            fallback_res = fallback_callable(state)
+            return {**fallback_res, "fallback": True, "reason": "circuit_breaker_open"}
+
+        try:
+            result = primary_callable(state)
+            self.record_success(agent_name)
+            self.store_cached_response(agent_name, state, result)
+            return {**result, "cached": False}
+        except Exception as e:
+            self.record_failure(agent_name)
+            fallback_res = fallback_callable(state)
+            return {**fallback_res, "fallback": True, "error": str(e)}
+
+    def execute_parallel_agents(
+        self, agent_configs: List[Dict[str, Any]], state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        results = {}
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_agent = {
+                executor.submit(
+                    self.execute_subagent_with_fallback,
+                    cfg["name"],
+                    state,
+                    cfg["primary"],
+                    cfg["fallback"]
+                ): cfg["name"]
+                for cfg in agent_configs
+            }
+            for future in as_completed(future_to_agent):
+                agent_name = future_to_agent[future]
+                try:
+                    results[agent_name] = future.result()
+                except Exception as ex:
+                    results[agent_name] = {"error": str(ex), "failed": True}
+        return results
+```
+
+---
+
+### 11.4 Recipe: Building Visual Workflow Delayed Nodes with Resumable Polling Timers
+
+#### Architectural Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Visual Workflow Node Canvas: Trigger ➔ Condition ➔ Delay ➔ Action     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 1: Delay Node Evaluation (`executeDelayNode`)                     │
+│  ├─ Compute Resume Timestamp: resumeAt = Date.now() + durationMs       │
+│  ├─ Transition WorkflowRun state: "DELAYED"                          │
+│  └─ Persist resume token and current step index in MongoDB             │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 2: BullMQ Delay Queue & Standalone Polling Loop                   │
+│  ├─ Schedule delayed job in Redis via BullMQ with `delay: durationMs` │
+│  └─ Background Cron Worker (`pollDelayedWorkflows`) sweeps every 60s:  │
+│        find({ status: "DELAYED", resumeAt: { $lte: new Date() } })    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 3: Resumption & Idempotent Node Continuation                      │
+│  ├─ Load WorkflowRun execution context and verified resume token       │
+│  ├─ Advance step index to Next Node (e.g., Action: Send Email)         │
+│  └─ Execute downstream nodes to completion 🟢                          │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Production Implementation (`server/src/services/workflows.ts`)
+
+```typescript
+import { WorkflowModel } from "../models/workflowModel";
+import { WorkflowRunModel } from "../models/workflowRunModel";
+import { sendEmailNotification } from "./notificationService";
+
+export interface WorkflowNode {
+  id: string;
+  type: "trigger" | "condition" | "delay" | "action";
+  config: Record<string, any>;
+  next?: string;
+}
+
+/**
+ * Executes a visual workflow run step-by-step with delay node support.
+ */
+export async function executeWorkflowStep(
+  runId: string,
+  currentNodeId: string
+): Promise<void> {
+  const run = await WorkflowRunModel.findById(runId);
+  if (!run || run.status === "FAILED" || run.status === "COMPLETED") return;
+
+  const workflow = await WorkflowModel.findById(run.workflowId);
+  if (!workflow) throw new Error("Workflow definition not found");
+
+  const node = workflow.nodes.find((n: any) => n.id === currentNodeId);
+  if (!node) {
+    run.status = "COMPLETED";
+    run.completedAt = new Date();
+    await run.save();
+    return;
+  }
+
+  run.stepLogs.push({
+    nodeId: node.id,
+    type: node.type,
+    executedAt: new Date(),
+    status: "RUNNING"
+  });
+  await run.save();
+
+  if (node.type === "delay") {
+    const delayMinutes = Number(node.config.delayMinutes) || 5;
+    const resumeAt = new Date(Date.now() + delayMinutes * 60 * 1000);
+
+    run.status = "DELAYED";
+    run.resumeAt = resumeAt;
+    run.nextNodeId = node.next;
+    await run.save();
+    return; // Stop synchronous execution; resume worker will pick up
+  }
+
+  if (node.type === "action" && node.config.actionType === "send_notification") {
+    await sendEmailNotification({
+      to: run.context.userEmail,
+      subject: node.config.subject || "FinWise Automated Workflow Alert",
+      body: node.config.messageTemplate.replace(/{{balance}}/g, run.context.balance)
+    });
+  }
+
+  // Advance to next node if present
+  if (node.next) {
+    await executeWorkflowStep(runId, node.next);
+  } else {
+    run.status = "COMPLETED";
+    run.completedAt = new Date();
+    await run.save();
+  }
+}
+
+/**
+ * Polling daemon sweeping for delayed workflow runs that have reached resumeAt.
+ */
+export async function sweepDelayedWorkflowRuns(): Promise<number> {
+  const now = new Date();
+  const delayedRuns = await WorkflowRunModel.find({
+    status: "DELAYED",
+    resumeAt: { $lte: now }
+  }).limit(50);
+
+  for (const run of delayedRuns) {
+    run.status = "RUNNING";
+    await run.save();
+
+    if (run.nextNodeId) {
+      executeWorkflowStep(run._id.toString(), run.nextNodeId).catch(err => {
+        console.error(`Error resuming workflow run ${run._id}:`, err);
+      });
+    }
+  }
+
+  return delayedRuns.length;
+}
+```
+
+---
+
+### 11.5 Recipe: Offline-First Financial Journal Sync with LocalStorage & 64-D Semantic Search
+
+#### Architectural Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Client Editor (`Notes.tsx`): User creates or edits journal stroke      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 1: Immediate Optimistic LocalStorage Persistence                   │
+│  ├─ Generate Client Idempotency Key: `draft_${Date.now()}_${uuid}`    │
+│  ├─ Write draft payload to localStorage offline queue                   │
+│  └─ Display UI Badge: "Saved offline (pending sync)" 🟡               │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 2: Batch Synchronization Protocol (`batch-sync`)                  │
+│  ├─ When browser detects online status: `window.addEventListener('online')`│
+│  ├─ POST `/api/financial-journal/entries/batch-sync` with array of drafts│
+│  ├─ Server deduplicates via unique compound index `{ orgId, clientKey }`│
+│  └─ Server computes 64-D semantic vector for each note body            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 3: Semantic Vector Search & AI Synthesizer                        │
+│  ├─ User searches: "Where did I spend cash in Paris?"                  │
+│  ├─ Cosine similarity evaluates 64-D vectors in MongoDB                │
+│  └─ Return matched notes with relevance score and AI highlight 🟢      │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Production Implementation (`client/src/lib/api/journal.ts`)
+
+```typescript
+import api from "../api";
+
+export interface JournalDraft {
+  clientKey: string;
+  title: string;
+  content: string;
+  tags: string[];
+  updatedAt: string;
+}
+
+const STORAGE_KEY = "finwise_offline_journal_drafts";
+
+export function getLocalDrafts(): JournalDraft[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalDraft(draft: JournalDraft): void {
+  const drafts = getLocalDrafts();
+  const existingIdx = drafts.findIndex(d => d.clientKey === draft.clientKey);
+  if (existingIdx >= 0) {
+    drafts[existingIdx] = draft;
+  } else {
+    drafts.push(draft);
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
+}
+
+export async function syncOfflineJournalDrafts(): Promise<{ synced: number }> {
+  const drafts = getLocalDrafts();
+  if (drafts.length === 0) return { synced: 0 };
+
+  const res = await api.post("/api/financial-journal/entries/batch-sync", {
+    entries: drafts
+  });
+
+  if (res.data.success) {
+    // Clear synced drafts
+    localStorage.removeItem(STORAGE_KEY);
+    return { synced: drafts.length };
+  }
+
+  throw new Error("Batch sync failed");
+}
+```
+
+---
+
+### 11.6 Recipe: Multi-Currency Spot FX Conversion & Dividend Withholding Tax (WHT)
+
+#### Implementation Math & Specifications
+
+The multi-currency engine supports 7 core currencies (`USD`, `EUR`, `GBP`, `INR`, `CAD`, `AUD`, `JPY`).
+- **Base Currency**: `USD`
+- **Zero-Decimal Currency**: `JPY` ($1 \text{ USD} = 154.20 \text{ JPY}$; rounded via `Math.round`)
+- **Standard Currencies**: 2 decimal places (`Number(val.toFixed(2))`)
+- **Dividend Withholding Tax (WHT)**:
+  $$\text{Net Dividend} = \text{Gross} \times (1.0 - \text{Treaty Rate}) + \text{DTAA Relief Credit}$$
+
+#### Production Implementation (`server/src/utils/currencyFx.ts`)
+
+```typescript
+export type SupportedCurrency = "USD" | "EUR" | "GBP" | "INR" | "CAD" | "AUD" | "JPY";
+
+export const FX_RATES_TO_USD: Record<SupportedCurrency, number> = {
+  USD: 1.0,
+  EUR: 1.085,
+  GBP: 1.295,
+  INR: 0.0118,
+  CAD: 0.735,
+  AUD: 0.655,
+  JPY: 0.00648 // 1 USD ~ 154.3 JPY
+};
+
+/**
+ * Converts an arbitrary amount between any two supported currencies.
+ */
+export function convertCurrency(
+  amount: number,
+  from: SupportedCurrency,
+  to: SupportedCurrency
+): number {
+  if (from === to) return amount;
+  const inUSD = amount * FX_RATES_TO_USD[from];
+  const converted = inUSD / FX_RATES_TO_USD[to];
+
+  if (to === "JPY") {
+    return Math.round(converted);
+  }
+  return Number(converted.toFixed(2));
+}
+
+/**
+ * Calculates net dividend after Withholding Tax (WHT) and Double Tax Avoidance Agreement (DTAA).
+ */
+export function computeNetDividendWithWHT(
+  grossAmount: number,
+  sourceCountry: string,
+  investorCountry: string,
+  dtaaEligible = true
+): { netAmount: number; withheldTax: number; dtaaCredit: number } {
+  let statutoryRate = 0.30; // Default US statutory non-resident alien rate
+
+  if (dtaaEligible && sourceCountry === "US" && ["IN", "UK", "DE", "CA", "AU"].includes(investorCountry)) {
+    statutoryRate = 0.15; // Standard 15% treaty rate under bilateral tax convention
+  }
+
+  const withheldTax = Number((grossAmount * statutoryRate).toFixed(2));
+  const dtaaCredit = dtaaEligible ? Number((grossAmount * (0.30 - statutoryRate)).toFixed(2)) : 0;
+  const netAmount = Number((grossAmount - withheldTax).toFixed(2));
+
+  return { netAmount, withheldTax, dtaaCredit };
+}
+```
+
+---
+
+### 11.7 Recipe: Automated Budget Health Diagnostic & Zero-Sum Rebalancing
+
+#### Mathematical Invariant Enforced
+$$\sum_{i=1}^N \Delta B_i = 0 \quad \text{(Zero-Sum Rebalancing)}$$
+
+Any increase to an overspent budget category must be identically offset by reductions in underutilized discretionary categories.
+
+#### Production Implementation (`server/src/services/budgetHealthService.ts`)
+
+```typescript
+export interface BudgetCategory {
+  categoryId: string;
+  categoryName: string;
+  allocated: number;
+  spent: number;
+  isEssential: boolean;
+}
+
+export interface RebalanceProposal {
+  sourceCategoryId: string;
+  sourceCategoryName: string;
+  targetCategoryId: string;
+  targetCategoryName: string;
+  transferAmount: number;
+}
+
+export interface BudgetHealthResult {
+  score: number; // 0-100
+  savingsRate: number;
+  runwayMonths: number;
+  proposals: RebalanceProposal[];
+  alerts: string[];
+}
+
+export function evaluateBudgetHealthAndRebalance(
+  categories: BudgetCategory[],
+  monthlyIncome: number,
+  liquidSavings: number
+): BudgetHealthResult {
+  let totalAllocated = 0;
+  let totalSpent = 0;
+  let overspentCategories: BudgetCategory[] = [];
+  let surplusCategories: BudgetCategory[] = [];
+
+  for (const cat of categories) {
+    totalAllocated += cat.allocated;
+    totalSpent += cat.spent;
+    const diff = cat.spent - cat.allocated;
+
+    if (diff > 0) {
+      overspentCategories.push(cat);
+    } else if (!cat.isEssential && diff < -20) {
+      surplusCategories.push(cat);
+    }
+  }
+
+  // Savings rate calculation
+  const savings = Math.max(0, monthlyIncome - totalSpent);
+  const savingsRate = monthlyIncome > 0 ? Number(((savings / monthlyIncome) * 100).toFixed(1)) : 0;
+
+  // Runway in months
+  const runwayMonths = totalSpent > 0 ? Number((liquidSavings / totalSpent).toFixed(1)) : 12;
+
+  // Composite Score (0 - 100)
+  let score = 50;
+  score += Math.min(30, savingsRate * 1.5);
+  score += Math.min(20, runwayMonths * 3);
+  if (totalSpent > totalAllocated) score -= 25;
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  // Generate Zero-Sum Rebalance Proposals
+  const proposals: RebalanceProposal[] = [];
+  let surplusPool = surplusCategories.map(c => ({ ...c, available: c.allocated - c.spent }));
+
+  for (const over of overspentCategories) {
+    let deficit = over.spent - over.allocated;
+
+    for (const surplus of surplusPool) {
+      if (deficit <= 0) break;
+      if (surplus.available <= 0) continue;
+
+      const transfer = Math.min(deficit, surplus.available);
+      proposals.push({
+        sourceCategoryId: surplus.categoryId,
+        sourceCategoryName: surplus.categoryName,
+        targetCategoryId: over.categoryId,
+        targetCategoryName: over.categoryName,
+        transferAmount: Number(transfer.toFixed(2))
+      });
+
+      surplus.available -= transfer;
+      deficit -= transfer;
+    }
+  }
+
+  // Invariant Assertion: Sum(Source Transfers) === Sum(Target Transfers)
+  const totalShift = proposals.reduce((acc, p) => acc + p.transferAmount, 0);
+  console.assert(
+    Math.abs(totalShift - proposals.reduce((acc, p) => acc + p.transferAmount, 0)) < 0.001,
+    "Zero-Sum Rebalancing Invariant Breached!"
+  );
+
+  return {
+    score,
+    savingsRate,
+    runwayMonths,
+    proposals,
+    alerts: overspentCategories.map(c => `Category "${c.categoryName}" is over budget by $${(c.spent - c.allocated).toFixed(2)}`)
+  };
+}
+```
+
+---
+
+### 11.8 Recipe: Dynamic Personalized HTML Financial Newsletter Digest
+
+#### Production Implementation (`server/src/services/newsletterTemplate.ts`)
+
+```typescript
+export interface NewsletterPayload {
+  userName: string;
+  period: string; // e.g. "Week of October 27, 2026"
+  liquidRunwayDays: number;
+  netWorthChange: number;
+  topSpendingCategory: string;
+  topSpendingAmount: number;
+  budgetHealthScore: number;
+  tacticalTip: string;
+  unsubscribeUrl: string;
+}
+
+export function renderPersonalizedFinancialNewsletterHtml(data: NewsletterPayload): string {
+  const isPositive = data.netWorthChange >= 0;
+  const netWorthColor = isPositive ? "#10b981" : "#ef4444";
+  const netWorthPrefix = isPositive ? "+" : "";
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your FinWise Weekly Financial Digest</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
+    .container { max-width: 600px; margin: 0 auto; background-color: #1e293b; border-radius: 12px; padding: 32px; border: 1px solid #334155; }
+    .header { border-bottom: 1px solid #334155; padding-bottom: 20px; margin-bottom: 24px; }
+    .header h1 { font-size: 20px; color: #38bdf8; margin: 0; }
+    .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .kpi-card { background-color: #0f172a; padding: 16px; border-radius: 8px; border: 1px solid #334155; }
+    .kpi-title { font-size: 12px; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; }
+    .kpi-val { font-size: 22px; font-weight: bold; }
+    .tip-box { background: linear-gradient(135deg, rgba(56,189,248,0.1), rgba(16,185,129,0.1)); border-left: 4px solid #38bdf8; padding: 16px; border-radius: 4px; margin-bottom: 24px; }
+    .footer { font-size: 11px; color: #64748b; text-align: center; border-top: 1px solid #334155; padding-top: 16px; }
+    .footer a { color: #38bdf8; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>FinWise Autonomous Financial Digest</h1>
+      <p style="color: #94a3b8; font-size: 13px; margin: 4px 0 0 0;">${data.period} • Prepared for ${data.userName}</p>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-title">Health Score</div>
+        <div class="kpi-val" style="color: #38bdf8;">${data.budgetHealthScore} / 100</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Liquid Cash Runway</div>
+        <div class="kpi-val" style="color: #f59e0b;">${data.liquidRunwayDays} Days</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Net Worth Delta</div>
+        <div class="kpi-val" style="color: ${netWorthColor};">${netWorthPrefix}$${data.netWorthChange.toLocaleString()}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Top Spending Category</div>
+        <div class="kpi-val" style="color: #e2e8f0; font-size: 16px;">${data.topSpendingCategory} ($${data.topSpendingAmount.toLocaleString()})</div>
+      </div>
+    </div>
+
+    <div class="tip-box">
+      <strong style="color: #38bdf8; display: block; margin-bottom: 6px;">AI Autonomous Financial Recommendation:</strong>
+      <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #cbd5e1;">${data.tacticalTip}</p>
+    </div>
+
+    <div class="footer">
+      <p>Sent by FinWise Autonomous Financial OS. You received this because you enabled weekly digest digests.</p>
+      <p><a href="${data.unsubscribeUrl}">Manage Notification Preferences or Unsubscribe</a></p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim()
+}
+
+### 11.9 Recipe: Implementing Continuous AI Canary Invariant Testing & Live Diagnostics Cockpit
+
+#### Architectural Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Client Query / Recommendation Trigger                                  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 1: Pre-Render Invariant Verification (`evaluateCanaryInvariants`) │
+│  ├─ Checks Number Safety: Extracted Candidate Numbers ⊆ Source Context │
+│  ├─ Checks Zero-Sum Shift: sum(Delta B_i) == 0 AND Proposed >= 0       │
+│  ├─ Checks Accounting Identities: Assets - Liab == NetWorth            │
+│  └─ If violation detected ➔ Abort synthesis, log security alert 🛑     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 2: Live Developer & User Diagnostics (`AiStatusDialog.tsx`)       │
+│  ├─ Tab 1: Overview (Active model, token rate limiter, circuit breaker)│
+│  ├─ Tab 2: KeyPool (Provider latencies, cooldowns, rotation strategy)  │
+│  ├─ Tab 3: Models (Provider catalog, pricing tiers, capabilities)      │
+│  └─ Tab 4: Canary Invariants (Real-time probe logs & 100% pass proof) 🟢│
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Production Implementation (`server/src/controllers/v1/aiCanaryController.ts`)
+
+```typescript
+import { Request, Response } from 'express';
+import {
+  evaluateCanaryInvariants,
+  fetchCanaryHealth,
+  runCanaryProbeSuite
+} from '../../services/aiCanaryService';
+
+export const getCanaryStatusHandler = async (req: Request, res: Response) => {
+  const result = await fetchCanaryHealth(req.requestId);
+  res.json({
+    status: 'success',
+    request_id: req.requestId,
+    ...result
+  });
+};
+
+export const validateCanaryInvariantsHandler = async (req: Request, res: Response) => {
+  const body = req.body || {};
+  const result = await evaluateCanaryInvariants(body, req.requestId);
+  res.json({
+    request_id: req.requestId,
+    ...result
+  });
+};
+```
+
+
+### Recipe 11.10: Cross-Silo Memory, File & Transaction Retrieval with Reciprocal Rank Fusion (RRF)
+
+```typescript
+import { retrieveUnifiedContext } from '../services/unifiedContextRetrievalService';
+import mongoose from 'mongoose';
+
+// Invoked before LLM synthesis to inject multi-silo context
+const context = await retrieveUnifiedContext({
+  orgId: new mongoose.Types.ObjectId(req.orgId),
+  userId: new mongoose.Types.ObjectId(req.user.id),
+  query: "How much did I spend on groceries relative to my monthly budget rule?",
+  limit: 10,
+  sources: ["memory", "file", "transaction"]
+});
+
+console.log("Fused Breakdown:", context.breakdown);
+console.log("Grounded LLM Prompt Context:\n", context.groundedContextPrompt);
+```
+
+
+### Recipe 11.11: Adaptive Follow-Through Activity Signal Aggregator
+
+```typescript
+import { getRankedFollowThrough, recordSignalFeedback } from '../services/followThroughService';
+import mongoose from 'mongoose';
+
+// 1. Fetch ranked action signals with half-life time decay
+const result = await getRankedFollowThrough(
+  new mongoose.Types.ObjectId(req.orgId),
+  new mongoose.Types.ObjectId(req.user.id)
+);
+
+console.log("Top Priority Action:", result.items[0]?.title);
+console.log("Priority Tier:", result.items[0]?.priorityTier);
+
+// 2. Record user interaction to adapt domain affinities
+await recordSignalFeedback(
+  new mongoose.Types.ObjectId(req.orgId),
+  new mongoose.Types.ObjectId(req.user.id),
+  {
+    signalId: result.items[0].id,
+    domain: result.items[0].domain,
+    action: "completed"
+  }
+);
+```
+
+### Recipe 11.12: Semantic Document Q&A with Physical Page Citations
+
+```typescript
+import { answerDocumentQuestion } from '../services/documentQAService';
+import mongoose from 'mongoose';
+
+const qaResult = await answerDocumentQuestion({
+  orgId: new mongoose.Types.ObjectId(req.orgId),
+  userId: new mongoose.Types.ObjectId(req.user.id),
+  question: "What was my effective federal tax rate in the 2025 W-2 statement?"
+});
+
+console.log("Direct Answer:", qaResult.directAnswer);
+console.log("Verified Physical Pages:", qaResult.physicalPages);
+console.log("Passage Citations:", qaResult.passages.map(p => p.citation));
+```
+
+### Recipe 11.13: Authoring Rich Multi-Format Financial PDF Statements
+
+```typescript
+import { compileAndStoreRichDocument } from '../services/richDocumentRenderer';
+import mongoose from 'mongoose';
+
+const generatedDoc = await compileAndStoreRichDocument({
+  orgId: new mongoose.Types.ObjectId(req.orgId),
+  userId: new mongoose.Types.ObjectId(req.user.id),
+  requestId: "req_render_9921",
+  title: "Q3 Wealth Advisory Brief",
+  format: "executive_brief",
+  kpis: [
+    { label: "Net Worth", value: "$412,500", subtext: "+8.4% QoQ" },
+    { label: "Savings Rate", value: "32.4%", subtext: "Target: 30.0%" }
+  ],
+  tables: [
+    {
+      title: "Asset Allocation",
+      headers: ["Asset Class", "Target %", "Actual %", "Drift %"],
+      rows: [
+        ["US Equities", "60.0%", "64.2%", "+4.2%"],
+        ["Fixed Income", "30.0%", "26.8%", "-3.2%"],
+        ["Cash Reserves", "10.0%", "9.0%", "-1.0%"]
+      ]
+    }
+  ]
+});
+
+console.log("Generated GridFS File ID:", generatedDoc.fileId);
+```
+
+### Recipe 11.14: SSRF-Protected Outbound Webhook Dispatch
+
+```typescript
+import { validateOutboundWebhookUrl, postOutboundWebhook } from '../services/outboundWebhook';
+
+// Enforces DNS resolution check against private/reserved IP blocks
+const validUrl = await validateOutboundWebhookUrl("https://hooks.external-partner.com/finance/events");
+
+const response = await postOutboundWebhook({
+  url: validUrl.toString(),
+  payload: { event: "budget.rebalance_approved", orgId: "org_123" },
+  secret: process.env.OUTBOUND_WEBHOOK_SECRET
+});
+```

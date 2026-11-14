@@ -21,6 +21,9 @@ import { ChatMessage } from "./ChatMessage";
 import { TypingIndicator, type WorkflowPhase } from "./TypingIndicator";
 import type { IChatAttachment, IChatMessage } from "@/types/chat.types";
 
+// Property structure defining parameters for the chat message scroll list.
+// Supplies the conversation message array, loading flags, and workflow phase states.
+// Configures document action handlers and disabling switches for active composer turns.
 interface ChatMessageListProps {
   messages: IChatMessage[];
   isLoading: boolean;
@@ -31,6 +34,9 @@ interface ChatMessageListProps {
   documentActionsDisabled?: boolean;
 }
 
+// Scrollable conversation history container handling message layout and auto-scrolling.
+// Positions viewports automatically to maintain newly delivered message readability.
+// Renders animated typing indicators, loading placeholders, and discrete message bubbles.
 export function ChatMessageList({
   messages,
   isLoading,

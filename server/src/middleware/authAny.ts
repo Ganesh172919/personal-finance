@@ -94,23 +94,16 @@ import mongoose from "mongoose"; // MongoDB ODM
 import passport from "../config/passport"; // Passport.js configuration
 import { resolveApiKey } from "../services/apiKeys"; // API key resolution service
 import {
-  enforceFeatureLimit,
+  type FeatureReservation,
   recordFeatureUsage,
+  reserveFeatureUsage,
 } from "../services/entitlements"; // Entitlement enforcement
 import { HttpError } from "./httpError"; // Custom HTTP error class
 import { extractRawApiKey, attachApiKeyToRequest } from "./apiKeyAuth"; // Shared API key utilities
 import { fireAndForget } from "../services/deadLetterQueue";
 
-/**
- * Authentication Middleware (JWT and API Key)
- *
- * Attempts to authenticate requests using JWT tokens or API keys.
- * Supports both authentication methods for flexibility.
- *
- * @param {Request} req - Express request object
- * @param {Response} res - Express response object
- * @param {NextFunction} next - Express next function
- */
+// Express middleware executing dual-stack authentication via Passport JWT or bearer API key tokens.
+// Resolves user or organization contexts and verifies quota limits before forwarding requests.
 export const authAny: RequestHandler = (req, res, next) => {
   // Attempt JWT authentication first
   passport.authenticate(
@@ -172,9 +165,10 @@ export const authAny: RequestHandler = (req, res, next) => {
           const orgObjectId = new mongoose.Types.ObjectId(orgId);
           const userObjectId = new mongoose.Types.ObjectId(createdByUserId);
 
-          // Enforce quota BEFORE recording usage — block if limit exhausted
+          // Atomically reserve quota BEFORE recording usage — block if limit exhausted
+          let reservation: FeatureReservation;
           try {
-            await enforceFeatureLimit({
+            reservation = await reserveFeatureUsage({
               orgId: orgObjectId,
               userId: userObjectId,
               feature: "api_requests",
@@ -205,6 +199,7 @@ export const authAny: RequestHandler = (req, res, next) => {
               userId: userObjectId,
               feature: "api_requests",
               units: 1,
+              reservation,
               requestId: req.requestId,
               context: {
                 path: req.path,

@@ -991,3 +991,105 @@ export async function bootstrap(): Promise<void> {
 - `server/AI_Core/agents/aggregator.py`: Mathematical number safety guard enforcing $\sum \Delta B_i = 0$ and $\text{Candidate Digits} \subseteq \text{Reference Digits}$.
 - `server/AI_Core/evals/`: Invariant test harness (`test_number_safety.py`, `test_routing_accuracy.py`, `test_determinism.py`, `runner.py`).
 - `server/AI_Core/lora/`: Low-rank parameter-efficient fine-tuning module ($r=8, \alpha=16$) for personal finance intent classification.
+
+---
+
+## R) 2026 Enterprise Core Micro-Architectures & Distributed Subsystem Reference
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4f46e5', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#3730a3', 'lineColor': '#6366f1', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((2026 Subsystem Atlas))
+    ML & Vector Engines
+      merchantEmbeddingClustering.ts
+      journalEmbeddingService.ts
+      retrievalService.ts (Multi-Modal Phase 2)
+      workspaceKnowledgeChunkModel.ts (64-D)
+    Enterprise AI Core
+      sub_agent_manager.py (TTL Caching & Breakers)
+      canary_validator.py (Math Invariants)
+      key_pool.py (Provider Rotation)
+      session_manager.py (SQLite Checkpoints)
+    Automation & Events
+      workflows.ts (Delay Timers & Graph Engine)
+      newsletterService.ts (Digest Dispatch)
+      calendarReminderController.ts (iCal Sync)
+    Global Finance Engine
+      currencyFx.ts (7-Currency Normalization)
+      financeBudgetsController.ts (Zero-Sum Rebalancing)
+    Cockpit UI Components
+      BudgetHealthCard.tsx (Composite Score Gauge)
+      TransactionReviewQueue.tsx (Clustering Triage)
+      FinancialCalendar.tsx (Recurring Reminders)
+      Notes.tsx (Offline Stroke Queue)
+```
+
+### R.1 Machine Learning & Vector Search Microservices
+
+| Service File | Responsibilities | Key Exported Functions | Invariants & Thresholds |
+| :--- | :--- | :--- | :--- |
+| `server/src/services/merchantEmbeddingClustering.ts` | 64-D subword N-gram hashing, brand anchor taxonomy projection, agglomerative centroid linkage clustering. | `generateMerchantEmbedding`, `cosineSimilarity`, `clusterMerchantTransactions` | $||v||_2 = 1.0 \pm 10^{-5}$, Cosine Linkage Threshold $C_{\text{sim}} \ge 0.70$ |
+| `server/src/services/journalEmbeddingService.ts` | Dense 64-D semantic indexing for personal financial notes, tag extraction, similarity search. | `indexJournalEntryVector`, `searchJournalEntriesBySemanticSimilarity` | Offline batch sync deduplication via `{ orgId, clientKey }` |
+| `server/src/services/retrievalService.ts` | Multi-modal document ingestion, form feed page extraction (`\f`), table header preservation, hybrid dense+sparse scoring. | `ingestDocumentForRAG`, `retrieveGroundedKnowledge`, `extractTabularData` | Grounding Gate: $G = 0.55 \cdot S_{\text{dense}} + 0.45 \cdot S_{\text{lexical}} \ge 0.70$ |
+| `server/src/models/workspaceKnowledgeChunkModel.ts` | Mongoose document chunk schema storing 1,800-char chunks, 64-D vector arrays, page numbers, and MongoDB `$text` search index. | `WorkspaceKnowledgeChunkModel` | Compound Index `{ orgId: 1, sourceDocument: 1, pageNumber: 1 }` |
+
+---
+
+### R.2 Enterprise AI Core & Resiliency Subsystems
+
+| Module Path | Architecture & Role | Key Classes / Functions | Failure Recovery / Invariant |
+| :--- | :--- | :--- | :--- |
+| `server/AI_Core/agents/sub_agent_manager.py` | Multi-agent parallel execution framework with Kahn's topological sort and SHA-256 state TTL caching. | `SubAgentManager`, `execute_subagent_with_fallback`, `execute_parallel_agents` | 120s TTL Cache; 5-failure threshold trips circuit breaker to `OPEN` for 300s with automatic fallback to secondary agent |
+| `server/AI_Core/evals/canary_validator.py` | Continuous mathematical invariant verification and hallucination security enforcement. | `validate_budget_zero_sum`, `validate_number_safety`, `sanitize_pii` | Enforces $\sum \Delta B_i = 0$; asserts candidate digits $C_{\text{cand}} \subseteq C_{\text{ref}}$ |
+| `server/AI_Core/agents/key_pool.py` | Multi-tenant API key rotation pool across Anthropic, OpenAI, and Gemini with cooldown backoff. | `KeyPool`, `get_next_key`, `report_failure`, `report_rate_limit` | Cooldown: 60s for HTTP 429; 3600s for HTTP 403; automatic failover |
+| `server/AI_Core/agents/session_manager.py` | Resumable SQLite multi-turn chat session checkpoint manager for long-running workflows. | `SessionManager`, `checkpoint_state`, `resume_session` | Atomic WAL mode SQLite persistence with rollback capability |
+
+---
+
+### R.3 Autonomous Automation & Event Pipeline Microservices
+
+| Service File | Responsibilities | Key Functions | Trigger Types |
+| :--- | :--- | :--- | :--- |
+| `server/src/services/workflows.ts` | Visual workflow node graph executor supporting conditional branching, delay timers, and multi-channel actions. | `executeWorkflowStep`, `sweepDelayedWorkflowRuns`, `handleInboundWebhook` | `schedule` (cron), `webhook`, `transaction_event`, `budget_breach` |
+| `server/src/services/newsletterService.ts` | Dynamic weekly/monthly personalized financial digest generation, balance sparklines, and email dispatch. | `dispatchWeeklyNewsletters`, `renderPersonalizedFinancialNewsletterHtml` | BullMQ cron worker aligned with user preferred UTC day/hour |
+| `server/src/controllers/v1/calendarReminderController.ts` | Bill due date tracking, tax calendar deadlines, status completion toggling, and RFC 5545 iCal stream export. | `listCalendarReminders`, `createCalendarReminder`, `exportIcsStream` | Recurring cadence: `once`, `weekly`, `monthly`, `quarterly`, `yearly` |
+
+---
+
+### R.4 Global Multi-Currency FX & Tax Modeling Subsystems
+
+| Utility / Controller | Description & Capabilities | Supported Currencies | Tax / Rounding Rules |
+| :--- | :--- | :--- | :--- |
+| `server/src/utils/currencyFx.ts` | Spot FX currency conversion engine with base currency USD and dividend withholding tax computation. | `USD`, `EUR`, `GBP`, `INR`, `CAD`, `AUD`, `JPY` | JPY rounded to integer (`Math.round`); WHT modeled with 15% DTAA treaty relief vs 30% statutory rate |
+| `server/src/controllers/v1/financeBudgetsController.ts` | Zero-sum budget allocation rebalancer and multi-currency envelope normalizer. | Multi-currency client input with auto-conversion to org base currency | Strict Zero-Sum Invariant: $\sum \Delta B_i = 0$; rebalance rejected if sum != 0 |
+
+---
+
+### R.5 Frontend Specialized Financial Cockpits (`client/src/`)
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 1. BudgetHealthCard.tsx: Composite 0–100 circular gauge, burn rates,   │
+│    runway in days, and one-click zero-sum auto-rebalance modal.        │
+├────────────────────────────────────────────────────────────────────────┤
+│ 2. TransactionReviewQueue.tsx: ML merchant cluster triage, confidence  │
+│    filtering (< 0.70), split transaction editor, and bulk approval.    │
+├────────────────────────────────────────────────────────────────────────┤
+│ 3. FinancialCalendar.tsx: Interactive calendar grid, reminder status   │
+│    toggling, recurring bill tracking, and live .ics calendar download. │
+├────────────────────────────────────────────────────────────────────────┤
+│ 4. NewsletterSettings.tsx: Delivery cadence configuration, preferred   │
+│    day/time selector, live HTML digest preview, and test dispatch.     │
+├────────────────────────────────────────────────────────────────────────┤
+│ 5. Notes.tsx: Offline-first financial journal with localStorage queue, │
+│    sync status badge, 64-D semantic vector search, and AI highlights.  │
+├────────────────────────────────────────────────────────────────────────┤
+│ 6. Workflows.tsx: Drag-and-drop visual node graph canvas with trigger, │
+│    delay, condition, and action nodes with execution step timeline.    │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+- `server/src/services/unifiedContextRetrievalService.ts`: Cross-silo retrieval engine combining user memories, workspace file chunks, and ledger transactions via Reciprocal Rank Fusion ($k = 60$).
+- `server/src/controllers/v1/unifiedContextController.ts`: REST controller serving `/api/v1/unified-context/query` and `/api/v1/unified-context/prompt`.
+- `client/src/lib/api/unifiedContext.ts`: Client API client wrapper for cross-silo context search and grounded prompt assembly.

@@ -77,13 +77,22 @@ from utils.agent_telemetry import record_agent_invocation
 from utils.request_metrics import capture_agent_metrics
 
 
+# Context manager tracking agent execution duration, metrics, and trace info.
+# Measures execution latency using high-precision performance counter.
+# Synthesizes telemetry traces and dispatches stats to telemetry registry.
 class AgentExecution:
+    # Initializes execution context instance with agent name and workflow phase.
+    # Sets up empty result and trace dictionaries for capturing outcomes.
+    # Configures container attributes before entering monitored execution scope.
     def __init__(self, agent: str, phase: str = "execution"):
         self.agent = agent
         self.phase = phase
         self.result = {}
         self.trace = {}
 
+    # Enters monitored execution context capturing start time and metric scope.
+    # Initializes high-precision timer and begins agent metric capture scope.
+    # Returns self to allow caller to attach result objects within with-block.
     def __enter__(self):
         self.started_at = datetime.now(timezone.utc).isoformat()
         self.started = perf_counter()
@@ -91,6 +100,9 @@ class AgentExecution:
         self.metrics = self.scope.__enter__()
         return self
 
+    # Finalizes execution tracking upon exiting the monitored with-block.
+    # Calculates elapsed milliseconds, collects token usage, and inspects errors.
+    # Dispatches invocation statistics to telemetry recorder and records trace.
     def __exit__(self, exc_type, exc, traceback):
         elapsed = (perf_counter() - self.started) * 1000
         usage = self.metrics.snapshot()

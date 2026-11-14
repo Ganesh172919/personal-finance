@@ -22,9 +22,15 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { ApiError, apiClient } from "./api";
 import { toast } from "@/hooks/useToast";
 
+// Governs how unauthorized HTTP 401 exceptions are handled by query functions.
+// Allows optional authentication queries to return null instead of throwing errors.
+// Distinguishes public exploratory views from hard-required authenticated screens.
 /** Controls behavior when a query receives a 401 Unauthorized response */
 type UnauthorizedBehavior = "returnNull" | "throw";
 
+// Constructs a generic query execution function conforming to React Query contracts.
+// Converts array query keys into slash-separated API endpoint request paths.
+// Intercepts 401 responses to selectively return null or throw according to options.
 /**
  * Creates a default query function for React Query.
  *
@@ -56,6 +62,9 @@ export const getQueryFn = <T>(options: {
   };
 
 
+// Instantiates and configures a TanStack React Query client with custom policies.
+// Configures selective 5xx error retry strategies, cache staleness, and error toasts.
+// Suppresses aggressive window focus polling in favor of server-sent event updates.
 /**
  * Global React Query client instance.
  *
@@ -119,6 +128,9 @@ export const createQueryClient = () => new QueryClient({
   },
 });
 
+// Global default React Query client instance for non-scoped standalone modules.
+// Supplies caching and query coordination for components outside provider scopes.
+// Ensures consistent server state caching across auxiliary application views.
 // Kept for consumers outside the application provider. Authenticated screens
 // receive a separate instance from ScopedDataProvider.
 export const queryClient = createQueryClient();

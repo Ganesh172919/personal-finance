@@ -76,6 +76,15 @@ describe("workspace file indexing API lifecycle", () => {
     await request(app).get("/api/files/rendered/invalid/download").set("Cookie", cookie).expect(400);
   });
 
+  it("rejects an empty upload without storing a broken file record", async () => {
+    const response = await request(app).post("/api/files")
+      .set("Cookie", [cookie, csrfCookie]).set("X-CSRF-Token", csrfToken)
+      .attach("files", Buffer.alloc(0), { filename: "empty.pdf", contentType: "application/pdf" })
+      .expect(400);
+    expect(response.body.code).toBe("EMPTY_FILE");
+    expect(await WorkspaceFileModel.countDocuments({})).toBe(0);
+  });
+
   it("indexes a long uploaded document and removes its evidence on deletion", async () => {
     const response = await upload();
     const fileId = response.body.files[0].id;

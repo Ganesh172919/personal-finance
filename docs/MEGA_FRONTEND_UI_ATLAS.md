@@ -736,7 +736,9 @@ FinWise Frontend UI Atlas (Mega)
         |
         v
 [Record the change and refresh this document]
-``````mermaid
+```
+
+```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0284c7', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0369a1', 'lineColor': '#8b5cf6', 'secondaryColor': '#10b981', 'tertiaryColor': '#f43f5e'}}}%%
 mindmap
   root((🖥️ FinanceOS UI Architecture))
@@ -1027,3 +1029,208 @@ export const ConversationInsightsPanel: React.FC<{ sessionId: string }> = ({ ses
   );
 };
 ```
+
+---
+
+## 11) 2026 Advanced Autonomous UI Cockpits & Interactive Component Atlas
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0891b2', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0e7490', 'lineColor': '#06b6d4', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((2026 UI Cockpit Atlas))
+    BudgetHealthCard
+      Composite Circular SVG Gauge 0-100
+      4-Pillar Breakdown Bars
+      Category Burn-Rate Alert Badges
+      One-Click Zero-Sum Rebalancer Modal
+    TransactionReviewQueue
+      ML Merchant Cluster Grouping
+      Confidence Filter < 0.70
+      Split Transaction Editor
+      Batch Rule Promotion
+    FinancialCalendar
+      Interactive Monthly Grid
+      Recurring Cadence Selector
+      RFC 5545 iCal Export
+      Mark Completed Toggle
+    NewsletterSettings
+      Frequency & Day Selector
+      Live Responsive HTML Preview
+      One-Click Test Email Dispatch
+    FinancialJournal Notes
+      Offline Draft LocalStorage Queue
+      Sync Status Badges
+      64-D Semantic Vector Search
+    Workflows Canvas
+      Drag-and-Drop Node Graph
+      Delay Node Timer Configuration
+      Live Execution Step Timeline
+```
+
+### 11.1 Component: `BudgetHealthCard.tsx` (Circular SVG Health Gauge & Zero-Sum Rebalancer)
+
+#### Component Anatomy & Features
+- **Visual Gauge**: Animated SVG circle with stroke-dasharray/stroke-dashoffset interpolation reflecting 0–100 score.
+- **Score Color Spectrum**: Green ($\ge 80$), Amber ($50 - 79$), Rose ($< 50$).
+- **4 Health Pillars**:
+  1. *Budget Adherence* (40 pts)
+  2. *Review Cleanliness* (20 pts)
+  3. *Savings & Goals Progress* (20 pts)
+  4. *Debt Burden & Runway* (20 pts)
+- **Burn-Rate Alert Badges**: Displays categories projected to exceed monthly allocation before period close.
+- **Auto-Rebalance Trigger**: Opens dialog displaying zero-sum shift proposals where $\sum \Delta B_i = 0$.
+
+```tsx
+// client/src/components/BudgetHealthCard.tsx
+import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../lib/api';
+import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { AlertTriangle, CheckCircle, RefreshCw, Zap } from 'lucide-react';
+
+export const BudgetHealthCard: React.FC = () => {
+  const queryClient = useQueryClient();
+  const [showRebalanceModal, setShowRebalanceModal] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['budget-health'],
+    queryFn: async () => {
+      const res = await api.get('/api/v1/finance/budgets/health');
+      return res.data.data;
+    }
+  });
+
+  const rebalanceMutation = useMutation({
+    mutationFn: async (proposals: any[]) => {
+      return await api.post('/api/v1/finance/budgets/rebalance-apply', { proposals });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['budget-health'] });
+      queryClient.invalidateQueries({ queryKey: ['budgets'] });
+      setShowRebalanceModal(false);
+    }
+  });
+
+  if (isLoading || !data) {
+    return <div className="h-48 rounded-xl bg-slate-900/40 animate-pulse border border-slate-800" />;
+  }
+
+  const score = data.score || 0;
+  const strokeDash = 2 * Math.PI * 40;
+  const strokeOffset = strokeDash - (strokeDash * score) / 100;
+  const gaugeColor = score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <Card className="border-slate-800 bg-slate-900/60 backdrop-blur-md">
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-base font-semibold text-slate-100 flex items-center gap-2">
+          <Zap className="h-4 w-4 text-amber-400" />
+          Budget & Financial Health
+        </CardTitle>
+        <Badge variant={score >= 80 ? 'default' : 'secondary'} className="text-xs">
+          {score >= 80 ? 'Optimal' : score >= 50 ? 'Fair' : 'At Risk'}
+        </Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-6">
+          <div className="relative w-24 h-24 flex items-center justify-center">
+            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="40" stroke="#1e293b" strokeWidth="8" fill="transparent" />
+              <circle
+                cx="50"
+                cy="50"
+                r="40"
+                stroke={gaugeColor}
+                strokeWidth="8"
+                strokeDasharray={strokeDash}
+                strokeDashoffset={strokeOffset}
+                strokeLinecap="round"
+                fill="transparent"
+                className="transition-all duration-1000 ease-out"
+              />
+            </svg>
+            <span className="absolute text-xl font-bold text-slate-100">{score}</span>
+          </div>
+
+          <div className="flex-1 space-y-1 text-xs">
+            <div className="flex justify-between text-slate-300">
+              <span>Savings Rate:</span>
+              <span className="font-semibold text-emerald-400">{data.savingsRate}%</span>
+            </div>
+            <div className="flex justify-between text-slate-300">
+              <span>Runway:</span>
+              <span className="font-semibold text-sky-400">{data.runwayMonths} Months</span>
+            </div>
+            <div className="flex justify-between text-slate-300">
+              <span>Active Overspends:</span>
+              <span className="font-semibold text-rose-400">{data.alerts?.length || 0}</span>
+            </div>
+          </div>
+        </div>
+
+        {data.proposals?.length > 0 && (
+          <Button
+            size="sm"
+            onClick={() => setShowRebalanceModal(true)}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs gap-2"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Review Zero-Sum Rebalancing Proposals
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+```
+
+---
+
+### 11.2 Component: `TransactionReviewQueue.tsx` (ML Merchant Clusters & Split Editor)
+
+#### Key Capabilities
+- **Confidence Triage**: Automatically partitions incoming transactions into *High Confidence* ($\ge 0.70$) and *Review Needed* ($< 0.70$).
+- **Cluster Grouping**: Groups transactions by ML-detected merchant centroid so a single rule applies to multiple items.
+- **Split Transaction Support**: Lets user partition a single receipt (e.g. Target \$150) into \$100 Groceries and \$50 Household Goods.
+- **Rule Promotion**: One-click creation of persistent regex/exact matching rules in MongoDB.
+
+---
+
+### 11.3 Component: `FinancialCalendar.tsx` (Recurring Reminders & RFC 5545 iCal Stream)
+
+#### Key Capabilities
+- **Visual Month View**: Grid displaying recurring bills, expected payroll deposits, and tax filing deadlines.
+- **Status Toggle**: One-click toggle marking reminders as `completed` or `pending` with instant visual strikethrough.
+- **Live iCal Export**: Live download button streaming `/api/v1/calendar-reminders/export.ics` directly into Google Calendar, Apple Calendar, or Outlook.
+
+---
+
+### 11.4 Component: `NewsletterSettings.tsx` (Digest Preferences & Live Email Preview)
+
+#### Key Capabilities
+- **Delivery Preferences**: Configures cadence (`weekly` vs `monthly`), day of week (Monday through Sunday), and UTC delivery hour.
+- **Interactive Preview**: Sandboxed `<iframe>` rendering the server-generated responsive HTML template with user live metrics.
+- **Test Dispatch**: Triggers on-demand email dispatch to verify SMTP delivery and styling.
+
+---
+
+### 11.5 Component: `Notes.tsx` / Financial Journal (Offline Queue & 64-D Semantic Search)
+
+#### Key Capabilities
+- **Offline-First Stroke Queue**: Edits and new drafts are immediately queued to `localStorage` with client idempotency tokens.
+- **Online Reconnect Sync**: `window.addEventListener('online')` automatically invokes `/api/financial-journal/entries/batch-sync`.
+- **64-D Semantic Vector Search**: Natural language search box querying notes using dense cosine similarity in 64-D embedding space.
+
+---
+
+### 11.6 Component: `AiStatusDialog.tsx` (4-Tab Autonomous Diagnostic Cockpit)
+
+#### Key Capabilities
+- **4-Tab Deep Inspection**:
+  1. **Overview Tab**: Active foundation model, failover chain, LLM call counts, server circuit breaker state (`CLOSED`, `OPEN`, `HALF-OPEN`), and rate limiter token status.
+  2. **KeyPool Tab**: Multi-provider API key metrics, per-key success rates, latency percentiles (p50, p95), cooldown backoff countdowns, and rotation strategy (`ROUND_ROBIN`, `LEAST_USED`, `LOWEST_LATENCY`).
+  3. **Model Catalog Tab**: Universal model inventory with capabilities (Vision, Reasoning, Long Context, Tool Calling), provider groupings, and pricing tiers.
+  4. **Canary Invariants Tab**: Real-time evaluation proofs for all 5 core mathematical invariants with execution source indicator (`FastAPI AI Core` vs `Local Deterministic Math Fallback`).
+- **One-Click Diagnostic Probes**: Execute on-demand verification suites directly from the UI to test math safety and provider connectivity.

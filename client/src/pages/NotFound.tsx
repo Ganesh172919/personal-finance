@@ -21,6 +21,9 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useAuth } from "@/hooks/useAuth";
 
+// Catch-all 404 page displayed when navigating to undefined application routes.
+// Renders responsive error feedback cards with context-sensitive recovery buttons.
+// Directs authenticated users to the dashboard and guests to the login page.
 export default function NotFound() {
   const { user } = useAuth();
 

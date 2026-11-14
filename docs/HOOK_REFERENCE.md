@@ -704,3 +704,98 @@ mindmap
 │    └─► Synchronously updates chat store without re-rendering full page │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 9. 2026 Domain Query & State Synchronization Hooks
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#7c3aed', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#6d28d9', 'lineColor': '#8b5cf6', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((2026 Hooks))
+    useAiCanaryStatus
+      Queries /api/v1/ai/canary/status
+      Re-evaluates 5 Core Invariants
+      Reports Mode (FastAPI vs Fallback)
+    useBudgetHealth
+      Queries /api/v1/finance/budgets/health
+      Calculates Composite Score 0-100
+      Evaluates Category Burn Alerts
+      Rebalance Mutation (sum dB = 0)
+    useJournalSync
+      Watches Browser Online State
+      Queues Drafts to LocalStorage
+      Batch Syncs via POST /batch-sync
+      Idempotent Deduplication
+    useCalendarReminders
+      Queries /api/v1/calendar-reminders
+      Toggle Status Mutation (pending/completed)
+      Live iCal .ics Stream Exporter
+```
+
+### 9.1 `useAiCanaryStatus`: Real-Time Mathematical Truth & Invariant Verification
+
+```typescript
+// client/src/hooks/useAiCanaryStatus.ts
+import { useQuery } from '@tanstack/react-query';
+import api from '../lib/api';
+
+export interface CanaryCheckItem {
+  probe_id: string;
+  invariant: string;
+  passed: boolean;
+  message?: string;
+}
+
+export function useAiCanaryStatus(enabled = true) {
+  return useQuery({
+    queryKey: ['ai-canary-status'],
+    queryFn: async () => {
+      const res = await api.get('/api/v1/ai/canary/status');
+      return res.data;
+    },
+    enabled,
+    refetchInterval: 30000 // Poll canary every 30s
+  });
+}
+```
+
+---
+
+### 9.2 `useJournalSync`: Offline-First LocalStorage & Batch Reconnect Sync
+
+```typescript
+// client/src/hooks/useJournalSync.ts
+import { useEffect, useState } from 'react';
+import { getLocalDrafts, syncOfflineJournalDrafts } from '../lib/api/journal';
+
+export function useJournalSync() {
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const refreshPending = () => {
+    setPendingCount(getLocalDrafts().length);
+  };
+
+  useEffect(() => {
+    refreshPending();
+
+    const handleOnline = async () => {
+      if (getLocalDrafts().length > 0) {
+        setIsSyncing(true);
+        try {
+          await syncOfflineJournalDrafts();
+          refreshPending();
+        } finally {
+          setIsSyncing(false);
+        }
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, []);
+
+  return { pendingCount, isSyncing, refreshPending };
+}
+```

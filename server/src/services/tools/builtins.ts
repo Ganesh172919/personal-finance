@@ -27,27 +27,45 @@ import { sendEmail } from "../../utils/sendEmail";
 import { getToolCatalogEntry } from "../toolCatalog";
 import type { ToolHandler } from "./types";
 
+// Enforces standard positive or negative sign convention on transaction monetary values.
+// Treats income transactions as positive ledger additions.
+// Formats expense and investment transactions as negative ledger amounts.
 const normalizeTransactionAmount = (amount: number, type: TransactionType) => {
   const absoluteAmount = Math.abs(Number(amount));
   return type === "income" ? absoluteAmount : -absoluteAmount;
 };
 
+// Escapes regular expression special characters to allow safe dynamic pattern matching.
+// Prevents regex injection and syntax errors when evaluating search queries.
+// Ensures user query strings are matched as literal text across database fields.
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// Safely parses and constrains an integer value within specified minimum and maximum bounds.
+// Returns a designated fallback number if the input is non-numeric or invalid.
+// Enforces boundary constraints on pagination limits and day offsets across tool invocations.
 const clampInt = (value: unknown, fallback: number, min: number, max: number) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(parsed)));
 };
 
+// Safely parses and bounds a floating-point numeric value within range limits.
+// Returns a default fallback value if the parameter cannot be evaluated as a finite number.
+// Restricts financial parameters and thresholds within sensible domain boundaries.
 const clampNumber = (value: unknown, fallback: number, min: number, max: number) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, parsed));
 };
 
+// Rounds a floating-point monetary value to standard two-decimal currency precision.
+// Multiplies by 100, rounds to the nearest integer, and divides back by 100.
+// Prevents floating-point precision drift across financial ledger computations.
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
 
+// Resolves the tool catalog entry specification for a given canonical tool identifier.
+// Queries the global catalog registry and throws an error if registration is absent.
+// Ensures that every builtin tool handler matches an authoritative catalog schema.
 const requireCatalogEntry = (tool: string) => {
   const entry = getToolCatalogEntry(tool);
   if (!entry) {
@@ -56,6 +74,9 @@ const requireCatalogEntry = (tool: string) => {
   return entry;
 };
 
+// Defines the core registry of builtin tool handlers available to the AI agent runtime.
+// Implements dry-run simulation and live execution methods for each supported tool.
+// Enforces security boundaries, tenant isolation, and audit logging across all operations.
 export const builtinToolHandlers: ToolHandler[] = [
   {
     tool: "workflows.create",

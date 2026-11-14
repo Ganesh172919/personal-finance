@@ -15,6 +15,9 @@
  */
 import { z } from "zod";
 
+// Validates incoming HTTP payloads emitting automated domain events.
+// Enforces event type strings, optional aggregate entity references, and metadata.
+// Powers external webhook triggers and event-driven workflow automation pipelines.
 export const emitAutomationEventBodySchema = z
   .object({
     event_type: z.string().trim().min(2).max(120),

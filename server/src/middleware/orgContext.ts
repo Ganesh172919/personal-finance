@@ -97,8 +97,23 @@ import mongoose from "mongoose"; // MongoDB ODM
 import type { IUserDocument } from "../models/userModel"; // User document type
 import { HttpError } from "./httpError"; // Custom HTTP error class
 import { getEnv } from "../config/env"; // Environment configuration
-import { resolveDefaultOrgForUser, resolveOrgForRequest } from "../services/orgService"; // Organization service
+import { resolveDefaultOrgForUser } from "../services/orgService"; // Organization service
+import { getAuthMemberships, pickDefaultMembership, type CachedMembership } from "../services/authCache"; // Cached memberships
 import { backfillLegacyOrgIdForUser } from "../services/orgDataBackfill"; // Legacy data backfill
+
+type ResolvedOrg = {
+  orgId: mongoose.Types.ObjectId | string;
+  memberId: mongoose.Types.ObjectId | string;
+  role: string;
+  isDefault: boolean;
+};
+
+const toResolvedOrg = (member: CachedMembership): ResolvedOrg => ({
+  orgId: member.orgId,
+  memberId: member._id,
+  role: member.role,
+  isDefault: member.isDefault,
+});
 
 /**
  * Organization Context Middleware
@@ -109,6 +124,8 @@ import { backfillLegacyOrgIdForUser } from "../services/orgDataBackfill"; // Leg
  * @param {Response} _res - Express response object (unused)
  * @param {NextFunction} next - Express next function
  */
+// Resolves tenant organization context and validates membership roles for authenticated users.
+// Injects orgId, membership details, and active roles into req.org while enforcing tenant boundaries.
 export const orgContext: RequestHandler = async (req, _res, next) => {
   try {
     // Get authenticated user from request
@@ -124,13 +141,33 @@ export const orgContext: RequestHandler = async (req, _res, next) => {
     try {
       const userId = new mongoose.Types.ObjectId(user._id);
 
-      // Resolve default organization for user
-      const defaultOrg = await resolveDefaultOrgForUser(userId);
+      // Authorize against committed membership state on every request. Cached
+      // projections on other replicas cannot prove a role or membership is still
+      // active after revocation, even when Redis invalidation succeeds.
+      const memberships = await getAuthMemberships(userId.toString(), { fresh: true });
+
+      let defaultOrg: ResolvedOrg;
+      const defaultMember = pickDefaultMembership(memberships);
+      if (defaultMember) {
+        defaultOrg = toResolvedOrg(defaultMember);
+      } else {
+        // First request for a user with no org yet: creates the personal org
+        // (OrgMember save hook invalidates the membership cache).
+        defaultOrg = await resolveDefaultOrgForUser(userId);
+      }
 
       // Resolve active organization (requested or default)
-      const activeOrg = requestedOrgId
-        ? await resolveOrgForRequest({ userId, requestedOrgId })
-        : defaultOrg;
+      let activeOrg = defaultOrg;
+      if (requestedOrgId) {
+        if (!mongoose.Types.ObjectId.isValid(requestedOrgId)) {
+          throw new Error("Invalid org id");
+        }
+        const requested = memberships.find(member => member.orgId === requestedOrgId.toLowerCase());
+        if (!requested) {
+          throw new Error("Org access denied");
+        }
+        activeOrg = toResolvedOrg(requested);
+      }
 
       // Attach organization context to request
       (req as any).org = {
@@ -144,7 +181,7 @@ export const orgContext: RequestHandler = async (req, _res, next) => {
       // Backfill legacy organization IDs if enabled
       const env = getEnv();
       if (env.ORG_LEGACY_BACKFILL_ENABLED) {
-        await backfillLegacyOrgIdForUser({ userId, defaultOrgId: defaultOrg.orgId });
+        await backfillLegacyOrgIdForUser({ userId, defaultOrgId: new mongoose.Types.ObjectId(String(defaultOrg.orgId)) });
       }
       return next();
     } catch (error: any) {

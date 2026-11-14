@@ -1,8 +1,14 @@
 import { Schema, model, Document, Types } from "mongoose";
 
+// Defines type unions for invoice payment status and billing subscription intervals.
+// Captures payment settlement states (paid, void, refunded) and cycles (monthly, annual).
+// Used across billing account services, dunning workflows, and customer receipt generation.
 export type InvoiceStatus = "paid" | "void" | "refunded";
 export type BillingCycle = "monthly" | "annual";
 
+// Defines the domain properties for an organization billing invoice record.
+// Stores monetary totals in USD and localized currencies, tax, line items, and billing periods.
+// Represents financial audit artifacts generated upon recurring subscription renewal.
 export interface IInvoice {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;
@@ -26,10 +32,16 @@ export interface IInvoice {
   updatedAt: Date;
 }
 
+// Extends the base invoice interface with Mongoose Document properties.
+// Exposes MongoDB ObjectId, document methods, and audit timestamps.
+// Represents the strongly-typed document returned by database billing queries.
 export interface IInvoiceDocument extends IInvoice, Document {
   _id: Types.ObjectId;
 }
 
+// Configures the Mongoose schema for the organization billing invoice collection.
+// Enforces validation rules on invoice numbers, currency values, plan tiers, and dates.
+// Automates creation and modification timestamps on all invoice modifications.
 const invoiceSchema = new Schema<IInvoiceDocument>(
   {
     orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
@@ -44,8 +56,8 @@ const invoiceSchema = new Schema<IInvoiceDocument>(
     amountLocalized: { type: Number },
     taxLocalized: { type: Number },
     totalLocalized: { type: Number },
-    status: { type: String, enum: ["paid", "void", "refunded"], required: true, default: "paid" },
-    paymentMethod: { type: String, required: true, default: "Card ending in 4242" },
+    status: { type: String, enum: ["paid", "void", "refunded"], required: true },
+    paymentMethod: { type: String, required: true },
     periodStart: { type: Date, required: true },
     periodEnd: { type: Date, required: true },
     issuedAt: { type: Date, required: true, default: Date.now },
@@ -54,7 +66,13 @@ const invoiceSchema = new Schema<IInvoiceDocument>(
   { timestamps: true }
 );
 
+// Configures compound database index on organization ID and issue date.
+// Optimizes billing history queries and chronological invoice statement sorting.
+// Facilitates rapid retrieval of organization billing records in the admin portal.
 invoiceSchema.index({ orgId: 1, issuedAt: -1 });
 
+// Compiles and exports the Mongoose model for invoice records.
+// Exposes data access methods to query, generate, and adjust customer billing invoices.
+// Integrates with payment gateway webhooks and financial accounting services.
 const InvoiceModel = model<IInvoiceDocument>("Invoice", invoiceSchema);
 export default InvoiceModel;

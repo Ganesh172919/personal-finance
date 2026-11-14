@@ -29,6 +29,9 @@ import { HttpError } from "../../middleware/httpError";
 
 // ─── Helpers ────────────────────────────────────────────
 
+// Validates caller identity and tenant membership on comment management routes.
+// Extracts verified MongoDB ObjectIds representing the organization and author.
+// Raises an unauthorized HTTP exception if tenant or user credentials are missing.
 const requireContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -47,6 +50,9 @@ const VALID_RESOURCE_TYPES = ["transaction", "budget", "goal", "workflow", "insi
 
 // ─── List Comments ──────────────────────────────────────
 
+// Queries polymorphic comment threads attached to a specific financial entity.
+// Filters out soft-deleted comments and populates author profile information.
+// Returns chronological comment hierarchies for transactions, budgets, or goals.
 export const listComments = async (req: Request, res: Response) => {
   const { orgId } = requireContext(req);
 
@@ -93,6 +99,9 @@ export const listComments = async (req: Request, res: Response) => {
 
 // ─── Create Comment ─────────────────────────────────────
 
+// Appends a new user comment or reply to a designated financial resource thread.
+// Validates resource classification, length constraints, and tagged user mentions.
+// Persists the new comment entity and returns the populated author descriptor.
 export const createComment = async (req: Request, res: Response) => {
   const { orgId, userId } = requireContext(req);
 
@@ -143,6 +152,9 @@ export const createComment = async (req: Request, res: Response) => {
 
 // ─── Update Comment ─────────────────────────────────────
 
+// Applies text modifications to an existing user comment within a resource thread.
+// Asserts author ownership to ensure users may only edit their own remarks.
+// Records edit timestamps, commits text revisions, and returns updated details.
 export const updateComment = async (req: Request, res: Response) => {
   const { orgId, userId } = requireContext(req);
   const commentId = req.params.id;
@@ -182,6 +194,9 @@ export const updateComment = async (req: Request, res: Response) => {
 
 // ─── Delete Comment (soft) ──────────────────────────────
 
+// Soft-deletes a targeted comment by applying a deletedAt timestamp to the entity.
+// Permits comment deletion by the original author or by organization administrators.
+// Retains data records for audit continuity while hiding comments from UI threads.
 export const deleteComment = async (req: Request, res: Response) => {
   const { orgId, userId } = requireContext(req);
   const commentId = req.params.id;

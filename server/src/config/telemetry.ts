@@ -39,24 +39,8 @@ import { logger } from "./logger";                                        // App
 // Singleton SDK instance (null when tracing is disabled)
 let sdk: NodeSDK | null = null;
 
-/**
- * Initialize OpenTelemetry distributed tracing.
- *
- * CRITICAL: This must be called BEFORE any other imports that use HTTP or database
- * modules. OpenTelemetry patches these modules at import time to add tracing spans.
- * In server.ts, this is the first function called in start().
- *
- * Only activates when OTEL_ENDPOINT environment variable is set.
- * When not set, this function is a complete no-op (zero overhead).
- *
- * INSTRUMENTATIONS ENABLED:
- * - @opentelemetry/instrumentation-http: Traces HTTP requests (Express routes, axios calls)
- * - @opentelemetry/instrumentation-mongoose: Traces MongoDB queries
- *
- * @example
- * // Set OTEL_ENDPOINT=http://localhost:4318 to enable tracing
- * // Traces will be sent to the OpenTelemetry collector at that endpoint
- */
+// Initializes OpenTelemetry distributed tracing and auto-instruments HTTP and Mongoose modules.
+// Activates trace collection only when an OTEL_ENDPOINT configuration is provided in the environment.
 export const initTelemetry = (): void => {
   const env = getEnv();
 
@@ -91,12 +75,8 @@ export const initTelemetry = (): void => {
   }
 };
 
-/**
- * Gracefully shut down the OpenTelemetry SDK.
- *
- * Called during server shutdown (in server.ts) to flush any pending trace data
- * to the collector before the process exits. This prevents data loss.
- */
+// Flushes pending telemetry spans and shuts down the active OpenTelemetry tracing SDK instance.
+// Executed during graceful server termination to prevent telemetry loss across active spans.
 export const shutdownTelemetry = async (): Promise<void> => {
   if (sdk) {
     try {

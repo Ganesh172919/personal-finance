@@ -4,18 +4,39 @@ import { Check, ChevronRight, Circle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// Root dropdown menu container coordinating popover state and focus management.
+// Wraps Radix UI DropdownMenuPrimitive Root to manage opened and closed status.
+// Anchors interactive action menus, navigation dropdowns, and option lists.
 const DropdownMenu = DropdownMenuPrimitive.Root;
 
+// Interactive button trigger toggling visibility of the dropdown menu on click.
+// Re-exports Radix UI DropdownMenuPrimitive Trigger with WAI-ARIA attributes.
+// Automatically controls aria-expanded state and positions the attached content popover.
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 
+// Grouping element organizing related dropdown menu items into logical clusters.
+// Re-exports Radix UI DropdownMenuPrimitive Group for assistive accessibility.
+// Enhances screen reader navigation across collections of related action choices.
 const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 
+// Portal wrapper rendering dropdown menus into document body DOM tree.
+// Re-exports Radix UI DropdownMenuPrimitive Portal to avoid parent overflow clipping.
+// Guarantees proper z-index elevation above other interface components.
 const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
 
+// Submenu container orchestrating cascading secondary dropdown menus.
+// Re-exports Radix UI DropdownMenuPrimitive Sub for nested menu management.
+// Coordinates hover triggers and focus transitions between menu levels.
 const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 
+// Radio group container enforcing mutually exclusive item selections in dropdowns.
+// Re-exports Radix UI DropdownMenuPrimitive RadioGroup with value synchronization.
+// Manages single-selection state across nested DropdownMenuRadioItem children.
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
+// Submenu trigger opening an adjacent cascading flyout menu on hover or press.
+// Renders an inline ChevronRight icon indicating secondary menu availability.
+// Supports optional inset property for alignment with icon-padded peers.
 const DropdownMenuSubTrigger = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.SubTrigger>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubTrigger> & {
@@ -38,6 +59,9 @@ const DropdownMenuSubTrigger = React.forwardRef<
 DropdownMenuSubTrigger.displayName =
   DropdownMenuPrimitive.SubTrigger.displayName;
 
+// Floating flyout menu container rendered alongside DropdownMenuSubTrigger.
+// Formats popover backgrounds, shadows, and smooth directional zoom animations.
+// Houses secondary nested menu action items within cascading dropdowns.
 const DropdownMenuSubContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
@@ -54,6 +78,9 @@ const DropdownMenuSubContent = React.forwardRef<
 DropdownMenuSubContent.displayName =
   DropdownMenuPrimitive.SubContent.displayName;
 
+// Main floating menu container anchored below or above the dropdown trigger.
+// Renders inside a portal with popover border styling and entrance animations.
+// Handles auto-positioning, collision detection, and scrollable overflow height.
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
@@ -72,6 +99,9 @@ const DropdownMenuContent = React.forwardRef<
 ));
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName;
 
+// Standard selectable action button within a dropdown menu popover.
+// Applies hover and keyboard navigation focus styling with accent colors.
+// Supports optional inset padding for alignment across mixed menu layouts.
 const DropdownMenuItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & {
@@ -90,6 +120,9 @@ const DropdownMenuItem = React.forwardRef<
 ));
 DropdownMenuItem.displayName = DropdownMenuPrimitive.Item.displayName;
 
+// Interactive toggle menu item representing a selectable boolean option.
+// Displays an animated Check icon indicator when checked state is active.
+// Forwards DOM references and manages change events upon user activation.
 const DropdownMenuCheckboxItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.CheckboxItem>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.CheckboxItem>
@@ -114,6 +147,9 @@ const DropdownMenuCheckboxItem = React.forwardRef<
 DropdownMenuCheckboxItem.displayName =
   DropdownMenuPrimitive.CheckboxItem.displayName;
 
+// Radio selection item displaying an active circle dot indicator when selected.
+// Used within a DropdownMenuRadioGroup to represent a single-choice option.
+// Forwards DOM references to the underlying Radix RadioItem primitive.
 const DropdownMenuRadioItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.RadioItem>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.RadioItem>
@@ -136,6 +172,9 @@ const DropdownMenuRadioItem = React.forwardRef<
 ));
 DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName;
 
+// Section header label communicating category titles inside dropdown menus.
+// Renders semi-bold typography with consistent vertical padding.
+// Supports inset property to align cleanly with adjacent action items.
 const DropdownMenuLabel = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Label>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Label> & {
@@ -154,6 +193,9 @@ const DropdownMenuLabel = React.forwardRef<
 ));
 DropdownMenuLabel.displayName = DropdownMenuPrimitive.Label.displayName;
 
+// Thin horizontal divider separating logical sections inside dropdown menus.
+// Renders a muted background line with negative horizontal margins.
+// Forwards DOM references to the underlying Radix Separator primitive.
 const DropdownMenuSeparator = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Separator>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>
@@ -166,6 +208,9 @@ const DropdownMenuSeparator = React.forwardRef<
 ));
 DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName;
 
+// Right-aligned accessory span displaying keyboard shortcut key combinations.
+// Formats shortcut hints with muted opacity and wide tracking typography.
+// Informs keyboard-oriented users of quick hotkey equivalents for menu actions.
 const DropdownMenuShortcut = ({
   className,
   ...props

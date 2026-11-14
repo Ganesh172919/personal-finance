@@ -89,11 +89,15 @@
  * @module services/transactionReview
  */
 
+import { createHash } from "node:crypto";
 import mongoose from "mongoose";
 
 import TransactionModel from "../models/transactionModel";
 
 /** Valid review flags for transactions */
+// Defines heuristic classification flags signaling review requirements.
+// Includes missing categories, suspected duplicates, and split candidates.
+// Highlights transactions requiring human confirmation or accounting triage.
 export type TransactionReviewFlag =
   | "uncategorized"
   | "suspected_duplicate"
@@ -102,15 +106,24 @@ export type TransactionReviewFlag =
   | "recurring_candidate";
 
 /** The review state attached to a transaction */
+// Encapsulates the triage review evaluation state of a financial transaction.
+// Contains active flags, qualitative notes, and computed attention scores.
+// Tracks reviewer identifiers, review timestamps, and ledger content hashes.
 export type TransactionReviewState = {
   needs_attention: boolean;
   flags: TransactionReviewFlag[];
   notes: string[];
   attention_score: number;
   confidence_score: number;
+  reviewed_at?: Date;
+  reviewed_by?: string;
+  reviewed_values_hash?: string;
 };
 
 /** Minimal transaction shape needed for review analysis */
+// Represents minimal structural fields required to evaluate transaction review status.
+// Encompasses monetary amounts, descriptions, categories, and merchant linkages.
+// Supplies previous review states and split allocations for heuristic inspection.
 export type ReviewableTransactionLike = {
   _id?: unknown;
   amount: number;
@@ -118,17 +131,63 @@ export type ReviewableTransactionLike = {
   description?: string;
   type?: string;
   merchantId?: mongoose.Types.ObjectId | string | null;
+  date?: Date | string;
+  splits?: Array<{ category: string; amount: number }>;
+  review?: {
+    needs_attention: boolean;
+    reviewed_at?: Date;
+    reviewed_by?: string;
+    reviewed_values_hash?: string;
+  };
 };
 
+// Bind approval to the original ledger values, so every write path (including
+// bulk edits) reopens changed records without relying on update timestamps.
+// Computes a SHA-256 fingerprint hash of core transaction accounting fields.
+// Detects subsequent modifications to amounts, dates, or split allocations.
+// Automatically invalidates approvals when underlying financial data changes.
+const reviewValuesHash = (transaction: ReviewableTransactionLike) => createHash("sha256").update(JSON.stringify({
+  amount: transaction.amount,
+  category: transaction.category || "",
+  description: transaction.description || "",
+  type: transaction.type || "",
+  date: transaction.date ? new Date(transaction.date).toISOString() : null,
+  merchantId: transaction.merchantId ? String(transaction.merchantId) : null,
+  splits: (transaction.splits || []).map(({ category, amount }) => ({ category, amount })),
+})).digest("hex");
+
+// Constructs a cleared approval review state for an acknowledged transaction.
+// Sets confidence to 1.0, clears all heuristic flags, and records reviewer identity.
+// Computes and attaches current ledger value hashes to detect future tampering.
+const approvedReview = (transaction: ReviewableTransactionLike, reviewedBy: string): TransactionReviewState => ({
+  needs_attention: false,
+  flags: [],
+  notes: [],
+  attention_score: 0,
+  confidence_score: 1,
+  reviewed_at: new Date(),
+  reviewed_by: reviewedBy,
+  reviewed_values_hash: reviewValuesHash(transaction),
+});
+
 /** Normalize text for comparison (lowercase, single spaces, trimmed) */
+// Normalizes arbitrary text strings for reliable heuristic matching.
+// Trims surrounding whitespace, collapses internal spaces, and downcases characters.
+// Standardizes transaction descriptions and categories before evaluation.
 const normalizeText = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase();
 
 /** Check if a category is missing or generic */
+// Evaluates whether a transaction category is missing or generically assigned.
+// Checks against generic terms such as other, misc, or uncategorized.
+// Flags transactions lacking explicit accounting categorization for review.
 const isUncategorized = (category?: string) => {
   const normalized = normalizeText(String(category || ""));
   return !normalized || normalized === "other" || normalized === "uncategorized" || normalized === "misc";
 };
 
+// Determines whether a transaction's description and amount suggest multiple items.
+// Checks for high dollar thresholds combined with compound delimiter tokens.
+// Flags potential multi-item purchases for receipt splitting and itemization.
 const isLikelySplitCandidate = (description: string, amount: number) => {
   const normalized = normalizeText(description);
   if (!normalized) return false;
@@ -145,6 +204,9 @@ const isLikelySplitCandidate = (description: string, amount: number) => {
  * Boost: +0.10 if merchant is associated
  * Floor: 0.10
  */
+// Calculates an automated classification confidence score ranging from 0.10 to 1.00.
+// Applies penalties for each active heuristic flag and boosts for known merchants.
+// Quantifies algorithmic certainty regarding a transaction's current categorization.
 const computeConfidenceScore = (params: {
   flags: TransactionReviewFlag[];
   merchantId?: mongoose.Types.ObjectId | string | null;
@@ -155,6 +217,9 @@ const computeConfidenceScore = (params: {
   return Math.max(0.10, Math.min(1.0, Math.round(score * 100) / 100));
 };
 
+// Evaluates heuristic rules across transaction attributes to produce review states.
+// Identifies uncategorized expenses, potential duplicates, and recurring patterns.
+// Aggregates warning flags, audit notes, and confidence scores into review objects.
 export const buildTransactionReviewState = (params: {
   category?: string;
   description?: string;
@@ -209,6 +274,9 @@ export const buildTransactionReviewState = (params: {
   };
 };
 
+// Enriches a collection of transactions with contextual review and duplicate checks.
+// Skips already-approved transactions whose ledger content hashes remain unchanged.
+// Queries historical database records to detect duplicate entries and cadence patterns.
 export const enrichTransactionsForReview = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -220,6 +288,16 @@ export const enrichTransactionsForReview = async (params: {
     params.transactions.map(async (transaction) => {
       const txId = transaction._id ? String(transaction._id) : "";
       if (!txId) return;
+
+      const review = transaction.review;
+      if (review?.reviewed_at && !review.needs_attention && review.reviewed_values_hash === reviewValuesHash(transaction)) {
+        reviewById.set(txId, {
+          needs_attention: false, flags: [], notes: [], attention_score: 0, confidence_score: 1,
+          reviewed_at: review.reviewed_at, reviewed_by: review.reviewed_by,
+          reviewed_values_hash: review.reviewed_values_hash,
+        });
+        return;
+      }
 
       const description = String(transaction.description || "").trim();
       const category = String(transaction.category || "");
@@ -253,7 +331,7 @@ export const enrichTransactionsForReview = async (params: {
           merchantId: transaction.merchantId,
           duplicateCount: duplicateMatch + 1,
           recurringCount: recurringMatch,
-          splits: (transaction as any).splits,
+          splits: transaction.splits,
         })
       );
     })
@@ -266,12 +344,20 @@ export const enrichTransactionsForReview = async (params: {
  * Approve a single transaction: clears all review flags, sets confidence
  * to 1.0, and records the reviewer for audit trail.
  */
+// Marks a single transaction as reviewed and approved by an authorized user.
+// Clears pending review flags and updates the review hash to the current data.
+// Records reviewer audit metadata and sets confidence score to maximum certainty.
 export const approveTransaction = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
   transactionId: string;
   reviewedBy: string;
 }) => {
+  const transaction = await TransactionModel.findOne({
+    _id: params.transactionId, orgId: params.orgId, userId: params.userId,
+  }).lean();
+  if (!transaction) return null;
+
   const updated = await TransactionModel.findOneAndUpdate(
     {
       _id: params.transactionId,
@@ -280,14 +366,7 @@ export const approveTransaction = async (params: {
     },
     {
       $set: {
-        "review.needs_attention": false,
-        "review.flags": [],
-        "review.notes": [],
-        "review.attention_score": 0,
-        "review.confidence_score": 1.0,
-        "review.reviewed_at": new Date(),
-        "review.reviewed_by": params.reviewedBy,
-        "review.updatedAt": new Date(),
+        review: { ...approvedReview(transaction, params.reviewedBy), updatedAt: new Date() },
       },
     },
     { new: true }
@@ -300,6 +379,9 @@ export const approveTransaction = async (params: {
  * Bulk approve multiple transactions by IDs.
  * Clears all flags and sets confidence to 1.0.
  */
+// Approves multiple transactions concurrently across an organization scope.
+// Verifies valid MongoDB ObjectIds and executes bulk database write operations.
+// Clears attention flags and records reviewer audit trails in batch fashion.
 export const bulkApproveTransactions = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -312,25 +394,16 @@ export const bulkApproveTransactions = async (params: {
 
   if (validIds.length === 0) return { modified: 0 };
 
-  const result = await TransactionModel.updateMany(
-    {
-      _id: { $in: validIds },
-      orgId: params.orgId,
-      userId: params.userId,
+  const transactions = await TransactionModel.find({
+    _id: { $in: validIds }, orgId: params.orgId, userId: params.userId,
+  }).lean();
+  if (!transactions.length) return { modified: 0 };
+  const result = await TransactionModel.bulkWrite(transactions.map(transaction => ({
+    updateOne: {
+      filter: { _id: transaction._id, orgId: params.orgId, userId: params.userId },
+      update: { $set: { review: { ...approvedReview(transaction, params.reviewedBy), updatedAt: new Date() } } },
     },
-    {
-      $set: {
-        "review.needs_attention": false,
-        "review.flags": [],
-        "review.notes": [],
-        "review.attention_score": 0,
-        "review.confidence_score": 1.0,
-        "review.reviewed_at": new Date(),
-        "review.reviewed_by": params.reviewedBy,
-        "review.updatedAt": new Date(),
-      },
-    }
-  );
+  })));
 
   return { modified: result.modifiedCount || 0 };
 };

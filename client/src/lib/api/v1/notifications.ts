@@ -21,6 +21,9 @@ import { apiClient } from "../core";
 // ─── Types ────────────────────────────────────────────────
 
 /** A single notification item with status, content, and metadata. */
+// Represents an individual in-app notification delivered to the active organization.
+// Tracks lifecycle read states, notification headers, body copy, and metadata payloads.
+// Powers visual notification badges, alert cards, and dropdown feed components.
 export interface NotificationItem {
   id: string;
   status: "unread" | "read";
@@ -31,12 +34,18 @@ export interface NotificationItem {
   metadata: Record<string, unknown>;
 }
 
+// Encapsulates the response payload returned when querying organization notifications.
+// Delivers the notification array alongside organization and server request identifiers.
+// Supplies the data feed populating user notification center trays.
 export interface NotificationsListResponse {
   org_id: string;
   notifications: NotificationItem[];
   request_id: string;
 }
 
+// Encapsulates the response payload returned after acknowledging a notification.
+// Delivers the modified notification entity with updated read timestamps.
+// Updates local notification state and decrements unread counter badges.
 export interface NotificationReadResponse {
   org_id: string;
   notification: NotificationItem;
@@ -45,6 +54,9 @@ export interface NotificationReadResponse {
 
 // ─── API Functions ────────────────────────────────────────
 
+// Queries organization in-app notifications filtered by read status and record limits.
+// Formulates query parameters for read or unread statuses and fetch limits.
+// Dispatches an authenticated GET request loading notification lists.
 /** List notifications with optional status filter and limit. */
 export async function listNotifications(params?: {
   status?: "unread" | "read";
@@ -61,6 +73,9 @@ export async function listNotifications(params?: {
   return apiClient(`/notifications${suffix}`);
 }
 
+// Marks a specific unread notification as acknowledged using its unique ID.
+// Dispatches an authenticated POST request targeting the read confirmation route.
+// Synchronizes read timestamps across devices and updates local badge counts.
 /** Mark a single notification as read. */
 export async function markNotificationRead(
   notificationId: string,
@@ -73,6 +88,9 @@ export async function markNotificationRead(
   );
 }
 
+// Marks all active unread organization notifications as acknowledged in bulk.
+// Fetches unread notification records and resolves concurrent read status requests.
+// Clears notification tray unread counters and dismisses urgent alerts.
 /**
  * Mark all unread notifications as read.
  * Currently implemented client-side: fetches all unread (up to 200)

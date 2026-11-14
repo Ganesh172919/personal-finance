@@ -136,6 +136,21 @@ describe("Billing page", () => {
     expect(screen.getByTestId("button-upgrade-pro")).not.toBeDisabled();
   });
 
+  it("does not present a canceled paid subscription as the current paid plan", () => {
+    mockConfig.entitlements.plan = "pro";
+    mockConfig.entitlements.status = "canceled";
+    renderWithClient(<Billing />);
+    expect(screen.getByTestId("badge-current-plan")).toHaveTextContent("free Plan");
+    expect(screen.getByTestId("button-upgrade-pro")).not.toBeDisabled();
+    expect(screen.getByTestId("button-plan-free")).toBeDisabled();
+  });
+
+  it("fills the shell width so the invoice table cannot widen the page past a phone viewport", () => {
+    renderWithClient(<Billing />);
+    // Inside AppShell's flex-column <main>, mx-auto without w-full shrink-wraps to the table's min-content width.
+    expect(screen.getByTestId("billing-page")).toHaveClass("mx-auto", "w-full", "min-w-0");
+  });
+
   it("triggers upgrade to Pro and handles instant activation", async () => {
     apiBilling.createBillingCheckout.mockResolvedValueOnce({
       activated: true,
@@ -257,92 +272,37 @@ describe("Billing page", () => {
     expect(screen.getByTestId("pack-card-scenarios_pack_100")).toHaveTextContent("Simulation Pack");
     expect(screen.getByTestId("pack-card-flex_bundle")).toHaveTextContent("All-in-One Flex Bundle");
 
-    expect(screen.getByTestId("button-buy-ai_pack_250")).toBeInTheDocument();
-    expect(screen.getByTestId("button-buy-ocr_pack_100")).toBeInTheDocument();
-    expect(screen.getByTestId("button-buy-scenarios_pack_100")).toBeInTheDocument();
-    expect(screen.getByTestId("button-buy-flex_bundle")).toBeInTheDocument();
+    for (const id of ["ai_pack_250", "ocr_pack_100", "scenarios_pack_100", "flex_bundle"]) {
+      expect(screen.getByTestId(`button-buy-${id}`)).toBeDisabled();
+    }
+    expect(creditPacksCard).toHaveTextContent("not currently offered for sale");
   });
 
-  it("opens confirmation dialog and purchases credit booster with toast notification", async () => {
-    apiBilling.purchaseCreditPack.mockResolvedValueOnce({
-      success: true,
-      pack: {
-        id: "ai_pack_250",
-        name: "AI Power Pack",
-        price_usd: 5,
-        credits: { monthly_ai_calls: 250 },
-      },
-      period_key: "2026-11",
-      purchase_id: "pack-12345",
-    });
-
+  it("never offers credit checkout while the server cannot verify payment", () => {
     renderWithClient(<Billing />);
-
-    // Click Buy Pack on AI Power Pack
     fireEvent.click(screen.getByTestId("button-buy-ai_pack_250"));
-
-    // Confirmation dialog appears
-    const dialog = await screen.findByTestId("dialog-credit-pack-confirm");
-    expect(dialog).toBeInTheDocument();
-    expect(screen.getByText("Confirm AI Power Pack Purchase")).toBeInTheDocument();
-    expect(screen.getByText("$5.00 USD")).toBeInTheDocument();
-
-    // Cancel closes dialog
-    fireEvent.click(screen.getByTestId("button-cancel-credit-pack"));
-    await waitFor(() => {
-      expect(screen.queryByTestId("dialog-credit-pack-confirm")).not.toBeInTheDocument();
-    });
-
-    // Re-open and confirm
-    fireEvent.click(screen.getByTestId("button-buy-ai_pack_250"));
-    const confirmBtn = await screen.findByTestId("button-confirm-credit-purchase");
-    fireEvent.click(confirmBtn);
-
-    await waitFor(() => {
-      expect(apiBilling.purchaseCreditPack).toHaveBeenCalledWith({
-        pack_id: "ai_pack_250",
-      });
-      expect(toastMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Credit Pack Activated",
-          description: expect.stringContaining("AI Power Pack"),
-        })
-      );
-    });
+    expect(screen.queryByTestId("dialog-credit-pack-confirm")).not.toBeInTheDocument();
+    expect(apiBilling.purchaseCreditPack).not.toHaveBeenCalled();
+    expect(toastMock).not.toHaveBeenCalledWith(expect.objectContaining({ title: "Credit Pack Activated" }));
   });
 
-  it("toggles between monthly and annual billing cycles, displaying discounted annual rates and passing annual cadence to checkout", async () => {
-    apiBilling.createBillingCheckout.mockResolvedValueOnce({
-      activated: true,
-      plan: "pro",
-    });
-
+  it("labels annual prices as illustrative and blocks annual checkout", () => {
     renderWithClient(<Billing />);
-
-    // Default is monthly billing
     expect(screen.getByTestId("price-pro")).toHaveTextContent("$19 / month");
     expect(screen.getByTestId("price-team")).toHaveTextContent("$49 / month");
 
-    // Toggle to annual billing
-    const annualBtn = screen.getByTestId("btn-billing-annual");
-    fireEvent.click(annualBtn);
-
-    // Check 20% discount rates
-    expect(screen.getByTestId("badge-annual-savings")).toHaveTextContent("Save 20%");
-    expect(screen.getByTestId("price-pro")).toHaveTextContent("$15 / month");
-    expect(screen.getByTestId("price-pro")).toHaveTextContent("$180 billed annually (Save $48/yr)");
-    expect(screen.getByTestId("price-team")).toHaveTextContent("$39 / month");
-    expect(screen.getByTestId("price-team")).toHaveTextContent("$468 billed annually (Save $120/yr)");
-
-    // Click Upgrade to Pro with annual selected
+    fireEvent.click(screen.getByTestId("btn-billing-annual"));
+    expect(screen.getByTestId("badge-annual-savings")).toHaveTextContent("Preview only");
+    expect(screen.getByRole("status")).toHaveTextContent("Annual checkout is unavailable");
+    expect(screen.getByTestId("price-pro")).toHaveTextContent("Illustrative annual total: $180");
+    expect(screen.getByTestId("price-team")).toHaveTextContent("Illustrative annual total: $468");
+    expect(screen.getByTestId("button-upgrade-pro")).toBeDisabled();
+    expect(screen.getByTestId("button-upgrade-team")).toBeDisabled();
     fireEvent.click(screen.getByTestId("button-upgrade-pro"));
+    expect(apiBilling.createBillingCheckout).not.toHaveBeenCalled();
 
-    await waitFor(() => {
-      expect(apiBilling.createBillingCheckout).toHaveBeenCalledWith({
-        plan_tier: "pro",
-        billing_cycle: "annual",
-      });
-    });
+    fireEvent.click(screen.getByTestId("btn-billing-monthly"));
+    expect(screen.getByTestId("button-upgrade-pro")).not.toBeDisabled();
   });
 
   it("renders organization invoices history and allows downloading official PDF tax receipts", async () => {

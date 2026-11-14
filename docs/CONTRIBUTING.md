@@ -303,3 +303,8 @@ Before opening a Pull Request for new features or bugfixes, contributors must ce
 | **Monotonic Revision Invariant**| Real-Time SSE | Streaming state emitters must include monotonically increasing revision counters. |
 | **DLQ Scrubbing Invariant** | Worker Jobs | All failing BullMQ job payloads must pass through `scrubPayloadForDLQ()` before persisting to Redis. |
 | **Node 24 LTS Invariant** | Runtime | All code must execute cleanly under Node `>=24.14.1 <25` and npm `>=11.0.0`. |
+| **Canary Invariant Check** | AI Invariants | All synthesis outputs satisfy 5 identities: Number safety, Zero-sum, Balance Sheet, Cash Flow, Debt. |
+| **Unified Context Invariant** | Retrieval Fusion | Cross-silo retrieval uses RRF $k=60$ with query intent source weighting and 90-day recency decay. |
+| **Merchant Embedding Invariant** | ML Clustering | Merchant embedding space is 64-D, L2 unit-normalized ($\|\vec{v}\|_2 = 1.0$), with $C_{\text{sim}} \ge 0.70$. |
+| **Offline Sync Idempotency** | Notes & Journal | All offline client drafts must emit UUID `clientKey` indexed uniquely on `{ orgId, userId, clientKey }`. |
+| **RFC 5545 Conformance** | Calendar Export | All `.ics` feeds conform to RFC 5545 with valid `UID`, `DTSTAMP`, `DTSTART`, and `VALARM` blocks. |

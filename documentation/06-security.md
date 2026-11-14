@@ -1542,3 +1542,41 @@ mindmap
 │    └─► Quarantine sanitized packet in Redis bull:finwise-dlq           │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 11. 2026 Mathematical Invariant Security & Hallucination Prevention
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#dc2626', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#b91c1c', 'lineColor': '#ef4444', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((Mathematical Security))
+    Number Safety Gate
+      Regex Digits Extraction
+      Subset Verification Cand in Ref
+      Rejects Fabricated Returns / Savings
+    Zero-Sum Constraint
+      Sum Delta B_i == 0
+      Proposed Allocations >= 0
+      Prevents Phantom Capital Creation
+    Accounting Invariant Proofs
+      Assets - Liabilities == Net Worth
+      Income - Expenses == Net Cashflow
+      Principal + Interest == Total Payment
+    DLQ Scrubbing
+      API Key Token Redaction
+      Card Number Regex Masking
+```
+
+### 11.1 The Mathematical Truth Invariant Architecture
+
+In mission-critical personal and enterprise finance, an AI model that invents numbers is a severe regulatory and financial liability. The FinWise security architecture enforces mathematical constraints at the compiler and runtime levels:
+
+1. **Number Safety Invariant**:
+   Any numerical string generated in an AI output is parsed via regular expressions:
+   $$D_{\text{cand}} = \big\{ d \in \mathbb{R} \mid d \text{ extracted from candidate text} \big\}$$
+   The model output is strictly rejected if:
+   $$D_{\text{cand}} \setminus \big( D_{\text{ref}} \cup D_{\text{allowlist}} \big) \neq \emptyset$$
+2. **Zero-Sum Envelope Reallocation**:
+   Reallocation proposals cannot inject or evaporate capital:
+   $$\sum_{i=1}^M \text{Proposed}_i = \sum_{i=1}^M \text{Initial}_i \quad \iff \quad \sum_{i=1}^M \Delta B_i = 0$$

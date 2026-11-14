@@ -22,20 +22,13 @@
 
 import type { NextFunction, Request, Response } from "express";
 
-/**
- * Type guard to check if a value is a plain object (not array, not null).
- * Used to safely spread and enrich response payloads.
- */
+// Type guard verifying that an arbitrary input represents a non-null, non-array object.
+// Ensures response payloads can be safely cloned and enriched with metadata properties.
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/**
- * Maps HTTP status codes to human-readable error codes.
- * Used as a fallback when controllers don't specify an error code.
- *
- * @param statusCode - HTTP status code
- * @returns Error code string (e.g., "BAD_REQUEST", "NOT_FOUND")
- */
+// Maps numeric HTTP status error codes to standardized machine-readable error classification strings.
+// Provides fallback error codes for API error responses when controllers omit explicit codes.
 const defaultErrorCode = (statusCode: number): string => {
   if (statusCode >= 500) return "INTERNAL_SERVER_ERROR";
   switch (statusCode) {
@@ -58,22 +51,8 @@ const defaultErrorCode = (statusCode: number): string => {
   }
 };
 
-/**
- * Response Context Middleware
- *
- * Wraps res.json() to automatically enrich JSON responses with:
- * - request_id (for tracing)
- * - error code (for error responses)
- * - org_id (for successful responses)
- *
- * This middleware uses the "Monkey Patching" pattern to wrap res.json().
- * It replaces the original method with an enhanced version that adds
- * context before delegating to the original.
- *
- * @param req - Express request object
- * @param res - Express response object
- * @param next - Express next function
- */
+// Wraps Express res.json to inject request IDs, default error codes, and active tenant org IDs.
+// Decorates outgoing JSON API responses transparently across all endpoints for frontend clients.
 export const responseContext = (req: Request, res: Response, next: NextFunction) => {
   // Save reference to the original res.json() method
   const originalJson = res.json.bind(res);

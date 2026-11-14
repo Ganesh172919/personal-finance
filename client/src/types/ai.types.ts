@@ -16,12 +16,21 @@
 
 import type { IWorkflowTraceEntry } from "@/types";
 
+// Categorizes the relative urgency or significance of operational items.
+// Applies to action items, automated recommendations, and diagnostic alerts.
+// Restricts permitted priority values to low, medium, or high urgency levels.
 /** Priority level used across action items, tool calls, and insights */
 export type Priority = "low" | "medium" | "high";
 
+// Measures the potential financial or operational risk of tool invocations.
+// Mirrored directly against standard priority tiers for uniform risk handling.
+// Informs confirmation dialog triggers when executing mutating agent commands.
 /** Risk level for tool calls (same scale as priority) */
 export type ToolCallRisk = Priority;
 
+// Enumerates all supported agent tool invocation action types in the system.
+// Covers transaction handling, budget management, workflow runs, and exports.
+// Acts as a strict union discriminant for dispatching backend agent tools.
 export type ToolName =
   | "transactions.create"
   | "goals.createOrUpdate"
@@ -32,6 +41,9 @@ export type ToolName =
   | "exports.create"
   | "notifications.sendEmail";
 
+// Defines the contract for an individual tool invocation requested by AI agents.
+// Specifies the target tool, structured arguments, risk tier, and confirmation need.
+// Provides client-side components the metadata required to render confirmation prompts.
 export interface ToolCall {
   id: string;
   title: string;
@@ -42,6 +54,9 @@ export interface ToolCall {
   risk: ToolCallRisk;
 }
 
+// Captures core quantitative financial health metrics synthesized by AI.
+// Tracks net cash flow, savings percentages, debt ratios, and emergency reserves.
+// Serves as the numeric foundation for high-level plan summaries and scorecards.
 export interface KeyMetrics {
   monthly_net_cash_flow: number | null;
   savings_rate: number | null;
@@ -50,6 +65,9 @@ export interface KeyMetrics {
   total_debt: number | null;
 }
 
+// Outlines an actionable recommendation generated as part of a financial plan.
+// Details strategic rationale, step-by-step guidance, priority, and anticipated impact.
+// Associates concrete next actions with relevant financial categories and deadlines.
 export interface ActionItem {
   id?: string;
   kind?: "cashflow" | "budget" | "debt" | "invest" | "goal" | "education" | "generic";
@@ -61,12 +79,18 @@ export interface ActionItem {
   expected_impact: string;
 }
 
+// Segregates proposed financial action items across discrete forward-looking horizons.
+// Organizes immediate 7-day tasks, intermediate 30-day goals, and annual initiatives.
+// Enables structured chronological roadmap rendering within client interfaces.
 export interface ActionBuckets {
   next_7_days: ActionItem[];
   next_30_days: ActionItem[];
   next_12_months: ActionItem[];
 }
 
+// Represents a comprehensive AI-generated personal finance optimization plan.
+// Incorporates executive summaries, key metrics, time-bucketed tasks, and warnings.
+// Highlights underlying assumptions and data caveats to ensure transparent guidance.
 export interface Plan {
   executive_summary: string;
   key_metrics: KeyMetrics;
@@ -75,6 +99,9 @@ export interface Plan {
   data_warnings: string[];
 }
 
+// Represents the unified payload returned from processing user AI prompt commands.
+// Supplies conversational response text, execution plans, tool requests, and traces.
+// Delivers supporting evidence snippets, confidence metrics, and agent audit trails.
 export interface ProcessAICommandResponse {
   success: boolean;
   response: string;
@@ -130,6 +157,9 @@ export interface ProcessAICommandResponse {
   recovered_from_checkpoint?: boolean;
 }
 
+// Conveys the operational health and candidate model setup for an AI provider.
+// Indicates whether credentials and network connectivity are fully initialized.
+// Exposes candidate models and failover configuration for status dashboards.
 export interface AiCoreProviderStatus {
   name: string;
   display_name: string;
@@ -141,8 +171,14 @@ export interface AiCoreProviderStatus {
 }
 
 // Key Pool Types
+// Defines the health lifecycle states for upstream LLM provider API credentials.
+// Tracks available keys through healthy, degraded, cooling down, or tripped states.
+// Informs dynamic routing mechanisms to bypass faulty or quota-exhausted keys.
 export type KeyStatus = "healthy" | "degraded" | "cooldown" | "circuit_open" | "disabled";
 
+// Aggregates granular performance telemetry and error breakdowns for an API key.
+// Records successful and failed requests, status code buckets, and cooldowns.
+// Provides objective inputs for circuit-breaking and latency-aware key routing.
 export interface KeyHealth {
   total_requests: number;
   successful_requests: number;
@@ -163,6 +199,9 @@ export interface KeyHealth {
   circuit_opened_at: number | null;
 }
 
+// Represents a single managed API credential within an AI provider's key pool.
+// Contains unique identifiers, masked fingerprints, status tags, and health logs.
+// Powers administrative key rotation, health observation, and circuit control.
 export interface KeyPoolEntry {
   key_id: string;
   provider: string;
@@ -173,6 +212,9 @@ export interface KeyPoolEntry {
   health: KeyHealth;
 }
 
+// Summarizes operational statistics across an entire pool of provider API keys.
+// Computes overall success rates, available key counts, and active rotation rules.
+// Surfaces aggregated capacity metrics for monitoring high-availability AI pipelines.
 export interface KeyPoolStats {
   provider: string;
   total_keys: number;
@@ -190,9 +232,19 @@ export interface KeyPoolStats {
 }
 
 // Session Types
+// Defines the high-level operational lifecycle states of an AI user session.
+// Encompasses initial creation, active progress, pauses, completions, or failures.
+// Guides frontend session management and interaction states across long-running tasks.
 export type SessionStatus = "created" | "in_progress" | "paused" | "completed" | "failed" | "expired";
+
+// Designates distinct functional stages within multi-step AI reasoning workflows.
+// Traces pipeline transitions from routing and planning to synthesis and completion.
+// Enforces structured state transitions and checkpointing across execution phases.
 export type CheckpointPhase = "routing" | "planning" | "research" | "execution" | "verification" | "synthesis" | "complete" | "error";
 
+// Stores short-term and rolling context state maintained across session turns.
+// Holds extracted user facts, ongoing conversation summaries, and pending goals.
+// Keeps track of referenced artifacts and cumulative token usage across requests.
 export interface SessionMemory {
   user_facts: Record<string, unknown>;
   rolling_summary: string;
@@ -203,6 +255,9 @@ export interface SessionMemory {
   total_output_tokens: number;
 }
 
+// Encapsulates the comprehensive persisted state of an active AI workflow session.
+// Associates sessions with organizational users, current phases, and memory caches.
+// Tracks checkpoint quantities, execution durations, expiration dates, and error logs.
 export interface SessionState {
   id: string;
   org_id: string;
@@ -222,6 +277,9 @@ export interface SessionState {
   last_error: string | null;
 }
 
+// Captures an immutable snapshot of workflow execution at a specific phase boundary.
+// Records state payloads, individual agent outputs, latency, and context summaries.
+// Facilitates workflow pause-and-resume capabilities and detailed audit diagnostics.
 export interface SessionCheckpoint {
   id: string;
   session_id: string;
@@ -237,6 +295,9 @@ export interface SessionCheckpoint {
   error: string | null;
 }
 
+// Provides high-level session aggregate counts and state distributions.
+// Breaks down total tracked sessions by their respective lifecycle status values.
+// Supports administrative dashboards monitoring platform-wide AI usage activity.
 export interface SessionStats {
   total_sessions: number;
   by_status: Record<SessionStatus, number>;
@@ -244,6 +305,9 @@ export interface SessionStats {
 }
 
 // Model Catalog Types
+// Summarizes catalog distribution metrics across registered AI foundation models.
+// Breaks down counts by provider, functional capability, pricing tier, and speeds.
+// Assesses overall system readiness regarding vision, JSON mode, and reasoning models.
 export interface ModelCatalogStats {
   total_models: number;
   enabled_models: number;
@@ -256,6 +320,9 @@ export interface ModelCatalogStats {
   free_models: number;
 }
 
+// Details specifications, capabilities, and pricing for a foundation LLM model.
+// Encompasses context window limits, token generation caps, and modality support.
+// Governs dynamic model selection algorithms based on cost, speed, and capabilities.
 export interface ModelEntry {
   model_id: string;
   provider: string;
@@ -278,6 +345,9 @@ export interface ModelEntry {
 }
 
 // Enhanced AI Status Response (from /api/ai/status)
+// Structures the top-level status diagnostic payload returned by the AI subsystem.
+// Aggregates key pool states, model catalogs, active route traces, and canary probes.
+// Offers administrative observers comprehensive visibility into AI engine telemetry.
 export interface EnhancedAiStatusResponse {
   status: string;
   service: string;
@@ -307,9 +377,32 @@ export interface EnhancedAiStatusResponse {
   };
   vision: Record<string, unknown>;
   memory: { enabled: boolean };
+  canary?: {
+    status: "healthy" | "warning" | "critical";
+    total_evaluations: number;
+    passed_evaluations: number;
+    failed_evaluations: number;
+    pass_rate_pct: number;
+    last_evaluated_at: string | null;
+    by_invariant: Record<string, { total: number; passed: number; failed: number; pass_rate_pct: number }>;
+    by_source: Record<string, { total: number; passed: number; failed: number; pass_rate_pct: number }>;
+    recent_events: Array<{
+      probe_id: string;
+      timestamp: string;
+      invariant: string;
+      source: string;
+      passed: boolean;
+      duration_ms: number;
+      details?: Record<string, unknown>;
+      violations?: string[];
+    }>;
+  };
 }
 
 // Session List Response
+// Defines the response structure when fetching a paginated collection of AI sessions.
+// Returns an array of session states, total count metadata, and aggregate metrics.
+// Standardizes session exploration responses across administrative and user consoles.
 export interface SessionListResponse {
   success: boolean;
   sessions?: SessionState[];
@@ -320,6 +413,9 @@ export interface SessionListResponse {
 }
 
 // Session Detail Response
+// Models the detailed response containing full state and checkpoints for a session.
+// Supplies the primary session record alongside an ordered array of checkpoint steps.
+// Equips UI views with the requisite data to replay multi-step agent decisions.
 export interface SessionDetailResponse {
   success: boolean;
   session: SessionState;
@@ -328,6 +424,9 @@ export interface SessionDetailResponse {
 }
 
 // Model List Response
+// Represents the API response envelope for catalog queries listing available models.
+// Delivers the array of supported model configurations, counts, and request traces.
+// Informs client selection dropdowns and model configuration administration tables.
 export interface ModelListResponse {
   success: boolean;
   models: ModelEntry[];
@@ -335,6 +434,9 @@ export interface ModelListResponse {
   request_id: string;
 }
 
+// Represents the health and connectivity status of the AI Core microservice.
+// Reflects connectivity to the python service, active providers, and client instances.
+// Validates end-to-end integration health between the Node backend and Python engine.
 export interface AiCoreStatusResponse {
   ai_core: {
     healthy: boolean;

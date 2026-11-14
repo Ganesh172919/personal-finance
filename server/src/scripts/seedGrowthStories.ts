@@ -1,10 +1,12 @@
 import mongoose from 'mongoose';
 import { GrowthStory } from '../models/growthStoryModel';
-import { getEnv } from '../config/env';
+import 'dotenv/config';
 import { logger } from '../config/logger';
+import { requireFixtureDatabase } from './fixtureDatabase';
 
-const MONGODB_URI = getEnv().MONGO_URI;
-
+// Mock financial success and debt recovery stories for platform user inspiration.
+// Captures personal journeys, financial metrics, debt strategies, and timeline outcomes.
+// Seeded into database to showcase real-world financial independence milestones.
 const mockStories = [
   {
     title: "From ₹8 Lakh Debt to ₹50 Lakh Net Worth in 3 Years — Priya's Story",
@@ -154,9 +156,12 @@ I now consistently bill over ₹3,00,000 a month. My personal "salary" is still 
   }
 ];
 
+// Seeding routine inserting mock growth stories into MongoDB collection.
+// Avoids duplicate records by filtering candidate stories against existing slug keys.
+// Logs count of inserted stories and exits process cleanly.
 async function seedData() {
   try {
-    await mongoose.connect(MONGODB_URI as string);
+    await mongoose.connect(requireFixtureDatabase(), { directConnection: true });
     logger.info('Connected to MongoDB. Starting Growth Story seed...');
 
     const existingSlugs = await GrowthStory.find({}, 'slug').lean();
@@ -179,6 +184,9 @@ async function seedData() {
   }
 }
 
+// Conditional execution block when running script directly from shell.
+// Executes seedData function when file is executed as main program module.
+// Allows module functions to be exported safely without side effects.
 if (require.main === module) {
   seedData();
 }

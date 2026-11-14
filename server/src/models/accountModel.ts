@@ -31,6 +31,9 @@ import { orgScopePlugin } from "../utils/orgScopePlugin";
  *
  * Defines the types of financial accounts supported.
  */
+// Enumerates the supported categories of financial account entities.
+// Determines balance behavior distinguishing between asset and liability accounts.
+// Enforces valid categorization values across database records and APIs.
 export type AccountType = "checking" | "savings" | "credit" | "brokerage" | "cash";
 
 /**
@@ -38,6 +41,9 @@ export type AccountType = "checking" | "savings" | "credit" | "brokerage" | "cas
  *
  * Defines the possible states of an account.
  */
+// Represents operational lifecycle status states of a financial account.
+// Distinguishes open active ledger accounts from archived closed accounts.
+// Restricts status assignment to validated active or closed enum values.
 export type AccountStatus = "active" | "closed";
 
 /**
@@ -45,6 +51,9 @@ export type AccountStatus = "active" | "closed";
  *
  * Defines the structure of an account document in MongoDB.
  */
+// Defines TypeScript interface for financial account document attributes.
+// Encapsulates balances, institutional identifiers, currency, and timestamps.
+// Serves as strongly-typed model contract for account queries and updates.
 export interface IAccount {
   orgId: Types.ObjectId; // Organization that owns this account
   name: string; // Account name (e.g., "Primary Checking")
@@ -68,6 +77,9 @@ export interface IAccount {
  *
  * Extends IAccount with Mongoose Document methods and _id field.
  */
+// Extends IAccount interface with Mongoose Document methods and objectId.
+// Provides runtime document persistence, validation, and schema methods.
+// Enables strongly-typed querying across MongoDB account collection.
 export interface IAccountDocument extends IAccount, Document {
   _id: Types.ObjectId; // MongoDB ObjectId
 }
@@ -87,6 +99,9 @@ export interface IAccountDocument extends IAccount, Document {
  * - default: Default value if not provided
  * - enum: Restrict to specific values
  */
+// Defines Mongoose schema configuration and validation rules for accounts.
+// Enforces required fields, string length constraints, and currency formatting.
+// Enables automated timestamp tracking for createdAt and updatedAt dates.
 const accountSchema = new Schema<IAccountDocument>(
   {
     // Organization that owns this account (indexed)
@@ -139,9 +154,15 @@ const accountSchema = new Schema<IAccountDocument>(
  * - orgId + status + updatedAt: For listing accounts by status
  * - orgId + type + status + updatedAt: For filtering by type and status
  */
+// Configures multi-field compound indexes optimizing account lookup queries.
+// Accelerates organization-scoped filtering by account status, type, and date.
+// Ensures high-performance queries across large multi-tenant account tables.
 accountSchema.index({ orgId: 1, status: 1, updatedAt: -1 });
 accountSchema.index({ orgId: 1, type: 1, status: 1, updatedAt: -1 });
 
+// Attaches organization scoping plugin to automatically enforce multi-tenancy.
+// Injects orgId query predicates preventing accidental cross-tenant data leakage.
+// Guarantees tenant isolation across all find, update, and delete queries.
 accountSchema.plugin(orgScopePlugin);
 
 /**
@@ -150,7 +171,13 @@ accountSchema.plugin(orgScopePlugin);
  * Mongoose model for account documents.
  * Used for CRUD operations on account data.
  */
+// Instantiates Mongoose model bound to MongoDB "Account" data collection.
+// Provides strongly typed CRUD operations and query building methods.
+// Manages document lifecycle and persistence for financial account entities.
 const AccountModel = model<IAccountDocument>("Account", accountSchema);
+// Exports compiled AccountModel instance as default module export.
+// Imported by controllers, migration scripts, and financial ledger services.
+// Provides central gateway for all database interactions with account records.
 export default AccountModel;
 
 /**

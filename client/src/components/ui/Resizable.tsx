@@ -5,6 +5,9 @@ import * as ResizablePrimitive from "react-resizable-panels";
 
 import { cn } from "@/lib/utils";
 
+// Multi-panel layout container coordinating dynamic drag-to-resize operations.
+// Built on react-resizable-panels PanelGroup supporting horizontal and vertical directions.
+// Coordinates layout proportions and persists panel sizing configurations.
 const ResizablePanelGroup = ({
   className,
   ...props
@@ -18,8 +21,14 @@ const ResizablePanelGroup = ({
   />
 );
 
+// Individual adjustable panel element nested inside a ResizablePanelGroup.
+// Re-exports react-resizable-panels Panel supporting min/max size limits.
+// Adapts dynamically as adjacent divider handles are dragged by the user.
 const ResizablePanel = ResizablePrimitive.Panel;
 
+// Interactive drag divider handle positioned between adjacent resizable panels.
+// Renders an optional GripVertical icon handle for visual drag discoverability.
+// Supports keyboard arrow adjustments and mouse/touch drag manipulation.
 const ResizableHandle = ({
   withHandle,
   className,

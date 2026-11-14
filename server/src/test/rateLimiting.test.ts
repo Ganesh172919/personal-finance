@@ -20,6 +20,18 @@ import { clearTestDb, startTestDb, stopTestDb } from "./testDb";
 describe("rate limiting", () => {
   const app = createApp();
 
+  it("shares the credential attempt limit across canonical and compatibility login paths", async () => {
+    const isolatedApp = createApp();
+    for (let index = 0; index < 20; index++) {
+      const path = index % 2 ? "/api/auth/login" : "/api/v1/auth/login";
+      const response = await request(isolatedApp).post(path).send({});
+      expect(response.status).not.toBe(429);
+    }
+    const response = await request(isolatedApp).post("/api/v1/auth/login").send({});
+    expect(response.status).toBe(429);
+    expect(response.body.code).toBe("AUTH_RATE_LIMITED");
+  });
+
   beforeAll(async () => {
     await startTestDb();
     configurePassport();

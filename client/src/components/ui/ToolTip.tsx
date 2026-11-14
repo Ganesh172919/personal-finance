@@ -5,12 +5,24 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 
 import { cn } from "@/lib/utils";
 
+// Context provider configuring global tooltip timing and hover delay settings.
+// Wraps Radix UI TooltipPrimitive Provider for application or section boundaries.
+// Coordinates hover delays and skip delays across adjacent tooltip triggers.
 const TooltipProvider = TooltipPrimitive.Provider;
 
+// Root tooltip component managing visibility state for an individual tooltip.
+// Wraps Radix UI TooltipPrimitive Root to handle open, hover, and focus events.
+// Anchors informative description popovers to triggers without disrupting tab order.
 const Tooltip = TooltipPrimitive.Root;
 
+// Interactive trigger element opening the tooltip on hover or keyboard focus.
+// Re-exports Radix UI TooltipPrimitive Trigger with accessibility bindings.
+// Automatically manages aria-describedby linkage to the tooltip content.
 const TooltipTrigger = TooltipPrimitive.Trigger;
 
+// Floating tooltip content bubble rendered near the associated trigger element.
+// Formats compact popover borders, shadows, and smooth directional zoom animations.
+// Forwards DOM references to the underlying Radix Tooltip Content primitive.
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>

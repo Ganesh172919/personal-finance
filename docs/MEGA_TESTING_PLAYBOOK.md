@@ -735,7 +735,9 @@ FinWise Testing Playbook (Mega)
         |
         v
 [Record the change and refresh this document]
-``````mermaid
+```
+
+```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#047857', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#065f46', 'lineColor': '#10b981', 'secondaryColor': '#8b5cf6', 'tertiaryColor': '#f59e0b'}}}%%
 mindmap
   root((🧪 FinWise Testing Framework))
@@ -990,4 +992,174 @@ describe('Dead Letter Queue (DLQ) Resilience', () => {
     expect(scrubbed.account.balance).toBe(500.0);
   });
 });
+```
+
+---
+
+## 11) 2026 Enterprise Quality Gates, Invariant Testing & Distributed Evals
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#047857', 'lineColor': '#10b981', 'secondaryColor': '#0284c7', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((2026 Testing Pyramid))
+    Client Verification
+      51 Test Suites / 408 Tests
+      BudgetHealthCard SVG Gauge RTL Tests
+      TransactionReviewQueue Split Mock Tests
+      FinancialCalendar iCal Stream Tests
+      Offline Journal LocalStorage Mock Tests
+    Server Gateway Verification
+      67 Test Suites / 271 Tests
+      merchantEmbeddingClustering.test.ts
+      retrievalMultiModal.test.ts
+      journalOfflineSyncAndSemanticSearch.test.ts
+      portfolioMultiCurrencyWht.test.ts
+      calendarReminders.test.ts
+      workflows.test.ts
+    AI Core Verification
+      316 Pytest Unit Tests
+      test_sub_agent_manager.py (TTL Caching)
+      test_canary_validator.py (Math Invariants)
+      KeyPool Circuit Breaker Mock Tests
+    Continuous Invariant Evals
+      175 Evals Harness Runner (100% Pass)
+      Zero-Sum Shift Invariant Sum dB = 0
+      Number Hallucination Safety Cand in Ref
+      PII Sanitization Regex Audit
+```
+
+### 11.1 Recipe: 64-D Merchant Vector Embedding & Agglomerative Clustering Tests
+
+```typescript
+// server/src/test/merchantEmbeddingClustering.test.ts
+import { describe, it, expect } from 'vitest';
+import {
+  generateMerchantEmbedding,
+  cosineSimilarity,
+  clusterMerchantTransactions
+} from '../services/merchantEmbeddingClustering';
+
+describe('64-D Merchant Vector Embedding & Clustering', () => {
+  it('generates normalized 64-dimensional unit vectors (||v||2 == 1.0)', () => {
+    const vec = generateMerchantEmbedding('Blue Bottle Coffee San Francisco');
+    expect(vec).toHaveLength(64);
+
+    const norm = Math.sqrt(vec.reduce((sum, v) => sum + v * v, 0));
+    expect(norm).toBeCloseTo(1.0, 4);
+  });
+
+  it('clusters semantically similar merchant variations together', () => {
+    const rawTxns = [
+      { id: 'tx_1', merchant: 'Blue Bottle Coffee #12' },
+      { id: 'tx_2', merchant: 'BLUE BOTTLE COFFEE SF' },
+      { id: 'tx_3', merchant: 'Delta Air Lines Flight 402' },
+      { id: 'tx_4', merchant: 'DELTA AIR' }
+    ];
+
+    const clusters = clusterMerchantTransactions(rawTxns, 0.70);
+
+    expect(clusters.length).toBe(2);
+    const coffeeCluster = clusters.find(c => c.canonicalName.toLowerCase().includes('blue bottle'));
+    const airlineCluster = clusters.find(c => c.canonicalName.toLowerCase().includes('delta'));
+
+    expect(coffeeCluster?.transactionIds).toEqual(['tx_1', 'tx_2']);
+    expect(airlineCluster?.transactionIds).toEqual(['tx_3', 'tx_4']);
+  });
+});
+```
+
+---
+
+### 11.2 Recipe: Multi-Modal RAG Hybrid Grounding ($G \ge 0.70$) & Page Extraction Tests
+
+```typescript
+// server/src/test/retrievalMultiModal.test.ts
+import { describe, it, expect } from 'vitest';
+import { ingestDocumentForRAG, retrieveGroundedKnowledge } from '../services/retrievalService';
+
+describe('Multi-Modal Grounded RAG Pipeline', () => {
+  it('extracts physical page numbers separated by form feeds (\\f)', async () => {
+    const docText = 'Page 1: Annual Operating Revenue $4.2M\fPage 2: Total Debt Obligations $1.1M';
+    const chunkCount = await ingestDocumentForRAG('org_test', '10K_Report.pdf', docText);
+
+    expect(chunkCount).toBeGreaterThanOrEqual(2);
+
+    const results = await retrieveGroundedKnowledge('org_test', 'Operating Revenue');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].pageNumber).toBe(1);
+    expect(results[0].groundingScore).toBeGreaterThanOrEqual(0.70);
+  });
+});
+```
+
+---
+
+### 11.3 Recipe: SubAgentManager Concurrency & SHA-256 TTL Caching Tests
+
+```python
+# server/AI_Core/tests/test_sub_agent_manager.py
+import pytest
+import time
+from agents.sub_agent_manager import SubAgentManager
+
+def test_sha256_ttl_response_caching():
+    manager = SubAgentManager(ttl_seconds=2)
+    state = {"user_id": "u_99", "monthly_income": 8500.0}
+
+    call_count = 0
+    def mock_primary(s):
+        nonlocal call_count
+        call_count += 1
+        return {"plan": "50/30/20 standard"}
+
+    def mock_fallback(s):
+        return {"plan": "fallback rule"}
+
+    # First call: cache miss
+    res1 = manager.execute_subagent_with_fallback("BudgetAgent", state, mock_primary, mock_fallback)
+    assert res1["cached"] is False
+    assert call_count == 1
+
+    # Second call within TTL: cache hit (zero additional LLM invocations)
+    res2 = manager.execute_subagent_with_fallback("BudgetAgent", state, mock_primary, mock_fallback)
+    assert res2["cached"] is True
+    assert call_count == 1
+
+    # Expire TTL
+    time.sleep(2.1)
+    res3 = manager.execute_subagent_with_fallback("BudgetAgent", state, mock_primary, mock_fallback)
+    assert res3["cached"] is False
+    assert call_count == 2
+```
+
+---
+
+### 11.4 Recipe: Canary Invariant Mathematical Verification Tests
+
+```python
+# server/AI_Core/tests/test_canary_validator.py
+import pytest
+from evals.canary_validator import CanaryValidator
+
+def test_zero_sum_budget_rebalancing_invariant():
+    valid_shifts = [
+        {"category": "Dining Out", "delta": -150.0},
+        {"category": "Groceries", "delta": 100.0},
+        {"category": "Emergency Savings", "delta": 50.0}
+    ]
+    assert CanaryValidator.validate_budget_zero_sum(valid_shifts) is True
+
+    invalid_shifts = [
+        {"category": "Dining Out", "delta": -150.0},
+        {"category": "Groceries", "delta": 200.0} # Leaks $50 into budget!
+    ]
+    assert CanaryValidator.validate_budget_zero_sum(invalid_shifts) is False
+
+def test_number_safety_hallucination_gate():
+    ref_numbers = [4200.0, 150.0, 50.0]
+    safe_text = "We reclaimed $150.00 from dining and added $50.00 to savings, keeping $4200.00 base intact."
+    assert CanaryValidator.validate_number_safety(safe_text, ref_numbers) is True
+
+    hallucinated_text = "You will earn an extra $899.99 in high-yield returns."
+    assert CanaryValidator.validate_number_safety(hallucinated_text, ref_numbers) is False
 ```

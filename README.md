@@ -1,12 +1,16 @@
-# FinWise — AI-Powered Autonomous Personal Finance Platform
+# FinWise - Personal finance workspace
 
-> **A Production-Grade, Multi-Tier, Full-Stack Financial Workspace & Multi-Agent Intelligence Engine**  
-> *Deterministic Calculations, Topological SubAgent DAG Execution, RAG Phase 2 Grounded Retrieval, and FinanceOS Operational Cockpit*  
-> **Release Target:** 2026 Enterprise Edition · **Runtime Specification:** Node.js `>=24.14.1 <25` · Python `3.11+` · React `18.3` · MongoDB `7.0` · Redis `7.0`
+> **The Great Indian AI Internship Challenge 2026 Submission**  
+> **Participant:** J Ganesh Kumar Reddy | **Submission Compendium:** [**Official Submission Document**](GNANI_AI_SUBMISSION.md) · [**Executive Submission Summary**](SUBMISSION.md)  
+> Understand where your money went, review uncertain records, log expenses by voice in 12+ Indic languages, and turn decisions into trackable next actions.  
+> **Runtime:** Node.js `>=24.14.1 <25` · Python `3.11+` · React `18.3` · MongoDB `7.0` · optional Redis `7.0`  
+> **AI & Speech Models:** Gnani AI Prisma v3.0 (STT) · Gnani AI Timbre (TTS) · Gnani AI Evon v3.3 (30B Reasoning LLM)
 
 ---
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Gnani AI](https://img.shields.io/badge/Gnani%20AI-Prisma%20v3.0%20%7C%20Timbre%20%7C%20Evon%2030B-indigo.svg)](https://app.gnani.ai)
+[![Challenge](https://img.shields.io/badge/Challenge-Great%20Indian%20AI%20Internship-orange.svg)](GNANI_AI_SUBMISSION.md)
 [![Node.js](https://img.shields.io/badge/Node.js-24%2B%20LTS-green.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
@@ -17,17 +21,36 @@
 
 ---
 
+## 🏆 The Great Indian AI Internship Challenge Submission Highlights
+
+FinWise has been upgraded into **Bharat's First Voice-First Financial Operating System** using Gnani AI's speech and reasoning models:
+
+| Gnani AI Model | Integration in FinWise | Impact |
+| :--- | :--- | :--- |
+| **Prisma v3.0 (STT)** | Live microphone recording in Chat and FinanceOS Cockpit | Transcribes 12+ Indic dialects (Hindi, Telugu, Tamil, Kannada, Marathi, Bengali, Gujarati, Malayalam, Punjabi, Odia, Indian English) and code-mixed Hinglish with 8kHz telephonic noise cancellation |
+| **Timbre (TTS, beta)** | Voice playback on AI responses & spoken confirmations | Expressive regional speech synthesis that speaks back transaction confirmations in the user's native dialect |
+| **Evon v3.3 (30B Reasoning)** | First-class LLM provider in Python AI Core | Extracts structured transactions (`amount`, `category`, `merchant`, `paymentMethod`) from colloquial Indian phrasing with zero arithmetic hallucinations |
+
+- 📄 **Full Written Submission Document:** [**GNANI_AI_SUBMISSION.md**](GNANI_AI_SUBMISSION.md)
+- 🎬 **60-Second Video Demo Script:** [See Section 6 of Submission](GNANI_AI_SUBMISSION.md#6-official-60-second-video-demo-script)
+- 📢 **Public LinkedIn Post Copy:** [Ready-to-Publish LinkedIn Post](GNANI_AI_SUBMISSION.md#7-linkedin-post-copy-ready-to-publish)
+- 🐦 **Public X (Twitter) Post Copy:** [Ready-to-Publish X Thread](GNANI_AI_SUBMISSION.md#8-x-twitter-post--thread-copy)
+
+---
+
 ## Master Documentation Hub
 
 | Document | Description | Format | Target Audience |
 | :--- | :--- | :--- | :--- |
+| [**Gnani AI Submission**](GNANI_AI_SUBMISSION.md) | Official Challenge Submission Document & Award Category Alignments | Challenge Compendium | Gnani AI Review Panel |
+| [**Submission Summary**](SUBMISSION.md) | Executive Summary, Models Used, and 60-Sec Demo Script | Quick Reference | Evaluators & Public |
 | [**Documentation Index**](docs/INDEX.md) | Central entry point for all 35+ system guides and manuals | Hub | Everyone |
 | [**Building on This Project**](docs/BUILDING_ON_THIS_PROJECT.md) | The definitive developer handbook for extending, customizing, and scaling the platform | Master Blueprint | Full-Stack Engineers & Contributors |
 | [**Master Walkthrough**](walkthrough.md) | Complete 10-phase engineering walkthrough covering all enterprise platform upgrades | Walkthrough | Developers & Leads |
 | [**Project Presentation**](PROJECT_PRESENTATION.md) | 12-slide executive & engineering presentation deck with Mindmaps & ASCII flows | Slide Deck | Executives & Architects |
 | [**Project Explanation**](PROJECT_EXPLANATION.md) | Exhaustive system compendium covering all tiers, data models, Section 14 deep dive, and mathematics | Whitepaper | Senior Engineers & Leads |
 | [**Project Flow**](PROJECT_FLOW.md) | 15 end-to-end request, computation, failover, and data lifecycles | Flow Catalog | Full-Stack Engineers |
-| [**Architecture Overview**](docs/ARCHITECTURE.md) | System topology, database schemas, BullMQ queueing, and tenant isolation | Architecture | Systems Engineers |
+| [**Architecture Overview**](docs/ARCHITECTURE.md) | System topology, MongoDB-backed worker, and tenant isolation | Architecture | Systems Engineers |
 | [**AI Core Reference**](docs/AI_CORE.md) | Multi-agent LangGraph orchestration, subagents, tools, and evaluation harness | Engine Guide | AI / ML Engineers |
 | [**API Reference**](docs/API.md) | Canonical `/api/v1` REST endpoints, SSE streams, and contracts | API Playbook | Backend Developers |
 | [**Frontend Architecture**](docs/FRONTEND.md) | FinanceOS cockpit, Zustand reactive stores, TanStack Query v5, Wouter routing | Client Guide | Frontend Developers |
@@ -55,11 +78,11 @@ mindmap
       Live SSE Token Streams & Real-time Bus
     API Gateway - Port 3000
       Express 5 TypeScript Routing Engine
-      Canonical /api/v1 Endpoints
+      Canonical /api/v1 Endpoints (with /api compatibility aliases)
       Dual Auth JWT & SHA-256 Hashed API Keys
       Multi-Tenant Isolation OrgScopePlugin
       Sliding Window Rate Limiter & Security Headers
-      BullMQ Async Redis Queues & DLQ Quarantining
+      MongoDB-backed worker and optional Redis cache
       RAG Phase 2 Bounded Window Chunker & BM25 Retrieval
     AI Core - Port 8001
       FastAPI + Uvicorn Async Runtime
@@ -74,7 +97,7 @@ mindmap
       Evaluation Suite Invariant Verification
     Persistence Tier
       MongoDB 7.0 52 Mongoose Models
-      Redis 7.0 Cache & Queue Transport
+      Redis 7.0 optional cache and rate-limit transport
       GridFS File & Statement Storage
       SQLite Persistent Session Memory
 ```
@@ -97,7 +120,7 @@ mindmap
 │    ├─► 🏢 Multi-Tenant Guard: OrgScopePlugin automatically injects { orgId }                    │
 │    ├─► 📋 Zod Validation: Strict payload validation & sanitize inputs                           │
 │    ├─► 🔍 RAG Phase 2: Bounded Window Chunking (1800 ch) & Lexical BM25 Retrieval Engine        │
-│    └─► ⚙️ Async Queue: BullMQ + Redis for Newsletter, PDF generation, and DLQ                   │
+│    └─► ⚙️ Async Worker: MongoDB-backed polling for workflows and scheduled exports              │
 └───────────────────────┬─────────────────────────────────────────┬───────────────────────────────┘
                         │                                         │
         💾 Read / Write Operations                       ⚡ High-Speed IPC / HTTP
@@ -110,7 +133,7 @@ mindmap
 │  │   • Compound B-Tree Compound Indexes      │  │  ├─► KeyPool Multi-Key Provider Failover     │
 │  │  ├─► Redis 7.0                            │  │  ├─► Deterministic Financial Calculators     │
 │  │   • Distributed Rate Limiting             │  │  ├─► Resumable Sessions & SQLite Memory      │
-│  │   • BullMQ Queues & Dead Letter Queue     │  │  └─► Number Safety Invariant Verification    │
+│  │   • Optional Redis cache & rate limiting  │  │  └─► Number Safety Invariant Verification    │
 │  │   • L1/L2 Cache with TTL Invalidation     │  └──────────────────────────────────────────────┘
 │  └─► GridFS & SQLite                         │
 │      • Large Document Blob Storage           │
@@ -181,12 +204,21 @@ for level_idx, level_subtasks in enumerate(levels):
 ---
 
 ### 5. Automated Newsletters & Dead Letter Queue Quarantining
-- **BullMQ Scheduled Newsletters**: Automated weekly digest generation (`newsletterService.ts` and `newsletterScheduler.ts`) dispatched according to subscriber UTC delivery preferences.
+- **Scheduled newsletters**: Automated weekly digest generation (`newsletterService.ts` and `newsletterScheduler.ts`) dispatched according to subscriber UTC delivery preferences.
 - **Dead Letter Queue (`deadLetterQueue.ts`)**: Quarantines poisoned background jobs after 3 consecutive failures, preserving execution logs and stack traces for administrative inspection and replay.
 
 ---
 
-### 6. Enterprise Financial Operations (2026 Release)
+### 6. Enterprise Financial Operations & Advanced Intelligence (Latest 2026 Additions)
+- **Machine Learning Merchant Embedding Clustering (`merchantEmbeddingClustering.ts`, `TransactionReviewQueue.tsx`)**: 64-dimensional L2-normalized vector space projecting sector taxonomies (dims 0–11), brand anchor aliases (dims 12–27), and FastText subword character n-gram FNV-1a hashes (dims 28–63). Agglomerative cosine centroid clustering ($C_{\text{sim}} \ge 0.70$) groups noisy bank descriptions into canonical entities with 1-click batch categorization rules.
+- **Multi-Modal Grounded RAG Knowledge Engine (`retrievalService.ts`, `Files.tsx`)**: Bounded window document chunking (1800 chars / 260 chars overlap) preserving physical PDF pages (`\f`), 64-D dense semantic embedding indexing, and hybrid dense cosine + BM25 lexical ranking ($G \ge 0.70$) with interactive `[docId:chunkIndex]` citations and deep navigation drawers.
+- **Enterprise AI Core Resumable Sessions & KeyPool (`key_pool.py`, `session_manager.py`)**: Multi-key provider pools with token-bucket rate limiting, cooldown tracking, and circuit breakers (CLOSED -> OPEN -> HALF-OPEN). Resumable SQLite session checkpoints for LangGraph multi-agent DAGs across routing, planning, execution, and synthesis phases.
+- **Visual Workflow Node Graph Canvas (`Workflows.tsx`, `workflows.ts`)**: Interactive drag-and-drop node graph canvas with multi-step delay timers ($1\text{s}$ to $30\text{d}$), token-authenticated inbound webhooks (`POST /api/workflows/webhook/:token`), and conditional branch rules with runtime `{{field}}` variable interpolation.
+- **Global Multi-Currency FX Engine (`currencyFx.ts`)**: Standardized ISO 4217 conversions across 7 global currencies (`USD`, `EUR`, `GBP`, `INR`, `CAD`, `AUD`, `JPY`) with JPY zero-decimal integer rounding and localized cross-border Dividend Withholding Tax (WHT) / Double Tax Treaty (DTAA) modeling.
+- **Financial Journal Offline Stroke Sync & 64-D Vector Search (`Notes.tsx`, `journalEntryModel.ts`)**: Stylus handwriting canvas notes with `localStorage` draft queuing, idempotent `clientDraftId` batch synchronization (`POST /api/financial-journal/entries/batch-sync`), and 64-D semantic vector similarity search.
+- **Authenticated Bank-Feed Import Simulator (`POST /api/transactions/bank-feed`)**: User-authenticated Plaid/Teller-style import simulation with `externalId` deduplication and an in-app test harness. A provider-specific signed callback is not yet configured.
+- **Historical Macro Crisis Replay & Real-Time Linked Account Stress Testing (`Scenarios.tsx`)**: Replays 5 historical market shocks (2008 GFC, 2020 COVID, 1970s Stagflation, 2000 Dot-Com, 2022 Rate Shock) with portfolio Beta sensitivity tuning, capital buffer deficit calculation, and liquidation waterfall simulation.
+- **Peer Spending Benchmarks & Zero-Sum Auto-Rebalancing (`budgetHealthService.ts`, `BudgetHealthCard.tsx`)**: Household cohort IQR benchmarks, peer alignment index, and automated zero-sum envelope transfers satisfying the mathematical invariant $\sum \Delta B_i = 0$.
 - **Custom CSV Column Selection (`Exports.tsx`)**: Interactive column selection chips with dynamic projection preserving user-specified order.
 - **Financial Calendar Recurring Bill Sync & RFC 5545 Export (`FinancialCalendar.tsx`)**: Auto-detection of recurring payment cadences with `.ics` calendar sync and reminder alarms.
 - **Multi-Goal Portfolio Rebalancing & Windfall Redistribution (`GoalsAndDebts.tsx`)**: Priority, urgency, and velocity algorithms to optimize multiple financial targets and distribute lump-sum windfalls.
@@ -197,6 +229,138 @@ for level_idx, level_subtasks in enumerate(levels):
 - **Private Session Boundaries & Cache Coalescing (`AuthContext.tsx`, `conversationInsightsCache.ts`)**: Per-user QueryClient lifecycle and in-memory request coalescing.
 
 ---
+
+---
+
+## 🚀 2026 Enterprise Architectural Extensions & Autonomous Capabilities
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#1e293b', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#3b82f6', 'lineColor': '#60a5fa', 'secondaryColor': '#0f172a', 'tertiaryColor': '#1e1e2e'}}}%%
+mindmap
+  root((2026 Autonomous Subsystems))
+    Continuous AI Canary Engine
+      5 Mathematical Invariants
+      Dual-Layer Verification FastAPI + TS Fallback
+      Strict Number Safety Subset Digits
+      Zero-Sum Budget Conservation sum(Delta B) = 0
+    AI System Diagnostics Cockpit
+      AiStatusDialog 4-Tab Real-Time Modal
+      KeyPool Live Health & Rate Limits
+      Universal Model Catalog & Cooldowns
+      Interactive Invariant Probe Runner
+    64-D Machine Learning Clustering
+      Sector Taxonomy Projections Dims 0-11
+      Brand Anchor Projections Dims 12-27
+      FastText Subword N-Gram Hashes Dims 28-63
+      Agglomerative Centroid Cosine Linkage sim >= 0.70
+    Multi-Modal Grounded RAG Phase 2
+      1800-Char Bounded Window Chunker
+      PDF Form-Feed Page Markers (\f)
+      Hybrid BM25 + 64-D Cosine Grounding (G >= 0.70)
+      Evidence Drawer [docId:chunkIndex] Citations
+    Visual Workflow Automation
+      Drag-and-Drop Sequential Action Nodes
+      MongoDB-backed delayed workflow polling (1s to 30d)
+      Token-Authenticated Inbound Webhooks
+      Conditional Branch Rules & Template Interpolation
+    Offline-First Financial Journal
+      HTML5 Canvas Handwriting & Markdown Notes
+      localStorage Queue with Idempotent clientKey
+      Batch Sync POST /api/financial-journal/entries/batch-sync
+      64-D Semantic Vector Similarity Search
+    Global Multi-Currency FX Engine
+      Standardized ISO 4217 across 7 Global Currencies
+      JPY Zero-Decimal Integer Formatting
+      Dividend Withholding Tax (WHT) & DTAA Relief
+    Live RFC 5545 iCalendar Feed
+      Automated Recurring Bill Cadence Ingestion
+      Real-Time .ics Subscription Streaming Feed
+      Custom Notification Audio Alarms (VALARM)
+```
+
+### Continuous Production AI Canary Invariant Validation Topology
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🟢 INCOMING AI SYNTHESIS CANDIDATE (From LangGraph Specialist Agent or LLM Provider)            │
+│    Candidate Output: { summary: "Saved $450/mo", proposed_allocations: { rent: 1200, ... } }    │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔍 DUAL-LAYER INVARIANT VALIDATION PIPELINE (server/src/services/aiCanaryService.ts)            │
+│                                                                                                 │
+│    LAYER 1: High-Performance Python Microservice (FastAPI Port 8001: POST /canary/validate)     │
+│    ├─► Invariant 1: Number Safety (Candidate Digits ⊆ Reference Ledger Digits ∪ Allowlist)      │
+│    ├─► Invariant 2: Zero-Sum Conservation (∑ ΔB_i = 0 and ∀i: Proposed_i ≥ 0)                   │
+│    ├─► Invariant 3: Balance Sheet Identity (Assets - Liabilities = Net Worth ± $0.01)            │
+│    ├─► Invariant 4: Cash Flow Identity (Income - Expenses = Net Cash Flow ± $0.01)              │
+│    └─► Invariant 5: Debt Amortization Identity (Principal + Interest = Total Payment ± $0.01)   │
+│                                                                                                 │
+│    LAYER 2: Deterministic Local TypeScript Fallback (Active if AI Core is Offline or Times Out) │
+│    └─► Pure TypeScript math executes all 5 invariant audits with zero external network overhead  │
+└───────────────────────────────────────┬─────────────────────────────────┬───────────────────────┘
+                                        │                                 │
+                   ✅ All 5 Invariants PASS                              ❌ Any Invariant FAILS
+                                        ▼                                 ▼
+┌───────────────────────────────────────────────┐ ┌───────────────────────────────────────────────┐
+│ 🚀 SERVE TO USER INTERFACE                    │ │ 🛡️ ZERO-HALLUCINATION CIRCUIT BREAKER         │
+│    • Display verified plan in FinanceOS       │ │    • Instant rejection of narrative text      │
+│    • Render green Invariant Passed pill badge │ │    • Automatic fallback to closed-form math   │
+│    • Record latency & pass metrics            │ │    • Alert logged to AI Status Cockpit        │
+└───────────────────────────────────────────────┘ └───────────────────────────────────────────────┘
+```
+
+#### Core Implementation: Continuous AI Canary Validator (`server/src/services/aiCanaryService.ts`)
+
+```typescript
+export interface CanaryValidationRequest {
+  candidateText?: string;
+  referenceNumbers?: number[];
+  budgetChanges?: Array<{ category: string; delta: number; proposed: number }>;
+  balanceSheet?: { assets: number; liabilities: number; netWorth: number };
+  cashFlow?: { income: number; expenses: number; netCashFlow: number };
+  debtPayment?: { principal: number; interest: number; totalPayment: number };
+}
+
+export async function validateCanaryInvariants(
+  req: CanaryValidationRequest,
+  strictMode = false
+): Promise<CanaryValidationResult> {
+  const violations: string[] = [];
+
+  // Invariant 1: Strict Number Safety
+  if (req.candidateText && req.referenceNumbers) {
+    const extracted = extractNumbersFromText(req.candidateText);
+    const refSet = new Set(req.referenceNumbers.map(n => Math.round(n * 100) / 100));
+    const ALLOWED = new Set([0, 1, 2, 3, 4, 5, 7, 10, 12, 14, 30, 365]);
+    for (const val of extracted) {
+      if (!refSet.has(val) && !ALLOWED.has(val)) {
+        violations.push(`Number Safety: Unverified digit ${val} detected in candidate synthesis.`);
+      }
+    }
+  }
+
+  // Invariant 2: Zero-Sum Budget Conservation
+  if (req.budgetChanges && req.budgetChanges.length > 0) {
+    const sumDelta = req.budgetChanges.reduce((acc, c) => acc + c.delta, 0);
+    if (Math.abs(sumDelta) > 0.01) {
+      violations.push(`Zero-Sum Violation: Sum of delta budgets (${sumDelta}) != 0.00`);
+    }
+    for (const c of req.budgetChanges) {
+      if (c.proposed < 0) {
+        violations.push(`Negative Allocation: Category "${c.category}" cannot have negative budget.`);
+      }
+    }
+  }
+
+  return {
+    valid: violations.length === 0,
+    violations,
+    evaluatedAt: new Date().toISOString()
+  };
+}
+```
 
 ---
 
@@ -417,7 +581,7 @@ async def tax_optimization_node(state: Dict[str, Any]) -> Dict[str, Any]:
 ### Backend API Gateway
 - **Framework**: Express 5 with TypeScript
 - **Database**: MongoDB 7.0 (Mongoose 8) with multi-tenant `OrgScopePlugin` (52 collections)
-- **Cache & Queues**: Redis 7.0 (ioredis) + BullMQ 5
+- **Cache & background work**: Optional Redis 7.0 (ioredis) cache/rate-limit backing plus a MongoDB-backed worker
 - **Validation**: Zod 4 with strict coercion and sanitization
 - **Authentication**: Passport.js (JWT Bearer + Google OAuth) + TOTP 2FA + Scoped API Keys
 - **Security**: Helmet, sliding rate limiting, CSRF protection, NoSQL injection defenses
@@ -454,7 +618,7 @@ cd personal-finance
 cd server
 npm install
 cp .env.example .env
-# Edit .env with MONGO_URI, REDIS_URI, JWT_SECRET, etc.
+# Edit .env with MONGO_URI, REDIS_URL, JWT_SECRET, etc.
 
 # 3. Setup Client
 cd ../client
@@ -493,6 +657,7 @@ FinWise includes a production-ready `compose.yaml` orchestrating all tiers:
 
 ```bash
 # Launch entire multi-tier stack with Docker Compose
+# First: copy compose.env.example to .env and replace every placeholder.
 docker compose up -d --build
 
 # Verify container health
@@ -507,11 +672,11 @@ The monorepo enforces a 100% green test pyramid across all three tiers:
 
 | Layer | Framework | Current Verified Count | Command |
 | :--- | :--- | :--- | :--- |
-| **Client Views & Stores** | Vitest + Testing Library + MSW | **45 suites / 293 tests passed** | `cd client && npm test` |
+| **Client Views & Stores** | Vitest + Testing Library + MSW | **51 suites / 408 tests passed** | `cd client && npm test` |
 | **Client Production Build**| Vite + Rollup | **0 errors (111 PWA assets)** | `cd client && npm run build` |
-| **Server API Gateway** | Vitest + Supertest | **49 suites / 193 tests passed** | `cd server && npm run test:ci` |
+| **Server API Gateway** | Vitest + Supertest | **67 suites / 271 tests passed** | `cd server && npm run test:ci` |
 | **Server TypeScript Check**| TypeScript `tsc --noEmit` | **0 errors (Strict Mode)** | `cd server && npm run check` |
-| **AI Core Unit & Contracts**| Pytest 8.x + FastAPI TestClient | **29 suites / 217 tests passed** | `cd server/AI_Core && pytest tests/ -v` |
+| **AI Core Unit & Contracts**| Pytest 8.x + FastAPI TestClient | **316+ tests passed passed** | `cd server/AI_Core && pytest tests/ -v` |
 | **AI Evaluation Harness** | Custom Invariant Evaluator | **175 evaluations passed** | `cd server/AI_Core && python -m evals.runner` |
 | **Python Code Quality** | Ruff Linter | **All rules clean** | `cd server/AI_Core && ruff check .` |
 

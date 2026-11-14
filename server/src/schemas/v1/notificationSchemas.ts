@@ -13,6 +13,9 @@
  */
 import { z } from "zod";
 
+// Validates query parameters when retrieving user notification records.
+// Supports filtering notifications by read or unread delivery status.
+// Limits query pagination bounds between 1 and 200 items to prevent oversized responses.
 export const listNotificationsQuerySchema = z
   .object({
     status: z.enum(["unread", "read"]).optional(),

@@ -9,13 +9,22 @@ import OrgMemberModel, { type OrgRole } from "../models/orgMemberModel";
 import UserModel from "../models/userModel";
 import { assertSeatAvailable, requireTeamPlan } from "./orgEntitlements";
 
+// Generates an HMAC-SHA256 cryptographic digest for organization invite tokens.
+// Salting with the system JWT secret protects against token exposure in databases.
+// Returns the calculated hexadecimal hash used for database lookups.
 const hashToken = (token: string) => {
   const env = getEnv();
   return crypto.createHmac("sha256", env.JWT_SECRET).update(token).digest("hex");
 };
 
+// Normalizes recipient email addresses by trimming whitespace and converting to lowercase.
+// Ensures consistent and reliable case-insensitive lookups across invitations.
+// Prevents duplicate invites caused by varied capitalization styles.
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
+// Creates and persists a secure team invitation link for a target email.
+// Enforces team licensing plans, seat capacity limits, and revokes prior invites.
+// Returns the newly recorded invitation document along with the plaintext token.
 export const createOrgInvite = async (params: {
   orgId: mongoose.Types.ObjectId;
   invitedByUserId: mongoose.Types.ObjectId;
@@ -86,6 +95,9 @@ export const createOrgInvite = async (params: {
   };
 };
 
+// Validates and accepts a team invitation token on behalf of an authenticated user.
+// Enforces token expiration, email matching constraints, and seat allocations.
+// Activates team membership records and marks the invitation accepted idempotently.
 export const acceptOrgInvite = async (params: {
   token: string;
   userId: mongoose.Types.ObjectId;
@@ -101,6 +113,23 @@ export const acceptOrgInvite = async (params: {
   }
 
   await requireTeamPlan({ orgId: invite.orgId as mongoose.Types.ObjectId, userId: params.userId });
+
+  // Idempotent re-accept: the same user re-submitting an invite they already
+  // accepted (page remount, retry, double click) gets the same success result.
+  if (
+    invite.status === "accepted" &&
+    invite.acceptedByUserId &&
+    String(invite.acceptedByUserId) === String(params.userId)
+  ) {
+    const existing = await OrgMemberModel.findOne({
+      orgId: invite.orgId,
+      userId: params.userId,
+      status: "active",
+    }).lean();
+    if (existing) {
+      return { invite: invite.toObject(), member: existing };
+    }
+  }
 
   if (invite.status !== "pending") {
     throw new HttpError(409, "INVITE_NOT_PENDING", "Invite is no longer valid");

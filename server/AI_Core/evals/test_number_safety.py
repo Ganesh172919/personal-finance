@@ -122,9 +122,8 @@ class TestExtractNumbers:
         assert "0" in numbers
 
     def test_negative_number(self):
-        """Negative sign is not captured by the regex -- only digits."""
         numbers = extract_numbers("Cash flow: -5000")
-        assert "5000" in numbers
+        assert numbers == {"-5000"}
 
     def test_large_number(self):
         numbers = extract_numbers("Retirement target: 1,00,00,000")
@@ -193,6 +192,15 @@ class TestNumberSafetyPassing:
 @pytest.mark.safety
 class TestNumberSafetyFailing:
     """Cases where the candidate introduces new numbers not in the reference."""
+
+    @pytest.mark.parametrize("candidate,reference", [
+        ("USD 1,500.00", "USD -1,500.00"),
+        ("$-1,500", "$1,500"),
+        ("5%", "−5%"),
+    ])
+    def test_rejects_reversed_signs(self, candidate, reference):
+        assert not numbers_are_subset(candidate, reference)
+        assert numbers_are_subset("USD -1,500", "$−1,500")
 
     def test_introduced_integer(self):
         ref = "Cash flow: ₹15,000"

@@ -26,6 +26,9 @@
 import { create } from "zustand";
 
 /** Command bar store state and actions */
+// Defines the state contract and action dispatches for the command palette.
+// Tracks modal visibility state alongside recent search and command query history.
+// Provides open, close, toggle, and bounded history push operations.
 interface CommandBarStore {
   /** Whether the command bar palette is open */
   isOpen: boolean;
@@ -43,6 +46,9 @@ interface CommandBarStore {
  * Allows Cmd+K registration in useKeyboardShortcuts and consumption
  * in AiCommandBar without prop-drilling.
  */
+// Zustand store managing the global Cmd+K command bar state.
+// Prevents prop-drilling across keyboard shortcuts and dialog views.
+// Caps query history at 20 unique entries with automatic deduplication.
 export const useCommandBarStore = create<CommandBarStore>((set) => ({
   isOpen: false,
   history: [],

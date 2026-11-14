@@ -36,6 +36,9 @@ MARGIN = 36  # ~0.5 inch
 USABLE_WIDTH = PAGE_WIDTH - 2 * MARGIN
 
 
+# Custom ReportLab Canvas supporting dynamic two-pass total page count computation.
+# Records page states during document rendering to calculate final page metrics.
+# Draws running headers, page separation rules, and confidential footer notices.
 class NumberedCanvas(canvas.Canvas):
     """Two-pass canvas to dynamically compute and draw total page counts along with running headers/footers."""
     def __init__(self, *args, **kwargs):
@@ -80,11 +83,17 @@ class NumberedCanvas(canvas.Canvas):
         self.restoreState()
 
 
+# Escapes XML characters and normalizes typographic dashes for PDF rendering.
+# Prevents parsing errors when generating ReportLab formatted paragraph tags.
+# Returns clean XML-safe text with standard hyphenation and entity replacement.
 def clean(text: str) -> str:
     """Escapes XML entities while preserving readable formatting."""
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("—", " - ").replace("–", "-")
 
 
+# Generates comprehensive master architecture guide in multi-page PDF format.
+# Assembles styles, cover pages, system flows, diagrams, and interview guides.
+# Compiles the final document with two-pass canvas numbering and copies to root.
 def build_pdf():
     print(f"[*] Building Expanded FinWise Master PDF Guide...")
     doc = SimpleDocTemplate(
@@ -998,5 +1007,8 @@ Browser (React 18 SPA)                     Express API Gateway (Port 3000)      
     return PDF_PATH_ROOT
 
 
+# Direct script execution entry point for master PDF documentation generation.
+# Triggers the complete PDF construction pipeline when run from the command line.
+# Builds the publication-ready document and outputs status notifications.
 if __name__ == "__main__":
     build_pdf()

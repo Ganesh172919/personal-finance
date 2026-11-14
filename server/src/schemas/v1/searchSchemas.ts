@@ -14,6 +14,9 @@
  */
 import { z } from "zod";
 
+// Validates query parameters for global omni-search across domain entities.
+// Accepts search string, comma-delimited type filters, and pagination cursor tokens.
+// Transforms raw type filter strings into trimmed arrays for unified search indexers.
 export const globalSearchQuerySchema = z.object({
   q: z.string().trim().min(1).max(200),
   types: z

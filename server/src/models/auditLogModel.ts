@@ -7,6 +7,9 @@
 
 import { Schema, model, Document, Types } from "mongoose";
 
+// Enumerates discrete security action events tracked by the audit logging engine.
+// Covers authentication attempts, 2FA workflows, credential changes, and data purges.
+// Enforced across security auditing middleware to standardize event taxonomy.
 export type AuditAction =
   | "login_success"
   | "login_failed"
@@ -35,8 +38,14 @@ export type AuditAction =
   | "session_invalidated"
   | "suspicious_activity";
 
+// Categorizes the threat severity level of an individual security audit event.
+// Differentiates routine informational actions from warning and critical threats.
+// Enables security monitoring dashboards to filter and alert on high-severity risks.
 export type AuditSeverity = "info" | "warn" | "critical";
 
+// Defines TypeScript interface for immutable security audit log entries.
+// Stores actor context, IP address, user agent, target entity, and event payload.
+// Facilitates incident investigation, forensic audits, and compliance reporting.
 export interface IAuditLog {
   orgId?: Types.ObjectId;
   userId?: Types.ObjectId;
@@ -51,10 +60,16 @@ export interface IAuditLog {
   createdAt: Date;
 }
 
+// Extends IAuditLog with Mongoose Document methods and MongoDB primary key.
+// Enables runtime database querying and strongly typed document manipulation.
+// Represents individual security audit records stored in MongoDB collection.
 export interface IAuditLogDocument extends IAuditLog, Document {
   _id: Types.ObjectId;
 }
 
+// Mongoose schema definition for append-only immutable security audit logs.
+// Enforces action and severity enumerations, IP length constraints, and indexing.
+// Disables automatic updatedAt timestamps to preserve immutable event integrity.
 const auditLogSchema = new Schema<IAuditLogDocument>(
   {
     orgId: { type: Schema.Types.ObjectId, ref: "Organization", index: true },
@@ -98,11 +113,20 @@ const auditLogSchema = new Schema<IAuditLogDocument>(
 );
 
 // TTL index: auto-delete after 365 days (configurable)
+// Configures multi-field compound indexes and automatic 365-day TTL retention.
+// Speeds up forensic filtering by user action, tenant severity, and timestamp.
+// Automatically purges aged log records after one year compliance retention period.
 auditLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 365 * 24 * 60 * 60 });
 
 // Compound indexes for common queries
 auditLogSchema.index({ userId: 1, action: 1, createdAt: -1 });
 auditLogSchema.index({ orgId: 1, severity: 1, createdAt: -1 });
 
+// Instantiates Mongoose model bound to MongoDB "AuditLog" collection.
+// Provides strongly typed insertion and querying methods for audit records.
+// Central model invoked by security middleware, auth handlers, and incident tools.
 const AuditLogModel = model<IAuditLogDocument>("AuditLog", auditLogSchema);
+// Exports compiled AuditLogModel instance as default module export.
+// Imported by authentication controllers, security services, and audit reporters.
+// Serves as dedicated data access layer for recording immutable audit logs.
 export default AuditLogModel;

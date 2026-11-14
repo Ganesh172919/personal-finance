@@ -122,3 +122,91 @@ pytest evals/test_routing_accuracy.py -v
 pytest evals/test_determinism.py -v
 pytest evals/test_latency.py -v
 ```
+
+
+---
+
+## 5. Continuous Production AI Canary Invariant Validation Harness
+
+The continuous canary validator (`server/AI_Core/evals/canary_validator.py`) enforces 5 mathematical identities across all LLM synthesis outputs:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                   5 CORE MATHEMATICAL CANARY INVARIANTS                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 1. Number Safety: D_cand ⊆ D_ref ∪ {0, 1, 2, 3, 4, 5, 7, 10, 12, 14, 30, 365} │
+│ 2. Zero-Sum Budget Conservation: ∑ ΔB_i = 0 and Proposed_i ≥ 0              │
+│ 3. Balance Sheet Identity: |Assets - Liabilities - Net Worth| ≤ 0.01        │
+│ 4. Cash Flow Identity: |Income - Expenses - Net Cash Flow| ≤ 0.01           │
+│ 5. Debt Amortization Identity: |Principal + Interest - Payment| ≤ 0.01      │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Execution Commands:
+```bash
+# Run Canary invariant validation unit tests
+pytest tests/test_canary_validator.py -v
+
+# Run full 175-eval suite
+python -m evals.runner
+```
+
+
+---
+
+## 6. Multi-Domain Follow-Through & Ranking Evaluator (`test_follow_through_eval.py`)
+
+Verifies multi-domain signal extraction, priority score bounding ($S \in [0.0, 100.0]$), overdue precedence invariance, and adaptive preference learning with half-life exponential time decay across all 6 financial domains (`task`, `goal`, `budget`, `reminder`, `recurring`, `debt`).
+
+```bash
+# Execute Follow-Through Evaluator Suite
+pytest evals/test_follow_through_eval.py -v
+```
+
+---
+
+## 7. Conversation Summary & Narration Sign-Off Evaluator (`test_conversation_summary_eval.py`)
+
+Validates multi-agent conversation recaps and narration outputs against 7 core sign-off criteria:
+- **Number Safety Invariant**: $D_{\text{cand}} \subseteq D_{\text{ref}}$ (zero ungrounded numbers).
+- **Four Canonical Sections**: `Conversation pulse`, `Repeated topics`, `Recommended next moves`, `Suggested next prompt`.
+- **Word Count Bound**: $\le 240$ words.
+- **Deterministic Factual Fallback**: Activates deterministic recap on any safety violation.
+
+```bash
+# Execute Conversation Summary Evaluator Suite
+pytest evals/test_conversation_summary_eval.py -v
+```
+
+---
+
+## 8. Financial Document Authorship & Rich Layout Evaluator (`test_document_creation_eval.py`)
+
+Benchmarks automated PDFKit document synthesis across 6 structured formats (`standard`, `executive_brief`, `tax_prep_summary`, `cash_flow_audit`, `debt_payoff_schedule`, `net_worth_statement`):
+- Verifies physical page boundaries and form-feed (`\f`) preservation.
+- Verifies Balance Sheet ($A - L = NW$) and Cash Flow conservation identities.
+- Validates side-by-side KPI cards, multi-column tables, and callouts.
+
+```bash
+# Execute Document Authorship Evaluator Suite
+pytest evals/test_document_creation_eval.py -v
+```
+
+---
+
+## 9. Multi-Modal Document Q&A Grounding Invariant Evaluator (`test_document_qa_eval.py`)
+
+Audits semantic retrieval and question-answering fidelity across IRS Tax Forms (1040, W-2), Brokerage Statements, and OCR Receipts:
+- **Zero Hallucination Invariant**: All asserted figures trace to source passages.
+- **Physical Page Attribution**: Cited page numbers strictly match ground-truth source document pages.
+- **Negative Case Handling**: Returns graceful non-hallucinated disclaimers on out-of-distribution questions.
+
+```bash
+# Execute Document Q&A Evaluator Suite
+pytest evals/test_document_qa_eval.py -v
+```
+
+---
+
+**Evidence:**
+- `server/AI_Core/evals/` (`test_follow_through_eval.py`, `test_conversation_summary_eval.py`, `test_document_creation_eval.py`, `test_document_qa_eval.py`)

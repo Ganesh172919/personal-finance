@@ -3028,3 +3028,58 @@ server {
     }
 }
 ```
+
+---
+
+## 12. 2026 Production Multi-Service Deployment & Health Probing
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#3b82f6', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((Kubernetes Deploy))
+    Liveness Probes
+      GET /healthz
+      Fast 500ms Ping
+    Readiness Probes
+      GET /readyz
+      Checks MongoDB + Redis + AI Canary
+    Canary Validation Health
+      GET /api/v1/ai/canary/status
+      Automated Traffic Shift Gate
+    Environment Secrets
+      KeyPool Multi-Provider Keys
+      BullMQ Redis Password
+      Mongo Replica Set URI
+```
+
+### 12.1 Kubernetes Liveness & Readiness Ingress Spec
+In enterprise container deployments, include the `/readyz` probe to guarantee that traffic is only routed to pods with verified database, cache, and mathematical canary readiness:
+
+```yaml
+# deploy/kubernetes/api-gateway-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finwise-api-gateway
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: gateway
+          image: finwise/gateway:2026.enterprise
+          ports:
+            - containerPort: 3000
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 15
+```

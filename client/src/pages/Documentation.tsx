@@ -64,6 +64,10 @@ import {
 import { ScrollArea } from "@/components/ui/ScrollArea";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+// Data shape defining a feature documentation section with icons and tips.
+// Structures feature identifiers, titles, descriptions, and capabilities lists.
+// Used to render structured feature deep-dive cards in the documentation portal.
 interface DocSection {
   id: string;
   title: string;
@@ -74,11 +78,17 @@ interface DocSection {
   proTips?: string[];
 }
 
+// Data shape representing a frequently asked question and its answer.
+// Populates interactive FAQ accordion elements in the documentation guide.
+// Provides concise troubleshooting and educational help to platform users.
 interface FAQItem {
   question: string;
   answer: string;
 }
 
+// Data structure specifying keyboard shortcut key bindings and their actions.
+// Associates key combinations like Ctrl+K or Esc with application commands.
+// Displayed in the keyboard shortcuts reference table for power users.
 interface ShortcutItem {
   keys: string[];
   action: string;
@@ -86,6 +96,9 @@ interface ShortcutItem {
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
+// Step-by-step onboarding walkthrough guides for new platform members.
+// Outlines account creation, onboarding, transaction import, and AI chat.
+// Rendered as sequential milestone cards in the documentation getting-started hub.
 const gettingStartedSteps = [
   {
     step: 1,
@@ -515,6 +528,9 @@ const tocSections = [
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
+// Comprehensive in-app platform documentation and user reference guide page.
+// Features searchable topics, sticky table of contents, and smooth scrolling.
+// Covers feature deep-dives, getting started steps, shortcuts, and FAQs.
 export default function Documentation() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSection, setActiveSection] = useState("getting-started");

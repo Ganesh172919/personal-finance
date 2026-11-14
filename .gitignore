@@ -13,12 +13,31 @@ client/.vite/
 
 
 
-server/.env
+# Local environment files and credentials
 .env
-client/.env
-server/AI_Core/.env
-plugin-runtime/.env
-observability/.env
+.env.*
+!.env.example
+!.env.*.example
+*.env
+credentials.json
+service-account*.json
+*.pem
+*.key
+*.pfx
+*.p12
+*.sqlite
+*.sqlite3
+*.db
+
+# Local Codex builds and workspace notes
+.codex/
+.codex-build/
+codex-build/
+codex_build/
+.agents/teamwork/
+/scratch/
+/output/browser/
+/output/deployment/
 
 
 # Local helper scripts
@@ -32,6 +51,7 @@ client/dist/
 server/dist/
 dist-ssr
 *.local
+*.tsbuildinfo
 
 # Python artifacts
 __pycache__/

@@ -109,9 +109,15 @@ import { detectRecurringCandidates } from "./financeIntelligence";
 import type { IFinancialGoal, IDebt } from "../models/financialProfileModel";
 
 /** Priority classification for command center signals */
+// Categorizes financial alerts and action signals into three distinct urgency tiers.
+// "act_now" highlights immediate risks, "review_this_week" flags upcoming items,
+// and "safe_to_ignore" provides passive informational context for the user.
 export type PriorityLevel = "act_now" | "review_this_week" | "safe_to_ignore";
 
 /** A single prioritized signal shown in the command center */
+// Represents a single prioritized financial alert or actionable recommendation signal.
+// Captures title, explanatory narrative, urgency classification, and optional metrics.
+// Supplies navigation deep-links directing users straight to the relevant resolution screen.
 export interface CommandCenterSignal {
   id: string;
   title: string;
@@ -122,6 +128,9 @@ export interface CommandCenterSignal {
 }
 
 /** Multi-account consolidated netting breakdown */
+// Details multi-account consolidated balance netting across all liquid and debt accounts.
+// Distinguishes between liquid cash reserves, investment holdings, and short-term liabilities.
+// Computes true net cash runway and overall net worth metrics for holistic visibility.
 export interface ConsolidatedNetting {
   liquid_assets: number;
   investment_assets: number;
@@ -143,6 +152,9 @@ export interface ConsolidatedNetting {
 }
 
 /** The complete command center payload */
+// Defines the complete data payload delivered to the Financial Command Center cockpit.
+// Encapsulates cash runway, budget burn velocity, upcoming obligations, and priority signals.
+// Serves as the primary composite feed powering the daily dashboard overview interface.
 export interface CommandCenterPayload {
   generated_at: string;
   time_of_day: "morning" | "afternoon" | "evening";
@@ -217,15 +229,27 @@ export interface CommandCenterPayload {
   priority_signals: CommandCenterSignal[];
 }
 
+// Formats a JavaScript Date object into a standard YYYY-MM period identifier string.
+// Zero-pads calendar months to guarantee lexicographically sorted consistency.
+// Serves as standard grouping key for monthly financial analytics and budget envelopes.
 const monthKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 
+// Computes the total number of calendar days in the month of the provided date.
+// Evaluates leap year February calculations accurately via standard JavaScript Date edge days.
+// Supplies essential denominator for velocity rate and daily spend projection algorithms.
 const daysInMonth = (date: Date) =>
   new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
 
+// Translates the current 24-hour clock hour into a natural time-of-day greeting segment.
+// Segregates hours into morning, afternoon, or evening categories.
+// Powers personalized contextual greetings displayed on the main dashboard header.
 const getTimeOfDay = (hour: number): "morning" | "afternoon" | "evening" =>
   hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
 
+// Aggregates real-time financial telemetry across accounts, budgets, debts, and tasks.
+// Evaluates multi-account balance netting, burn pace, and overdue obligation risks.
+// Synthesizes prioritized action chips into a cohesive daily command center feed.
 export const buildCommandCenterPayload = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;

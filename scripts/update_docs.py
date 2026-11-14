@@ -1,3 +1,6 @@
+# Helper script to update improvement progress notes with batch test results.
+# Reads current progress documentation, injects summary batches, and updates test counts.
+# Writes updated progress markdown content back to the project docs directory.
 import re
 
 with open("docs/IMPROVEMENT_PROGRESS.md", "r", encoding="utf-8") as f:

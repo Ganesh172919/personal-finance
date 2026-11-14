@@ -17,6 +17,9 @@
  */
 import { z } from "zod";
 
+// Validates query parameters for filtering scheduled calendar reminder events.
+// Enforces YYYY-MM-DD calendar syntax for optional start and end date bounds.
+// Rejects unexpected query parameters using strict schema evaluation.
 export const listCalendarRemindersQuerySchema = z
   .object({
     from: z
@@ -32,6 +35,9 @@ export const listCalendarRemindersQuerySchema = z
   })
   .strict();
 
+// Validates request payloads creating a new calendar reminder notification.
+// Enforces YYYY-MM-DD date formats, title length bounds, and optional descriptions.
+// Rejects unrecognized request attributes using strict schema evaluation.
 export const createCalendarReminderBodySchema = z
   .object({
     date: z
@@ -43,6 +49,28 @@ export const createCalendarReminderBodySchema = z
   })
   .strict();
 
+// Validates route parameters specifying a calendar reminder by its unique record ID.
+// Enforces standard 24-character hexadecimal MongoDB ObjectId syntax.
+// Ensures calendar reminder route handlers operate exclusively on valid IDs.
 export const calendarReminderIdParamSchema = z.object({
   id: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid id"),
 });
+
+// Validates request payloads for bulk querying or exporting calendar reminders.
+// Accepts optional date ranges and an array of up to 200 reminder ObjectIds.
+// Used for bulk agenda lookups and calendar synchronization operations.
+export const batchCalendarRemindersBodySchema = z
+  .object({
+    from: z
+      .string()
+      .trim()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date (expected YYYY-MM-DD)")
+      .optional(),
+    to: z
+      .string()
+      .trim()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date (expected YYYY-MM-DD)")
+      .optional(),
+    ids: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid id")).max(200).optional(),
+  })
+  .strict();

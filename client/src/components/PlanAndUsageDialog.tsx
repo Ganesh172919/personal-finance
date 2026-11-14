@@ -26,8 +26,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { useAppDialogStore } from "@/stores/appDialogStore";
 
+// Formats boolean flag values into readable affirmative or negative string tokens.
+// Translates true and false states into localized Yes and No displays.
+// Powers clear boolean feature capability summaries within entitlement tables.
 const formatBoolean = (value: boolean) => (value ? "Yes" : "No");
 
+// Modal dialogue displaying comprehensive plan entitlements and resource usage totals.
+// Details monthly AI inference quotas, OCR limits, scenario depths, and remaining units.
+// Synchronizes active organization tiers and billing cycles across tracked metrics.
 export function PlanAndUsageDialog() {
   const { user } = useAuth();
   const open = useAppDialogStore((s) => s.planAndUsageOpen);

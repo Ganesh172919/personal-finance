@@ -1,0 +1,123 @@
+# ══════════════════════════════════════════════════════════════════════
+# FinWise — Nightly Load / Spike / SSE Soak
+# ══════════════════════════════════════════════════════════════════════
+# Runs the k6 suites in loadtest/k6 against the compose stack on a single
+# GitHub-hosted runner (4 vCPU). That machine runs the stack AND the load
+# generator, so absolute latencies are pessimistic and only regressions
+# between nights are meaningful. It is NOT a capacity proof for production
+# sizing (see docs/CAPACITY_AND_SLOS.md).
+#
+# Default: mock LLM (measures the platform, no provider quota burned).
+# Manual run with llm=real needs the repo secret GEMINI_API_KEY (or set
+# LLM_PROVIDER/keys the same way AI Core's .env.example documents). Real-LLM
+# runs should use K6_MIX=82,15,2,1 so the AI rate matches the plan (~75/min)
+# instead of the stress mix, otherwise free-tier quotas are exhausted.
+# ══════════════════════════════════════════════════════════════════════
+
+name: Nightly Load
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      llm:
+        description: "LLM backend for AI Core"
+        type: choice
+        options: [mock, real]
+        default: mock
+      users:
+        description: "Virtual users for the load run"
+        type: string
+        default: "150"
+
+concurrency:
+  group: nightly-load
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  load:
+    name: k6 (${{ inputs.llm || 'mock' }} LLM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      LLM_MODE: ${{ inputs.llm || 'mock' }}
+      K6_USERS: ${{ inputs.users || '150' }}
+      K6_BASE_URL: http://127.0.0.1:8080
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create env files and throwaway secrets
+        run: |
+          cp server/.env.example server/.env
+          cp server/AI_Core/.env.example server/AI_Core/.env
+          {
+            echo "JWT_SECRET=$(openssl rand -hex 32)"
+            echo "AI_CORE_INTERNAL_TOKEN=$(openssl rand -hex 24)"
+            echo "WEBHOOK_CREDENTIALS_KEY=$(openssl rand -base64 32)"
+          } >> "$GITHUB_ENV"
+          if [ "$LLM_MODE" = "real" ]; then
+            echo "LLM_PROVIDER=gemini" >> "$GITHUB_ENV"
+            echo "K6_MIX=82,15,2,1" >> "$GITHUB_ENV"
+          else
+            echo "LLM_PROVIDER=mock" >> "$GITHUB_ENV"
+          fi
+
+      - name: Inject provider key (real LLM only)
+        if: ${{ inputs.llm == 'real' }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::error::llm=real requires the GEMINI_API_KEY repository secret"; exit 1
+          fi
+          echo "::add-mask::$GEMINI_API_KEY"
+          printf '\nGEMINI_API_KEY=%s\n' "$GEMINI_API_KEY" >> server/AI_Core/.env
+
+      - name: Start stack
+        run: docker compose -f compose.yaml -f loadtest/compose.loadtest.yaml up -d --build --wait --wait-timeout 300
+
+      - uses: grafana/setup-k6-action@v1
+
+      # Each suite is a separate step with continue-on-error so one failing
+      # threshold does not hide the others; the final step fails the job.
+      - name: k6 load (ramp + hold)
+        id: load
+        continue-on-error: true
+        run: k6 run --summary-export=load-summary.json loadtest/k6/load.js
+
+      - name: k6 spike
+        id: spike
+        continue-on-error: true
+        run: k6 run --summary-export=spike-summary.json loadtest/k6/spike.js
+
+      - name: k6 SSE soak
+        id: soak
+        continue-on-error: true
+        run: k6 run --summary-export=soak-summary.json loadtest/k6/soak-sse.js
+
+      - name: Upload k6 summaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-summaries-${{ env.LLM_MODE }}
+          path: "*-summary.json"
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Dump logs on failure
+        if: failure() || steps.load.outcome == 'failure' || steps.spike.outcome == 'failure' || steps.soak.outcome == 'failure'
+        run: docker compose -f compose.yaml -f loadtest/compose.loadtest.yaml logs --no-color --tail=300
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f compose.yaml -f loadtest/compose.loadtest.yaml down -v
+
+      - name: Fail if any suite breached its thresholds
+        if: steps.load.outcome == 'failure' || steps.spike.outcome == 'failure' || steps.soak.outcome == 'failure'
+        run: |
+          echo "load=${{ steps.load.outcome }} spike=${{ steps.spike.outcome }} soak=${{ steps.soak.outcome }}"
+          exit 1

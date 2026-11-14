@@ -11,6 +11,9 @@
 import { Link, useLocation } from "wouter";
 import { ChevronRight, Home } from "lucide-react";
 
+// Lookup dictionary mapping URL pathname route slugs to human-friendly display titles.
+// Normalizes path segments into properly formatted capitalization for navigation trails.
+// Provides fallback translations for primary workspaces, modules, and sub-views.
 const ROUTE_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
   transactions: "Transactions",
@@ -37,6 +40,9 @@ const ROUTE_LABELS: Record<string, string> = {
   blogs: "Blogs",
 };
 
+// Contextual navigation breadcrumb component derived dynamically from active route URLs.
+// Parses wouter location paths into hierarchical clickable navigation links.
+// Omits rendering on authentication views to preserve minimal landing interfaces.
 export function Breadcrumb() {
   const [location] = useLocation();
 

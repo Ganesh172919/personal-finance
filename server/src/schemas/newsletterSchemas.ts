@@ -18,6 +18,9 @@
  */
 import { z } from "zod";
 
+// Validates request payloads modifying personal newsletter subscription preferences.
+// Controls subscription status, HH:mm delivery time, timezone, and topic toggles.
+// Enforces strict schema constraints to keep preference configurations sanitized.
 export const updateNewsletterPreferencesBodySchema = z
   .object({
     isSubscribed: z.boolean().optional(),
@@ -40,6 +43,9 @@ export const updateNewsletterPreferencesBodySchema = z
   })
   .strict();
 
+// Validates pagination query parameters for listing previously dispatched newsletters.
+// Coerces and bounds integer limits up to 50 items and enforces non-negative offsets.
+// Supplies safe defaults when pagination attributes are omitted in client queries.
 export const newsletterHistoryQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(50).default(10),
@@ -47,6 +53,9 @@ export const newsletterHistoryQuerySchema = z
   })
   .strict();
 
+// Validates route parameters specifying a newsletter one-click unsubscribe token.
+// Enforces valid UUID string format syntax on the incoming token parameter.
+// Protects public unsubscribe handler endpoints against malformed parameter inputs.
 export const unsubscribeTokenParamSchema = z
   .object({
     token: z.string().uuid("Invalid unsubscribe token"),

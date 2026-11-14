@@ -9,9 +9,15 @@
  *        "profile:read", "notifications:send", "workflows:create"
  */
 
+// String alias representing permission scopes granted to third-party plugins.
+// Formatted as resource:action tokens such as transactions:write or goals:read.
+// Enforces fine-grained capability isolation across sandboxed plugin executions.
 export type PluginPermission = string;
 
 /** All recognized permissions and their descriptions. */
+// Comprehensive dictionary of permissible plugin permissions and plain descriptions.
+// Used for displaying requested permission explanations during plugin installation prompts.
+// Serves as authoritative whitelist when validating plugin manifest permission claims.
 export const PERMISSION_CATALOG: Record<PluginPermission, string> = {
   "transactions:read": "Read transaction history and summaries",
   "transactions:write": "Create, update, or delete transactions",
@@ -34,6 +40,9 @@ export const PERMISSION_CATALOG: Record<PluginPermission, string> = {
 };
 
 /** Permissions that are considered high-risk and require explicit user consent during install. */
+// Set of high-risk permissions requiring explicit administrator or user confirmation.
+// Flags write operations affecting financial transactions, debts, accounts, or profiles.
+// Enforces elevated security friction during marketplace plugin installations.
 export const HIGH_RISK_PERMISSIONS = new Set<PluginPermission>([
   "transactions:write",
   "debts:write",
@@ -47,6 +56,9 @@ export const HIGH_RISK_PERMISSIONS = new Set<PluginPermission>([
  * Map from tool name prefixes to the permissions they require.
  * Used to auto-validate plugin tool calls at runtime.
  */
+// Mapping table connecting internal tool execution names to required permission scopes.
+// Used by sandbox interceptors to verify that a plugin holds required privileges.
+// Ensures automated tool invocations are gated by corresponding capability checks.
 const TOOL_PERMISSION_MAP: Record<string, PluginPermission[]> = {
   "transactions.create": ["transactions:write"],
   "transactions.update": ["transactions:write"],
@@ -73,6 +85,9 @@ const TOOL_PERMISSION_MAP: Record<string, PluginPermission[]> = {
   "integrations.sync": ["integrations:sync"],
 };
 
+// Structured evaluation result returned after assessing plugin tool execution permissions.
+// Conveys boolean authorization decision, missing required permissions, and error details.
+// Returned by permission checking utilities to support fail-closed security gating.
 export interface PermissionCheckResult {
   allowed: boolean;
   missing: PluginPermission[];
@@ -82,6 +97,9 @@ export interface PermissionCheckResult {
 /**
  * Check whether a plugin's granted permissions cover a specific tool call.
  */
+// Verifies whether a plugin's granted permissions allow executing a designated tool.
+// Compares required tool permissions against granted permissions using fail-closed logic.
+// Rejects unmapped or unknown tool names automatically with descriptive rationale.
 export function checkToolPermission(
   toolName: string,
   grantedPermissions: PluginPermission[],
@@ -115,6 +133,9 @@ export function checkToolPermission(
  * Validate an entire plugin manifest's declared permissions.
  * Returns any unrecognized or suspicious permission requests.
  */
+// Audits a candidate plugin's declared permission list against catalog definitions.
+// Flags unrecognized permissions, high-risk security scopes, and unusual permission volume.
+// Produces warnings and validation status to inform administrator installation reviews.
 export function validatePluginPermissions(
   requestedPermissions: PluginPermission[],
 ): { valid: boolean; unrecognized: string[]; highRisk: string[]; warnings: string[] } {

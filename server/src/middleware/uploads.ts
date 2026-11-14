@@ -29,13 +29,8 @@ import type { Request } from "express";
 import { getEnv } from "../config/env";
 import { HttpError } from "./httpError";
 
-/**
- * Factory function that creates a configured Multer instance.
- *
- * @param params.maxBytes - Maximum file size in bytes
- * @param params.allowedMimes - Optional override for allowed MIME types
- * @returns Configured Multer instance
- */
+// Factory generating configured in-memory Multer instances with strict payload size caps.
+// Enforces allowed MIME type filtering to reject unsupported files before processing.
 const createUpload = (params: { maxBytes: number; allowedMimes?: string[] }) => {
   const env = getEnv();
   const allowed = new Set(params.allowedMimes || env.UPLOAD_ALLOWED_MIME);
@@ -70,17 +65,8 @@ const IMAGE_MAGIC_BYTE_MIMES = new Set([
   "image/gif",   // 47 49 46 38
 ]);
 
-/**
- * Validates that an uploaded buffer's actual magic bytes match an allowed image type.
- *
- * This is a second layer of defense after Multer's MIME type check.
- * Call this AFTER multer processes the file but BEFORE sending it to OCR or other processing.
- *
- * Uses dynamic import of 'file-type' to avoid loading it at startup (it's a large module).
- *
- * @param buffer - The uploaded file buffer to validate
- * @throws {HttpError} 400 if the file is not a genuine image
- */
+// Inspects binary buffer headers against known image magic-byte signatures using file-type.
+// Prevents file extension spoofing attacks by rejecting mismatched binary content.
 export const validateImageBuffer = async (buffer: Buffer): Promise<void> => {
   // Dynamic import: file-type is large, only load when needed
   const { fileTypeFromBuffer } = await import("file-type");
@@ -96,39 +82,38 @@ export const validateImageBuffer = async (buffer: Buffer): Promise<void> => {
   }
 };
 
-/**
- * Multer instance configured for receipt image uploads.
- * Max size: 8MB (configurable via RECEIPT_UPLOAD_MAX_BYTES env var)
- */
+// Constructs a Multer upload instance configured for receipt photo submissions.
+// Applies environment-configured receipt byte limits and in-memory storage handling.
 export const receiptUpload = () => {
   const env = getEnv();
   return createUpload({ maxBytes: env.RECEIPT_UPLOAD_MAX_BYTES });
 };
 
-/**
- * Multer instance configured for journal image uploads.
- * Max size: 4MB (configurable via JOURNAL_UPLOAD_MAX_BYTES env var)
- */
+// Configures an in-memory Multer instance tailored for journal note image attachments.
+// Enforces journal size limits and validates supported image formats.
 export const journalUpload = () => {
   const env = getEnv();
   return createUpload({ maxBytes: env.JOURNAL_UPLOAD_MAX_BYTES });
 };
 
-/**
- * Multer instance configured for CSV file uploads.
- * Max size: 15MB (configurable via CSV_UPLOAD_MAX_BYTES env var)
- * Allowed MIME types: text/csv, application/vnd.ms-excel, application/csv
- */
+// Configures an in-memory Multer instance for tabular banking CSV imports.
+// Restricts incoming files to valid CSV MIME types and enforces file size boundaries.
 export const csvUpload = () => {
   const env = getEnv();
   return createUpload({ maxBytes: env.CSV_UPLOAD_MAX_BYTES, allowedMimes: env.CSV_UPLOAD_ALLOWED_MIME });
 };
 
-/**
- * Multer instance configured for general workspace file uploads.
- * Max size: 25MB (configurable via FILE_UPLOAD_MAX_BYTES env var)
- * No MIME type filtering (any file type allowed).
- */
+// Instantiates an in-memory Multer instance for voice note and speech audio uploads.
+// Accepts standard audio container formats up to 10MB.
+export const voiceUpload = () => {
+  return multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  });
+};
+
+// Instantiates a general-purpose in-memory Multer instance for arbitrary workspace file uploads.
+// Applies maximum workspace file size limits to accommodate larger documents and reports.
 export const workspaceFileUpload = () => {
   const env = getEnv();
 

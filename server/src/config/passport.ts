@@ -20,7 +20,8 @@
  * SECURITY CONSIDERATIONS:
  * - JWT tokens are stored in HTTP-only cookies (not localStorage) to prevent XSS attacks
  * - The JWT strategy reads from cookies, not the Authorization header, for this reason
- * - Google OAuth links accounts by email if a user with the same email already exists
+ * - Google OAuth links accounts by email only when Google reports the email as verified
+ * - OAuth state + PKCE verifier live in a signed httpOnly cookie (see services/googleOAuth.ts)
  *
  * PRODUCTION INSIGHTS:
  * - Passport.js is configured once at startup, not per-request
@@ -32,23 +33,21 @@
 
 // ── Imports ───────────────────────────────────────────────────────────
 import passport from "passport";                                    // Authentication middleware
-import { Strategy as JwtStrategy } from "passport-jwt";            // JWT token authentication
+import { CachedJwtStrategy as JwtStrategy } from "./cachedJwtStrategy"; // JWT cookie auth (cached user, per-request fast path)
 import { Strategy as GoogleStrategy } from "passport-google-oauth20"; // Google OAuth 2.0
 import UserModel from "../models/userModel";                        // Mongoose User model
 import { getEnv } from "./env";                                     // Environment configuration
 import { logger } from "./logger";                                  // Application logger
+import {
+  getGoogleCallbackUrl,
+  googleStateStore,
+  resolveGoogleUser,
+  type GoogleOAuthContext,
+  type GoogleProfileLike,
+} from "../services/googleOAuth";             // Google find/link/create + cookie state store
 
-/**
- * Configures all Passport.js authentication strategies.
- *
- * This function is called once during server startup (in server.ts).
- * It registers strategies with Passport, which are then available
- * for use in route middleware via passport.authenticate().
- *
- * STRATEGY REGISTRATION ORDER:
- * 1. JWT strategy (always) - for API authentication
- * 2. Google OAuth strategy (optional) - for social login
- */
+// Configures Passport authentication strategies including cookie-based JWT and Google OAuth 2.0.
+// Registers authentication callbacks, user token validation hooks, and automated account linking.
 export const configurePassport = () => {
   const env = getEnv();
 
@@ -71,23 +70,9 @@ export const configurePassport = () => {
         },
         // The secret key used to verify the JWT signature
         secretOrKey: env.JWT_SECRET,
-      },
-      // Verify callback: called after JWT is decoded
-      // jwtPayload contains the decoded token claims (id, email, etc.)
-      async (jwtPayload, done) => {
-        try {
-          // Look up the user by the ID stored in the JWT payload
-          const user = await UserModel.findById(jwtPayload.id);
-          if (user) {
-            return done(null, user); // Success: attach user to req.user
-          }
-          // User not found (may have been deleted after token was issued)
-          return done(null, false);
-        } catch (error) {
-          // Database error or other unexpected failure
-          return done(error as any, false);
-        }
       }
+      // The verify step (user lookup by payload id, served from the auth cache)
+      // and the per-request fast path live in CachedJwtStrategy.
     )
   );
 
@@ -95,53 +80,33 @@ export const configurePassport = () => {
   // Only configured if Google OAuth credentials are provided.
   // The callback URL must match what's configured in Google Cloud Console.
   if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
-    const callbackURL = env.GOOGLE_CALLBACK_URL || "/api/auth/google/callback";
-    logger.info(`[Passport] Registering Google OAuth strategy`);
-    logger.info(`[Passport]   Client ID : ${env.GOOGLE_CLIENT_ID.substring(0, 12)}...`);
-    logger.info(`[Passport]   Callback  : ${callbackURL}`);
+    const callbackURL = getGoogleCallbackUrl();
+    // Never log the client id/secret or any profile data: only the callback path that must be allow-listed.
+    logger.info(`[Passport] Registering Google OAuth strategy (callback: ${callbackURL})`);
 
     passport.use(
       "google",
       new GoogleStrategy(
         {
-          clientID: env.GOOGLE_CLIENT_ID,       // From Google Cloud Console
+          clientID: env.GOOGLE_CLIENT_ID, // From Google Cloud Console
           clientSecret: env.GOOGLE_CLIENT_SECRET, // From Google Cloud Console
-          // Callback URL that Google redirects to after user approves
-          callbackURL,
-        },
-        // This callback receives the OAuth tokens and the user's Google profile
-        // _accessToken and _refreshToken are not used (we issue our own JWT)
-        async (_accessToken, _refreshToken, profile, done) => {
+          callbackURL, // Must match an "Authorized redirect URI" in Google Cloud Console
+          scope: ["profile", "email"],
+          // State + PKCE are enforced through a signed, short-lived cookie (no server session needed).
+          pkce: true,
+          store: googleStateStore,
+          passReqToCallback: true,
+        } as any,
+        // _accessToken / _refreshToken are unused: we issue our own JWT cookie.
+        async (req: any, _accessToken: string, _refreshToken: string, profile: GoogleProfileLike, done: any) => {
           try {
-            // STRATEGY 1: Check if user already linked their Google account
-            let user = await UserModel.findOne({ googleId: profile.id });
-            if (user) {
-              return done(null, user); // Existing Google-linked user
+            const ctx = (req?.res?.locals?.googleOAuth ?? {}) as GoogleOAuthContext;
+            const result = await resolveGoogleUser(profile, ctx);
+            if ("error" in result) {
+              return done(null, false, { code: result.error, message: result.error });
             }
-
-            // STRATEGY 2: Check if user exists with the same email (account linking)
-            // This handles the case where a user registered with email/password
-            // and later tries to sign in with Google using the same email
-            user = await UserModel.findOne({ email: profile.emails?.[0]?.value });
-            if (user) {
-              // Link Google account to existing user
-              user.googleId = profile.id;
-              user.photoURL = profile.photos?.[0]?.value;
-              user.isEmailVerified = true; // Google verifies emails, so we can trust this
-              await user.save();
-              return done(null, user);
-            }
-
-            // STRATEGY 3: Create a new user from Google profile
-            user = await UserModel.create({
-              googleId: profile.id,
-              name: profile.displayName,
-              email: profile.emails?.[0]?.value,
-              photoURL: profile.photos?.[0]?.value,
-              authProvider: "google",      // Track the auth method
-              isEmailVerified: true,       // Google verifies emails
-            });
-            return done(null, user);
+            if (req?.res) req.res.locals.googleOAuthResult = { created: result.created, linked: result.linked };
+            return done(null, result.user);
           } catch (error) {
             return done(error as any, false);
           }

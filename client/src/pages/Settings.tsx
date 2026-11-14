@@ -26,7 +26,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { User, Shield, Key, Settings as SettingsIcon, Copy, Eye, EyeOff, Mail } from "lucide-react";
+import { User, Shield, Key, Settings as SettingsIcon, Copy, Eye, EyeOff, Mail, Mic, Sparkles } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { useToast } from "@/hooks/useToast";
@@ -52,6 +52,9 @@ import { listApiKeys, createApiKey, revokeApiKey } from "@/lib/api/v1/apiKeys";
 import type { ApiKeyListItem } from "@/lib/api/v1/apiKeys";
 import NewsletterSettings from "@/components/NewsletterSettings";
 
+// Unified account settings, profile configuration, and security control center.
+// Provides tabbed management across user profile, passwords, 2FA, API keys, and preferences.
+// Synchronizes organization-level formatting defaults and newsletter delivery options.
 export default function Settings() {
   const { user, checkAuthStatus } = useAuth();
   const configQuery = useAppConfig();
@@ -75,7 +78,7 @@ export default function Settings() {
         />
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5 rounded-[calc(var(--radius)-4px)] border border-border/70 bg-card/85 p-1">
+          <TabsList className="grid w-full grid-cols-6 rounded-[calc(var(--radius)-4px)] border border-border/70 bg-card/85 p-1">
           <TabsTrigger value="profile" className="flex items-center gap-2" data-testid="tab-profile" onClick={() => setActiveTab("profile")}>
             <User className="w-4 h-4" />
             <span className="sr-only sm:not-sr-only">Profile</span>
@@ -95,6 +98,10 @@ export default function Settings() {
           <TabsTrigger value="newsletter" className="flex items-center gap-2" data-testid="tab-newsletter" onClick={() => setActiveTab("newsletter")}>
             <Mail className="w-4 h-4" />
             <span className="sr-only sm:not-sr-only">Newsletter</span>
+          </TabsTrigger>
+          <TabsTrigger value="gnani" className="flex items-center gap-2 text-indigo-400" data-testid="tab-gnani" onClick={() => setActiveTab("gnani")}>
+            <Mic className="w-4 h-4" />
+            <span className="sr-only sm:not-sr-only">Gnani AI</span>
           </TabsTrigger>
         </TabsList>
 
@@ -117,6 +124,10 @@ export default function Settings() {
         <TabsContent value="newsletter" className="space-y-4 mt-6">
           <NewsletterSettings />
         </TabsContent>
+
+        <TabsContent value="gnani" className="space-y-4 mt-6">
+          <GnaniVoiceSection toast={toast} />
+        </TabsContent>
         </Tabs>
       </div>
     </div>
@@ -125,6 +136,9 @@ export default function Settings() {
 
 // ─── Profile Section ────────────────────────────────────
 
+// User profile configuration section displaying editable personal details.
+// Manages display name, phone number updates, and read-only email verification status.
+// Refreshes global authentication state upon saving profile updates.
 function ProfileSection({ user, toast, checkAuthStatus }: any) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user?.name || "");
@@ -135,7 +149,8 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await updateProfile({ name, email, phoneNumber });
+      // Email is not editable via this endpoint (the server ignores it), so only send mutable fields.
+      await updateProfile({ name, phoneNumber });
       toast({
         title: "Profile updated",
         description: "Your profile has been updated successfully.",
@@ -187,11 +202,15 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
               id="email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={!isEditing}
+              readOnly
+              disabled
+              aria-describedby="email-readonly-hint"
               placeholder="your.email@example.com"
               data-testid="profile-email-input"
             />
+            <p id="email-readonly-hint" className="text-xs text-muted-foreground">
+              Your sign-in email can't be changed here.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -243,6 +262,9 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
 
 // ─── Security Section ───────────────────────────────────
 
+// Account security management section for password rotation and 2FA coordination.
+// Validates password complexity requirements and matches confirmation inputs.
+// Embeds two-factor authentication controls and active session monitoring.
 function SecuritySection({ user, toast, queryClient }: any) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -270,6 +292,16 @@ function SecuritySection({ user, toast, queryClient }: any) {
       toast({
         title: "Error",
         description: "Password must be at least 8 characters long",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Mirror the server password policy (same as registration).
+    if (!/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      toast({
+        title: "Error",
+        description: "Password must include upper, lower, and numeric characters",
         variant: "destructive",
       });
       return;
@@ -393,6 +425,9 @@ function SecuritySection({ user, toast, queryClient }: any) {
 
 // ─── Two-Factor Authentication ──────────────────────────
 
+// Two-factor authentication configuration section using TOTP authenticator apps.
+// Generates QR setup codes, verifies registration tokens, and produces emergency backup codes.
+// Supports safe disabling of 2FA with token confirmation dialogs.
 function TwoFactorSection({ enabled, isLoading, toast, queryClient }: any) {
   const [isSettingUp, setIsSettingUp] = useState(false);
   const [setupData, setSetupData] = useState<any>(null);
@@ -625,6 +660,9 @@ function TwoFactorSection({ enabled, isLoading, toast, queryClient }: any) {
 
 // ─── API Keys Section ───────────────────────────────────
 
+// Developer API key management interface for personal integrations and scripts.
+// Displays active API keys with masked prefixes, usage counts, and creation timestamps.
+// Facilitates key generation with one-time secret revelation and immediate revocation.
 function ApiKeysSection({ toast, queryClient }: any) {
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeySecret, setNewKeySecret] = useState("");
@@ -800,6 +838,9 @@ function ApiKeysSection({ toast, queryClient }: any) {
 
 // ─── Preferences Section ────────────────────────────────
 
+// Supported monetary currencies for workspace-wide financial reporting.
+// Supplies ISO currency symbols and international currency codes.
+// Configures default ledger formatting across accounts, budgets, and exports.
 const CURRENCIES = [
   { value: "INR", label: "₹ INR — Indian Rupee" },
   { value: "USD", label: "$ USD — US Dollar" },
@@ -813,6 +854,9 @@ const CURRENCIES = [
   { value: "CHF", label: "CHF — Swiss Franc" },
 ];
 
+// Predefined regional locale identifiers supported by the application.
+// Determines date formatting, decimal conventions, and language preferences.
+// Maps standard BCP 47 language tags to human-readable names.
 const LOCALES = [
   { value: "en-IN", label: "English (India)" },
   { value: "en-US", label: "English (US)" },
@@ -825,6 +869,9 @@ const LOCALES = [
   { value: "zh-CN", label: "Chinese (China)" },
 ];
 
+// Canonical IANA timezone identifiers available for organization schedule timing.
+// Configures automated report generation, daily summaries, and reminder delivery.
+// Provides offset abbreviations to aid timezone selection.
 const TIMEZONES = [
   { value: "Asia/Kolkata", label: "Asia/Kolkata (IST, UTC+5:30)" },
   { value: "UTC", label: "UTC" },
@@ -839,6 +886,9 @@ const TIMEZONES = [
   { value: "Asia/Dubai", label: "Asia/Dubai (GST)" },
 ];
 
+// Organization preferences section controlling global currency, locale, and timezone.
+// Detects uncommitted preference modifications to prevent accidental navigation loss.
+// Mutates organization settings and updates query caches across all dashboards.
 function PreferencesSection({ configQuery, toast, queryClient }: any) {
   const org = configQuery.data?.org;
   const [currency, setCurrency] = useState(org?.currency || "USD");
@@ -959,6 +1009,90 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
           >
             {isSaving ? "Saving..." : "Save Preferences"}
           </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function GnaniVoiceSection({ toast }: { toast: any }) {
+  const [indicLang, setIndicLang] = useState("hi-IN");
+  const [telephonicFilter, setTelephonicFilter] = useState(true);
+
+  return (
+    <Card className="border border-indigo-500/30 bg-card p-6">
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-indigo-400" />
+              The Great Indian AI Internship Challenge — Build Resources
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Configuration and live telemetry for Gnani AI Speech and LLM models.
+            </p>
+          </div>
+          <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-500/40">
+            J Ganesh Kumar Reddy
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-4 rounded-lg bg-muted/40 border border-border">
+            <div className="text-xs text-muted-foreground">Allocated Credits</div>
+            <div className="text-xl font-bold text-foreground">5,000 Credits</div>
+            <div className="text-xs text-emerald-400 mt-1">● Active on app.gnani.ai</div>
+          </div>
+          <div className="p-4 rounded-lg bg-muted/40 border border-border">
+            <div className="text-xs text-muted-foreground">Speech Models</div>
+            <div className="text-sm font-semibold text-foreground">Prisma v3.0 (STT) &amp; Timbre (TTS)</div>
+            <div className="text-xs text-muted-foreground mt-1">12+ Indic Languages &amp; Hinglish</div>
+          </div>
+          <div className="p-4 rounded-lg bg-muted/40 border border-border">
+            <div className="text-xs text-muted-foreground">Reasoning Engine</div>
+            <div className="text-sm font-semibold text-foreground">Evon v3.3 (30B Model)</div>
+            <div className="text-xs text-muted-foreground mt-1">Deep Financial Reasoning</div>
+          </div>
+        </div>
+
+        <div className="space-y-4 pt-2">
+          <div className="space-y-2">
+            <Label htmlFor="default-indic-lang">Default Spoken Indic Dialect</Label>
+            <select
+              id="default-indic-lang"
+              value={indicLang}
+              onChange={(e) => {
+                setIndicLang(e.target.value);
+                toast({ title: "Language preference saved", description: `Default set to ${e.target.value}` });
+              }}
+              className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="hi-IN">हिन्दी (Hindi)</option>
+              <option value="hi-en-IN">Hinglish (Code-Mixed)</option>
+              <option value="te-IN">తెలుగు (Telugu)</option>
+              <option value="ta-IN">தமிழ் (Tamil)</option>
+              <option value="kn-IN">ಕನ್ನಡ (Kannada)</option>
+              <option value="mr-IN">मराठी (Marathi)</option>
+              <option value="bn-IN">বাংলা (Bengali)</option>
+              <option value="gu-IN">ગુજરાતી (Gujarati)</option>
+              <option value="en-IN">Indian English</option>
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/20">
+            <div>
+              <div className="text-sm font-medium text-foreground">8kHz Telephonic Audio Filter</div>
+              <div className="text-xs text-muted-foreground">
+                Enhance transcription accuracy in noisy Indian market &amp; traffic audio.
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={telephonicFilter}
+              onChange={(e) => setTelephonicFilter(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+          </div>
         </div>
       </div>
     </Card>

@@ -23,6 +23,9 @@ import { getCurrentPeriodKey, getResolvedEntitlements } from "../../services/ent
 import { HttpError } from "../../middleware/httpError";
 import UsageLedgerModel from "../../models/usageLedgerModel";
 
+// Fetches the organization's feature consumption ledger and entitlement allocations.
+// Determines billing cycle period keys, reconciles user identities, and computes remaining limits.
+// Returns resolved plan quotas, feature usage summaries, and itemized ledger line items.
 export const getUsageLedger = async (req: Request, res: Response) => {
   if (!req.org?.orgId) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");

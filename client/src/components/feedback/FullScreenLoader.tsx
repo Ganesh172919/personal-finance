@@ -17,11 +17,17 @@
  *  - The spinner uses CSS `animate-spin` on a transparent-top border circle for a smooth
  *    rotation effect without external animation libraries.
  */
+// Property specifications for the full-viewport loading screen indicator.
+// Provides configurable text labels and secondary status descriptions.
+// Supplies fallback values when custom status messages are not supplied.
 type FullScreenLoaderProps = {
   label?: string;
   description?: string;
 };
 
+// Full-screen loading overlay presented during workspace boots and route suspense.
+// Centers an animated radial spinner and theme-aware textual status indicators.
+// Prevents UI flashing and layout shifts while code chunks and user data resolve.
 export function FullScreenLoader({
   label = "Loading Personal Finance...",
   description = "Preparing your workspace.",

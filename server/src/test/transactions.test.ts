@@ -127,6 +127,20 @@ describe("transactions API", () => {
 
     expect(page2.body.transactions).toHaveLength(1);
 
+    // Keyset pagination returns the same rows as page mode, without skip().
+    const nextCursor = page1.body.pagination.next_cursor;
+    expect(typeof nextCursor).toBe("string");
+    const cursorPage = await request(app)
+      .get(`/api/transactions?limit=2&cursor=${encodeURIComponent(nextCursor)}`)
+      .set("Cookie", [cookie, csrfCookie])
+      .expect(200);
+    expect(cursorPage.body.transactions.map((t: any) => t.id ?? t._id)).toEqual(page2.body.transactions.map((t: any) => t.id ?? t._id));
+    expect(cursorPage.body.pagination).toMatchObject({ has_more: false, next_cursor: null });
+    await request(app)
+      .get("/api/transactions?limit=2&cursor=not-a-cursor")
+      .set("Cookie", [cookie, csrfCookie])
+      .expect(400);
+
     await request(app)
       .delete(`/api/transactions/${id}`)
       .set("Cookie", [cookie, csrfCookie])

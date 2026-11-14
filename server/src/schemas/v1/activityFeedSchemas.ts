@@ -15,6 +15,9 @@
  */
 import { z } from "zod";
 
+// Validates query parameters for browsing the organizational activity feed.
+// Supports cursor-based before date filters, event type filters, and actor user IDs.
+// Bounds result page sizes between 1 and 100 items using strict schema evaluation.
 export const activityFeedQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(100).optional(),

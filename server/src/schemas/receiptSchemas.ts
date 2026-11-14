@@ -15,11 +15,17 @@
  */
 import { z } from "zod";
 
+// Validates optional language and currency hint parameters for receipt OCR parsing.
+// Supplies domain hints to guide optical character recognition text extraction.
+// Enforces length constraints to prevent oversized hint values from being ingested.
 export const receiptParseBodySchema = z.object({
   lang: z.string().trim().min(1).max(20).optional(),
   currencyHint: z.string().trim().min(1).max(10).optional(),
 });
 
+// Validates confirmed receipt transaction metadata before writing to the ledger.
+// Enforces vendor name, YYYY-MM-DD date, positive totals, and assigned category.
+// Validates line items including descriptions, unit pricing, and quantity figures.
 export const receiptConfirmBodySchema = z.object({
   vendor: z.string().trim().min(1).max(250),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD date"),

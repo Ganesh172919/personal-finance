@@ -24,6 +24,9 @@ import type { IUserDocument } from "../../models/userModel";
 import { HttpError } from "../../middleware/httpError";
 import { createFinancialStoryShareLink, resolveShareLinkPayload } from "../../services/shares";
 
+// Validates that organization context is attached to the request session.
+// Throws a 401 unauthorized error if the organization context is omitted or invalid.
+// Returns the resolved organization ID parsed into a MongoDB ObjectId instance.
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -32,6 +35,9 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+// Creates a public or semi-private shareable token for a financial story report.
+// Applies customizable visibility settings for goals, deadlines, and milestone counts.
+// Persists the snapshot payload in the database and returns the access token.
 export const createFinancialStoryShare = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -60,6 +66,9 @@ export const createFinancialStoryShare = async (req: Request, res: Response) => 
   });
 };
 
+// Resolves a public financial story share link using its secure unique token string.
+// Verifies token expiration and loads the stored read-only financial summary payload.
+// Returns the snapshot story details without requiring active user authentication.
 export const getPublicFinancialStoryShare = async (req: Request, res: Response) => {
   const token = String((req as any).params?.token || "");
   const resolved = await resolveShareLinkPayload({ type: "financial_story", token });

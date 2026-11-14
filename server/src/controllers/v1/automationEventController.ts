@@ -87,6 +87,9 @@ const AUTOMATION_EVENT_CATALOG = [
   },
 ] as const;
 
+// Validates tenant organization presence on automation event requests.
+// Asserts that the organization identifier is a valid MongoDB ObjectId.
+// Aborts request execution with an unauthorized HTTP error when context is missing.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -94,6 +97,9 @@ const requireOrgContext = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Enforces administrative permissions for triggering automated domain events.
+// Checks the member role rank against required organizational administrative levels.
+// Throws a forbidden HTTP exception if the caller lacks administrative access.
 const requireOrgAdmin = (req: Request) => {
   const orgId = requireOrgContext(req);
   if (roleRank[req.org!.role] < roleRank.admin) {
@@ -102,6 +108,9 @@ const requireOrgAdmin = (req: Request) => {
   return orgId;
 };
 
+// Delivers the static catalog of supported automation domain event triggers.
+// Provides descriptors, source subsystems, and event names for workflow builders.
+// Returns the event catalog alongside tenant and request tracing identifiers.
 export const listAutomationEvents = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   return res.json({
@@ -111,6 +120,9 @@ export const listAutomationEvents = async (req: Request, res: Response) => {
   });
 };
 
+// Publishes a custom or test domain event directly onto the application event bus.
+// Verifies administrative authorization and constructs uniform event envelopes.
+// Dispatches the event payload to trigger responsive workflows and activity feeds.
 export const emitAutomationEvent = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;

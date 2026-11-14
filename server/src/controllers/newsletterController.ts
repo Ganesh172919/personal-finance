@@ -79,6 +79,9 @@ import { generateAndSendNewsletter, previewNewsletter } from "../services/newsle
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Validates tenant context and extracts the active organization identifier.
+// Converts the raw organization ID into a strongly-typed MongoDB ObjectId.
+// Throws an unauthorized exception if organization context was not provided.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -86,6 +89,9 @@ const requireOrgContext = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Enforces presence of authenticated user context on incoming requests.
+// Validates caller identity before processing personalized newsletter preferences.
+// Raises an unauthorized HTTP exception if user session data is absent.
 const requireUser = (req: Request): IUserDocument => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -94,6 +100,9 @@ const requireUser = (req: Request): IUserDocument => {
   return user;
 };
 
+// Serializes internal newsletter preference documents into sanitized API responses.
+// Maps schedule delivery times, timezone selections, and granular content toggles.
+// Formats timestamps and identifiers into standardized external representations.
 const mapPreference = (doc: any) => ({
   id: String(doc._id),
   user_id: String(doc.userId),
@@ -123,6 +132,9 @@ const mapPreference = (doc: any) => ({
  * GET /newsletter/preferences
  * Returns the user's newsletter preferences. Creates defaults if none exist.
  */
+// Fetches personalized newsletter settings and delivery options for the caller.
+// Automatically initializes default preference documents when none exist yet.
+// Returns mapped configuration parameters alongside tracking request identifiers.
 export const getPreferences = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const user = requireUser(req);
@@ -143,6 +155,9 @@ export const getPreferences = async (req: Request, res: Response) => {
  * PUT /newsletter/preferences
  * Updates the user's newsletter preferences.
  */
+// Mutates user newsletter delivery frequencies, timezone choices, and topic toggles.
+// Validates input fields and commits partial attribute updates to storage.
+// Returns the refreshed newsletter preference entity accompanied by request tracing.
 export const updatePreferences = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const user = requireUser(req);
@@ -196,6 +211,9 @@ export const updatePreferences = async (req: Request, res: Response) => {
  * POST /newsletter/preview
  * Generates a newsletter preview without sending it.
  */
+// Generates a live HTML preview of the personalized newsletter without sending emails.
+// Evaluates active user financial summaries and dynamic recommendation widgets.
+// Responds with formatted email markup and structured article section payloads.
 export const previewNewsletterHandler = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const user = requireUser(req);
@@ -213,6 +231,9 @@ export const previewNewsletterHandler = async (req: Request, res: Response) => {
  * POST /newsletter/send-now
  * Immediately generates and sends the newsletter to the current user.
  */
+// Triggers instantaneous compilation and email dispatch of the user newsletter.
+// Coordinates template rendering, financial metrics synthesis, and delivery hooks.
+// Dispatches the compiled digest immediately to the caller verified email address.
 export const sendNow = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const user = requireUser(req);
@@ -241,6 +262,9 @@ export const sendNow = async (req: Request, res: Response) => {
  * GET /newsletter/unsubscribe/:token
  * One-click unsubscribe using the unique token.
  */
+// Processes one-click unsubscribe links using unique public security tokens.
+// Deactivates active subscription flags without requiring user authentication.
+// Returns an opt-out confirmation message along with request audit identifiers.
 export const unsubscribe = async (req: Request, res: Response) => {
   const token = String((req.params as any)?.token || "");
 
@@ -265,6 +289,9 @@ export const unsubscribe = async (req: Request, res: Response) => {
  * GET /newsletter/history
  * Returns basic newsletter delivery history for the user.
  */
+// Retrieves delivery records and historical transmission metadata for newsletters.
+// Queries previous dispatch timestamps and user-specific recipient logs.
+// Responds with a paginated list of past delivery events for the current user.
 export const getHistory = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const user = requireUser(req);

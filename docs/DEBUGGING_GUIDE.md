@@ -485,3 +485,54 @@ If PDF downloads are blank or terminate unexpectedly:
      print('Expected chunks: ' + Math.ceil(file.length / file.chunkSize) + ' | Actual: ' + chunkCount);
    "
    ```
+
+---
+
+### 6.5 Debugging ML Merchant Vector Clustering
+
+If transactions fail to cluster or appear under incorrect canonical merchants:
+
+1. **Check Vector Norm**: Ensure embeddings are unit normalized ($\|\vec{v}\|_2 = 1.0 \pm 10^{-5}$):
+   ```bash
+   npm run test:unit src/test/merchantEmbeddingClustering.test.ts
+   ```
+2. **Inspect Cluster Centroid Distance**:
+   Evaluate cosine similarity in Node REPL:
+   ```typescript
+   import { cosineSimilarity, generateMerchantEmbedding } from './server/src/services/merchantEmbeddingClustering';
+   const sim = cosineSimilarity(generateMerchantEmbedding("BLUE BOTTLE"), generateMerchantEmbedding("SQ *BLUE BOTTLE SF"));
+   console.log("Cosine Similarity:", sim); // Must be >= 0.70
+   ```
+
+---
+
+### 6.6 Debugging AI Canary Invariant Violations
+
+If an LLM recommendation returns HTTP 422 or triggers an invariant rejection:
+
+1. **Verify Number Safety**: Check if the prompt output contains numbers missing from context:
+   ```bash
+   curl -X POST http://localhost:3000/api/v1/ai/canary/validate \
+     -H "Content-Type: application/json" \
+     -d '{"candidate": "Saved $999.00", "reference": "Context balance $500.00"}'
+   ```
+2. **Verify Budget Shifts**: Check that sum of allocation deltas strictly equals 0:
+   $$\sum \text{Proposed} - \sum \text{Initial} = 0$$
+
+---
+
+### 6.7 Debugging Visual Workflow Delayed Resumption Loops
+
+If delayed workflows remain in `status: "DELAYED"` past their `resumeAt` timestamp:
+
+1. **Inspect MongoDB WorkflowRuns**:
+   ```bash
+   mongosh personal-finance --eval "
+     db.workflowruns.find({ status: 'DELAYED', resumeAt: { \$lte: new Date() } }).pretty();
+   "
+   ```
+2. **Trigger Sweeper Manually**:
+   ```typescript
+   import { sweepDelayedWorkflowRuns } from './server/src/services/workflows';
+   await sweepDelayedWorkflowRuns();
+   ```

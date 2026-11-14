@@ -23,6 +23,9 @@
 
 import { create } from "zustand";
 
+// Defines lifecycle stages representing real-time AI request execution.
+// Tracks progression from routing across multi-agent analysis to completion or error.
+// Controls stage indicator badges and animation states in workflow visualizers.
 /**
  * AI processing phases — matches the SSE streaming phases.
  * "idle" = no active request, "synthesizing" = building final response.
@@ -35,6 +38,9 @@ export type AIPhase =
   | "complete"
   | "error";
 
+// Represents an execution trace record captured during agent workflow orchestration.
+// Captures agent identifiers, execution timestamps, processing statuses, and errors.
+// Feeds timeline visualizer components detailing autonomous agent collaboration.
 /**
  * A single workflow trace entry — records one agent's execution.
  * Used to build the workflow visualization timeline.
@@ -47,6 +53,9 @@ export type WorkflowTraceEntry = {
   error?: string;       // Error message if status is "failed"
 };
 
+// State interface contract defining state attributes and mutators for AI execution.
+// Tracks processing phases, current active agent, trace logs, and error messages.
+// Exposes state updater actions consumed by real-time Server-Sent Event stream hooks.
 /** AI store state and actions interface */
 interface AIStore {
   /** Current AI processing phase */
@@ -64,6 +73,9 @@ interface AIStore {
   reset: () => void;
 }
 
+// Global Zustand state store tracking real-time AI agent execution and workflow traces.
+// Supports direct access outside React render cycles for asynchronous stream handlers.
+// Powers live workflow visualizations, active agent banners, and execution resets.
 /**
  * Global AI state store.
  * Tracks the current processing phase and workflow trace entries

@@ -27,6 +27,9 @@
 
 import { useEffect, useState } from 'react';
 
+// Custom React hook delaying value updates until a specified inactivity delay elapses.
+// Clears and resets pending timeouts upon consecutive value updates or unmounts.
+// Prevents high-frequency API invocations on rapid user keyboard inputs and filters.
 /**
  * Returns a debounced version of `value` that only updates after `delay` ms
  * of inactivity (no new value changes).

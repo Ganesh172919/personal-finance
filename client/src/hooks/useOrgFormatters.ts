@@ -30,16 +30,31 @@ import { useMemo } from "react";
 
 import { useAppConfig } from "@/hooks/useAppConfig";
 
+// Standard fallback BCP-47 language tag applied when organization preferences are absent.
+// Defaults formatting conventions to American English typography and date order.
+// Prevents runtime localization exceptions when tenant configurations are pending.
 /** Fallback locale when org config doesn't specify one */
 const DEFAULT_LOCALE = "en-US";
+// Standard fallback ISO-4217 three-letter currency code for financial valuations.
+// Defaults denomination formatting to United States Dollars if not configured by tenant.
+// Guarantees consistent currency symbol resolution across monetary display widgets.
 /** Fallback currency when org config doesn't specify one */
 const DEFAULT_CURRENCY = "USD";
+// Standard fallback IANA timezone identifier applied to date and timestamp rendering.
+// Anchors temporal presentation to Coordinated Universal Time when unconfigured.
+// Prevents client browser timezone drift during date string normalization.
 /** Fallback timezone when org config doesn't specify one */
 const DEFAULT_TIMEZONE = "UTC";
 
+// Normalizes unknown input types into clean and trimmed string representations.
+// Discards non-string inputs and strips leading or trailing whitespace.
+// Sanitizes raw configuration values prior to locale formatter instantiation.
 /** Safely extracts a trimmed string from an unknown value */
 const coerceString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
+// Custom React hook providing tenant-aware currency, number, and datetime formatters.
+// Integrates memoized Intl.NumberFormat and Intl.DateTimeFormat instances for performance.
+// Exposes standardized formatting helpers reflecting organization regional settings.
 /**
  * Provides locale-aware formatting functions based on the user's org settings.
  *

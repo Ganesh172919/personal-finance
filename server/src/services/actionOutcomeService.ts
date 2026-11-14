@@ -14,11 +14,17 @@ import {
   setProfileMutationSource,
 } from "./profileService";
 
+// Normalizes financial transaction amounts into signed values based on transaction category.
+// Returns a positive absolute amount for income entries and negative for expense items.
+// Guarantees consistent sign representation for accounting mutations across the app.
 const normalizeTransactionAmount = (amount: number, type: TransactionType) => {
   const absoluteAmount = Math.abs(Number(amount));
   return type === "income" ? absoluteAmount : -absoluteAmount;
 };
 
+// Custom error type representing failures encountered while applying task outcome effects.
+// Encapsulates numeric HTTP status codes, machine-readable error codes, and descriptive messages.
+// Distinguishes domain execution failures from general unexpected system exceptions.
 export class ActionOutcomeError extends Error {
   status: number;
   code: string;
@@ -30,6 +36,9 @@ export class ActionOutcomeError extends Error {
   }
 }
 
+// Parameter payload required to apply task effects to a user's financial profile.
+// Specifies organization and user identifiers, task effect definitions, and idempotency keys.
+// Provides contextual audit attributes including notes, request IDs, and action links.
 export type ApplyTaskEffectsParams = {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -42,6 +51,9 @@ export type ApplyTaskEffectsParams = {
   actionLinkId?: string;
 };
 
+// Structure of the execution result returned after applying task effects to state.
+// Outlines modified transaction identifiers, impacted goals, updated debts, and task status.
+// Includes provenance tracking metadata and idempotency replay detection flags.
 export type ApplyTaskEffectsResult = {
   task: Record<string, unknown>;
   applied_effects: {
@@ -61,6 +73,9 @@ export type ApplyTaskEffectsResult = {
   idempotent_replay: boolean;
 };
 
+// Identifies whether a MongoDB database error stems from unsupported replica set transactions.
+// Checks error codes, illegal operation markers, and transaction error messages.
+// Allows the service to fall back gracefully to standalone non-transactional execution.
 const isTransactionUnsupportedError = (error: unknown) => {
   const maybeError = error as { message?: string; code?: number; codeName?: string } | undefined;
   const message = String(maybeError?.message || "");
@@ -76,6 +91,9 @@ const isTransactionUnsupportedError = (error: unknown) => {
   );
 };
 
+// Applies goal progress updates to a financial profile by setting or incrementing target savings.
+// Searches the user profile for the target goal identifier and adjusts current savings.
+// Throws an ActionOutcomeError with HTTP 404 if the specified goal does not exist.
 const applyGoalProgress = (params: {
   profile: any;
   goalId: string;
@@ -95,6 +113,9 @@ const applyGoalProgress = (params: {
   }
 };
 
+// Records a debt reduction payment on a designated liability within the user profile.
+// Locates the debt entry by unique identifier and subtracts the paid amount from balance.
+// Clamps remaining liability balances to a non-negative floor of zero.
 const applyDebtPayment = (params: {
   profile: any;
   debtId: string;
@@ -110,6 +131,9 @@ const applyDebtPayment = (params: {
   debt.balance = nextBalance > 0 ? nextBalance : 0;
 };
 
+// Updates core high-level financial parameters on a user's profile document.
+// Mutates annual income, monthly expenses, or liquid savings fields if provided.
+// Leaves unmentioned profile metrics untouched to preserve current user data.
 const applyProfileUpdate = (params: {
   profile: any;
   updates: {
@@ -129,6 +153,9 @@ const applyProfileUpdate = (params: {
   }
 };
 
+// Applies side-effect mutations arising from task completion onto user financial records.
+// Mutates transactions, goals, debts, and profile metrics inside an atomic database session.
+// Emits domain events, logs provenance attributes, and supports idempotent replay.
 export const applyTaskEffects = async (params: ApplyTaskEffectsParams): Promise<ApplyTaskEffectsResult> => {
   await ensureProfileWithMigration({ orgId: params.orgId, userId: params.userId });
 

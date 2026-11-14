@@ -238,3 +238,20 @@ Verify the newly added 2026 enterprise capabilities:
      -H "Content-Type: application/json" \
      -d '{"title":"Test Report","content":"Executive Summary text"}'
    ```
+
+5. **Machine Learning Merchant Clustering**:
+   ```bash
+   curl -X GET http://localhost:3000/api/financial-data/merchant-clusters \
+     -H "Authorization: Bearer <USER_TOKEN>"
+   ```
+6. **AI System Status & Canary Diagnostics**:
+   Click the **AI Status Chip** in the navigation header to open [`AiStatusDialog.tsx`](file:///c:/Users/RAVIPRAKASH/personal-finance/client/src/components/AiStatusDialog.tsx) and view live invariant checks:
+   ```bash
+   curl -X GET http://localhost:3000/api/v1/ai/canary/status \
+     -H "Authorization: Bearer <USER_TOKEN>"
+   ```
+7. **Calendar RFC 5545 Live Stream**:
+   ```bash
+   curl -X GET http://localhost:3000/api/v1/calendar-reminders/export.ics \
+     -H "Authorization: Bearer <USER_TOKEN>"
+   ```

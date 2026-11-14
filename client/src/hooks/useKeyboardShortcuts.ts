@@ -21,6 +21,9 @@ import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { useCommandBarStore } from "@/stores/commandBarStore";
 
+// Custom React hook registering global hotkeys and keyboard navigation listeners.
+// Binds modifier combinations for the AI command bar and rapid dashboard view switching.
+// Ignores non-global hotkeys when focus resides in editable form text controls.
 /**
  * Global keyboard shortcuts for FinWise.
  *
@@ -52,7 +55,7 @@ export function useKeyboardShortcuts() {
         target.isContentEditable;
 
       // Ctrl/Cmd + K → Toggle command bar (works even in inputs — industry standard)
-      if (isCmd && e.key === "k") {
+      if (isCmd && !e.shiftKey && e.key.toLowerCase() === "k") {
         e.preventDefault(); // Prevent browser's default "search bar" behavior
         toggleCommandBar();
         return;

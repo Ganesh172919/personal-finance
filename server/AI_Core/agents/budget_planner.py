@@ -118,6 +118,9 @@ from utils.response_cache import agent_cache
 logger = logging.getLogger(__name__)
 
 
+# Specialized agent for personal financial budgeting and cashflow allocation.
+# Computes recommended spending envelopes based on debt burdens and savings targets.
+# Produces detailed deterministic budget allocations and emergency fund roadmaps.
 class BudgetPlannerAgent:
     """Creates and optimizes personalized budget plans.
 
@@ -126,6 +129,9 @@ class BudgetPlannerAgent:
     plan with allocations, savings targets, and debt repayment guidance.
     """
 
+    # Creates a comprehensive monthly budget plan from user income, debts, and goals.
+    # Implements intelligent profile caching to skip redundant computation cycles.
+    # Computes emergency fund targets, debt repayment envelopes, and key financial ratios.
     def create_budget_plan(self, user_profile: Dict[str, Any]) -> Dict[str, Any]:
         """Create a comprehensive budget plan.
 
@@ -181,6 +187,9 @@ class BudgetPlannerAgent:
             logger.error("Error creating budget plan: %s", exc)
             return {"error": str(exc), "detailed_recommendations": "Unable to create budget plan."}
 
+    # Calculates proportional spending category allocations across needs and wants.
+    # Adjusts discretionary allocations dynamically based on debt payment burdens.
+    # Returns monetary distribution envelopes across housing, groceries, and savings.
     def _calculate_budget_allocation(
         self,
         income: float,
@@ -212,6 +221,9 @@ class BudgetPlannerAgent:
             "utilities": income * 0.05,
         }
 
+    # Calculates monthly capital needed to reach active user financial goals.
+    # Divides goal target amounts by their respective timelines in months.
+    # Caps goal savings ceiling to 30 percent of total monthly income.
     def _calculate_goal_savings(self, goals: List[Dict[str, Any]], income: float) -> float:
         if not goals:
             return income * settings.DEFAULT_SAVINGS_RATE
@@ -224,6 +236,9 @@ class BudgetPlannerAgent:
 
         return min(total_monthly_savings, income * 0.30)
 
+    # Generates a structured savings and emergency fund buildout schedule.
+    # Evaluates reserve deficit against the recommended emergency fund horizon.
+    # Outlines monthly contributions required across individual goals and reserves.
     def _create_savings_plan(
         self,
         income: float,
@@ -259,6 +274,9 @@ class BudgetPlannerAgent:
             "baseline_savings_target": income * settings.DEFAULT_SAVINGS_RATE,
         }
 
+    # Allocates monthly cashflow toward liability amortizations and debt paydown.
+    # Sums minimum monthly contractual obligations across all active debt accounts.
+    # Suggests extra monthly principal acceleration up to 10 percent of income.
     def _calculate_debt_repayment_budget(self, debts: List[Dict[str, Any]], income: float) -> Dict[str, Any]:
         if not debts:
             return {"total_monthly_payment": 0, "debts": []}
@@ -284,6 +302,9 @@ class BudgetPlannerAgent:
             "debts": debt_details,
         }
 
+    # Assembles markdown-formatted budget guidance without relying on LLM generation.
+    # Formats currency allocations, savings breakdowns, and debt repayment goals.
+    # Yields predictable, deterministic recommendation reports for front-end display.
     def _generate_detailed_budget(
         self,
         income: float,

@@ -60,6 +60,9 @@ const isDev = import.meta.env.DEV;
 
 // ─── Network Request Logger ─────────────────────────────
 
+// Models recorded HTTP request telemetry metadata captured during development.
+// Captures HTTP methods, endpoint URLs, status codes, latency, and response sizes.
+// Feeds the in-memory circular network logging ring buffer for inspection.
 interface RequestLog {
   method: string;
   url: string;
@@ -71,6 +74,9 @@ interface RequestLog {
 const requestBuffer: RequestLog[] = [];
 const MAX_REQUEST_LOGS = 100;
 
+// Records and color-codes outgoing network request results within browser consoles.
+// Appends telemetry entries to an in-memory buffer while evicting oldest records.
+// Formats status codes with intuitive alert styling to ease runtime troubleshooting.
 function logRequest(entry: RequestLog) {
   if (!isDev) return;
 
@@ -94,6 +100,9 @@ function logRequest(entry: RequestLog) {
   );
 }
 
+// Patches the global window.fetch function to record network timings and statuses.
+// Intercepts outgoing requests, measures latency, and records audit breadcrumbs.
+// Automatically operates as a no-op when running inside production build environments.
 /**
  * Install fetch interceptor for automatic request logging.
  * Call once at app startup.
@@ -132,6 +141,9 @@ export function installNetworkLogger() {
 
 // ─── Performance Helpers ─────────────────────────────────
 
+// Creates an initial high-resolution performance timestamp mark for profiling.
+// Uses the browser Performance API to tag the start of a named operation.
+// Skips execution cleanly in production environments to minimize runtime overhead.
 /**
  * Start a named performance measurement.
  * Call `endPerfMark(name)` to log the duration.
@@ -141,6 +153,9 @@ export function startPerfMark(name: string) {
   performance.mark(`${name}:start`);
 }
 
+// Measures the elapsed time between start and end performance marks and outputs logs.
+// Evaluates operation duration against color-coded performance threshold limits.
+// Automatically cleans up registered performance marks and measures after reporting.
 /**
  * End a named performance measurement and log the duration.
  */
@@ -171,6 +186,9 @@ export function endPerfMark(name: string) {
 
 // ─── Utility ─────────────────────────────────────────────
 
+// Converts raw integer byte counts into formatted human-readable file size strings.
+// Calculates logarithmically scaled units ranging across bytes, kilobytes, and megabytes.
+// Provides standardized size representations for network and document logging.
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const k = 1024;
@@ -179,6 +197,9 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
+// Retrieves an immutable snapshot copy of all buffered network request log entries.
+// Provides developer tools and test assertions access to recent HTTP interactions.
+// Shields the internal circular buffer array from external mutating modifications.
 /**
  * Get the request log buffer (useful for debugging).
  */
@@ -186,6 +207,9 @@ export function getRequestLogs(): ReadonlyArray<RequestLog> {
   return [...requestBuffer];
 }
 
+// Resets the circular network request log buffer by truncating stored entries.
+// Clears historical request records to isolate subsequent diagnostic test runs.
+// Prevents memory accumulation during extended local development testing sessions.
 /**
  * Clear the request log buffer.
  */

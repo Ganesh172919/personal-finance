@@ -31,6 +31,27 @@ Without a flag matrix, it is easy to misread a disabled feature as a bug.
 | `RECEIPTS_OCR_ENABLED` | `true` | Controls receipt OCR feature availability | `server/src/config/env.ts`, receipt flows |
 | `JOURNAL_ENABLED` | `true` | Controls journal-related feature availability | `server/src/config/env.ts`, journal flows |
 | `ORG_LEGACY_BACKFILL_ENABLED` | Computed: enabled outside production unless explicitly set | Controls legacy org data backfill behavior | `server/src/config/env.ts`, org migration/backfill services |
+| `CANARY_STRICT_MODE` | `false` | When true, rejects any candidate AI synthesis violating mathematical invariants with HTTP 422 | `server/src/services/aiCanaryService.ts` |
+| `MERCHANT_EMBEDDING_DIM` | `64` | Dimensionality for merchant FastText/brand/taxonomy vector embeddings | `server/src/services/merchantEmbeddingClustering.ts` |
+| `RAG_GROUNDING_THRESHOLD` | `0.70` | Confidence gate threshold $G$ for verified citation generation | `server/src/services/retrievalService.ts` |
+| `WORKFLOW_DELAY_SWEEP_MS` | `60000` | Cron sweeper frequency for resuming delayed visual workflows | `server/src/services/workflows.ts` |
+
+### Scaling and self-improvement flags
+
+| Flag | Default behavior | Main effect | Key code areas |
+| -- | -- | -- | -- |
+| `EVENT_BUS` | `memory` | Set `redis` for cross-replica SSE fanout (requires `REDIS_URL`) | `server/src/modules/realtime/eventBus.ts` |
+| `AI_MAX_CONCURRENCY` / `AI_QUEUE_MAX` | `8` / see env reference | Gateway in-flight work limit and bounded waiting queue | `server/src/services/aiConcurrency.ts` |
+| `AI_CORE_STATE_BACKEND` | `mongo` when a Mongo URI exists, otherwise `sqlite` | Shared AI sessions, checkpoints and memory; ECS explicitly selects `mongo` | `server/AI_Core/memory/state_store.py` |
+| `AI_CORE_REQUIRE_ACTOR_HEADERS` | `false` | Enforce actor headers for AI process requests when all callers support them | `server/AI_Core/api_service.py` |
+| `ORG_SCOPE_ENFORCE` | enabled in production | Reject unscoped reads/writes on guarded collections | `server/src/utils/orgScopePlugin.ts` |
+| `AI_OPTIMIZE_ENABLED` | `true` | Schedule nightly optimizer from the worker; opt-out orgs are skipped | `server/src/services/aiOptimizeScheduler.ts` |
+| `AI_PROMOTION_MODE` | `human` | `suggest` only reports; `human` requires admin approval; `auto_prompts` can promote gated prompt/exemplar candidates only | `server/AI_Core/learning/config.py`, `learning/rollout.py` |
+| `AI_SHADOW_ENABLED` / `LLM_BANDIT_ENABLED` | both `false` | Shadow evaluation and adaptive provider/model ordering are opt-in on the free tier | `server/AI_Core/learning/` |
+| `AI_OPTIMIZER_LLM_BUDGET` | `0` | Zero means offline optimizer uses heuristics, not LLM calls | `server/AI_Core/learning/config.py` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | unset | Enables Google sign-in only when both OAuth client credentials are configured | `server/src/services/googleOAuth.ts`, `server/src/config/env.ts` |
+
+The per-organization `aiLearningOptOut` setting is stored on the Organization and is not a process environment flag. The gateway stops forwarding feedback and the AI Core refuses learning traces for opted-out requests. For complete defaults and deployment guidance, see [ENV_VARIABLES.md](./ENV_VARIABLES.md).
 
 ## 3. Computed-default flags
 
@@ -182,7 +203,7 @@ mindmap
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │ 🟣 STAGE 3: EXECUTE FEATURE & RETURN ARTIFACT                          │
-│    ├─► BullMQ background worker compiles financial report              │
+│    ├─► Mongo-polling background worker compiles financial report       │
 │    └─► Client downloads generated PDF with updated usage balance 🟢    │
 └────────────────────────────────────────────────────────────────────────┘
 ```

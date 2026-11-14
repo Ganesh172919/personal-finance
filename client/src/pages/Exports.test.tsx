@@ -241,6 +241,33 @@ describe("Exports page", () => {
     });
   });
 
+  it("sends an inclusive 'Date to' as the exclusive next-day bound the API expects", async () => {
+    apiExports.createExport.mockResolvedValueOnce({ id: "job-range", queued: false, status: "succeeded" });
+    renderWithClient(<Exports />);
+
+    fireEvent.change(screen.getByTestId("input-csv-from"), { target: { value: "2026-11-05" } });
+    fireEvent.change(screen.getByTestId("input-csv-to"), { target: { value: "2026-11-05" } });
+    fireEvent.click(screen.getByTestId("button-create-csv"));
+
+    await waitFor(() => {
+      expect(apiExports.createExport.mock.calls[0][0]).toMatchObject({
+        type: "transactions_csv",
+        params: { date_from: "2026-11-05T00:00:00.000Z", date_to: "2026-11-06T00:00:00.000Z" },
+      });
+    });
+  });
+
+  it("rejects an inverted CSV date range without creating an export", () => {
+    renderWithClient(<Exports />);
+
+    fireEvent.change(screen.getByTestId("input-csv-from"), { target: { value: "2026-12-01" } });
+    fireEvent.change(screen.getByTestId("input-csv-to"), { target: { value: "2026-01-01" } });
+    fireEvent.click(screen.getByTestId("button-create-csv"));
+
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Invalid date range", variant: "destructive" }));
+    expect(apiExports.createExport).not.toHaveBeenCalled();
+  });
+
   it("validates and submits monthly summary PDF export", async () => {
     apiExports.createExport.mockResolvedValueOnce({
       id: "job-new-pdf",

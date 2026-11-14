@@ -108,6 +108,11 @@ import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+try:  # Prometheus is optional for unit tests / minimal installs.
+    from utils.prometheus_metrics import LLM_COST_USD_TOTAL, LLM_TOKENS_TOTAL, NODE_DURATION_MS
+except Exception:  # pragma: no cover - defensive
+    NODE_DURATION_MS = LLM_TOKENS_TOTAL = LLM_COST_USD_TOTAL = None
+
 # ---------------------------------------------------------------------------
 # Thread-safe lock for all telemetry state
 # ---------------------------------------------------------------------------
@@ -121,6 +126,9 @@ _lock = threading.Lock()
 _agent_metrics: Dict[str, Dict[str, Any]] = {}
 
 
+# Returns or lazily initializes metrics dictionary for named agent.
+# Sets initial counters for invocations, latency, tokens, and cache hits.
+# Returns mutable dictionary tracking metrics for specified agent name.
 def _ensure_agent(name: str) -> Dict[str, Any]:
     """Return (or lazily initialise) the metrics dict for *name*."""
     if name not in _agent_metrics:
@@ -138,6 +146,9 @@ def _ensure_agent(name: str) -> Dict[str, Any]:
     return _agent_metrics[name]
 
 
+# Records telemetry data for individual agent execution instance.
+# Updates invocation counts, latency totals, token metrics, and fallbacks.
+# Thread-safely computes running average latency and observes histograms.
 def record_agent_invocation(
     agent_name: str,
     *,
@@ -161,6 +172,8 @@ def record_agent_invocation(
     fallback_used : bool
         ``True`` if the agent fell back to a deterministic response.
     """
+    if NODE_DURATION_MS is not None and latency_ms > 0:
+        NODE_DURATION_MS.labels(str(agent_name)[:64]).observe(latency_ms)
     with _lock:
         entry = _ensure_agent(agent_name)
         entry["invocation_count"] += 1
@@ -179,6 +192,9 @@ def record_agent_invocation(
         entry["avg_latency_ms"] = round(entry["total_latency_ms"] / count, 2) if count else 0.0
 
 
+# Generates snapshot dictionary of performance metrics across all agents.
+# Computes percentage success rates and fallback rates for each agent.
+# Returns thread-safe snapshot dictionary keyed by canonical agent names.
 def get_agent_metrics() -> Dict[str, Dict[str, Any]]:
     """Return a snapshot of per-agent metrics."""
     with _lock:
@@ -200,6 +216,9 @@ def get_agent_metrics() -> Dict[str, Dict[str, Any]]:
 _model_metrics: Dict[str, Dict[str, Any]] = {}
 
 
+# Returns or initializes usage tracking dictionary for specific model ID.
+# Tracks call counts, errors, token usage, and dollar cost totals.
+# Returns mutable dictionary container tracking metrics for model ID.
 def _ensure_model(model_id: str) -> Dict[str, Any]:
     if model_id not in _model_metrics:
         _model_metrics[model_id] = {
@@ -212,6 +231,9 @@ def _ensure_model(model_id: str) -> Dict[str, Any]:
     return _model_metrics[model_id]
 
 
+# Logs model invocation metrics including tokens and estimated dollar cost.
+# Increments Prometheus counters and updates thread-safe model aggregates.
+# Tracks input tokens, output tokens, total cost, and error occurrences.
 def record_model_usage(
     model_id: str,
     *,
@@ -235,6 +257,14 @@ def record_model_usage(
     error : bool
         ``True`` if the call resulted in an error.
     """
+    if LLM_TOKENS_TOTAL is not None:
+        label = str(model_id)[:96]
+        if input_tokens > 0:
+            LLM_TOKENS_TOTAL.labels(label, "in").inc(input_tokens)
+        if output_tokens > 0:
+            LLM_TOKENS_TOTAL.labels(label, "out").inc(output_tokens)
+        if cost_usd > 0:
+            LLM_COST_USD_TOTAL.labels(label).inc(cost_usd)
     with _lock:
         entry = _ensure_model(model_id)
         entry["call_count"] += 1
@@ -245,6 +275,9 @@ def record_model_usage(
             entry["error_count"] += 1
 
 
+# Generates snapshot dictionary of usage metrics across all models.
+# Calculates total tokens and percentage error rates for each model ID.
+# Returns thread-safe dictionary mapping model names to usage metrics.
 def get_model_metrics() -> Dict[str, Dict[str, Any]]:
     """Return a snapshot of per-model metrics."""
     with _lock:
@@ -273,6 +306,9 @@ _workflow_metrics: Dict[str, Dict[str, Any]] = {
 }
 
 
+# Records execution summary for complete multi-agent workflow invocation.
+# Computes cumulative and average workflow duration and agent counts.
+# Tracks parallel execution groups and saves timestamped last execution.
 def record_workflow_execution(
     *,
     duration_ms: float,
@@ -309,6 +345,9 @@ def record_workflow_execution(
         }
 
 
+# Returns snapshot copy of global workflow execution metrics dictionary.
+# Acquires lock to safely clone overall workflow duration and execution counts.
+# Returns dictionary containing workflow execution telemetry statistics.
 def get_workflow_metrics() -> Dict[str, Any]:
     """Return a snapshot of per-workflow metrics."""
     with _lock:
@@ -319,6 +358,9 @@ def get_workflow_metrics() -> Dict[str, Any]:
 # Telemetry summary (exposed to /api/ai/status)
 # ---------------------------------------------------------------------------
 
+# Assembles comprehensive telemetry summary report for status endpoint.
+# Aggregates snapshots across agents, underlying models, and workflows.
+# Returns dictionary payload formatted for administrative status API.
 def get_telemetry_summary() -> Dict[str, Any]:
     """Return the full telemetry summary for the status endpoint.
 

@@ -56,6 +56,14 @@
 
 import { Document, Schema, Types, model } from "mongoose";
 
+// Defines content modality classifications for RAG document knowledge chunks.
+// Distinguishes prose text, tabular datasets, OCR image transcripts, and structured data.
+// Enables modality-aware retrieval filtering and specialized embedding generation.
+export type ChunkModality = "text" | "table" | "image_ocr" | "structured_data";
+
+// Defines the domain attributes for partitioned document chunks used in RAG semantic search.
+// Captures chunk text windows, token counts, section headers, page numbers, and embeddings.
+// Represents the fundamental atomic unit of knowledge retrieved during context augmentation.
 export interface IWorkspaceKnowledgeChunk {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;
@@ -67,15 +75,29 @@ export interface IWorkspaceKnowledgeChunk {
   sectionTitle?: string;
   pageNumber?: number;
   sourceKind: string;
+  modality?: ChunkModality;
+  embedding?: number[];
+  entities?: {
+    merchants?: string[];
+    amounts?: number[];
+    dates?: string[];
+    currencies?: string[];
+  };
   metadata?: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
 }
 
+// Merges knowledge chunk domain attributes with standard Mongoose Document methods.
+// Exposes database primary keys, lifecycle management methods, and timestamp fields.
+// Represents a persistent knowledge chunk document returned by vector and lexical searches.
 export interface IWorkspaceKnowledgeChunkDocument extends IWorkspaceKnowledgeChunk, Document {
   _id: Types.ObjectId;
 }
 
+// Configures the Mongoose schema mapping for the RAG knowledge chunk collection.
+// Enforces length constraints on text snippets, valid modalities, and embedding vectors.
+// Automatically manages creation and modification timestamps on all write operations.
 const workspaceKnowledgeChunkSchema = new Schema<IWorkspaceKnowledgeChunkDocument>(
   {
     orgId: {
@@ -130,6 +152,20 @@ const workspaceKnowledgeChunkSchema = new Schema<IWorkspaceKnowledgeChunkDocumen
       maxlength: 40,
       default: "document",
     },
+    modality: {
+      type: String,
+      enum: ["text", "table", "image_ocr", "structured_data"],
+      default: "text",
+      index: true,
+    },
+    embedding: {
+      type: [Number],
+      default: undefined,
+    },
+    entities: {
+      type: Schema.Types.Mixed,
+      default: undefined,
+    },
     metadata: {
       type: Schema.Types.Mixed,
       default: undefined,
@@ -140,10 +176,17 @@ const workspaceKnowledgeChunkSchema = new Schema<IWorkspaceKnowledgeChunkDocumen
   }
 );
 
+// Configures compound database indexes for multi-tenant lexical search and RAG retrieval.
+// Enforces uniqueness across file IDs and chunk indices to prevent duplicate partitions.
+// Optimizes retrieval queries filtered by tenant ownership, modality, and update recency.
 workspaceKnowledgeChunkSchema.index({ orgId: 1, userId: 1, workspaceFileId: 1, chunkIndex: 1 }, { unique: true });
 workspaceKnowledgeChunkSchema.index({ orgId: 1, userId: 1, updatedAt: -1 });
 workspaceKnowledgeChunkSchema.index({ orgId: 1, userId: 1, sourceKind: 1, updatedAt: -1 });
+workspaceKnowledgeChunkSchema.index({ orgId: 1, userId: 1, modality: 1, updatedAt: -1 });
 
+// Compiles and exports the Mongoose model for RAG document knowledge chunks.
+// Exposes data access methods to insert, query, update, or purge chunked file knowledge.
+// Serves as the high-throughput persistence store for context retrieval pipelines.
 const WorkspaceKnowledgeChunkModel = model<IWorkspaceKnowledgeChunkDocument>(
   "WorkspaceKnowledgeChunk",
   workspaceKnowledgeChunkSchema

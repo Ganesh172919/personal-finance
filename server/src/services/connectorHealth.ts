@@ -14,6 +14,9 @@ import IntegrationConnectionModel, {
 import IntegrationSyncRunModel from "../models/integrationSyncRunModel";
 import { logger } from "../config/logger";
 
+// Represents health diagnostics and historical synchronization metrics for an integration.
+// Tracks synchronization success rates, execution latencies, and staleness intervals.
+// Supplies comprehensive operational status telemetry for administrative dashboards.
 export interface ConnectorHealthSummary {
   connectorKey: string;
   status: IntegrationConnectionStatus;
@@ -29,6 +32,9 @@ export interface ConnectorHealthSummary {
 /**
  * Get health summary for all integration connections in an org.
  */
+// Compiles synchronization health metrics across all integrations in an organization.
+// Evaluates recent sync run logs to derive success percentages and average run durations.
+// Returns an array of connection health summaries with staleness indicators.
 export async function getConnectorHealthSummary(
   orgId: mongoose.Types.ObjectId,
 ): Promise<ConnectorHealthSummary[]> {
@@ -83,6 +89,9 @@ export async function getConnectorHealthSummary(
  * Mark connections as "error" if they haven't synced in over 48 hours.
  * Called periodically or via a health-check cron.
  */
+// Scans active integration connections and marks unresponsive instances as errored.
+// Evaluates connection timestamps against a configurable elapsed hour cutoff limit.
+// Logs diagnostic warnings and returns the total number of connections flagged as stale.
 export async function markStaleConnections(
   maxStaleHours: number = 48,
 ): Promise<number> {
@@ -116,6 +125,9 @@ export async function markStaleConnections(
  * Webhook signature verification for incoming integration webhooks.
  * Supports HMAC-SHA256 signatures.
  */
+// Authenticates incoming webhook HTTP request payloads using HMAC-SHA256 signatures.
+// Computes cryptographic hash with the shared secret and executes constant-time comparison.
+// Protects the server against webhook forgery and timing discrepancy attacks.
 export function verifyWebhookSignature(
   payload: Buffer | string,
   signature: string,

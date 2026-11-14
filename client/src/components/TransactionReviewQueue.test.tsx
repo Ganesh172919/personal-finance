@@ -30,6 +30,8 @@ const apiTransactions = vi.hoisted(() => ({
   approveTransaction: vi.fn(),
   bulkApproveTransactions: vi.fn(),
   alwaysCategorize: vi.fn(),
+  getMerchantClusters: vi.fn(),
+  applyMerchantCluster: vi.fn(),
 }));
 
 vi.mock("@/lib/api/transactions", () => ({
@@ -80,6 +82,31 @@ const mockReviewTransactions = [
   },
 ];
 
+const mockClusters = [
+  {
+    cluster_key: "amazon",
+    normalized_name: "Amazon",
+    suggested_category: "Shopping",
+    confidence: 0.95,
+    semantic_similarity: 0.98,
+    raw_descriptions: ["AMZN MKTP US*2A41B", "Amazon.com*MB92 Retail"],
+    transaction_ids: ["tx-amzn-1", "tx-amzn-2"],
+    count: 2,
+    total_spend: 75.49,
+  },
+  {
+    cluster_key: "starbucks",
+    normalized_name: "Starbucks",
+    suggested_category: "Food & Dining",
+    confidence: 0.92,
+    semantic_similarity: 0.94,
+    raw_descriptions: ["STARBUCKS #1042 SEATTLE WA", "SBUX COFFEE DOWNTOWN"],
+    transaction_ids: ["tx-sbux-1", "tx-sbux-2"],
+    count: 2,
+    total_spend: 12.25,
+  },
+];
+
 describe("TransactionReviewQueue Component", () => {
   let queryClient: QueryClient;
 
@@ -102,6 +129,16 @@ describe("TransactionReviewQueue Component", () => {
     apiTransactions.approveTransaction.mockResolvedValue({ success: true });
     apiTransactions.bulkApproveTransactions.mockResolvedValue({ modified: 3 });
     apiTransactions.alwaysCategorize.mockResolvedValue({ success: true });
+    apiTransactions.getMerchantClusters.mockResolvedValue({
+      clusters: mockClusters,
+      total_clusters: mockClusters.length,
+    });
+    apiTransactions.applyMerchantCluster.mockResolvedValue({
+      success: true,
+      updated_count: 2,
+      normalized_name: "Amazon",
+      category: "Shopping",
+    });
   });
 
   afterEach(() => {
@@ -182,6 +219,7 @@ describe("TransactionReviewQueue Component", () => {
   });
 
   it("approves single transaction and slides it out of the queue", async () => {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     renderReviewQueue();
 
     await waitFor(() => {
@@ -195,6 +233,9 @@ describe("TransactionReviewQueue Component", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({ title: "Approved" }),
       );
+      for (const key of ["/api/transactions", "/api/financial-data/transactions", "/api/command-center", "/api/budget-health"]) {
+        expect(invalidate).toHaveBeenCalledWith({ queryKey: [key] });
+      }
     });
 
     // Item should now be filtered out by approvedIds
@@ -278,6 +319,93 @@ describe("TransactionReviewQueue Component", () => {
     expect(screen.getByText("All clear!")).toBeInTheDocument();
     expect(
       screen.getByText("No transactions need review right now. Great work keeping your finances tidy."),
+    ).toBeInTheDocument();
+  });
+
+  it("renders ML cluster suggestion banner and switches to Smart Merchant Clusters view", async () => {
+    renderReviewQueue();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-ml-cluster-suggestion")).toBeInTheDocument();
+      expect(screen.getByTestId("badge-tab-cluster-count")).toHaveTextContent("2");
+    });
+
+    // Click to open ML clusters
+    fireEvent.click(screen.getByTestId("btn-open-ml-clusters"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-ml-merchant-clusters")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("badge-ml-cluster-count")).toHaveTextContent("2 Clusters");
+    expect(screen.getByTestId("card-merchant-cluster-amazon")).toBeInTheDocument();
+    expect(screen.getByTestId("card-merchant-cluster-starbucks")).toBeInTheDocument();
+
+    // Check ML Match and Semantic Similarity badges
+    expect(screen.getByTestId("badge-cluster-confidence-amazon")).toHaveTextContent("95% ML Match");
+    expect(screen.getByTestId("badge-cluster-similarity-amazon")).toHaveTextContent("98% Similarity");
+
+    // Variants rendered
+    expect(screen.getByText("AMZN MKTP US*2A41B")).toBeInTheDocument();
+    expect(screen.getByText("Amazon.com*MB92 Retail")).toBeInTheDocument();
+
+    // Counts & spend
+    expect(screen.getByTestId("badge-cluster-tx-count-amazon")).toHaveTextContent("2 transactions");
+    expect(screen.getByTestId("badge-cluster-spend-amazon")).toHaveTextContent("$75.49");
+  });
+
+  it("applies merchant cluster normalization and invalidates queries", async () => {
+    renderReviewQueue();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("btn-tab-merchant-clusters")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("btn-tab-merchant-clusters"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("btn-cluster-apply-amazon")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("btn-cluster-apply-amazon"));
+
+    await waitFor(() => {
+      expect(apiTransactions.applyMerchantCluster).toHaveBeenCalledWith(
+        {
+          cluster_key: "amazon",
+          normalized_name: "Amazon",
+          category: "Shopping",
+          transaction_ids: ["tx-amzn-1", "tx-amzn-2"],
+        },
+        expect.anything(),
+      );
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Merchant Cluster Normalized" }),
+      );
+    });
+  });
+
+  it("displays empty state when all merchant clusters are normalized", async () => {
+    apiTransactions.getMerchantClusters.mockResolvedValue({
+      clusters: [],
+      total_clusters: 0,
+    });
+
+    renderReviewQueue();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("btn-tab-merchant-clusters")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("btn-tab-merchant-clusters"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("empty-merchant-clusters")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("All Merchants Normalized")).toBeInTheDocument();
+    expect(
+      screen.getByText("No unclustered merchant variations detected in your transactions."),
     ).toBeInTheDocument();
   });
 });

@@ -32,6 +32,9 @@ import { Progress } from "@/components/ui/Progress";
 import { getPublicFinancialStoryShare } from "@/lib/apiClient";
 import type { PublicSharePayloadFinancialStory } from "@/lib/api/v1/shares";
 
+// Icon lookup map for public financial story milestones by agent category.
+// Associates specialized Lucide icons with budgeting, debt, and investing milestones.
+// Renders star icon fallback when an unmapped milestone category is received.
 const milestoneIcons: Record<string, any> = {
   master: Star,
   budget_planner: BarChart3,
@@ -42,6 +45,9 @@ const milestoneIcons: Record<string, any> = {
   default: Star,
 };
 
+// Converts milestone completion date strings into friendly relative age text.
+// Produces human-readable spans such as Today, days ago, or months ago.
+// Calculates elapsed calendar time relative to the current viewing date.
 const formatMilestoneDate = (dateString: string) => {
   const date = new Date(dateString);
   const now = new Date();
@@ -54,6 +60,9 @@ const formatMilestoneDate = (dateString: string) => {
   return `${Math.floor(diffDays / 365)} years ago`;
 };
 
+// Formats ISO datetime strings into localized viewer date representations.
+// Employs JavaScript Date locale formatting with try-catch resilience.
+// Returns the original raw string if date parsing encounters an error.
 const formatIsoDate = (value: string) => {
   try {
     return new Date(value).toLocaleString();
@@ -62,6 +71,9 @@ const formatIsoDate = (value: string) => {
   }
 };
 
+// Publicly accessible read-only view for shared financial stories and goals.
+// Validates cryptographic sharing tokens and renders anonymized progress metrics.
+// Allows users to display achievements without exposing sensitive personal data.
 export default function SharedFinancialStory() {
   const [, params] = useRoute("/share/financial-story/:token");
   const token = params?.token || "";

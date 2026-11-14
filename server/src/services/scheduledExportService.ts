@@ -11,8 +11,13 @@ import { openGridFsDownloadStream } from "./gridfs";
 import { sendEmail } from "../utils/sendEmail";
 import { logger } from "../config/logger";
 import { HttpError } from "../middleware/httpError";
+import { fetchOutboundWebhook } from "./outboundWebhook";
+import { decryptWebhookCredential } from "./webhookCredentials";
 
 /** Helper to compute the next run date based on cadence */
+// Calculates the next execution timestamp according to the scheduled frequency.
+// Advances date to either the upcoming Monday or the first of next month.
+// Standardizes the scheduled run time to 08:00 UTC across all cadences.
 export const computeNextRunDate = (
   frequency: ScheduledExportFrequency,
   fromDate = new Date()
@@ -33,6 +38,9 @@ export const computeNextRunDate = (
 };
 
 /** Convert readable stream to in-memory Buffer */
+// Aggregates stream chunks into a single contiguous in-memory buffer.
+// Iterates through incoming readable stream segments sequentially.
+// Concatenates all captured buffer portions and returns the complete binary.
 const streamToBuffer = async (stream: NodeJS.ReadableStream): Promise<Buffer> => {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) {
@@ -46,6 +54,9 @@ const streamToBuffer = async (stream: NodeJS.ReadableStream): Promise<Buffer> =>
  * fetches file from GridFS, sends email with attachment to recipient,
  * and updates schedule tracking metadata.
  */
+// Executes an automated scheduled export job and dispatches its generated artifact.
+// Builds export files via GridFS and delivers them through email or webhooks.
+// Updates run execution timestamps, delivery status metrics, and next scheduled runs.
 export const executeScheduledExport = async (scheduledExportId: string) => {
   const schedule = await ScheduledExportModel.findById(scheduledExportId);
   if (!schedule) {
@@ -53,6 +64,20 @@ export const executeScheduledExport = async (scheduledExportId: string) => {
   }
 
   const now = new Date();
+  if (schedule.destination === "cloud_storage") {
+    // Older schedules may still contain this retired destination. Never claim a
+    // URI was uploaded when no cloud storage provider has been configured.
+    schedule.lastRunAt = now;
+    schedule.lastDeliveryStatus = "failed";
+    schedule.lastError = "Cloud storage delivery is not configured in this deployment";
+    schedule.nextRunAt = computeNextRunDate(schedule.frequency, now);
+    await schedule.save();
+    throw new HttpError(
+      501,
+      "CLOUD_STORAGE_NOT_CONFIGURED",
+      "Cloud storage delivery is not configured. Use email or a public HTTPS webhook.",
+    );
+  }
   let exportParams: Record<string, unknown> = { ...(schedule.params || {}) };
 
   // Compute default params if not explicitly provided
@@ -140,7 +165,7 @@ export const executeScheduledExport = async (scheduledExportId: string) => {
       "X-FinWise-Checksum": checksumSha256,
     };
     if (schedule.destinationConfig?.authHeader) {
-      headers["Authorization"] = schedule.destinationConfig.authHeader;
+      headers["Authorization"] = decryptWebhookCredential(schedule.destinationConfig.authHeader);
     }
 
     let deliveryStatus: "success" | "failed" = "success";
@@ -148,7 +173,7 @@ export const executeScheduledExport = async (scheduledExportId: string) => {
     let responseSnippet = "";
 
     try {
-      const resp = await fetch(webhookUrl, {
+      const resp = await fetchOutboundWebhook(webhookUrl, {
         method: "POST",
         headers,
         body: JSON.stringify(webhookPayload),
@@ -186,45 +211,6 @@ export const executeScheduledExport = async (scheduledExportId: string) => {
       export_job_id: processedJob._id.toString(),
       webhook_url: webhookUrl,
       http_code: httpCode,
-      size_bytes: sizeBytes,
-      checksum_sha256: checksumSha256,
-      next_run_at: schedule.nextRunAt.toISOString(),
-    };
-  }
-
-  if (destination === "cloud_storage") {
-    const provider = schedule.destinationConfig?.cloudProvider || "s3";
-    const bucket = schedule.destinationConfig?.bucketName || "finwise-vault";
-    const region = schedule.destinationConfig?.bucketRegion || "us-east-1";
-    const prefix = (schedule.destinationConfig?.bucketPrefix || "exports").replace(/^\/|\/$/g, "");
-    const customName = schedule.destinationConfig?.customFilename || filename;
-    const objectKey = `${prefix}/${customName}`;
-    const cloudUri = `${provider}://${bucket}/${objectKey}`;
-
-    schedule.lastRunAt = now;
-    schedule.lastDeliveryStatus = "success";
-    schedule.lastError = null;
-    schedule.lastDeliveryDetails = {
-      destination: "cloud_storage",
-      provider,
-      cloud_uri: cloudUri,
-      bucket,
-      region,
-      object_key: objectKey,
-      size_bytes: sizeBytes,
-      checksum_sha256: checksumSha256,
-      synced_at: now.toISOString(),
-    };
-    schedule.nextRunAt = computeNextRunDate(schedule.frequency, now);
-    await schedule.save();
-
-    return {
-      success: true,
-      destination: "cloud_storage",
-      scheduled_export_id: schedule._id.toString(),
-      export_job_id: processedJob._id.toString(),
-      cloud_uri: cloudUri,
-      provider,
       size_bytes: sizeBytes,
       checksum_sha256: checksumSha256,
       next_run_at: schedule.nextRunAt.toISOString(),

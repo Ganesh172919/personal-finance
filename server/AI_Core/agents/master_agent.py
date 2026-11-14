@@ -157,15 +157,19 @@ from typing import Any, Dict, List, Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from graph.state import AnalysisType
+from registry import get_prompt, get_routing_config, record_verification, render_prompt
 from tools import PlanInputs, build_plan, render_plan_markdown
 from utils import create_llm
-from utils.agent_helpers import get_currency_code
-from utils.agent_routing import domain_scores, routing_text
+from utils.agent_helpers import extract_key_insights, get_currency_code
+from utils.agent_routing import domain_scores, education_follow_up, is_illustrative_education, routing_text
 from utils.metric_answers import direct_metric_answer
 
 logger = logging.getLogger(__name__)
 
 
+# Master financial strategist agent coordinating multi-agent orchestration.
+# Directs deterministic query routing across specialized advisor domains.
+# Synthesizes cross-specialist outputs into unified financial action plans.
 class MasterFinancialStrategistAgent:
     """Coordinates analysis routing and synthesizes the final financial plan.
 
@@ -174,18 +178,37 @@ class MasterFinancialStrategistAgent:
     merges their outputs into a single actionable plan.
     """
 
+    # Initializes the master strategist with LLM instances and routing tools.
+    # Configures fallback narrative polish handlers and default system prompts.
+    # Establishes internal state tracking for dynamic prompt overrides.
     def __init__(self):
         # The LLM is used only for optional narrative polish -- not for routing.
         self.llm = create_llm("master")
 
-        self.system_prompt = SystemMessage(
-            content=(
-                "You are the Master Financial Strategist. "
-                "Synthesize deterministic specialist outputs into a clear and actionable plan. "
-                "Be concise, practical, and specific."
-            )
-        )
+        # ``system_prompt`` resolves through the artifact registry at call time
+        # (baked-in default when the registry is empty); assigning overrides it.
+        self._system_prompt_override: Optional[SystemMessage] = None
 
+    # Retrieves the active system message prompt for the strategist agent.
+    # Checks for dynamic registry prompt overrides or returns defaults.
+    # Maintains standard tone and safety instructions for synthesis tasks.
+    @property
+    def system_prompt(self) -> SystemMessage:
+        override = getattr(self, "_system_prompt_override", None)
+        if override is not None:
+            return override
+        return SystemMessage(content=get_prompt("master.system"))
+
+    # Configures an explicit runtime system prompt override for the agent.
+    # Allows dynamic prompt adaptation during specialized evaluation sessions.
+    # Persists custom instruction payloads across execution cycles.
+    @system_prompt.setter
+    def system_prompt(self, value: SystemMessage) -> None:
+        self._system_prompt_override = value
+
+    # Performs deterministic rule-based intent classification on user requests.
+    # Evaluates query keywords, conversational history, and user profiles.
+    # Selects appropriate specialist analysis paths without incurring LLM cost.
     def determine_analysis_type(
         self,
         user_input: str,
@@ -229,6 +252,8 @@ class MasterFinancialStrategistAgent:
         """
         text = (user_input or "").lower().strip()
         has_profile = bool(user_profile)
+        if is_illustrative_education(text) or education_follow_up(user_input, conversation_history):
+            return AnalysisType.FINANCIAL_EDUCATION
 
         # --- Context enrichment ---
         # For ambiguous follow-ups like "what about investing?", the previous
@@ -275,7 +300,7 @@ class MasterFinancialStrategistAgent:
             if re.search(r"(₹|rs\.?|inr)\s*\d", prompt):
                 return True
             # Percentages
-            if re.search(r"\b\d+(?:\.\d+)?\s*%\b", prompt):
+            if re.search(r"\b\d+(?:\.\d+)?\s*%", prompt):
                 return True
             # Indian number units (k, lakh, crore)
             if re.search(r"\b\d+(?:\.\d+)?\s*(?:k|l|lac|lakh|lakhs|cr|crore|crores)\b", prompt):
@@ -306,16 +331,20 @@ class MasterFinancialStrategistAgent:
         # --- Broad-plan / comprehensive intent detection ---
         # Phrases like "analyze my finances" or "give me a roadmap" signal
         # that the user wants a holistic view, not a single-domain analysis.
+        routing_cfg = get_routing_config()
         personal_or_comprehensive = any(
             phrase in text
             for phrase in [
                 "analyze my", "my finances", "financial plan", "improve my", "overall", "comprehensive",
                 "full analysis", "roadmap", "strategy",
+                *routing_cfg.extra_broad_phrases,
             ]
         )
 
         # Compute final flags
+        education_text = re.sub(r"^i(?:['’]m| am) trying to (?:understand|learn)\b", "", text, count=1)
         looks_educational = any(re.search(pattern, text_with_context) for pattern in education_patterns)
+        explicit_example = re.search(r"\b(?:hypothetical|illustrative|worked)\b", education_text)
         personal_or_action_seeking = _is_personal_or_action_seeking(text_with_context)
         has_amounts_or_timelines = _has_amounts_or_timelines(text)
 
@@ -326,6 +355,14 @@ class MasterFinancialStrategistAgent:
 
         # Rule 1: Pure educational query (no personal context, no numbers)
         if looks_educational and not personal_or_action_seeking and not has_amounts_or_timelines:
+            return AnalysisType.FINANCIAL_EDUCATION
+
+        if (
+            (education_text != text or explicit_example)
+            and any(re.search(pattern, education_text) for pattern in education_patterns)
+            and not _is_personal_or_action_seeking(education_text)
+            and (not has_amounts_or_timelines or explicit_example)
+        ):
             return AnalysisType.FINANCIAL_EDUCATION
 
         # Rule 2: Educational phrasing but no domain keywords matched
@@ -355,6 +392,9 @@ class MasterFinancialStrategistAgent:
         # Rule 7: Fallback to best-scoring domain or comprehensive
         return best_domain if scores.get(best_domain, 0) > 0 else AnalysisType.COMPREHENSIVE
 
+    # Determines if user query complexity warrants sub-agent task decomposition.
+    # Evaluates multi-domain keyword matches against configured thresholds.
+    # Identifies complex portfolio and multi-goal scenarios needing delegation.
     def _should_decompose(
         self,
         text: str,
@@ -375,7 +415,8 @@ class MasterFinancialStrategistAgent:
         used instead of the simpler comprehensive_analysis node.
         """
         # Signal 1: 3+ domain categories scored above 0.
-        if len(non_zero_domains) >= 3:
+        routing_cfg = get_routing_config()
+        if len(non_zero_domains) >= routing_cfg.decompose_min_domains:
             return True
 
         # Signal 2: "comprehensive plan" language with at least 2 domains.
@@ -386,13 +427,14 @@ class MasterFinancialStrategistAgent:
             "financial roadmap",
             "overall plan",
             "holistic plan",
+            *routing_cfg.extra_plan_phrases,
         ]
         has_plan_language = any(phrase in text for phrase in plan_language)
-        if has_plan_language and len(non_zero_domains) >= 2:
+        if has_plan_language and len(non_zero_domains) >= routing_cfg.plan_language_min_domains:
             return True
 
         # Signal 3: Complex profile -- goals AND debts AND investments.
-        if user_profile and len(non_zero_domains) >= 2:
+        if user_profile and len(non_zero_domains) >= routing_cfg.complex_profile_min_domains:
             has_goals = bool(user_profile.get("financial_goals"))
             has_debts = bool(user_profile.get("debts"))
             has_investments = bool(
@@ -404,6 +446,9 @@ class MasterFinancialStrategistAgent:
 
         return False
 
+    # Synthesizes specialized advisory outputs into a consolidated plan.
+    # Executes deterministic plan rendering followed by optional LLM polish.
+    # Verifies strict numeric invariants to prevent hallucinations in guidance.
     def synthesize_plan(
         self,
         user_profile: Dict[str, Any],
@@ -484,21 +529,12 @@ class MasterFinancialStrategistAgent:
             # The prompt is deliberately strict: the LLM must NOT change,
             # add, or remove any numeric values.  This prevents the LLM from
             # hallucinating different amounts, percentages, or timelines.
-            prompt = f"""
-Rewrite the following financial plan for clarity and readability.
-
-Rules (critical):
-- Do NOT introduce any new numbers. Keep every numeric value exactly as provided.
-- Do NOT change currency/percent values or add extra numeric examples.
-- Keep the same structure and meaning; you may improve wording and formatting only.
-
-Optional chat context (for relevance; do not add new facts):
-Session summary: {session_summary[:800]}
-Recent messages: {history[-6:]}
-
-PLAN (do not change numbers):
-{deterministic_markdown}
-"""
+            prompt = render_prompt(
+                get_prompt("master.polish"),
+                session_summary=session_summary[:800],
+                recent_messages=history[-6:],
+                plan=deterministic_markdown,
+            )
 
             # invoke_with_fallback returns (response, was_fallback_used).
             # If the LLM is unreachable, the deterministic markdown is returned
@@ -506,6 +542,7 @@ PLAN (do not change numbers):
             llm_response, llm_fallback_used = self.llm.invoke_with_fallback(
                 [self.system_prompt, HumanMessage(content=prompt)],
                 deterministic_markdown,
+                max_attempts=4,
             )
 
             candidate = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
@@ -515,7 +552,10 @@ PLAN (do not change numbers):
             # Extract every numeric token from both the LLM output and the
             # deterministic version.  If the LLM introduced ANY new number
             # that was not in the original, discard its output entirely.
-            if llm_fallback_used or not self._numbers_are_subset(candidate, deterministic_markdown):
+            guard_ok = (not llm_fallback_used) and self._numbers_are_subset(candidate, deterministic_markdown)
+            if not llm_fallback_used:
+                record_verification(guard_ok)
+            if not guard_ok:
                 if not llm_fallback_used:
                     logger.warning("LLM output introduced new numbers; falling back to deterministic markdown.")
                 final_markdown = deterministic_markdown
@@ -542,10 +582,16 @@ PLAN (do not change numbers):
             "llm_route": self.llm.get_route_metadata(),
         }
 
+    # Computes a deterministic truncated SHA-256 identifier from a seed string.
+    # Ensures idempotent tool call tracking across repetitive planning runs.
+    # Generates uniform identifier tokens for recommended automated workflows.
     def _tool_id(self, seed: str) -> str:
         digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
         return digest[:12]
 
+    # Generates deterministic low-risk automation suggestions from plan metrics.
+    # Configures automated check-in tasks, emergency fund alerts, and debt rules.
+    # Sets strict user confirmation requirements for proposed client actions.
     def _build_tool_calls(self, plan: Dict[str, Any], user_profile: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Build deterministic, low-risk tool calls that improve retention and execution.
 
@@ -728,6 +774,9 @@ PLAN (do not change numbers):
 
         return tool_calls[:5]
 
+    # Asserts that numeric tokens in polished text match the reference plan.
+    # Guards against LLM hallucination of financial quantities and rates.
+    # Protects calculation integrity before returning advice to the user.
     def _numbers_are_subset(self, candidate: str, reference: str) -> bool:
         """Check that every number in *candidate* already exists in *reference*.
 
@@ -736,16 +785,25 @@ PLAN (do not change numbers):
         from utils.agent_helpers import numbers_are_subset
         return numbers_are_subset(candidate, reference)
 
+    # Identifies the primary operational action category across agent outputs.
+    # Categorizes client next steps into budgeting, investing, or debt plans.
+    # Maps aggregated analytical signals into standard platform taxonomy.
     def _determine_action_type(self, analyses: Dict[str, Any]) -> str:
         """Map the set of completed analyses to a single action type string."""
         from utils.agent_helpers import determine_action_type
         return determine_action_type(analyses)
 
+    # Calculates the overall urgency level of the synthesized recommendations.
+    # Evaluates negative cash flow and debt burdens to prioritize interventions.
+    # Assigns high, medium, or low priority statuses for client dashboards.
     def _determine_priority(self, analyses: Dict[str, Any]) -> str:
         """Determine the urgency level of the financial plan."""
         from utils.agent_helpers import determine_priority
         return determine_priority(analyses)
 
+    # Extracts executive-level insight statements from each specialist result.
+    # Formats key takeaways with proper regional currency designations.
+    # Provides condensed bullet points for rapid summary cards and UI views.
     def _extract_key_insights(
         self, analyses: Dict[str, Any], user_profile: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
@@ -754,6 +812,9 @@ PLAN (do not change numbers):
         currency_code = get_currency_code(user_profile)
         return extract_key_insights(analyses, currency_code=currency_code)
 
+    # Aggregates profile statistics, analysis summaries, and metric payloads.
+    # Structures input context into readable textual blocks for synthesis.
+    # Standardizes financial data points across disparate analysis sources.
     def _prepare_synthesis_data(self, user_profile: Dict[str, Any], analyses: Dict[str, Any]) -> Dict[str, str]:
         return {
             "user_profile": self._format_user_profile_for_synthesis(user_profile),
@@ -761,6 +822,9 @@ PLAN (do not change numbers):
             "key_metrics": self._extract_key_metrics(analyses, user_profile),
         }
 
+    # Formats core user profile parameters into structured text lines.
+    # Summarizes income, expenses, savings, debts, and milestone goals.
+    # Produces consistent currency-aware context for planning templates.
     def _format_user_profile_for_synthesis(self, user_profile: Dict[str, Any]) -> str:
         if not user_profile:
             return "No user profile available."
@@ -794,6 +858,9 @@ PLAN (do not change numbers):
 
         return "\n".join(lines)
 
+    # Formats high-level insights from all successful domain analyses.
+    # Filters out failed agent runs to ensure only valid data is presented.
+    # Compiles concise bullet points highlighting individual domain outcomes.
     def _format_analyses_summary(self, analyses: Dict[str, Any], currency_code: str = "INR") -> str:
         summary_parts = []
 
@@ -805,10 +872,13 @@ PLAN (do not change numbers):
 
         return "\n".join(summary_parts) if summary_parts else "No detailed analyses available"
 
+    # Extracts the single most critical insight string for a given analysis type.
+    # Formats domain-specific metrics like savings targets or payoff methods.
+    # Returns standardized fallback messages if detailed data is absent.
     def _extract_key_insight(self, analysis_type: str, analysis_data: Dict[str, Any], currency_code: str = "INR") -> str:
         if analysis_type == "income_analysis":
-            net_cash_flow = analysis_data.get("summary_metrics", {}).get("net_cash_flow", 0)
-            return f"Net cash flow: {currency_code} {float(net_cash_flow):,.2f} monthly"
+            insights = extract_key_insights({"income_analysis": analysis_data}, currency_code)
+            return insights[0]["description"] if insights else "Recorded monthly cash flow unavailable"
 
         if analysis_type == "budget_plan":
             savings_target = analysis_data.get("savings_plan", {}).get("total_monthly_savings", 0)
@@ -824,16 +894,19 @@ PLAN (do not change numbers):
 
         return "Analysis completed"
 
+    # Compiles essential quantitative metrics across active specialist reports.
+    # Extracts savings rates, debt balances, and necessary monthly savings.
+    # Formats numerical indicators into clean line-separated summaries.
     def _extract_key_metrics(self, analyses: Dict[str, Any], user_profile: Dict[str, Any]) -> str:
         metrics: List[str] = []
         currency_code = get_currency_code(user_profile)
 
         if "income_analysis" in analyses:
             income_data = analyses["income_analysis"]
-            net_cash_flow = income_data.get("summary_metrics", {}).get("net_cash_flow", 0)
-            savings_rate = income_data.get("summary_metrics", {}).get("savings_rate", 0)
-            metrics.append(f"Monthly Net Cash Flow: {currency_code} {float(net_cash_flow):,.2f}")
-            metrics.append(f"Savings Rate: {float(savings_rate):.1f}%")
+            metrics.append(self._extract_key_insight("income_analysis", income_data, currency_code))
+            savings_rate = income_data.get("summary_metrics", {}).get("savings_rate")
+            if isinstance(savings_rate, (int, float)):
+                metrics.append(f"Savings Rate: {float(savings_rate):.1f}%")
 
         if "budget_plan" in analyses:
             budget_data = analyses["budget_plan"]
@@ -847,18 +920,23 @@ PLAN (do not change numbers):
 
         return "\n".join(metrics) if metrics else "Key metrics unavailable"
 
+    # Enriches synthesized plan text with standardized headers and source footers.
+    # Documents contributing specialist modules responsible for the plan content.
+    # Produces polished final document layouts for user display or export.
     def _format_final_output(self, raw_plan: str, analyses: Dict[str, Any]) -> str:
         header = "FINANCIAL PLAN\n" + "=" * 50 + "\n\n"
         sources = ", ".join(key.replace("_", " ") for key in analyses.keys())
         footer = f"\n\nSources: {sources}" if sources else ""
         return header + raw_plan + footer
 
+    # Constructs a deterministic fallback plan if AI generation experiences failure.
+    # Assembles key findings and practical steps from deterministic analysis modules.
+    # Ensures continuous user guidance even when LLM endpoints are unavailable.
     def _create_fallback_plan(self, analyses: Dict[str, Any], currency_code: str = "INR") -> str:
         plan_parts = ["AI narrative is temporarily unavailable. Use this deterministic plan:"]
 
         if "income_analysis" in analyses:
-            net_flow = analyses["income_analysis"].get("summary_metrics", {}).get("net_cash_flow", 0)
-            plan_parts.append(f"- Monthly net cash flow: {currency_code} {float(net_flow):,.2f}")
+            plan_parts.append("- " + self._extract_key_insight("income_analysis", analyses["income_analysis"], currency_code))
 
         if "budget_plan" in analyses:
             monthly_goal_savings = analyses["budget_plan"].get("savings_plan", {}).get("total_monthly_savings", 0)

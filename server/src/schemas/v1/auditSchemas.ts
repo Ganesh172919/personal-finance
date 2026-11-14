@@ -13,6 +13,9 @@
  */
 import { z } from "zod";
 
+// Validates query parameters for listing organization audit trail logs.
+// Supports filtering by specific audit action strings and coerces integer limits.
+// Bounds result sets between 1 and 200 items using strict schema evaluation.
 export const listAuditEventsQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(200).optional(),

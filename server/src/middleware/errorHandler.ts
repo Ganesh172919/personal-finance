@@ -77,6 +77,7 @@
 
 import { NextFunction, Request, Response } from "express"; // Express types
 import mongoose from "mongoose"; // MongoDB ODM for error types
+import multer from "multer"; // Upload middleware error types
 import { ZodError } from "zod"; // Zod validation error type
 import { HttpError } from "./httpError"; // Custom HTTP error class
 import { logger } from "../config/logger"; // Application logger
@@ -91,6 +92,8 @@ import { sendErrorResponse } from "../utils/apiResponse"; // Standardized error 
  * @param {Request} req - Express request object
  * @param {Response} res - Express response object
  */
+// Catches unhandled HTTP requests targeting routes that do not match registered endpoints.
+// Dispatches a standardized 404 response payload including the correlation request ID.
 export const notFoundHandler = (req: Request, res: Response) => {
   sendErrorResponse(res, 404, {
     message: "Route not found",
@@ -115,6 +118,8 @@ export const notFoundHandler = (req: Request, res: Response) => {
  * @param {Response} res - Express response object
  * @param {NextFunction} _next - Express next function (unused)
  */
+// Central Express error-handling middleware that classifies and formats unhandled exceptions.
+// Maps HttpError, ZodError, and Mongoose errors to standardized JSON error responses with logging.
 export const errorHandler = (err: unknown, req: Request, res: Response, _next: NextFunction) => {
   // Skip if headers already sent (response already started)
   if (res.headersSent) {
@@ -123,10 +128,26 @@ export const errorHandler = (err: unknown, req: Request, res: Response, _next: N
 
   // Handle custom HTTP errors
   if (err instanceof HttpError) {
+    const retryAfter = (err as HttpError & { retryAfterSeconds?: number }).retryAfterSeconds;
+    if (typeof retryAfter === "number" && retryAfter > 0) {
+      res.setHeader("Retry-After", String(Math.ceil(retryAfter)));
+    }
     sendErrorResponse(res, err.statusCode, {
       message: err.message,
       code: err.code,
       details: err.details,
+      requestId: req.requestId,
+    });
+    return;
+  }
+
+  // Handle upload limit errors (oversized file, too many files, unexpected field)
+  if (err instanceof multer.MulterError) {
+    const tooLarge = err.code === "LIMIT_FILE_SIZE";
+    sendErrorResponse(res, tooLarge ? 413 : 400, {
+      message: tooLarge ? "Uploaded file is too large" : "Invalid file upload",
+      code: tooLarge ? "FILE_TOO_LARGE" : "INVALID_UPLOAD",
+      details: { reason: err.code },
       requestId: req.requestId,
     });
     return;
@@ -145,10 +166,11 @@ export const errorHandler = (err: unknown, req: Request, res: Response, _next: N
 
   // Handle Mongoose validation errors
   if (err instanceof mongoose.Error.ValidationError) {
+    const fields = Object.keys(err.errors);
     sendErrorResponse(res, 400, {
       message: "Data validation failed",
       code: "DB_VALIDATION_ERROR",
-      details: err.errors,
+      details: { fields },
       requestId: req.requestId,
     });
     return;
@@ -159,7 +181,7 @@ export const errorHandler = (err: unknown, req: Request, res: Response, _next: N
     sendErrorResponse(res, 400, {
       message: "Invalid identifier format",
       code: "INVALID_ID",
-      details: err.message,
+      details: { field: err.path || "id" },
       requestId: req.requestId,
     });
     return;

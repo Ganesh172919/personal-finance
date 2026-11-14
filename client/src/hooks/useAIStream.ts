@@ -87,6 +87,9 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useAIStore, type WorkflowTraceEntry } from "@/stores/aiStore";
 import { createAiStreamRequest } from "@/services/aiStream";
 
+// Discriminated union of Server-Sent Event stream event chunks emitted by the AI service.
+// Distinguishes agent routing signals, live step traces, completion payloads, and errors.
+// Dictates intermediate visualizer animations and final result compilation in the UI.
 /** Discriminated union of all possible SSE chunk types */
 export type AIResponseChunk =
   | { phase: "routing"; request_id: string }           // Request being routed
@@ -94,6 +97,9 @@ export type AIResponseChunk =
   | { phase: "complete"; result: Record<string, unknown> } // Final result
   | { phase: "error"; message: string };               // Error occurred
 
+// Custom React hook managing real-time Server-Sent Event streaming for AI reasoning.
+// Maintains chunk buffers, abort controllers, loading states, and error captures.
+// Streams intermediate agent traces into Zustand store for live pipeline visualizers.
 /**
  * Hook for streaming AI responses via SSE.
  *

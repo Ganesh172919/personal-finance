@@ -27,10 +27,16 @@
  * @module lib/apiBase
  */
 
+// Establishes the target base URL prefix for backend communication across environments.
+// Reads Vite environment configurations and strips trailing slashes to normalize paths.
+// Defaults safely to the local proxy endpoint path for standard development workflows.
 /** Base URL for all API requests. Strips trailing slash for consistency. */
 export const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "/api";
 
+// Resolves a relative path against the configured root API base address.
+// Sanitizes leading slash prefixes and avoids duplicating redundant API path tokens.
+// Generates fully qualified absolute or relative URL targets for network requests.
 /**
  * Resolves a path against the configured API base URL.
  * Handles deduplication when the path already contains the base URL prefix.
@@ -54,6 +60,9 @@ export const resolveApiUrl = (path: string) => {
   return `${API_BASE_URL}${normalized}`;
 };
 
+// Normalizes shorthand route paths and legacy prefixes into standard API endpoints.
+// Rewrites legacy v1 prefixes and prepends standard namespace segments transparently.
+// Serves as the primary URL construction helper called across frontend API clients.
 /**
  * Builds a full API URL from a shorthand endpoint.
  * Normalizes various formats into /api/* paths.

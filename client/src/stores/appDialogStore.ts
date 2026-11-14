@@ -23,9 +23,15 @@ import { create } from "zustand";
 
 import type { ApiError } from "@/lib/apiError";
 
+// Error codes identifying paywall restrictions or quota exhaustion states.
+// Distinguishes general plan entitlement limits from unprovisioned feature tiers.
+// Governs conditional upgrade messaging and visual call-to-action behaviors.
 /** Valid feature limit error codes from the server */
 type FeatureLimitCode = "FEATURE_LIMIT_REACHED" | "FEATURE_NOT_AVAILABLE";
 
+// State contract defining the active configuration for paywall limit modal dialogs.
+// Encapsulates visibility toggles, user-facing error messages, and tracking request IDs.
+// Drives the presentation layer when an operation is blocked by subscription tier caps.
 /** State for the feature limit dialog */
 export type FeatureLimitDialogState = {
   open: boolean;
@@ -35,6 +41,9 @@ export type FeatureLimitDialogState = {
   details?: unknown;
 };
 
+// State interface contract defining modal visibility flags and transition actions.
+// Manages feature-limit paywalls and account plan/usage inspection dialog states.
+// Exposes programmatic modal triggers consumed by global API response interceptors.
 /** App dialog store state and actions */
 type AppDialogState = {
   featureLimit: FeatureLimitDialogState | null;
@@ -45,6 +54,9 @@ type AppDialogState = {
   closePlanAndUsage: () => void;
 };
 
+// Global Zustand store orchestrating modal dialog visibility for platform upgrade paywalls.
+// Invoked automatically by the API client when HTTP 402 payment requirements are returned.
+// Prompts users with subscription tier upgrade paths without disrupting current view flow.
 /**
  * Global dialog state store.
  * Opened programmatically from API error handlers (not from UI components).

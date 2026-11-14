@@ -11,6 +11,9 @@
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Card, CardContent, CardHeader } from "@/components/ui/Card";
 
+// Loading placeholder component mimicking the BudgetHealthCard layout.
+// Renders pulsing skeleton rectangles for header, score value, and budget bars.
+// Prevents layout shifts during financial budget health query fetching.
 /** Skeleton for BudgetHealthCard */
 export function BudgetHealthCardSkeleton() {
   return (
@@ -31,6 +34,9 @@ export function BudgetHealthCardSkeleton() {
   );
 }
 
+// Placeholder loading skeleton for the InvestmentPortfolio card component.
+// Replicates donut chart circle and multi-row asset allocation breakdowns.
+// Maintains visual stability while investment holdings and balances load.
 /** Skeleton for InvestmentPortfolio */
 export function InvestmentPortfolioSkeleton() {
   return (
@@ -58,6 +64,9 @@ export function InvestmentPortfolioSkeleton() {
   );
 }
 
+// Skeleton placeholder mirroring the SpendingAnalysis card structure.
+// Displays placeholder blocks for spending charts and category rows.
+// Smoothes page loading transitions while transaction analytics load.
 /** Skeleton for SpendingAnalysis */
 export function SpendingAnalysisSkeleton() {
   return (
@@ -82,6 +91,9 @@ export function SpendingAnalysisSkeleton() {
   );
 }
 
+// Loading placeholder component for the GoalProgress dashboard card.
+// Renders animated placeholder rows simulating multiple financial target progress bars.
+// Preserves vertical rhythm while savings goals are queried from the server.
 /** Skeleton for GoalProgress */
 export function GoalProgressSkeleton() {
   return (
@@ -104,6 +116,9 @@ export function GoalProgressSkeleton() {
   );
 }
 
+// Skeleton placeholder replicating the RecentActivity transaction list feed.
+// Displays pulsing avatar circles, item descriptions, and amount placeholders.
+// Eliminates layout jumpiness while recent financial logs are fetched.
 /** Skeleton for RecentActivity */
 export function RecentActivitySkeleton() {
   return (

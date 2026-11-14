@@ -24,10 +24,16 @@ import {
 } from "../../services/healthScoreService.js";
 import { HttpError } from "../../middleware/httpError.js";
 
+// Initializes an Express router dedicated to financial health score evaluation and trends.
+// Exposes longitudinal score analysis, historical chart series, and score persistence endpoints.
+// Enforces tenant organization boundaries and user session verification across all operations.
 const router = Router();
 const requireAuth = passport.authenticate("jwt", { session: false });
 const requireOrgContext = orgContext;
 
+// Extracts and asserts the presence of authenticated user and active organization IDs.
+// Throws a 401 HttpError if either user authentication or tenant context is absent.
+// Returns normalized string identifiers for scoping downstream financial calculation queries.
 const requireActor = (req: Request) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id || !req.org?.orgId) {
@@ -45,6 +51,9 @@ const requireActor = (req: Request) => {
  * Query params:
  * - months: number (default 6, max 24)
  */
+// Calculates directional financial health score trajectories across a specified lookback window.
+// Evaluates current and previous period composite scores to classify positive or negative momentum.
+// Invokes getHealthScoreTrend and returns a formatted JSON payload with score history.
 router.get(
   "/trend",
   requireAuth,
@@ -93,6 +102,9 @@ router.get(
  * Query params:
  * - months: number (default 12, max 36)
  */
+// Formats historical financial health scores into visual time-series data points for charting.
+// Clamps query lookback horizons between 1 and 36 months to ensure responsive dashboard rendering.
+// Dispatches data point aggregation to getHealthScoreChart with tenant isolation enforcement.
 router.get(
   "/chart",
   requireAuth,
@@ -120,6 +132,9 @@ router.get(
  * - score: number (0-100)
  * - breakdown: { savingsRate, debtManagement, budgetAdherence, emergencyFund }
  */
+// Persists a newly calculated financial health score and its component breakdown metrics.
+// Validates composite scores between 0 and 100 alongside emergency, savings, and debt ratios.
+// Evaluates score shifts using checkHealthScoreAlert to trigger notifications on sharp declines.
 router.post(
   "/",
   requireAuth,

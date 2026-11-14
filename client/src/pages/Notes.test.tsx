@@ -14,6 +14,8 @@ const mockApi = vi.hoisted(() => ({
   createGoal: vi.fn(),
   updateFinancialProfile: vi.fn(),
   createTasksFromPlan: vi.fn(),
+  syncOfflineJournalNotes: vi.fn(),
+  searchJournalEntries: vi.fn(),
 }));
 
 vi.mock("@/lib/apiClient", () => ({
@@ -31,6 +33,8 @@ vi.mock("@/hooks/useAppConfig", () => ({
   useAppConfig: () => mockConfig.useAppConfig(),
 }));
 
+const canvasState = vi.hoisted(() => ({ strokes: [[{ x: 0.1, y: 0.2, t: 100 }]] as unknown[] }));
+
 const toastMock = vi.fn();
 vi.mock("@/hooks/useToast", () => ({
   useToast: () => ({ toast: toastMock }),
@@ -42,7 +46,7 @@ vi.mock("@/features/journaling/HandwritingCanvas", () => ({
       clear: vi.fn(),
       undo: vi.fn(),
       exportBlob: vi.fn().mockResolvedValue(new Blob(["canvas"], { type: "image/png" })),
-      getStrokes: vi.fn().mockReturnValue([[{ x: 0.1, y: 0.2, t: 100 }]]),
+      getStrokes: () => canvasState.strokes,
     }));
     return <div data-testid="handwriting-canvas" />;
   }),
@@ -55,6 +59,9 @@ const mockEntries = {
       createdAt: "2026-10-25T10:00:00Z",
       recognizedText: "Save 5000 for emergency fund by December",
       fileId: "file-123",
+      sentiment: "optimistic",
+      tags: ["savings", "emergency"],
+      hasEmbedding: true,
       parsedIntent: {
         amounts: [{ value: 5000, currency: "USD" }],
         goal_candidates: [{ name: "Emergency Fund", target: 5000 }],
@@ -65,6 +72,9 @@ const mockEntries = {
       createdAt: "2026-10-26T14:30:00Z",
       recognizedText: "Cut groceries down to 600 monthly",
       fileId: null,
+      sentiment: "concerned",
+      tags: ["budget"],
+      hasEmbedding: true,
       parsedIntent: {
         amounts: [{ value: 600, currency: "USD" }],
       },
@@ -78,6 +88,9 @@ describe("Notes / Financial Journal Page", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
+    canvasState.strokes = [[{ x: 0.1, y: 0.2, t: 100 }]];
+
     queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false, gcTime: 0 },
@@ -102,6 +115,7 @@ describe("Notes / Financial Journal Page", () => {
 
   afterEach(() => {
     cleanup();
+    localStorage.clear();
   });
 
   const renderNotes = () => {
@@ -135,6 +149,7 @@ describe("Notes / Financial Journal Page", () => {
     expect(screen.getByTestId("notes-page")).toBeInTheDocument();
     expect(screen.getByTestId("handwriting-canvas")).toBeInTheDocument();
     expect(screen.getByTestId("recognize-btn")).toBeInTheDocument();
+    expect(screen.getByTestId("card-journal-semantic-search")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getAllByTestId("journal-entry-item").length).toBe(2);
@@ -149,6 +164,8 @@ describe("Notes / Financial Journal Page", () => {
       entry_id: "entry-new",
       recognized_text: "Save 3000 for vacation fund",
       confidence: { overall: 0.94 },
+      sentiment: "optimistic",
+      tags: ["savings", "vacation"],
       detected_values: {
         amounts: [{ value: 3000, currency: "USD" }],
         goal_candidates: [{ name: "Vacation Fund", target: 3000 }],
@@ -280,6 +297,202 @@ describe("Notes / Financial Journal Page", () => {
           agentOutputId: "agent-out-456",
           requestId: "req-789",
         },
+      });
+    });
+  });
+
+  it("saves canvas strokes locally as an offline draft and increments pending badge count", async () => {
+    renderNotes();
+
+    const saveOfflineBtn = screen.getByTestId("btn-save-offline-draft");
+    fireEvent.click(saveOfflineBtn);
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Draft saved locally",
+        }),
+      );
+      expect(screen.getByTestId("badge-offline-queue-count")).toHaveTextContent("1");
+      expect(screen.getByTestId("card-offline-journal-sync")).toBeInTheDocument();
+    });
+  });
+
+  it("does not queue or recognize an empty canvas", async () => {
+    canvasState.strokes = [];
+    renderNotes();
+
+    fireEvent.click(screen.getByTestId("btn-save-offline-draft"));
+    expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Nothing to save" }));
+    expect(screen.queryByTestId("badge-offline-queue-count")).not.toBeInTheDocument();
+    expect(localStorage.length).toBe(0);
+
+    fireEvent.click(screen.getByTestId("recognize-btn"));
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Recognition failed" }));
+    });
+    expect(mockApi.recognizeHandwriting).not.toHaveBeenCalled();
+  });
+
+  it("opens a journal entry from the keyboard", async () => {
+    renderNotes();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("journal-entry-item").length).toBe(2);
+    });
+    const entry = screen.getAllByTestId("journal-entry-item")[0];
+    expect(entry).toHaveAttribute("tabindex", "0");
+    expect(entry).toHaveAttribute("role", "button");
+
+    fireEvent.keyDown(entry, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(mockApi.getJournalEntry).toHaveBeenCalledWith("entry-1");
+      expect(screen.getByTestId("sheet-recognized-text")).toBeInTheDocument();
+    });
+  });
+
+  it("synchronizes queued offline notes batch and flushes local storage queue", async () => {
+    // Pre-populate an offline draft in localStorage
+    const sampleDraft = {
+      clientDraftId: "draft-local-123",
+      title: "Offline Travel Budget",
+      recognizedText: "Budget 1500 for summer trip #travel",
+      strokes: [[{ x: 0.1, y: 0.1, t: 100 }]],
+      createdAt: new Date().toISOString(),
+      tags: ["travel"],
+    };
+    localStorage.setItem("finwise_offline_journal_queue", JSON.stringify([sampleDraft]));
+
+    mockApi.syncOfflineJournalNotes.mockResolvedValue({
+      success: true,
+      syncedCount: 1,
+      duplicatesSkipped: 0,
+      entries: [
+        {
+          id: "entry-synced-1",
+          clientDraftId: "draft-local-123",
+          title: "Offline Travel Budget",
+          recognizedText: "Budget 1500 for summer trip #travel",
+          tags: ["travel"],
+          sentiment: "neutral",
+          parsedIntent: { amounts: [{ value: 1500, currency: "USD" }] },
+          createdAt: sampleDraft.createdAt,
+          isDuplicate: false,
+        },
+      ],
+    });
+
+    renderNotes();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("badge-offline-queue-count")).toHaveTextContent("1");
+    });
+
+    const syncBtn = screen.getByTestId("btn-sync-offline-strokes");
+    fireEvent.click(syncBtn);
+
+    await waitFor(() => {
+      expect(mockApi.syncOfflineJournalNotes).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            clientDraftId: "draft-local-123",
+          }),
+        ]),
+      );
+    });
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Offline notes synced",
+        }),
+      );
+      expect(screen.queryByTestId("badge-offline-queue-count")).not.toBeInTheDocument();
+    });
+  });
+
+  it("performs semantic vector search and displays similarity match badges", async () => {
+    mockApi.searchJournalEntries.mockResolvedValue({
+      query: "emergency savings",
+      threshold: 0.1,
+      totalMatches: 1,
+      results: [
+        {
+          id: "entry-1",
+          title: "Emergency Fund",
+          recognizedText: "Save 5000 for emergency fund by December",
+          tags: ["savings", "emergency"],
+          sentiment: "optimistic",
+          similarityScore: 0.93,
+          parsedIntent: { amounts: [{ value: 5000 }] },
+          createdAt: "2026-10-25T10:00:00Z",
+        },
+      ],
+    });
+
+    renderNotes();
+
+    const searchInput = screen.getByTestId("input-semantic-search");
+    fireEvent.change(searchInput, { target: { value: "emergency savings" } });
+
+    const searchBtn = screen.getByTestId("btn-semantic-search");
+    fireEvent.click(searchBtn);
+
+    await waitFor(() => {
+      expect(mockApi.searchJournalEntries).toHaveBeenCalledWith({
+        query: "emergency savings",
+        threshold: 0.1,
+        limit: 15,
+        tag: undefined,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("semantic-search-results")).toBeInTheDocument();
+      expect(screen.getByTestId("badge-similarity-score-entry-1")).toHaveTextContent("93% Match");
+    });
+
+    // Test clear button
+    const clearBtn = screen.getByTestId("btn-clear-search");
+    fireEvent.click(clearBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("semantic-search-results")).not.toBeInTheDocument();
+      expect(searchInput).toHaveValue("");
+    });
+  });
+
+  it("filters semantic search when clicking category concept tags", async () => {
+    mockApi.searchJournalEntries.mockResolvedValue({
+      query: "savings",
+      threshold: 0.1,
+      totalMatches: 1,
+      results: [
+        {
+          id: "entry-1",
+          title: "Emergency Fund",
+          recognizedText: "Save 5000 for emergency fund by December",
+          tags: ["savings"],
+          sentiment: "optimistic",
+          similarityScore: 0.88,
+          parsedIntent: {},
+          createdAt: "2026-10-25T10:00:00Z",
+        },
+      ],
+    });
+
+    renderNotes();
+
+    const savingsChip = screen.getByTestId("chip-tag-savings");
+    fireEvent.click(savingsChip);
+
+    await waitFor(() => {
+      expect(mockApi.searchJournalEntries).toHaveBeenCalledWith({
+        query: "savings",
+        threshold: 0.1,
+        limit: 15,
+        tag: "savings",
       });
     });
   });

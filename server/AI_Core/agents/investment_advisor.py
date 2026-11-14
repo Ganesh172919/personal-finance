@@ -109,6 +109,9 @@ from utils.agent_helpers import get_currency_code
 logger = logging.getLogger(__name__)
 
 
+# Wealth management agent formulating personalized asset allocation strategies.
+# Evaluates risk profiles based on age, time horizon, and investing experience.
+# Generates multi-asset portfolio distributions and compound retirement forecasts.
 class InvestmentAdvisorAgent:
     """Provides personalized investment advice and portfolio recommendations.
 
@@ -117,9 +120,15 @@ class InvestmentAdvisorAgent:
     plan with risk assessment, allocation, and expected returns.
     """
 
+    # Initializes investment advisor with quantitative financial calculation tools.
+    # Connects to risk evaluation, asset return, and retirement projection modules.
+    # Provides deterministic mathematical underpinning for portfolio recommendations.
     def __init__(self):
         self.calculators = FinancialCalculators()
 
+    # Synthesizes comprehensive portfolio advice based on user profile parameters.
+    # Evaluates risk tolerance, target allocation, expected returns, and retirement models.
+    # Returns structured guidance dictionary with deterministic markdown insights.
     def provide_advice(self, user_profile: Dict[str, Any]) -> Dict[str, Any]:
         """Provide comprehensive investment advice."""
         logger.info("Generating investment advice for user profile")
@@ -145,6 +154,9 @@ class InvestmentAdvisorAgent:
             logger.error("Error generating investment advice: %s", exc)
             return {"error": str(exc), "recommendations": "Unable to generate investment advice."}
 
+    # Assesses client risk category by integrating age, timeline, and risk appetite.
+    # Invokes FinancialCalculators to classify conservative, moderate, or aggressive profiles.
+    # Establishes the risk foundation for equity, fixed income, and alternative splits.
     def _assess_risk_profile(self, user_profile: Dict[str, Any]) -> RiskProfile:
         age = user_profile.get("age", 30)
         risk_tolerance = user_profile.get("risk_tolerance", "moderate")
@@ -158,6 +170,9 @@ class InvestmentAdvisorAgent:
             risk_tolerance=risk_tolerance,
         )
 
+    # Formulates strategic investment focus matching assessed risk profile tier.
+    # Defines overarching objectives including preservation, balanced growth, or wealth expansion.
+    # Prescribes rebalancing cadence and active risk management rules.
     def _create_investment_strategy(
         self,
         user_profile: Dict[str, Any],
@@ -195,6 +210,9 @@ class InvestmentAdvisorAgent:
 
         return strategy
 
+    # Constructs percentage asset class distribution across equities, bonds, and cash.
+    # Adjusts allocation weights based on risk tier and expert investor experience.
+    # Yields target weights for domestic equity, international equity, and real assets.
     def _create_portfolio_allocation(
         self,
         risk_profile: RiskProfile,
@@ -232,6 +250,9 @@ class InvestmentAdvisorAgent:
 
         return allocation
 
+    # Projects expected annual, real, and multi-year compounded investment returns.
+    # Applies weighted asset return expectations adjusted by risk profile adjustments.
+    # Returns 5-year and 10-year cumulative growth rate projections.
     def _calculate_expected_returns(
         self,
         portfolio: Dict[str, float],
@@ -265,6 +286,9 @@ class InvestmentAdvisorAgent:
             "compounded_10yr": round(((1 + adjusted_return / 100) ** 10 - 1) * 100, 2),
         }
 
+    # Projects accumulated retirement capital at standard age 65 retirement.
+    # Factors current savings, monthly retirement contributions, and weighted returns.
+    # Computes total corpus and safe sustainable monthly retirement income.
     def _calculate_retirement_projection(
         self,
         user_profile: Dict[str, Any],
@@ -306,6 +330,9 @@ class InvestmentAdvisorAgent:
             expected_return=expected_return,
         )
 
+    # Generates deterministic markdown report detailing recommended asset allocation.
+    # Outlines target weights, recommended fund vehicles, and rebalancing tolerances.
+    # Highlights tax-advantaged accounts, SIP automation, and risk control measures.
     def _generate_investment_recommendations(
         self,
         user_profile: Dict[str, Any],

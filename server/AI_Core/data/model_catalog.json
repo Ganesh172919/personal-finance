@@ -1,6 +1,25 @@
 {
   "providers": [
     {
+      "provider": "gnani",
+      "defaults": {
+        "context_window": 128000,
+        "max_output_tokens": 8192,
+        "speed_tier": "fast",
+        "cost_tier": "low",
+        "reasoning_strength": "extreme",
+        "supports_function_calling": true,
+        "supports_streaming": true,
+        "supports_json_mode": true,
+        "modality": ["text", "voice"],
+        "tags": ["managed", "indic", "reasoning", "voice"]
+      },
+      "models": [
+        { "model": "evon-v3.3-30b", "display_name": "Gnani Evon v3.3 (30B Reasoning)", "capabilities": ["premium", "reasoning", "analysis", "indic"], "fallback_rank": 3 },
+        { "model": "evon-v3.3-30b-instruct", "display_name": "Gnani Evon v3.3 Instruct", "capabilities": ["reasoning", "analysis", "summarization", "routing", "indic"], "speed_tier": "fast", "cost_tier": "low", "fallback_rank": 10 }
+      ]
+    },
+    {
       "provider": "openai",
       "defaults": {
         "context_window": 128000,

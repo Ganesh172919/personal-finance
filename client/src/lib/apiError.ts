@@ -21,6 +21,9 @@
  * @module lib/apiError
  */
 
+// Custom error implementation encapsulating HTTP status codes and diagnostic metadata.
+// Extends standard JavaScript Error to preserve stack traces across try-catch blocks.
+// Carries request tracing identifiers and machine-readable error codes from the backend.
 /**
  * Structured API error with HTTP status, error code, and request tracking.
  * Extends Error so it works with try/catch and error boundaries.
@@ -45,6 +48,9 @@ export class ApiError extends Error {
   }
 }
 
+// Inspects failed HTTP response streams and extracts structured error details.
+// Clones response payloads to safely attempt JSON extraction without exhausting streams.
+// Assembles standardized ApiError instances with fallback messaging when parsing fails.
 /**
  * Parses a failed HTTP Response into an ApiError instance.
  * Attempts to extract structured error data from the JSON response body.

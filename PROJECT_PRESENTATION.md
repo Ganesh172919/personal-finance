@@ -403,3 +403,55 @@ mindmap
       p95 < 250ms API Response Envelope
       Sub-50ms Lexical BM25 Chunk Retrieval
 ```
+
+---
+
+## Slide 14: Bharat Voice AI Showcase — Indic Speech & Reasoning with Gnani AI
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4f46e5', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#818cf8', 'lineColor': '#a5b4fc', 'secondaryColor': '#312e81', 'tertiaryColor': '#1e1b4b'}}}%%
+mindmap
+  root((Bharat Voice AI - Gnani.ai))
+    Speech to Text
+      Gnani Prisma v3.0
+      12+ Indic Languages
+      Hinglish Code-Mixed Normalizer
+      8kHz Telephonic Bandpass Filter
+    Reasoning Intelligence
+      Gnani Evon v3.3 30B
+      Conversational Expense Extraction
+      Zero Arithmetic Hallucination Invariant
+    Text to Speech
+      Gnani Timbre Beta
+      Natural Regional Accents
+      Spoken Confirmation & Coaching
+    Challenge Target
+      The Great Indian AI Internship Challenge 2026
+      Participant: J Ganesh Kumar Reddy
+```
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    GNANI AI BHARAT VOICE SYSTEM ARCHITECTURE                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ • STT Engine: Gnani Prisma v3.0 (Hindi, Telugu, Tamil, Kannada, Hinglish...)│
+│ • Reasoning LLM: Gnani Evon v3.3 30B (Extracts Amount, Category, Merchant)  │
+│ • TTS Engine: Gnani Timbre Beta (Natural Regional Voice Confirmations)      │
+│ • Telephonic Resilience: 8kHz audio filter for noisy Indian street markets  │
+│ • 12 Production Voice Endpoints:                                            │
+│     1. POST /api/v1/voice/transcribe (Prisma STT - 12 Indic Languages)      │
+│     2. POST /api/v1/voice/synthesize (Timbre TTS - Regional Synthesis)      │
+│     3. POST /api/v1/voice/log-expense (Evon Reasoning + Ledger Mutation)    │
+│     4. POST /api/v1/voice/query (Conversational Voice Financial Copilot)    │
+│     5. POST /api/v1/voice/collections (Kirana Khata Debt & WhatsApp Remind) │
+│     6. POST /api/v1/voice/lead-qualification (BFSI MUDRA/MSME Underwriting) │
+│     7. POST /api/v1/voice/dispute (BFSI UPI Dispute & RBI T+1 Redressal)    │
+│     8. POST /api/v1/voice/analytics (Speech Acoustics & Voice Biometrics)   │
+│     9. POST /api/v1/voice/tax-advisor (Bharat Tax & GST Copilot FY24-25)    │
+│    10. POST /api/v1/voice/billing (Autonomous Vyapar Voice Billing & UPI QR)│
+│    11. POST /api/v1/voice/schemes (Jan Kalyan Welfare Schemes Navigator)    │
+│    12. POST /api/v1/voice/biometrics/verify (Voice Biometrics Liveness Gate)│
+│ • 10/10 Award Categories Targeted (₹50,000 each + Internship Shortlist)     │
+│ • Participant: J Ganesh Kumar Reddy | Challenge: Gnani AI Internship 2026   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```

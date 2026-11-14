@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @fileoverview V1 Referral System API
  *
  * Manages the user's referral code and referral redemption. Users can
@@ -17,11 +17,17 @@ import { apiClient } from "../core";
 
 import type { ReferralRedeemRequest, ReferralRedeemResponse, ReferralsMeResponse } from "@/types/apiTypes";
 
+// Retrieves the active user's personalized referral link, tracking code, and rewards.
+// Dispatches an authenticated GET request loading referral conversion metrics.
+// Powers customer referral sharing cards and viral growth promotion widgets.
 /** Fetch the current user's referral code and stats. */
 export async function getMyReferral() {
   return apiClient("/referrals/me") as Promise<ReferralsMeResponse>;
 }
 
+// Applies a prospective member's referral code to unlock introductory platform perks.
+// Dispatches an authenticated POST request submitting the referral tracking code.
+// Credits eligible sign-up bonuses to both the referred user and referring advocate.
 /** Redeem a referral code to claim referral benefits. */
 export async function redeemReferral(body: ReferralRedeemRequest) {
   return apiClient("/referrals/redeem", {

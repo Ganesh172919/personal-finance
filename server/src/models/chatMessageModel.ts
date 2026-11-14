@@ -38,6 +38,9 @@ import { Schema, model, Document, Types } from "mongoose"; // MongoDB ODM
  * This metadata is optional and primarily populated for assistant messages.
  * User messages typically have minimal or no metadata.
  */
+// Defines TypeScript envelope structure for auxiliary chat message metadata.
+// Stores agent workflow traces, tool invocations, citations, and performance telemetry.
+// Enriches assistant responses with UI interactive artifacts and evaluation metrics.
 export interface IChatMessageMetadata {
   // ---------------------------------------------------------------
   // File attachments
@@ -91,6 +94,8 @@ export interface IChatMessageMetadata {
 
   /** Reference to the AI agent output record for detailed post-hoc inspection */
   agentOutputId?: string;
+  /** The viewer's own feedback on this reply (mirrored from AgentOutput.feedback). */
+  feedback?: { rating: "up" | "down"; reasonCode?: string; hasCorrection?: boolean; updatedAt?: Date };
 
   // ---------------------------------------------------------------
   // Autopilot (automated workflow) tracking
@@ -147,6 +152,10 @@ export interface IChatMessageMetadata {
   /** Whether a fallback model or strategy was used (e.g., primary model was unavailable) */
   fallbackUsed?: boolean;
 
+  activeProvider?: string;
+  activeModel?: string;
+  recoveredFailureCount?: number;
+
   /** Number of LLM API calls made to generate this response (higher for complex multi-step tasks) */
   llmCallCount?: number;
 
@@ -175,6 +184,9 @@ export interface IChatMessageMetadata {
  *
  * Defines the structure of a chat message document in MongoDB.
  */
+// Defines TypeScript contract representing an individual turn in a conversation.
+// Encapsulates message role, text body, session foreign key, and rich metadata.
+// Supports multi-tenant isolation by binding each message to an organization.
 export interface IChatMessage {
   orgId: Types.ObjectId; // Organization that owns this message (multi-tenancy)
   sessionId: Types.ObjectId; // Parent ChatSession this message belongs to
@@ -191,6 +203,9 @@ export interface IChatMessage {
  * Extends IChatMessage with Mongoose Document methods and _id field.
  * This is the actual document type returned from MongoDB queries.
  */
+// Extends IChatMessage with Mongoose Document methods and MongoDB identifier.
+// Enables runtime database querying, persistence, and typed document manipulation.
+// Represents individual chat message documents stored in MongoDB database collection.
 export interface IChatMessageDocument extends IChatMessage, Document {
   _id: Types.ObjectId; // MongoDB ObjectId primary key
 }
@@ -202,6 +217,9 @@ export interface IChatMessageDocument extends IChatMessage, Document {
  * The metadata sub-document uses a flexible schema (Schema.Types.Mixed) for several
  * fields to accommodate varying AI response structures without schema migrations.
  */
+// Defines Mongoose schema definition governing conversation turn persistence and validation.
+// Configures flexible schema types for agent reasoning traces, tools, and attachments.
+// Automatically manages createdAt and updatedAt timestamps for message sequencing.
 const chatMessageSchema = new Schema<IChatMessageDocument>(
   {
     // ---------------------------------------------------------------
@@ -295,6 +313,10 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
       // Reference to the AI agent output record for post-hoc inspection
       agentOutputId: String,
 
+      // The viewer's own thumbs up/down on this reply, mirrored from AgentOutput.feedback
+      // so the rating survives a reload without an extra lookup.
+      feedback: { type: Schema.Types.Mixed, default: undefined },
+
       // Autopilot run identifiers for automated workflows
       autopilotRunId: String,
       autopilotRunStatus: String,
@@ -321,6 +343,9 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
 
       // Performance and reliability metrics
       fallbackUsed: Boolean, // Whether a fallback model was used
+      activeProvider: String,
+      activeModel: String,
+      recoveredFailureCount: Number,
       llmCallCount: Number,  // Number of LLM API calls made
       aiCoreDurationMs: Number, // Total AI processing time in ms
       cacheHit: Boolean,     // Whether response was served from cache
@@ -344,6 +369,9 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
  * chronologically so messages render in order. This index covers the
  * "load conversation history" use case efficiently.
  */
+// Compound index optimizing chronological retrieval of conversation history.
+// Accelerates queries filtering by organization and session ordered by timestamp.
+// Ensures fast paging and conversation transcript rendering in user interface.
 chatMessageSchema.index({ orgId: 1, sessionId: 1, createdAt: 1 });
 
 /**
@@ -352,7 +380,13 @@ chatMessageSchema.index({ orgId: 1, sessionId: 1, createdAt: 1 });
  * Mongoose model for chat message documents.
  * Used for CRUD operations on chat message data within the AI conversation system.
  */
+// Instantiates Mongoose model bound to MongoDB "ChatMessage" collection.
+// Provides strongly typed querying, message logging, and transcript loading methods.
+// Consumed by chat controllers, agent orchestrators, and streaming endpoints.
 const ChatMessageModel = model<IChatMessageDocument>("ChatMessage", chatMessageSchema);
+// Exports compiled ChatMessageModel instance as default module export.
+// Imported by chat controllers, feedback services, and memory indexing workers.
+// Serves as primary data access gateway for conversational message turns.
 export default ChatMessageModel;
 
 /**

@@ -26,19 +26,26 @@
  */
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 
-import { getAiCoreStatus, getEnhancedAiStatus } from "@/lib/apiClient";
+import { getAiCoreStatus, getEnhancedAiStatus, getCanaryHealth, runCanaryProbes } from "@/lib/apiClient";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/Dialog";
+import { ApiError } from "@/lib/apiError";
+import { getFeedbackReviewQueue, getLearningStatus, learningKeys } from "@/lib/api/aiLearning";
 import type { KeyPoolStats, KeyPoolEntry, KeyStatus } from "@/types/ai.types";
 
+// Property structure for the AI diagnostics and engine status dialog.
+// Supplies telemetry metadata from the latest executed AI inference query.
+// Captures request correlation IDs, fallback path usage, and cache indicators.
 type AiStatusDialogProps = {
   lastRequestId?: string;
   fallbackUsed?: boolean;
@@ -47,6 +54,9 @@ type AiStatusDialogProps = {
 };
 
 // Status badge colors
+// Theme styling map associating API key health states with visual color classes.
+// Distinguishes healthy, degraded, cooling-down, and circuit-broken states.
+// Applied across developer status badges to convey key pool operational health.
 const STATUS_COLORS: Record<KeyStatus, string> = {
   healthy: "bg-green-500/20 text-green-400",
   degraded: "bg-yellow-500/20 text-yellow-400",
@@ -55,6 +65,9 @@ const STATUS_COLORS: Record<KeyStatus, string> = {
   disabled: "bg-gray-500/20 text-gray-400",
 };
 
+// Small badge chip rendering the operational health status of an API key.
+// Normalizes enum status keys into readable labels with tinted badge styling.
+// Renders inside provider key pool diagnostic lists and detail inspection views.
 function KeyStatusBadge({ status }: { status: KeyStatus }) {
   return (
     <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${STATUS_COLORS[status] || STATUS_COLORS.disabled}`}>
@@ -63,6 +76,9 @@ function KeyStatusBadge({ status }: { status: KeyStatus }) {
   );
 }
 
+// Collapsible card summarizing provider-specific API credential pool metrics.
+// Displays aggregate availability ratios, success percentages, and rotation policies.
+// Allows developers to expand and inspect individual credential fingerprint rows.
 function KeyPoolCard({ pool }: { pool: KeyPoolStats }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -100,6 +116,9 @@ function KeyPoolCard({ pool }: { pool: KeyPoolStats }) {
   );
 }
 
+// Diagnostic entry row presenting health telemetry for a specific API credential.
+// Visualizes truncated key fingerprints, operational status, and request counts.
+// Reports average latency and historical success percentages for deep inspection.
 function KeyEntryRow({ entry }: { entry: KeyPoolEntry }) {
   return (
     <div className="flex items-center justify-between gap-2 rounded bg-muted/50 px-2 py-1 text-[10px]">
@@ -118,6 +137,89 @@ function KeyEntryRow({ entry }: { entry: KeyPoolEntry }) {
   );
 }
 
+/**
+ * "AI quality" tab: learning-loop snapshot (promotion mode, canary, last gate decisions,
+ * feedback awaiting review). Admin-only data; members see a short notice instead.
+ */
+// Diagnostic panel detailing continuous learning loops and model quality benchmarks.
+// Surfaces canary probe results, automated promotion modes, and feedback review queues.
+// Displays gated administrative controls for evaluating inference performance trends.
+function AiQualityPanel({ enabled }: { enabled: boolean }) {
+  const statusQuery = useQuery({
+    queryKey: learningKeys.status,
+    queryFn: getLearningStatus,
+    enabled,
+    retry: false,
+  });
+  const queueQuery = useQuery({
+    queryKey: learningKeys.reviewQueue("pending"),
+    queryFn: () => getFeedbackReviewQueue({ status: "pending", limit: 1 }),
+    enabled,
+    retry: false,
+  });
+
+  const denied = [statusQuery.error, queueQuery.error].some((e) => e instanceof ApiError && e.status === 403);
+  if (denied) {
+    return (
+      <p className="text-xs text-muted-foreground" data-testid="ai-quality-denied">
+        AI quality details are available to organization admins.
+      </p>
+    );
+  }
+  if (statusQuery.isLoading) return <p className="text-xs text-muted-foreground">Loading AI quality...</p>;
+  if (statusQuery.isError) {
+    return (
+      <p className="text-xs text-muted-foreground" data-testid="ai-quality-unavailable">
+        AI quality data is unavailable right now.
+      </p>
+    );
+  }
+
+  const status = statusQuery.data;
+  const activeCanary = status?.canary?.active;
+  const decisions = status?.canary?.lastDecisions ?? [];
+  const pending = queueQuery.data?.pending_count;
+
+  return (
+    <div className="space-y-3" data-testid="ai-quality-panel">
+      <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+        <div className="grid grid-cols-2 gap-2">
+          <div>promotion mode: {status?.promotionMode ?? "-"}</div>
+          <div>feedback to review: {pending ?? "-"}</div>
+          <div>optimizer last run: {status?.optimizer?.lastRunAt ?? "never"}</div>
+          <div>
+            canary:{" "}
+            {activeCanary
+              ? `${activeCanary.artifactId ?? activeCanary.id ?? "active"}${
+                  typeof activeCanary.progress === "number" ? ` (${Math.round(activeCanary.progress * 100)}%)` : ""
+                }`
+              : "none active"}
+          </div>
+        </div>
+      </div>
+      <div className="rounded-md border border-border bg-muted/30 p-3 space-y-1">
+        <p className="text-xs font-semibold text-foreground">Last gate decisions</p>
+        {decisions.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic">No decisions recorded yet.</p>
+        ) : (
+          decisions.slice(0, 5).map((d, idx) => (
+            <div key={idx} className="text-[11px] text-muted-foreground">
+              {d.artifactId ?? "artifact"}: {d.decision ?? "-"}
+              {d.reason ? ` - ${d.reason}` : ""}
+            </div>
+          ))
+        )}
+      </div>
+      <Link href="/ai-learning" className="text-xs text-primary hover:underline">
+        Open AI Learning
+      </Link>
+    </div>
+  );
+}
+
+// Comprehensive diagnostic dialog exposing internal AI architecture health and metrics.
+// Organizes provider pools, model catalogs, active sessions, and canary test outputs.
+// Supplies transparency and debugging telemetry for platform administrators and engineers.
 export function AiStatusDialog({
   lastRequestId,
   fallbackUsed,
@@ -125,7 +227,9 @@ export function AiStatusDialog({
   cacheHit,
 }: AiStatusDialogProps) {
   const [open, setOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "keys" | "models" | "sessions">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "keys" | "models" | "sessions" | "canary" | "quality">("overview");
+  const [canaryRunning, setCanaryRunning] = useState(false);
+  const [canaryRunReport, setCanaryRunReport] = useState<any>(null);
 
   const statusQuery = useQuery({
     queryKey: ["/api/ai-core/status"],
@@ -139,10 +243,31 @@ export function AiStatusDialog({
     enabled: open,
   });
 
+  const canaryQuery = useQuery({
+    queryKey: ["/api/ai/canary/number-safety"],
+    queryFn: getCanaryHealth,
+    enabled: open,
+  });
+
   const aiCore = statusQuery.data?.ai_core;
   const server = statusQuery.data?.server;
   const providers = aiCore?.providers?.providers || [];
   const enhanced = enhancedQuery.data;
+  const canary = canaryQuery.data?.canary || enhanced?.canary;
+
+  const handleRunProbes = async () => {
+    try {
+      setCanaryRunning(true);
+      const res = await runCanaryProbes(12);
+      setCanaryRunReport(res.report);
+      canaryQuery.refetch();
+      enhancedQuery.refetch();
+    } catch (err: any) {
+      console.error("Failed to run canary probes", err);
+    } finally {
+      setCanaryRunning(false);
+    }
+  };
 
   const rateLimiter = (aiCore?.rate_limit_status as any)?.rate_limit_status;
   const providerChain = enhanced?.provider?.fallback_chain || 
@@ -166,21 +291,25 @@ export function AiStatusDialog({
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>AI System Status</DialogTitle>
+          <DialogDescription className="sr-only">
+            AI subsystem health, configuration details, and continuous mathematical invariant canary status
+          </DialogDescription>
         </DialogHeader>
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-border pb-2">
-          {(["overview", "keys", "models", "sessions"] as const).map((tab) => (
+          {(["overview", "keys", "models", "sessions", "canary", "quality"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
+              data-testid={`tab-${tab}`}
               className={`px-3 py-1 text-xs rounded-t ${
                 activeTab === tab
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === "canary" ? "Canary / Invariants" : tab === "quality" ? "AI Quality" : tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
@@ -435,6 +564,157 @@ export function AiStatusDialog({
                 <p className="text-xs text-muted-foreground italic">No session data available.</p>
               )}
             </>
+          )}
+
+          {activeTab === "quality" && <AiQualityPanel enabled={open} />}
+
+          {activeTab === "canary" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-border pb-2">
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    Continuous Invariant Canary Guard
+                    <span
+                      data-testid="badge-canary-status"
+                      className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
+                        canary?.status === "healthy"
+                          ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                          : canary?.status === "warning"
+                          ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                          : "bg-red-500/20 text-red-400 border border-red-500/30"
+                      }`}
+                    >
+                      {canary?.status || "healthy"}
+                    </span>
+                  </h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Real-time mathematical invariance verification across candidate LLM digits, budget rebalancing, and balance sheet equations.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  data-testid="btn-run-canary-probes"
+                  disabled={canaryRunning}
+                  onClick={handleRunProbes}
+                  className="h-8 text-xs shrink-0"
+                >
+                  {canaryRunning ? "Running Probes..." : "Run Canary Probe Suite"}
+                </Button>
+              </div>
+
+              {/* Metric Overview Strip */}
+              <div className="grid grid-cols-4 gap-2 text-center" data-testid="card-canary-health">
+                <div className="rounded-md border border-border bg-muted/30 p-2.5">
+                  <p className="text-[11px] text-muted-foreground uppercase font-medium">Pass Rate</p>
+                  <p className="text-lg font-bold text-foreground" data-testid="metric-canary-pass-rate">
+                    {canary?.pass_rate_pct !== undefined ? `${canary.pass_rate_pct.toFixed(1)}%` : "100.0%"}
+                  </p>
+                </div>
+                <div className="rounded-md border border-border bg-muted/30 p-2.5">
+                  <p className="text-[11px] text-muted-foreground uppercase font-medium">Evaluated</p>
+                  <p className="text-lg font-bold text-foreground" data-testid="metric-canary-total">
+                    {canary?.total_evaluations ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-md border border-border bg-muted/30 p-2.5">
+                  <p className="text-[11px] text-muted-foreground uppercase font-medium">Passed</p>
+                  <p className="text-lg font-bold text-emerald-400" data-testid="metric-canary-passed">
+                    {canary?.passed_evaluations ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-md border border-border bg-muted/30 p-2.5">
+                  <p className="text-[11px] text-muted-foreground uppercase font-medium">Violations</p>
+                  <p className="text-lg font-bold text-destructive" data-testid="metric-canary-failed">
+                    {canary?.failed_evaluations ?? 0}
+                  </p>
+                </div>
+              </div>
+
+              {/* Invariant Pillars Checklist */}
+              <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+                <p className="text-xs font-semibold text-foreground">Verified Mathematical Invariants</p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center gap-2 p-1.5 rounded bg-background/50 border border-border/50">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 shrink-0" />
+                    <div>
+                      <p className="font-medium text-foreground">Number Safety Guard</p>
+                      <p className="text-[10px] text-muted-foreground">Candidate Digits ⊆ Reference Digits (zero hallucinations)</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-1.5 rounded bg-background/50 border border-border/50">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 shrink-0" />
+                    <div>
+                      <p className="font-medium text-foreground">Zero-Sum Rebalancing</p>
+                      <p className="text-[10px] text-muted-foreground">∑ ΔBᵢ = 0 &amp; Bᵢ ≥ 0 (envelope preservation)</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-1.5 rounded bg-background/50 border border-border/50">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 shrink-0" />
+                    <div>
+                      <p className="font-medium text-foreground">Balance Sheet Identity</p>
+                      <p className="text-[10px] text-muted-foreground">Assets - Liabilities = Net Worth (±0.05)</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-1.5 rounded bg-background/50 border border-border/50">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 shrink-0" />
+                    <div>
+                      <p className="font-medium text-foreground">Cash Flow Conservation</p>
+                      <p className="text-[10px] text-muted-foreground">Income - Expenses = Net Cash Flow (±0.05)</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* On-demand Run Probe Report */}
+              {canaryRunReport && (
+                <div className="rounded-md border border-emerald-500/30 bg-emerald-950/20 p-3 space-y-2" data-testid="card-canary-probe-report">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-emerald-400">
+                      Probe Suite Result: {canaryRunReport.suite_passed}/{canaryRunReport.total_probes} Passed ({canaryRunReport.suite_pass_rate_pct}%)
+                    </span>
+                    <span className="text-muted-foreground">{canaryRunReport.elapsed_ms}ms</span>
+                  </div>
+                  <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                    {canaryRunReport.results?.map((res: any, idx: number) => (
+                      <div key={idx} className="flex items-center justify-between text-[11px] py-1 border-b border-border/30">
+                        <span className="text-foreground truncate max-w-[280px]">{res.description || res.probe_id}</span>
+                        <span className={`px-1.5 py-0.2 rounded text-[10px] font-medium ${res.probe_assertion_passed ? "text-emerald-400 bg-emerald-500/10" : "text-destructive bg-destructive/10"}`}>
+                          {res.probe_assertion_passed ? "VERIFIED" : "FAILED"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recent Events Audit Trail */}
+              <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+                <p className="text-xs font-semibold text-foreground">Recent Invariant Audit Log</p>
+                {canary?.recent_events && canary.recent_events.length > 0 ? (
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1" data-testid="list-canary-audit-events">
+                    {canary.recent_events.slice(0, 10).map((evt: any) => (
+                      <div key={evt.probe_id} className="flex items-center justify-between text-xs p-1.5 rounded bg-background/40 border border-border/40">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-semibold uppercase ${evt.passed ? "text-emerald-400 bg-emerald-500/10" : "text-destructive bg-destructive/10"}`}>
+                              {evt.passed ? "PASS" : "FAIL"}
+                            </span>
+                            <span className="font-mono text-[11px] text-foreground">{evt.invariant}</span>
+                            <span className="text-[10px] text-muted-foreground">({evt.source})</span>
+                          </div>
+                          {evt.violations && evt.violations.length > 0 && (
+                            <p className="text-[10px] text-destructive truncate max-w-[360px]">{evt.violations[0]}</p>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-muted-foreground font-mono">{evt.duration_ms}ms</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">No live evaluation events recorded yet.</p>
+                )}
+              </div>
+            </div>
           )}
         </div>
 

@@ -13,16 +13,25 @@ import { USAGE_FEATURES, type UsageFeature } from "../../models/usageEventModel"
 import { executePluginTool, fetchPluginRuntimeRegistry, simulatePluginTool, syncPluginConnector } from "./runtimeClient";
 import type { PluginRuntimeConnector, PluginRuntimeTool } from "./types";
 
+// Normalizes and maps arbitrary role strings to valid ToolCatalogEntry required roles.
+// Recognizes administrative tiers owner and admin while defaulting unrecognized roles to member.
+// Enforces minimum role requirement constraints on dynamically registered plugin tools.
 const asToolRole = (value: string): ToolCatalogEntry["required_role"] => {
   const normalized = String(value || "member").toLowerCase();
   if (normalized === "admin" || normalized === "owner") return normalized;
   return "member";
 };
 
+// Type guard verifying if an entitlement string corresponds to a known metered usage feature.
+// Validates against USAGE_FEATURES enumeration array from usage event models.
+// Ensures plugin entitlement definitions link to valid billing tracking features.
 const isUsageFeature = (value: string): value is UsageFeature => {
   return (USAGE_FEATURES as readonly string[]).includes(value);
 };
 
+// Converts a remote runtime tool descriptor into a native ToolCatalogEntry.
+// Formats role access rules, entitlement requirements, and JSON schemas.
+// Registers tool in the catalog available to AI planners and API discovery.
 const toToolCatalogEntry = (tool: PluginRuntimeTool): ToolCatalogEntry => {
   const requiredEntitlement =
     tool.required_entitlement && isUsageFeature(String(tool.required_entitlement.feature))
@@ -48,6 +57,9 @@ const toToolCatalogEntry = (tool: PluginRuntimeTool): ToolCatalogEntry => {
   };
 };
 
+// Verifies that a target plugin is installed and authorized with all required permissions.
+// Checks tenant organization plugin install records and audits granted permission scopes.
+// Throws HttpError with 402 or 403 status if the plugin is uninstalled or lacks permissions.
 const ensurePluginInstalled = async (params: {
   orgId: mongoose.Types.ObjectId;
   pluginKey: string;
@@ -77,6 +89,9 @@ const ensurePluginInstalled = async (params: {
   return install;
 };
 
+// Wraps a remote plugin tool into a local ToolHandler proxy forwarding calls to the sandbox.
+// Validates installation and permissions before executing simulations or real operations.
+// Integrates remote plugin execution transparently with native tool registries.
 const toProxyToolHandler = (tool: PluginRuntimeTool): ToolHandler => {
   return {
     tool: tool.tool,
@@ -119,6 +134,9 @@ const toProxyToolHandler = (tool: PluginRuntimeTool): ToolHandler => {
   };
 };
 
+// Wraps a remote plugin connector into an IntegrationConnector proxy forwarding sync runs.
+// Validates tenant permissions before routing synchronization requests to sandbox daemons.
+// Normalizes and returns ingested record counts and sync metadata to caller.
 const toProxyConnector = (connector: PluginRuntimeConnector): IntegrationConnector => {
   return {
     key: connector.connector_key,
@@ -158,6 +176,9 @@ let lastRegisteredTools = new Set<string>();
 let lastRegisteredConnectors = new Set<string>();
 let refreshTimer: NodeJS.Timeout | null = null;
 
+// Queries plugin runtime daemon and synchronizes registered tools and connectors.
+// Adds new proxy handlers, registers connectors, and unregisters defunct plugin capabilities.
+// Reconciles in-memory capability stores with external plugin sandbox state.
 export const refreshPluginRuntimeRegistry = async (params: { requestId?: string } = {}) => {
   const env = getEnv();
   if (!env.PLUGIN_RUNTIME_URL) {
@@ -211,6 +232,9 @@ export const refreshPluginRuntimeRegistry = async (params: { requestId?: string 
   return { ok: true as const, enabled: true as const, tools: nextTools.size, connectors: nextConnectors.size };
 };
 
+// Bootstraps plugin manager background polling service to periodically sync capabilities.
+// Schedules recurring 30-second synchronization intervals against plugin runtime sandboxes.
+// Returns lifecycle controller object containing start status and shutdown stop method.
 export const startPluginManager = () => {
   const env = getEnv();
   if (!env.PLUGIN_RUNTIME_URL) {

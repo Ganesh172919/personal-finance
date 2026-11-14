@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeAll, afterEach, afterAll } from "vitest";
 import { useEffect } from "react";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { http, HttpResponse } from "msw";
 import { server } from "@/test/mocks/server";
 import { getActiveOrgId, setActiveOrgId } from "@/lib/orgContext";
+import { ProtectedRoute } from "@/routes/routeGuards";
 
 beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
 afterEach(() => {
@@ -52,6 +53,49 @@ function AuthProbe() {
 }
 
 describe("useAuth", () => {
+  it("retains a verified account and workspace during a transient rate limit", async () => {
+    render(<TestWrapper><AuthProbe /></TestWrapper>);
+    await screen.findByText("Test User");
+    setActiveOrgId("still-owned-org");
+    server.use(http.get("/api/auth/profile", () => HttpResponse.json({ message: "Too many requests" }, { status: 429 })));
+    await act(async () => { await authActions.checkAuthStatus(); });
+    expect(screen.getByText("Test User")).toBeInTheDocument();
+    expect(getActiveOrgId()).toBe("still-owned-org");
+    expect(localStorage.getItem("userId")).not.toBeNull();
+    expect(authActions.authError).toContain("temporarily limited");
+  });
+
+  it("does not escalate an expected rate limit into an uncaught global error report", async () => {
+    // reportError() re-dispatches the error as an uncaught window error, which the
+    // global listener then POSTs to /api/client-errors — extra load on a throttled API.
+    const reportError = vi.fn();
+    vi.stubGlobal("reportError", reportError);
+    try {
+      render(<TestWrapper><AuthProbe /></TestWrapper>);
+      await screen.findByText("Test User");
+      server.use(http.get("/api/auth/profile", () => HttpResponse.json({ message: "Too many requests" }, { status: 429 })));
+      await act(async () => { await authActions.checkAuthStatus(); });
+      expect(authActions.authError).toContain("temporarily limited");
+      expect(reportError).not.toHaveBeenCalled();
+
+      // Unexpected failures are still reported.
+      server.use(http.get("/api/auth/profile", () => HttpResponse.json({}, { status: 500 })));
+      await act(async () => { await authActions.checkAuthStatus(); });
+      expect(reportError).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps protected content hidden and offers retry after an unavailable boot check", async () => {
+    server.use(http.get("/api/auth/profile", () => HttpResponse.json({}, { status: 503 })));
+    render(<TestWrapper><ProtectedRoute><p>Private records</p></ProtectedRoute></TestWrapper>);
+    expect(await screen.findByRole("alert")).toHaveTextContent("could not check your sign-in");
+    expect(screen.queryByText("Private records")).not.toBeInTheDocument();
+    server.use(http.get("/api/auth/profile", () => HttpResponse.json({ id: "recovered-user", name: "Recovered", email: "qa@example.test" })));
+    fireEvent.click(screen.getByRole("button", { name: "Try sign-in check again" }));
+    expect(await screen.findByText("Private records")).toBeInTheDocument();
+  });
   it("shows loading state initially, then displays user profile", async () => {
     render(
       <TestWrapper>

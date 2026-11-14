@@ -396,3 +396,69 @@ export function legacyApiDeprecation(req: Request, res: Response, next: NextFunc
   next();
 }
 ```
+
+---
+
+## 7. 2026 Ingress Guards, Canary Validation & Dead-Letter Queue Interceptors
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#dc2626', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#b91c1c', 'lineColor': '#ef4444', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((Ingress Guards))
+    canaryValidationGuard
+      Pre-flight Invariant Verification
+      Rejects Unbalanced Budget Transfers (sum dB != 0)
+      Blocks Hallucinated Numbers
+    redisRateLimiter
+      Sliding Window Token Bucket
+      Protects AI Endpoints (60 RPM)
+      Standard RateLimit Headers
+    dlqErrorInterceptor
+      Catches Async Job Exceptions
+      Sanitizes Secrets & PII
+      Quarantines to bull:finwise-dlq
+```
+
+### 7.1 Pre-Flight Invariant Validation Guard (`canaryValidationGuard.ts`)
+
+Prevents state-modifying requests from reaching database controllers if they violate fundamental mathematical invariants:
+
+```typescript
+// server/src/middleware/canaryValidationGuard.ts
+import { Request, Response, NextFunction } from 'express';
+import { evaluateCanaryInvariants } from '../services/aiCanaryService';
+
+export async function canaryValidationGuard(req: Request, res: Response, next: NextFunction) {
+  // If request contains budget reallocation proposals, enforce sum(Delta B_i) === 0
+  if (req.body?.proposals && Array.isArray(req.body.proposals)) {
+    const totalShift = req.body.proposals.reduce((sum: number, p: any) => sum + Number(p.transferAmount || 0), 0);
+    if (Math.abs(totalShift) > 0.001) {
+      return res.status(422).json({
+        success: false,
+        error: 'INVARIANT_VIOLATION',
+        message: 'Rebalance proposals violate the zero-sum invariant (sum Delta B != 0).'
+      });
+    }
+  }
+
+  next();
+}
+```
+
+---
+
+### 7.2 Dead-Letter Queue Error Interceptor & PII Sanitizer (`dlqErrorInterceptor.ts`)
+
+```typescript
+// server/src/middleware/dlqErrorInterceptor.ts
+import { scrubPayloadForDLQ } from '../services/deadLetterQueue';
+import { logger } from '../config/logger';
+
+export function interceptJobError(job: any, err: Error) {
+  const sanitized = scrubPayloadForDLQ(job.data);
+  logger.error(`Job ${job.id} failed after ${job.attemptsMade} attempts:`, {
+    error: err.message,
+    sanitizedPayload: sanitized
+  });
+}
+```

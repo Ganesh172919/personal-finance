@@ -95,6 +95,9 @@ from utils.model_health import get_model_health_tracker
 logger = logging.getLogger(__name__)
 
 
+# Enumeration of distinct LLM task capabilities supported across models.
+# Defines capabilities including routing, summarization, analysis, and reasoning.
+# Used for task-specific candidate filtering and optimal model selection.
 class ModelCapability(Enum):
     ROUTING = "routing"
     SUMMARIZATION = "summarization"
@@ -106,12 +109,18 @@ class ModelCapability(Enum):
     EMBEDDING = "embedding"
 
 
+# Enumeration categorizing model execution latency and response throughput.
+# Classifies models into fast, medium, and slow operational tiers.
+# Enables latency constraints during candidate model resolution.
 class SpeedTier(Enum):
     FAST = "fast"
     MEDIUM = "medium"
     SLOW = "slow"
 
 
+# Enumeration classifying model financial expense tiers per token.
+# Ranges across free, low, medium, high, and premium expenditure brackets.
+# Enforces cost ceilings and economic prioritization during model routing.
 class CostTier(Enum):
     FREE = "free"
     LOW = "low"
@@ -120,6 +129,9 @@ class CostTier(Enum):
     PREMIUM = "premium"
 
 
+# Enumeration classifying model logical reasoning and problem-solving depth.
+# Ranges from low reasoning up to extreme analytical capability levels.
+# Directs complex reasoning tasks to adequately capable model candidates.
 class ReasoningStrength(Enum):
     LOW = "low"
     MEDIUM = "medium"
@@ -127,6 +139,9 @@ class ReasoningStrength(Enum):
     EXTREME = "extreme"
 
 
+# Dataclass encapsulating comprehensive metadata for a registered LLM model.
+# Records provider, capabilities, context limits, costs, and feature flags.
+# Powers health-aware ranking and dynamic fallback chain construction.
 @dataclass
 class ModelEntry:
     model_id: str
@@ -151,9 +166,15 @@ class ModelEntry:
     cost_input_per_1k: float = 0.0
     cost_output_per_1k: float = 0.0
 
+    # Evaluates whether the model supports a specified task capability.
+    # Checks membership against the configured capabilities set.
+    # Returns true if the model satisfies the requested capability.
     def matches_capability(self, capability: ModelCapability) -> bool:
         return capability in self.capabilities
 
+    # Serializes model metadata into standard dictionary representation.
+    # Converts enums and sets into JSON-serializable strings and lists.
+    # Returns dictionary suitable for API responses and telemetry logging.
     def to_dict(self) -> Dict[str, Any]:
         return {
             "model_id": self.model_id,
@@ -179,13 +200,22 @@ class ModelEntry:
         }
 
 
+# In-memory dictionary registry mapping model IDs to ModelEntry instances.
+# Populated from disk during startup and updated with provider health state.
+# Serves as the central registry for model discovery and resolution.
 MODEL_CATALOG: Dict[str, ModelEntry] = {}
 
 
+# Resolves the absolute filesystem path to model catalog JSON definition.
+# Navigates relative to current module location to locate data directory.
+# Returns Path object pointing to model_catalog.json file.
 def _catalog_path() -> Path:
     return Path(__file__).resolve().parent.parent / "data" / "model_catalog.json"
 
 
+# Parses an iterable of string values into a validated set of enum members.
+# Silently ignores invalid or unrecognized enum values during iteration.
+# Returns set containing successfully parsed enum instances.
 def _enum_set(enum_cls: Any, values: Iterable[str]) -> Set[Any]:
     result = set()
     for value in values:
@@ -196,6 +226,9 @@ def _enum_set(enum_cls: Any, values: Iterable[str]) -> Set[Any]:
     return result
 
 
+# Constructs a ModelEntry instance by merging provider defaults with model data.
+# Parses capability enums, context limits, pricing details, and feature flags.
+# Returns fully validated ModelEntry configured for catalog registration.
 def _build_model_entry(provider: str, defaults: Dict[str, Any], model_data: Dict[str, Any]) -> ModelEntry:
     merged = dict(defaults)
     merged.update(model_data)
@@ -225,6 +258,9 @@ def _build_model_entry(provider: str, defaults: Dict[str, Any], model_data: Dict
     )
 
 
+# Maps provider name string to its corresponding primary environment variable key.
+# Identifies canonical credential variable name for each supported provider.
+# Returns environment variable name string or none if provider is unsupported.
 def _provider_env_key(provider: str) -> Optional[str]:
     provider_keys = {
         "openai": "OPENAI_API_KEY",
@@ -241,6 +277,9 @@ def _provider_env_key(provider: str) -> Optional[str]:
     return provider_keys.get(provider)
 
 
+# Evaluates whether credentials are configured for a given provider.
+# Checks primary API key, array keys, and indexed key variants in environment.
+# Returns true if at least one valid credential key exists for the provider.
 def _provider_configured(provider: str) -> bool:
     env_var = _provider_env_key(provider)
     if not env_var:
@@ -260,6 +299,9 @@ def _provider_configured(provider: str) -> bool:
     return False
 
 
+# Loads and parses model definitions from external JSON catalog file.
+# Populates global MODEL_CATALOG registry and auto-enables configured models.
+# Re-initializes registered models across all configured providers.
 def _load_catalog() -> None:
     catalog_file = _catalog_path()
     raw = json.loads(catalog_file.read_text(encoding="utf-8"))
@@ -278,6 +320,9 @@ def _load_catalog() -> None:
     _auto_enable_models()
 
 
+# Generates multi-criteria comparison tuple for health-aware model ranking.
+# Factors in health score, fallback rank, reasoning strength, speed, and cost.
+# Returns ordered tuple used to sort candidate models by suitability.
 def _sorting_tuple(model: ModelEntry) -> tuple[Any, ...]:
     speed_order = {SpeedTier.FAST: 0, SpeedTier.MEDIUM: 1, SpeedTier.SLOW: 2}
     cost_order = {
@@ -304,23 +349,38 @@ def _sorting_tuple(model: ModelEntry) -> tuple[Any, ...]:
     )
 
 
+# Retrieves registered ModelEntry by its namespaced model identifier.
+# Looks up model ID in global in-memory MODEL_CATALOG dictionary.
+# Returns ModelEntry instance or none if identifier is not found.
 def get_model_by_id(model_id: str) -> Optional[ModelEntry]:
     return MODEL_CATALOG.get(model_id)
 
 
+# Returns list of all catalog models ordered by multi-criteria ranking.
+# Sorts entries using current health scores and static configuration priorities.
+# Returns comprehensive list of registered ModelEntry instances.
 def get_all_models() -> List[ModelEntry]:
     return sorted(MODEL_CATALOG.values(), key=_sorting_tuple)
 
 
+# Filters catalog for currently active and configured model candidates.
+# Excludes disabled or retired models whose providers lack active credentials.
+# Returns ordered list of enabled ModelEntry instances.
 def get_enabled_models() -> List[ModelEntry]:
     return [model for model in get_all_models() if model.enabled]
 
 
+# Retrieves enabled model candidates belonging to a specific provider.
+# Filters enabled models by case-insensitive provider name comparison.
+# Returns ordered list of ModelEntry instances for requested provider.
 def get_models_by_provider(provider: str) -> List[ModelEntry]:
     provider_name = str(provider).strip().lower()
     return [model for model in get_enabled_models() if model.provider == provider_name]
 
 
+# Filters and ranks available models matching capability and tier constraints.
+# Applies cost ceiling, minimum speed requirements, and provider filters.
+# Returns sorted list of compliant ModelEntry instances ordered by suitability.
 def get_models_for_task(
     capability: ModelCapability,
     max_cost_tier: Optional[CostTier] = None,
@@ -346,6 +406,9 @@ def get_models_for_task(
     return sorted(results, key=_sorting_tuple)
 
 
+# Builds prioritized fallback chain starting from requested primary model.
+# Discovers alternate healthy models sharing matching task capabilities.
+# Returns ordered list bounded by maximum chain length for resilient failover.
 def get_fallback_chain(
     primary_model_id: str,
     capability: Optional[ModelCapability] = None,
@@ -379,6 +442,9 @@ def get_fallback_chain(
     return chain
 
 
+# Resolves lowest cost model satisfying requested capability requirements.
+# Evaluates enabled candidate models against cost tier priority ordering.
+# Returns most economical ModelEntry candidate or none if none qualify.
 def get_cheapest_model_for_task(capability: ModelCapability) -> Optional[ModelEntry]:
     models = get_models_for_task(capability)
     if not models:
@@ -388,6 +454,9 @@ def get_cheapest_model_for_task(capability: ModelCapability) -> Optional[ModelEn
     return min(models, key=lambda model: cost_order.index(model.cost_tier))
 
 
+# Resolves highest throughput model satisfying requested capability.
+# Evaluates candidate models against speed tier priority ordering.
+# Returns fastest ModelEntry candidate or none if no models qualify.
 def get_fastest_model_for_task(capability: ModelCapability) -> Optional[ModelEntry]:
     models = get_models_for_task(capability)
     if not models:
@@ -397,11 +466,17 @@ def get_fastest_model_for_task(capability: ModelCapability) -> Optional[ModelEnt
     return min(models, key=lambda model: speed_order.index(model.speed_tier))
 
 
+# Resolves top-ranked model candidate satisfying specified task capability.
+# Returns optimal model according to multi-criteria health and rank sorting.
+# Returns highest-scoring ModelEntry or none if no models qualify.
 def get_best_model_for_task(capability: ModelCapability) -> Optional[ModelEntry]:
     models = get_models_for_task(capability)
     return models[0] if models else None
 
 
+# Aggregates operational statistics and breakdowns across model catalog.
+# Counts models by provider, capability, cost tier, and reasoning strength.
+# Returns dictionary detailing catalog metrics and provider availability.
 def get_catalog_stats() -> Dict[str, Any]:
     all_models = list(MODEL_CATALOG.values())
     enabled = [model for model in all_models if model.enabled]
@@ -448,6 +523,9 @@ def get_catalog_stats() -> Dict[str, Any]:
     }
 
 
+# Synchronizes model enablement status with provider environment credentials.
+# Activates unretired models that have configured credential keys present.
+# Mutates enabled boolean attribute on ModelEntry instances in place.
 def _auto_enable_models() -> None:
     for model in MODEL_CATALOG.values():
         model.enabled = not model.retired and _provider_configured(model.provider)

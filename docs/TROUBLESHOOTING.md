@@ -309,13 +309,13 @@ NODE_ENV=development npm run migrate:transactions
 
 **Solutions:**
 ```bash
-# Run seed scripts
+# Seed sample content into the separate local fixture database
 cd server
-npm run seed:content
+MOCK_CONTENT_MONGO_URI=mongodb://127.0.0.1:27017/finwise-fixtures npm run seed:content
 
 # Verify data in MongoDB
-mongosh --eval "db.blogs.countDocuments()"
-mongosh --eval "db.growthStories.countDocuments()"
+mongosh mongodb://127.0.0.1:27017/finwise-fixtures --eval "db.blogposts.countDocuments()"
+mongosh mongodb://127.0.0.1:27017/finwise-fixtures --eval "db.growthstories.countDocuments()"
 ```
 
 ### MongoDB Authentication Errors
@@ -358,12 +358,12 @@ mongosh --eval "db.growthStories.countDocuments()"
    GOOGLE_CLIENT_ID=your-client-id
    GOOGLE_CLIENT_SECRET=your-client-secret
    ```
-2. Add callback URL to Google Cloud Console:
+2. Add the callback URL to the OAuth client's "Authorized redirect URIs" in Google Cloud Console. It must equal `GOOGLE_CALLBACK_URL`, or by default `<CLIENT_URL origin>/api/auth/google/callback`:
    ```
-   http://localhost:3000/api/v1/auth/google/callback
+   http://localhost:5173/api/auth/google/callback
    ```
-3. Enable Google+ API in Google Cloud Console
-4. Verify `VITE_GOOGLE_CLIENT_ID` in `client/.env`
+3. No client-side variable is needed (there is no `VITE_GOOGLE_CLIENT_ID`). Check `GET /api/auth/providers` returns `"google": true`.
+4. Landing on `/login?error=<code>`: `google_unverified_email` (Google email not verified), `google_state_invalid` (expired/blocked cookie, retry), `google_denied` (cancelled), `google_account_conflict`, `google_failed`.
 
 ### JWT Token Expired
 
@@ -511,3 +511,46 @@ mindmap
 │    └─► Confirm recovery and update post-mortem logs 🟢                 │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 10. 2026 Enterprise Distributed Subsystem Troubleshooting
+
+### 10.1 AI Canary Invariant Validation Failure (HTTP 422)
+**Symptom**: AI recommendation synthesis returns `422 Unprocessable Entity` with `code: "INVARIANT_VIOLATION"`.  
+**Root Cause**:
+- Number safety check detected a numerical value in candidate text that is not in the source context ($D_{\text{cand}} \not\subseteq D_{\text{ref}}$).
+- Budget reallocation proposed envelopes do not sum to the exact initial allocation ($\sum \Delta B_i \neq 0$).  
+**Resolution**:
+1. Check the response payload from `POST /api/v1/ai/canary/validate`.
+2. Inspect the extracted digits array to identify the hallucinated quantity.
+3. If testing in development without AI Core, ensure fallback mode is operational:
+   ```bash
+   curl http://localhost:3000/api/v1/ai/canary/status
+   ```
+
+---
+
+### 10.2 Delayed Workflow Run Stalled in "DELAYED" Status
+**Symptom**: A workflow run with a delay node does not transition to `COMPLETED` after the delay timer expires.  
+**Root Cause**: The background delay sweep worker (`sweepDelayedWorkflowRuns`) is paused or BullMQ scheduler is unattached.  
+**Resolution**:
+1. Check MongoDB for overdue delayed runs:
+   ```bash
+   mongosh personal-finance --eval "db.workflowruns.find({ status: 'DELAYED' })"
+   ```
+2. Manually trigger a sweep in the Node REPL:
+   ```typescript
+   import { sweepDelayedWorkflowRuns } from './server/src/services/workflows';
+   await sweepDelayedWorkflowRuns();
+   ```
+
+---
+
+### 10.3 Offline Journal Drafts Not Syncing Upon Network Reconnect
+**Symptom**: User notes remain marked as `"Saved offline (pending sync)"` even after internet connectivity returns.  
+**Root Cause**: Browser `online` event did not fire (common in virtualized network adapters) or client idempotency key collision occurred.  
+**Resolution**:
+1. In Chrome DevTools, toggle throttling to **Offline** and back to **No throttling**.
+2. Inspect `localStorage.getItem("finwise_offline_journal_drafts")` to verify draft JSON validity.
+3. Call `syncOfflineJournalDrafts()` directly from the browser console.

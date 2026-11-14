@@ -93,6 +93,9 @@ import { Schema, model, Document, Types } from "mongoose"; // MongoDB ODM
 import type { MutationSource } from "../types/provenance"; // Provenance tracking types
 import { orgScopePlugin } from "../utils/orgScopePlugin"; // Organization scope plugin
 
+// Defines the fundamental financial direction classifications for ledger records.
+// Distinguishes money entering accounts (income), outflows (expense), and capital assets (investment).
+// Drives balance adjustments, budget envelope calculations, and cashflow reports.
 /**
  * Transaction Type Enum
  *
@@ -100,6 +103,9 @@ import { orgScopePlugin } from "../utils/orgScopePlugin"; // Organization scope 
  */
 export type TransactionType = "income" | "expense" | "investment";
 
+// Defines the mutation provenance metadata for individual financial transaction records.
+// Captures origin mechanisms, creator actor types, and source reference identifiers.
+// Provides end-to-end traceability for transactions generated via AI, imports, or OCR.
 /**
  * Transaction Source Interface
  *
@@ -108,6 +114,9 @@ export type TransactionType = "income" | "expense" | "investment";
  */
 export interface ITransactionSource extends MutationSource {}
 
+// Defines the comprehensive domain interface for financial transaction entities.
+// Encapsulates core amounts, split sub-allocations, review flags, and reconciliation data.
+// Acts as the primary ledger entry structure representing all economic activity.
 /**
  * Transaction Record Interface
  *
@@ -138,6 +147,7 @@ export interface ITransactionRecord {
     confidence_score?: number; // Category confidence score (0.0–1.0, higher = more confident)
     reviewed_at?: Date; // When the transaction was approved/reviewed
     reviewed_by?: string; // User ID who reviewed/approved the transaction
+    reviewed_values_hash?: string; // Ledger values covered by this approval
     updatedAt?: Date; // When review was last updated
   };
   reconciliation?: { // Reconciliation information
@@ -147,6 +157,7 @@ export interface ITransactionRecord {
     statementBalance?: number; // Statement balance
     reconciledAt?: Date; // When transaction was reconciled
   };
+  reconciliationStatus?: "unreconciled" | "cleared" | "reconciled" | "pending" | string;
   importDetails?: { // Import tracking information
     importId?: string; // Import batch ID
     fileName?: string; // Source file name
@@ -159,6 +170,9 @@ export interface ITransactionRecord {
   updatedAt: Date; // When transaction was last updated
 }
 
+// Extends transaction record domain attributes with standard Mongoose Document methods.
+// Exposes database primary keys, document lifecycle methods, and timestamp fields.
+// Represents a persistent transaction document returned by database ledger queries.
 /**
  * Transaction Record Document Interface
  *
@@ -168,6 +182,9 @@ export interface ITransactionRecordDocument extends ITransactionRecord, Document
   _id: Types.ObjectId; // MongoDB ObjectId
 }
 
+// Configures the Mongoose schema mapping for the primary transaction collection.
+// Enforces validation rules on transaction types, split amounts, and review statuses.
+// Automatically manages creation and modification timestamps across transaction writes.
 /**
  * Transaction Schema Definition
  *
@@ -233,7 +250,7 @@ const transactionSchema = new Schema<ITransactionRecordDocument>(
     source: {
       origin: {
         type: String,
-        enum: ["manual", "csv_import", "receipt_ocr", "journal", "task_completion", "ai_plan", "connector"],
+        enum: ["manual", "csv_import", "receipt_ocr", "journal", "task_completion", "ai_plan", "connector", "voice_note"],
       },
       request_id: { type: String }, // Request ID for tracing
       task_id: { type: String }, // Task ID (for async operations)
@@ -267,6 +284,7 @@ const transactionSchema = new Schema<ITransactionRecordDocument>(
       confidence_score: { type: Number, min: 0, max: 1, default: null }, // Category confidence (0.0–1.0)
       reviewed_at: { type: Date }, // When the transaction was approved/reviewed
       reviewed_by: { type: String, trim: true, maxlength: 64 }, // User ID who reviewed/approved
+      reviewed_values_hash: { type: String, maxlength: 64 },
       updatedAt: { type: Date }, // When review was last updated
     },
 
@@ -285,6 +303,11 @@ const transactionSchema = new Schema<ITransactionRecordDocument>(
       statementDate: { type: Date }, // Statement date
       statementBalance: { type: Number }, // Statement balance
       reconciledAt: { type: Date }, // When transaction was reconciled
+    },
+    reconciliationStatus: {
+      type: String,
+      enum: ["unreconciled", "cleared", "reconciled", "pending"],
+      default: "unreconciled",
     },
 
     /**
@@ -306,6 +329,9 @@ const transactionSchema = new Schema<ITransactionRecordDocument>(
   { timestamps: true } // Automatically add createdAt and updatedAt fields
 );
 
+// Integrates organization multi-tenancy enforcement on all transaction operations.
+// Automatically scopes queries and mutations to prevent cross-tenant data access.
+// Emits developmental warnings and enforces production guards for data isolation.
 /**
  * Organization Scope Plugin
  *
@@ -314,6 +340,9 @@ const transactionSchema = new Schema<ITransactionRecordDocument>(
  */
 transactionSchema.plugin(orgScopePlugin);
 
+// Configures compound database indexes tailored for high-volume ledger queries.
+// Accelerates timeline filtering by accounts, merchants, categories, and review flags.
+// Establishes a partial unique index on external IDs to prevent import duplicates.
 /**
  * Database Indexes
  *
@@ -343,6 +372,9 @@ transactionSchema.index({ orgId: 1, externalId: 1 }, {
 transactionSchema.index({ legacyId: 1 }, { unique: true, sparse: true });
 transactionSchema.index({ orgId: 1, date: -1, amount: 1 }); // budget envelope aggregation
 
+// Configures a weighted text search index across transaction descriptions and categories.
+// Assigns higher weight to merchant descriptions to prioritize exact title matches.
+// Enables natural language keyword searching across user financial histories.
 /**
  * Full-Text Search Index
  *
@@ -354,6 +386,9 @@ transactionSchema.index(
   { name: "txn_text_search", weights: { description: 3, category: 1 } },
 );
 
+// Compiles and exports the Mongoose model for financial transaction records.
+// Exposes data access methods to query, create, split, review, and reconcile transactions.
+// Serves as the primary operational ledger for all budgeting and financial analytics.
 /**
  * Transaction Model
  *

@@ -74,6 +74,9 @@
 
 import { logger } from "../config/logger";
 
+// Encapsulates diagnostic telemetry for a failed asynchronous background task.
+// Captures human-readable operation identifiers, error details, and timestamps.
+// Stores arbitrary contextual metadata to assist in post-incident debugging.
 interface DeadLetter {
   /** Human-readable description of the failed operation */
   operation: string;
@@ -92,6 +95,9 @@ const MAX_DEAD_LETTERS = 500;
 const deadLetters: DeadLetter[] = [];
 
 /** Record a failure already handled by a caller, using the same bounded queue. */
+// Records an error occurrence into the bounded in-memory dead-letter ring buffer.
+// Evicts oldest failure entries using FIFO ordering when capacity exceeds limits.
+// Emits structured warning logs with execution context to ensure failure visibility.
 export function recordDeadLetter(params: {
   operation: string;
   error: unknown;
@@ -128,6 +134,9 @@ export function recordDeadLetter(params: {
  * @param operation - Human-readable description of the operation
  * @param context - Optional additional context for debugging
  */
+// Wraps unawaited background promises to capture errors rather than swallowing them.
+// Attaches contextual metadata and operational descriptions to downstream rejections.
+// Routes promise failures into the dead-letter queue without throwing unhandled rejections.
 export function fireAndForget(
   promise: Promise<unknown>,
   operation: string,
@@ -142,6 +151,9 @@ export function fireAndForget(
  * Get all dead letters (for diagnostic endpoint).
  * Returns a copy to prevent external mutation.
  */
+// Retrieves a snapshot copy of all dead-letter records currently held in memory.
+// Clones the internal array buffer to safeguard against external state mutation.
+// Powers administrative diagnostic endpoints and system health dashboards.
 export function getDeadLetters(): DeadLetter[] {
   return [...deadLetters];
 }
@@ -150,6 +162,9 @@ export function getDeadLetters(): DeadLetter[] {
  * Get dead letter count by operation name.
  * Useful for monitoring dashboards.
  */
+// Aggregates dead-letter failure counts grouped by specific operation names.
+// Computes operational failure frequencies across recent in-memory records.
+// Facilitates rapid identification of recurring background process failures.
 export function getDeadLetterStats(): Record<string, number> {
   const stats: Record<string, number> = {};
   for (const entry of deadLetters) {
@@ -161,6 +176,9 @@ export function getDeadLetterStats(): Record<string, number> {
 /**
  * Clear all dead letters (for testing or manual cleanup).
  */
+// Flushes all recorded failure entries from the in-memory dead-letter queue.
+// Resets the ring buffer array length to zero immediately.
+// Primarily utilized during integration test isolation and diagnostic resets.
 export function clearDeadLetters(): void {
   deadLetters.length = 0;
 }

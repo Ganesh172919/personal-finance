@@ -18,9 +18,9 @@
 | `NODE_ENV`   | No       | Environment mode                      | `development` | `development`, `production`, `test`          |
 | `MONGO_URI`  | **Yes**  | MongoDB connection string             | —             | `mongodb://localhost:27017/personal-finance` |
 | `JWT_SECRET` | **Yes**  | Secret for signing JWT tokens         | —             | (random 64-char string)                      |
-| `REDIS_URL`  | No\*     | Redis connection URI (BullMQ + cache) | —             | `redis://localhost:6379`                     |
+| `REDIS_URL`  | No\*     | Redis connection URI for optional cache features | —             | `redis://localhost:6379`                     |
 
-> \* Required for background jobs, caching, and rate limiting in production.
+> \* Recommended for caching and distributed rate limiting in production. The application worker claims durable background-job records from MongoDB.
 
 ---
 
@@ -41,13 +41,13 @@
 
 ### Authentication & OAuth
 
-| Variable               | Required | Description                 | Example                                             |
-| ---------------------- | -------- | --------------------------- | --------------------------------------------------- |
-| `GOOGLE_CLIENT_ID`     | No\*     | Google OAuth2 client ID     | (from GCP console)                                  |
-| `GOOGLE_CLIENT_SECRET` | No\*     | Google OAuth2 client secret | (from GCP console)                                  |
-| `GOOGLE_CALLBACK_URL`  | No\*     | Google OAuth2 callback URL  | `http://localhost:3000/api/v1/auth/google/callback` |
+| Variable               | Required | Description                                                                                                                         | Example                                            |
+| ---------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `GOOGLE_CLIENT_ID`     | No\*     | Google OAuth2 web client ID (server-side flow; there is no `VITE_` equivalent)                                                      | `1234-abc.apps.googleusercontent.com`              |
+| `GOOGLE_CLIENT_SECRET` | No\*     | Google OAuth2 client secret (server only, never exposed to the browser)                                                             | (from GCP console)                                 |
+| `GOOGLE_CALLBACK_URL`  | No       | Redirect URI sent to Google. Default: `<CLIENT_URL origin>/api/auth/google/callback`. Must match an Authorized redirect URI in GCP. | `https://app.example.com/api/auth/google/callback` |
 
-> \* Required only if Google OAuth sign-in is enabled.
+> \* Set both to enable "Continue with Google". `GET /api/auth/providers` reports `google: true` only when both are present.
 
 ---
 
@@ -127,6 +127,17 @@
 | `AI_CORE_HEALTH_TIMEOUT_MS`         | No       | AI Core health check timeout                 | `2500`                  | `5000`           |
 | `AI_CORE_CIRCUIT_FAILURE_THRESHOLD` | No       | Failures before circuit breaker opens        | `3`                     | `5`              |
 | `AI_CORE_CIRCUIT_OPEN_MS`           | No       | Duration circuit stays open                  | `30000`                 | `60000`          |
+| `AI_MAX_CONCURRENCY` | No | Global in-flight AI work (wins over AI_CORE_MAX_CONCURRENCY alias) | `8` | `16` |
+| `AI_QUEUE_MAX` | No | Max AI requests waiting in the priority queue; more are shed with 503 + Retry-After | `50` | `100` |
+| `AI_QUEUE_MAX_PER_USER` | No | Max waiting AI requests per user; more are shed with 429 + Retry-After | `6` | `4` |
+| `AI_QUEUE_MAX_WAIT_MS` | No | Longest an AI request may wait in the queue before 503 + Retry-After | `15000` | `10000` |
+| `AI_USER_RATE_LIMIT_MAX` | No | Per-user AI POST rate limit per window (beneath the org limit; Redis-shared) | `20` | `30` |
+| `AI_USER_RATE_LIMIT_WINDOW_MS` | No | Window for the per-user AI rate limit | `60000` | `60000` |
+| `EVENT_BUS` | No | `memory` (default) or `redis` pub/sub so SSE events cross gateway replicas (needs REDIS_URL) | `memory` | `redis` |
+| `AI_CORE_CONNECT_TIMEOUT_MS` | No | TCP connect timeout to AI Core (AI_CORE_TIMEOUT_MS is the read timeout) | `2000` | `1000` |
+| `AI_CORE_RETRY_MAX` | No | Jittered retries for idempotent AI Core calls only | `1` | `2` |
+| `AI_CORE_RETRY_BASE_MS` | No | Base backoff for idempotent retries | `200` | `200` |
+| `AI_CORE_RETRY_AFTER_MAX_MS` | No | Longest AI Core 503 Retry-After the gateway waits before its single retry | `5000` | `5000` |
 | `AI_CORE_HEALTH_CACHE_MS`           | No       | Health check response cache duration         | `5000`                  | `10000`          |
 | `CONVERSATION_INSIGHTS_CACHE_TTL_MS` | No | Owned dashboard-summary cache TTL; 0 disables, maximum 300000 | `120000` | `60000` |
 
@@ -180,7 +191,7 @@ model calls and omit historical execution traces.
 
 | Variable                  | Required | Description                      | Default | Example |
 | ------------------------- | -------- | -------------------------------- | ------- | ------- |
-| `ASYNC_JOBS_ENABLED`      | No       | Enable BullMQ background workers | `false` | `true`  |
+| `ASYNC_JOBS_ENABLED`      | No       | Enable the MongoDB polling background worker | `false` | `true`  |
 | `WORKER_CONCURRENCY`      | No       | Worker concurrent job slots      | `4`     | `8`     |
 | `WORKER_POLL_INTERVAL_MS` | No       | Worker queue poll interval (ms)  | `1000`  | `2000`  |
 
@@ -229,9 +240,8 @@ model calls and omit historical execution traces.
 | Variable                | Required | Description             | Example                 |
 | ----------------------- | -------- | ----------------------- | ----------------------- |
 | `VITE_API_BASE_URL`     | **Yes**  | Backend API base URL    | `http://localhost:3000` |
-| `VITE_GOOGLE_CLIENT_ID` | No\*     | Google OAuth2 client ID | (from GCP console)      |
 
-> \* Required if Google OAuth sign-in is enabled.
+> Google sign-in needs **no** client variable: the SPA only links to `/api/auth/google` and asks `GET /api/auth/providers` whether to show the button. Configure `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` on the server.
 >
 > **Note:** All client env vars must be prefixed with `VITE_` to be exposed to the browser bundle by Vite.
 
@@ -267,8 +277,24 @@ model calls and omit historical execution traces.
 | `LLM_TIMEOUT_SECONDS` | No | Upstream LLM timeout in seconds | runtime default | `30` |
 | `AI_CORE_ALLOWED_ORIGINS` | No | CORS origins for the Python AI Core | `http://localhost:3000` | `http://localhost:3000,https://app.example.com` |
 | `LOG_LEVEL` | No | Python logging level | `INFO` | `DEBUG` |
+| `AI_CORE_MAX_INFLIGHT` | No | Heavy requests admitted per process; beyond it `503` + `Retry-After` (load shedding) | `6` | `6` |
+| `AI_CORE_SHED_RETRY_AFTER_SECONDS` | No | `Retry-After` value on shed responses | `2` | `2` |
+| `LLM_RPM` / `LLM_RPD` / `LLM_BURST` | No | Token-bucket budget per process (requests per minute / day / burst) | `15` / `1500` / `3` | `10` |
+| `LLM_RATE_LIMIT_MAX_WAIT_SECONDS` | No | Max wait for a bucket token; `0` fails fast to the deterministic fallback | `0` | `0` |
+| `LLM_MAX_ATTEMPTS` | No | Upstream attempts per call | `2` | `2` |
+| `LLM_RETRY_BASE_DELAY_SECONDS` / `LLM_RETRY_MAX_DELAY_SECONDS` | No | Jittered retry backoff bounds | `1.0` / `5.0` | `1.0` |
+| `LLM_CACHE_ENABLED` | No | Cache + coalesce identical low-temperature LLM calls | `1` | `0` |
+| `LLM_CACHE_MAX_TEMPERATURE` | No | Calls above this temperature are never cached | `0.2` | `0.2` |
+| `LLM_CACHE_TTL_SECONDS` / `LLM_CACHE_MAX_ENTRIES` | No | Entry lifetime / local LRU size | `900` / `512` | `900` |
+| `LLM_CACHE_REDIS_URL` | No | Shared cache across replicas (falls back to `REDIS_URL`); a dead Redis degrades to the local LRU | unset | `redis://redis:6379` |
+| `LLM_PROMPT_TEMPLATE_VERSION` | No | Part of the cache key; bump when prompts change | `v1` | `v2` |
+| `SUBAGENT_POOL_SIZE` | No | Shared sub-agent thread pool size per process | `16` | `16` |
+| `SUBAGENT_MAX_FANOUT` | No | Max parallel sub-agents per dependency level | `4` | `4` |
 
 ### Notes
+
+- Endpoints: `/health` is liveness only; `/ready` returns `503` while draining so load balancers stop routing.
+- The LLM cache scope (org id) is part of every key, so one org can never read another org's cached completion.
 
 - OpenRouter supports single-key and multi-key pool formats.
 - Key pools are health-tracked independently and only expose redacted fingerprints in status payloads.
@@ -313,9 +339,9 @@ mindmap
   root((⚙️ FinWise Env Config Matrix))
     🛡️ Server Gateway (server/.env)
       JWT_SECRET & REFRESH_SECRET (Min 64 chars)
-      DATABASE_URL (mongodb://...)
+      MONGO_URI (mongodb://...)
       REDIS_URL (redis://...)
-      AI_CORE_URL (http://localhost:8001)
+      PYTHON_API_URL (http://localhost:8001)
       RATE_LIMIT_WINDOW_MS & MAX
       CORS_ORIGINS (Allowed browser origins)
     🧠 AI Core (server/AI_Core/.env)
@@ -326,7 +352,6 @@ mindmap
       LLM_PROVIDER_PRIORITY (Failover order)
     💻 Client Frontend (client/.env)
       VITE_API_URL (/api/v1)
-      VITE_GOOGLE_CLIENT_ID (OAuth2 PKCE)
       VITE_ENABLE_DEV_LOGS (true/false)
     🔒 Production Hardening Flags
       NODE_ENV=production
@@ -374,7 +399,7 @@ dotenv.config();
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
-  DATABASE_URL: z.string().url(),
+  MONGO_URI: z.string().url(),
   REDIS_URL: z.string().url().default("redis://localhost:6379"),
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters long"),
   PYTHON_API_URL: z.string().url().default("http://localhost:8001"),
@@ -407,8 +432,95 @@ export function getEnv(): Env {
 | Variable | Required | Description | Default | Example |
 | :--- | :--- | :--- | :--- | :--- |
 | `AI_CORE_INTERNAL_TOKEN` | Yes (in prod) | Shared internal bearer token protecting Python AI Core | — | `sec_token_9900aabbcc11` |
+| `WEBHOOK_CREDENTIALS_KEY` | Required to save webhook Authorization values | Base64-encoded 32-byte AES-256-GCM key | — | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
 | `GRIDFS_UPLOAD_TIMEOUT_MS` | No | Timeout for PDFKit document compilation stream writes | `60000` | `60000` |
 | `DLQ_MAX_CAPACITY` | No | Maximum quarantined jobs in `bull:finwise-dlq` | `500` | `500` |
 | `NEWSLETTER_CRON_INTERVAL_MS`| No | Polling frequency for scheduled user financial digests | `60000` | `60000` |
 | `CONVERSATION_INSIGHTS_TTL_MS`| No | Cache TTL for in-process coalesced session insights | `120000` | `120000` |
 | `METRICS_TOKEN` | Yes (in prod) | Bearer token required to scrape Prometheus `GET /api/metrics` | — | `metric_secret_key_88` |
+
+| `PYTHON_API_URL` | No | Internal HTTP RPC endpoint for Python FastAPI AI Core | `http://localhost:8001` | `http://ai-core.internal:8001` |
+| `CANARY_SAMPLE_SIZE` | No | Number of automated probes in Canary test runs | `175` | `175` |
+| `CANARY_STRICT_MODE` | No | Aborts LLM synthesis if math invariant breached | `true` | `true` |
+| `MERCHANT_EMBEDDING_DIM` | No | Dimension of L2-normalized merchant vector space | `64` | `64` |
+| `RAG_GROUNDING_THRESHOLD`| No | Minimum hybrid score for verified citation gating | `0.70` | `0.70` |
+| `WORKFLOW_DELAY_SWEEP_MS`| No | Polling loop frequency for delayed workflow runs | `60000` | `60000` |
+| `AI_CORE_METRICS_TOKEN` | No | Internal bearer token protecting AI Core metrics | — | `metric_secret_key_88` |
+| `FILE_UPLOAD_MAX_BYTES` | No | Maximum workspace document upload size in bytes | `26214400` | `26214400` |
+| `AI_CORE_STATE_BACKEND` | No | AI Core state backend for sessions, checkpoints and memories: `mongo`, `sqlite` or `memory` (in-process mongomock, tests). Empty = `mongo` when a Mongo URI is set, else `sqlite` | auto | `mongo` |
+| `AI_CORE_MONGO_URI` | No | MongoDB URI for AI Core state; falls back to `MONGO_URI` | `MONGO_URI` | `mongodb://mongo:27017/?replicaSet=rs0` |
+| `AI_CORE_MONGO_DB` | No | Database name for AI Core state | `finwise_ai_core` | `finwise_ai_core` |
+| `AI_CORE_SESSION_TTL_SECONDS` | No | Mongo TTL index on session `updatedAt` (idle sessions expire) | `86400` (24h) | `86400` |
+| `AI_CORE_CHECKPOINT_TTL_SECONDS` | No | Mongo TTL index on checkpoint `createdAt` | `604800` (7d) | `604800` |
+| `AI_CORE_CHECKPOINT_MODE` | No | `boundary` = checkpoint at request start and end only; `every_node` = legacy write after every graph node | `boundary` | `boundary` |
+| `AI_CORE_READY_REQUIRES_STATE` | No | When truthy, `/ready` returns 503 while the state backend is unhealthy (otherwise it only reports `state_backend`) | off | `1` |
+| `REDIS_CIRCUIT_SECONDS` | No | Seconds the agent/sub-task response caches skip Redis after a failure (they use `REDIS_URL`, fall back to a local LRU) | `30` | `30` |
+| `FINWISE_MEMORY_DB_PATH` | No | SQLite database path for AI Core memory; only used when the state backend is `sqlite` | `memory.db` | `data/memory.db` |
+| `FINWISE_MEMORY_TOP_K` | No | Default top-k facts retrieved from FTS5 memory | `5` | `10` |
+| `FINWISE_SERVER_URL` | No | Base URL of Express server for tool execution IPC | `http://localhost:3000` | `http://api:3000` |
+| `FINWISE_TOOLS_TOKEN` | No | Shared token for internal tool calls | — | `sec_tool_token_123` |
+| `LLM_COST_USD_PER_1K_INPUT_TOKENS` | No | Input token unit price for budget accounting | `0.0015` | `0.0015` |
+| `LLM_COST_USD_PER_1K_OUTPUT_TOKENS` | No | Output token unit price for budget accounting | `0.002` | `0.002` |
+| `LLM_MAX_RETRIES` | No | Provider retry threshold before tripping circuit | `3` | `3` |
+| `LLM_MAX_TOKENS` | No | Maximum completion token ceiling | `4096` | `8192` |
+| `LLM_MODEL` | No | Default foundation model identifier | `gemini-2.0-flash` | `claude-3-5-sonnet` |
+| `LLM_TEMPERATURE` | No | Sampling temperature for financial synthesis | `0.2` | `0.1` |
+| `MODEL_CANDIDATES` | No | Comma-separated list of candidate models for fallback | — | `gemini-2.0-flash,claude-3-5-sonnet` |
+| `VISION_LANG_ALLOWED` | No | Allowed OCR language identifiers | `en` | `en,es,fr` |
+| `VISION_LANG_DEFAULT` | No | Default OCR recognition language | `en` | `en` |
+| `VISION_MAX_IMAGE_BYTES` | No | Maximum image size for receipt OCR in bytes | `8388608` | `8388608` |
+| `VITE_API_PROXY_TARGET` | No | Vite client development API proxy target URL | `http://localhost:3000` | `http://localhost:3000` |
+| `VITE_APP_NAME` | No | Application branding name displayed in UI | `FinWise` | `FinWise` |
+| `VITE_LOG_LEVEL` | No | Browser runtime log filtering level | `info` | `debug` |
+
+## Gateway Scaling: Auth Cache, Data Tier, Worker Hardening
+
+| Variable | Required | Description | Default | Example |
+| --- | --- | --- | --- | --- |
+| `AUTH_CACHE_TTL_SECONDS` | No | TTL for the cached authenticated user and org memberships (Redis + local). `0` disables the cache; invalidated on every User/OrgMember write | `45` (`0` when `NODE_ENV=test`) | `30` |
+| `AUTH_CACHE_LOCAL_TTL_MS` | No | In-process tier TTL when Redis is configured (bounds cross-replica staleness) | `5000` | `2000` |
+| `AUTH_CACHE_LOCAL_MAX` | No | Max entries in the in-process auth cache LRU | `5000` | `10000` |
+| `MONGO_MAX_POOL_SIZE` | No | MongoDB driver `maxPoolSize` | `20` | `50` |
+| `MONGO_MIN_POOL_SIZE` | No | MongoDB driver `minPoolSize` | `0` | `5` |
+| `MONGO_SOCKET_TIMEOUT_MS` | No | MongoDB socket timeout | `45000` | `60000` |
+| `MONGO_WAIT_QUEUE_TIMEOUT_MS` | No | Max wait for a pooled connection before failing | `10000` | `5000` |
+| `MONGO_SERVER_SELECTION_TIMEOUT_MS` | No | MongoDB server selection timeout | `10000` | `5000` |
+| `WORKER_JOB_MAX_ATTEMPTS` | No | Attempts per queued job (workflow run, integration sync, export) before it is dead-lettered | `3` | `5` |
+| `WORKER_JOB_BACKOFF_BASE_MS` | No | Base of the exponential retry backoff (equal jitter) | `5000` | `10000` |
+| `WORKER_JOB_BACKOFF_MAX_MS` | No | Backoff ceiling | `300000` | `600000` |
+| `WORKER_JOB_VISIBILITY_TIMEOUT_MS` | No | A `running` job older than this is treated as abandoned: requeued (or dead-lettered after max attempts) | `900000` | `600000` |
+| `AI_OPTIMIZE_ENABLED` | No | Worker runs the nightly per-org AI Core optimizer (`POST /api/learning/optimize/run`); orgs with `aiLearningOptOut` are skipped; 404/501 from AI Core is tolerated | `true` | `false` |
+| `AI_OPTIMIZE_HOUR_UTC` | No | UTC hour at which the nightly optimizer runs (once per day, leader-elected) | `3` | `2` |
+| `AI_OPTIMIZE_CHECK_INTERVAL_MS` | No | How often the worker checks whether it is time to run | `600000` | `300000` |
+| `ORG_SCOPE_ENFORCE` | No | `true` makes unscoped queries on org-scoped models throw; `false` forces warn-only; unset = enforce only in production. Cross-tenant jobs use `withOrgScopeBypass(reason, fn)` | production only | `true` |
+
+Leader election (newsletter scheduler, domain-event fanout when `EVENT_BUS=redis`, nightly optimizer) uses Redis `SET NX PX` with Lua renewal when `REDIS_URL` is set and an atomic claim on the `leader_locks` Mongo collection otherwise; no extra variables.
+
+Dead-letter jobs are stored in the `dead_letter_jobs` collection. Org admins list them with `GET /api/v1/admin/dead-letter-jobs?cursor=&limit=` and re-queue one with `POST /api/v1/admin/dead-letter-jobs/:id/replay`.
+
+
+## AI Core Runtime, Capacity & Telemetry Advanced Tuning
+
+| Variable | Required | Description | Default | Example |
+| --- | --- | --- | --- | --- |
+| `AI_CORE_DRAIN_SECONDS` | No | Seconds to wait for in-flight requests to drain during AI Core graceful termination | `10` | `15` |
+| `AI_CORE_MONGO_MAX_POOL` | No | Maximum connection pool size for the AI Core PyMongo client | `20` | `50` |
+| `AI_CORE_MONGO_SELECT_TIMEOUT_MS` | No | Server selection timeout in milliseconds for AI Core MongoDB connections | `5000` | `3000` |
+| `AI_CORE_MONGO_SOCKET_TIMEOUT_MS` | No | Socket read/write timeout in milliseconds for AI Core MongoDB operations | `45000` | `60000` |
+| `AI_CORE_REQUIRE_ACTOR_HEADERS` | No | Requires gateway-supplied `X-Internal-Org-Id` and `X-Internal-User-Id` on AI Core process requests | `false` | `true` |
+| `AI_EVAL_REPORT_DIR` | No | Directory for offline eval JSON reports (the CLI runner also compares against the most recent report there) | `docs/records/evaluations` | `/var/log/finwise/evals` |
+| `AI_PROMOTION_MODE` | No | `suggest` (no promotion), `human` (admin approval), or `auto_prompts` (only gated prompt/exemplar artifacts auto-promote); routing/model changes always require an admin | `human` | `human` |
+| `AI_REGISTRY_CACHE_TTL_SECONDS` | No | AI Core registry artifact loader cache TTL in seconds | `30` | `120` |
+| `AI_SHADOW_ENABLED` | No | Enable shadow artifact experiments; off by default to preserve free-tier LLM capacity | `false` | `false` |
+| `LLM_BANDIT_ENABLED` | No | Enable bounded model ordering among allowed catalog entries | `false` | `false` |
+| `AI_OPTIMIZER_LLM_BUDGET` | No | Maximum LLM calls per optimizer run; zero runs heuristics only | `0` | `0` |
+| `AI_LEARNING_OPT_OUT_ORGS` | No | Additional AI Core org IDs excluded from learning, comma separated (gateway also enforces the per-org setting) | empty | `orgA,orgB` |
+| `AI_RUN_TTL_DAYS` | No | AI learning run trace retention in MongoDB | `30` | `30` |
+| `AI_RUN_BUFFER_SIZE` | No | Maximum buffered learning run writes per process | `2000` | `2000` |
+| `CAPACITY_MAX_SESSIONS_LOCAL` | No | Maximum concurrent conversation sessions before entering local load-shedding | `50` | `100` |
+| `CAPACITY_MIN_MEASURED_SAMPLES` | No | Minimum generation duration samples required before activating dynamic capacity estimation | `5` | `10` |
+| `CAPACITY_RPS_LOCAL` | No | Rated requests-per-second throughput benchmark for local in-memory summary generation | `20` | `25` |
+| `CAPACITY_RPS_REDIS` | No | Rated requests-per-second throughput benchmark with distributed Redis coordination | `100` | `150` |
+| `CAPACITY_SATURATED_LATENCY_MS` | No | P95 generation latency threshold (ms) at which summary capacity marks status as saturated | `1500` | `2000` |
+| `LLM_MOCK_LATENCY_MS` | No | Simulated inference delay in milliseconds during test and mock provider execution | `0` | `50` |
+| `METRICS_ORG_LABELS` | No | When `true`, emits high-cardinality `org` labels on Prometheus token and cost counters | `false` | `true` |

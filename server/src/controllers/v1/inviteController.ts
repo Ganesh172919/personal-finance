@@ -25,6 +25,9 @@ import { acceptOrgInvite } from "../../services/orgInvites";
 import { recordAuditEvent } from "../../services/auditLog";
 import { HttpError } from "../../middleware/httpError";
 
+// Processes acceptance of an organization invitation token by an authenticated user.
+// Validates token legitimacy, creates organization membership, and records audit logs.
+// Returns the accepted invitation summary along with the newly enrolled membership record.
 export const acceptInvite = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const body = req.body as { token: string };

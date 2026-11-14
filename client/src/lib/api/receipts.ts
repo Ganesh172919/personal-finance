@@ -22,6 +22,9 @@
 
 import { apiClient } from "./core";
 
+// Defines the response payload returned upon uploading and parsing a receipt image.
+// Packages the extracted financial properties, model confidence scores, and syntax warnings.
+// Powers visual OCR verification forms enabling user corrections before record commit.
 /** Response returned after uploading and parsing a receipt image. */
 export type ReceiptParseResponse = {
   receipt_id: string;
@@ -33,6 +36,9 @@ export type ReceiptParseResponse = {
   success?: boolean;
 };
 
+// Submits an uploaded receipt document or image binary for OCR and entity extraction.
+// Packages multipart form data with optional localization hints and currency targets.
+// Dispatches an authenticated POST request returning structured OCR predictions.
 /**
  * Upload a receipt image for OCR parsing.
  * Returns extracted fields (vendor, date, total, etc.) with confidence scores.
@@ -53,6 +59,9 @@ export async function parseReceipt(
   });
 }
 
+// Represents user-verified receipt fields submitted to finalize transaction ingestion.
+// Enforces vendor identity, parsed transaction dates, tax sums, and line items.
+// Converts optical character extraction artifacts into verified ledger entries.
 /** User-validated receipt data sent to confirm/lock the parsed result. */
 export type ReceiptConfirmPayload = {
   vendor: string;
@@ -65,6 +74,9 @@ export type ReceiptConfirmPayload = {
   items?: Array<{ description: string; quantity?: number; unit_price?: number; total?: number }>;
 };
 
+// Submits finalized receipt transaction details following human review and correction.
+// Changes receipt processing state to confirmed and links created ledger transactions.
+// Dispatches an authenticated POST request to lock extracted financial parameters.
 /**
  * Confirm/correct the extracted receipt data after user review.
  * This transitions the receipt status from "parsed" to "confirmed"
@@ -77,9 +89,15 @@ export async function confirmReceipt(receiptId: string, payload: ReceiptConfirmP
   });
 }
 
+// Represents the sequential processing lifecycle state of an uploaded receipt file.
+// Distinguishes newly parsed OCR drafts from verified and finalized user receipts.
+// Governs transaction conversion permissions and editing behaviors across the UI.
 /** Lifecycle status of a receipt: freshly parsed, or user-confirmed. */
 export type ReceiptStatus = "parsed" | "confirmed";
 
+// Represents an audit log entity tracking an uploaded receipt document in persistence.
+// Maintains extraction payloads, confidence assessments, corrections, and linked files.
+// Provides historical tracking across user verification and bookkeeping pipelines.
 export type ReceiptRecord = {
   id: string;
   status: ReceiptStatus;
@@ -93,6 +111,9 @@ export type ReceiptRecord = {
   updatedAt?: string;
 };
 
+// Retrieves a paginated list of uploaded receipt documents with parsing metadata.
+// Encodes pagination query parameters for offset and page length navigation.
+// Dispatches an authenticated GET request fetching user receipt history collections.
 /** List stored receipts with pagination support. */
 export async function listReceipts(params: { page?: number; limit?: number } = {}): Promise<{
   receipts: ReceiptRecord[];
@@ -105,11 +126,17 @@ export async function listReceipts(params: { page?: number; limit?: number } = {
   return apiClient(`/receipts${suffix}`);
 }
 
+// Fetches the complete record and optical extraction details for a single receipt ID.
+// Includes extracted item breakdowns, confidence distributions, and linked transactions.
+// Dispatches an authenticated GET request to render receipt detail inspection views.
 /** Fetch a single receipt record by ID, including extracted data and confidence. */
 export async function getReceiptById(receiptId: string): Promise<{ receipt: ReceiptRecord; request_id?: string }> {
   return apiClient(`/receipts/${receiptId}`);
 }
 
+// Permanently deletes an uploaded receipt document and its extracted OCR records.
+// Removes parsed entity mappings while cleaning up related storage references.
+// Dispatches an authenticated DELETE request with the target receipt identifier.
 /** Permanently delete a receipt record by its ID. */
 export async function deleteReceipt(receiptId: string): Promise<{ receipt_id: string; request_id?: string }> {
   return apiClient(`/receipts/${receiptId}`, { method: "DELETE" });

@@ -3,6 +3,9 @@ import * as SliderPrimitive from "@radix-ui/react-slider";
 
 import { cn } from "@/lib/utils";
 
+// Range slider input component built on Radix UI SliderPrimitive Root.
+// Features customizable track, active range bar, and draggable thumb control.
+// Supports keyboard arrow adjustments, touch gestures, and mouse drags.
 const Slider = React.forwardRef<
   React.ElementRef<typeof SliderPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root>

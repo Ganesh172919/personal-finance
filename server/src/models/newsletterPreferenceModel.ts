@@ -68,6 +68,9 @@
 import { Schema, model, Document, Types } from "mongoose";
 import crypto from "crypto";
 
+// Defines user delivery preferences and content configuration for recurring newsletters.
+// Captures delivery schedule timing, timezone info, unsubscribe tokens, and topical flags.
+// Enables personalized digest assembly for financial tips, summaries, and action plans.
 export interface INewsletterPreference {
   userId: Types.ObjectId;
   orgId: Types.ObjectId;
@@ -89,10 +92,16 @@ export interface INewsletterPreference {
   updatedAt: Date;
 }
 
+// Combines newsletter preference properties with standard Mongoose Document methods.
+// Exposes database primary keys, lifecycle management methods, and timestamp fields.
+// Represents a persistent preference document returned by user profile settings queries.
 export interface INewsletterPreferenceDocument extends INewsletterPreference, Document {
   _id: Types.ObjectId;
 }
 
+// Configures the Mongoose schema for the newsletter preference collection.
+// Enforces default delivery schedules, automated UUID unsubscribe token generation, and flags.
+// Automatically manages document creation and modification timestamps on all write operations.
 const newsletterPreferenceSchema = new Schema<INewsletterPreferenceDocument>(
   {
     userId: {
@@ -129,8 +138,14 @@ const newsletterPreferenceSchema = new Schema<INewsletterPreferenceDocument>(
   { timestamps: true }
 );
 
+// Enforces a compound unique index on organization and user identifiers.
+// Guarantees each user has exactly one newsletter configuration per organization tenant.
+// Optimizes lookup efficiency when the scheduler dispatches daily morning newsletters.
 newsletterPreferenceSchema.index({ orgId: 1, userId: 1 }, { unique: true });
 
+// Compiles and exports the Mongoose model for newsletter user delivery settings.
+// Exposes data access methods to query, update, or unsubscribe user newsletter channels.
+// Consumed by automated background cron workers and user profile management endpoints.
 const NewsletterPreferenceModel = model<INewsletterPreferenceDocument>(
   "NewsletterPreference",
   newsletterPreferenceSchema

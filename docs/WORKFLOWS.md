@@ -298,7 +298,7 @@ GET /api/v1/workflows/templates
 | `ASYNC_JOBS_ENABLED` | `false` | Enable async queue processing |
 | `WORKER_CONCURRENCY` | `4` | Max concurrent jobs (1-64) |
 | `WORKER_POLL_INTERVAL_MS` | `1000` | Database poll interval |
-| `REDIS_URL` | - | Optional Redis for BullMQ |
+| `REDIS_URL` | - | Optional Redis cache URL; it is not the workflow queue |
 
 ### Processing Modes
 
@@ -311,7 +311,7 @@ GET /api/v1/workflows/templates
 - WorkflowRun created with status="queued"
 - Worker polls database every `WORKER_POLL_INTERVAL_MS`
 - Concurrent execution limited by `WORKER_CONCURRENCY`
-- Uses BullMQ if `REDIS_URL` configured
+- Uses the MongoDB polling worker; Redis is not used for workflow execution
 
 ## Best Practices
 
@@ -430,7 +430,7 @@ mindmap
 │ 📝 STAGE 2: WORKFLOW RUN RECORD CREATION                               │
 │    ├─► Insert WorkflowRun { workflowId, orgId, status: "pending" }     │
 │    ├─► Compile Step DAG into sequential execution steps                │
-│    └─► Enqueue job into BullMQ workflow worker queue                   │
+│    └─► Persist queued run for the MongoDB polling worker               │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
                                     ▼
@@ -521,5 +521,94 @@ export async function pollScheduledWorkflows() {
     workflow.nextRunAt = computeNextCronDate(workflow.trigger.cronExpression, workflow.scheduleTimezone);
     await workflow.save();
   }
+}
+```
+
+---
+
+## 7) 2026 Visual Node Graph Engine & Delayed Execution Pipeline
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ea580c', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#c2410c', 'lineColor': '#f97316', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((Visual Node Workflows))
+    Trigger Nodes
+      Schedule Cron
+      Inbound Webhook
+      Transaction Event
+      Budget Breach Event
+    Condition Nodes
+      Numeric Thresholds
+      Category Matching
+      Merchant Regex Filters
+    Delay Nodes
+      Persisted Delay Timers
+      Status Transition DELAYED
+      Resume Sweep Loop 60s
+    Action Nodes
+      Multi-Channel Email / Push
+      Outbound Webhook Dispatch
+      Budget Auto-Adjustment
+      Task Generation
+```
+
+### 7.1 Visual Workflow Node Graph Canvas
+
+The workflow system enables users to construct autonomous automation pipelines via an interactive drag-and-drop node graph in `client/src/pages/Workflows.tsx`:
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ [TRIGGER NODE]: Transaction Created (e.g. Amount > $500)               │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ [CONDITION NODE]: Category == "Dining & Entertainment"                 │
+│  ├─ TRUE ➔ Route to Delay Node                                         │
+│  └─ FALSE ➔ Route to Ignore / Audit Log                                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ [DELAY NODE]: Wait 60 Minutes (Cooldown Period)                        │
+│  ├─ WorkflowRun transitions to status: "DELAYED"                       │
+│  ├─ Sets resumeAt = Date.now() + 60 * 60 * 1000                        │
+│  └─ Background sweep resumes execution at resumeAt ⏱️                  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ [ACTION NODE]: Send High-Spend Alert & Trigger Zero-Sum Rebalancer     │
+│  ├─ Dispatches personalized email and SMS push notification            │
+│  └─ Rebalances $500 from Vacation Fund to Dining Budget 🟢             │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 7.2 Delay Worker Sweeper (`server/src/services/workflows.ts`)
+
+To ensure reliability even across server restarts, delayed workflows are persisted in MongoDB with `status: "DELAYED"` and monitored by a cron worker polling every 60 seconds:
+
+```typescript
+export async function sweepDelayedWorkflowRuns(): Promise<number> {
+  const now = new Date();
+  const delayedRuns = await WorkflowRunModel.find({
+    status: 'DELAYED',
+    resumeAt: { $lte: now }
+  }).limit(50);
+
+  for (const run of delayedRuns) {
+    run.status = 'RUNNING';
+    await run.save();
+
+    if (run.nextNodeId) {
+      executeWorkflowStep(run._id.toString(), run.nextNodeId).catch(err => {
+        console.error(`Failed to resume delayed workflow ${run._id}:`, err);
+      });
+    }
+  }
+
+  return delayedRuns.length;
 }
 ```

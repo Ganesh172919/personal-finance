@@ -26,4 +26,17 @@ describe("created document card", () => {
     render(<ChatDocumentCard document={document} onUseDocument={vi.fn()} disabled />);
     expect(screen.getByRole("button", { name: "Ask about this PDF" })).toBeDisabled();
   });
+  it("renders format badge and page count badge when provided", () => {
+    render(
+      <ChatDocumentCard
+        document={{
+          ...document,
+          format: "executive_brief",
+          pageCount: 3,
+        }}
+      />
+    );
+    expect(screen.getByTestId("badge-doc-format-507f1f77bcf86cd799439012")).toHaveTextContent("Executive Brief");
+    expect(screen.getByTestId("badge-doc-pages-507f1f77bcf86cd799439012")).toHaveTextContent("3 pages");
+  });
 });

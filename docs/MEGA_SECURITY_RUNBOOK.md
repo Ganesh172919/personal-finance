@@ -785,7 +785,9 @@ FinWise Security Runbook (Mega)
         |
         v
 [Record the change and refresh this document]
-``````mermaid
+```
+
+```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#be185d', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#9d174d', 'lineColor': '#06b6d4', 'secondaryColor': '#ec4899', 'tertiaryColor': '#10b981'}}}%%
 mindmap
   root((🛡️ FinWise Security Runbook))

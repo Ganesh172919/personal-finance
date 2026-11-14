@@ -25,7 +25,13 @@ import type { Request, Response } from "express";
 import { growthStoryService } from "../services/growthStoryService";
 import { HttpError } from "../middleware/httpError";
 
+// Exposes API handlers for financial growth stories and milestone case studies.
+// Dispatches queries, parameter extraction, and authorization checks to services.
+// Provides both public community browsing and authenticated submission workflows.
 export class GrowthStoryController {
+  // Retrieves a filterable, paginated list of user-submitted financial growth stories.
+  // Filters across categories, difficulty levels, thematic tags, and featured flags.
+  // Returns an array of story documents along with pagination metadata for the client.
   async getStories(req: Request, res: Response) {
     const { page, limit, category, difficulty, tag, sort, isFeatured, search } = req.query as Record<string, string | undefined>;
 
@@ -43,6 +49,9 @@ export class GrowthStoryController {
     res.json(result);
   }
 
+  // Fetches prominent growth stories curated for community spotlights and feeds.
+  // Limits query execution to a requested count of top-rated or recent publications.
+  // Responds with featured story payloads driving inspiration across community pages.
   async getFeaturedStories(req: Request, res: Response) {
     const { limit } = req.query as Record<string, string | undefined>;
     const result = await growthStoryService.getStories({
@@ -53,6 +62,9 @@ export class GrowthStoryController {
     res.json({ stories: result.stories });
   }
 
+  // Looks up an individual growth story narrative using its unique human-readable slug.
+  // Verifies story existence and throws a not found HTTP error if unresolved.
+  // Returns the complete narrative payload accompanied by tracking request IDs.
   async getStoryBySlug(req: Request, res: Response) {
     const { slug } = req.params;
     const story = await growthStoryService.getStoryBySlug(String(slug));
@@ -64,11 +76,17 @@ export class GrowthStoryController {
     res.json({ story, request_id: req.requestId });
   }
 
+  // Gathers distinct taxonomy classifications and tags used across growth journeys.
+  // Queries available story tags and categories to populate front-end filter bars.
+  // Returns an array of category identifiers available for community discovery.
   async getCategories(_req: Request, res: Response) {
     const categories = await growthStoryService.getCategories();
     res.json({ categories });
   }
 
+  // Adjusts the appreciation like count on a specific growth journey publication.
+  // Delegates atomic counter mutation to the backing growth story service.
+  // Returns the updated like total along with request correlation metadata.
   async toggleLike(req: Request, res: Response) {
     const { id } = req.params;
     try {
@@ -82,6 +100,9 @@ export class GrowthStoryController {
     }
   }
 
+  // Validates author credentials and persists a new financial growth journey story.
+  // Calculates estimated reading times automatically based on text word counts.
+  // Saves the published story record and returns the newly created entity details.
   async createStory(req: Request, res: Response) {
     const userId = (req as any).user?._id;
 
@@ -101,4 +122,7 @@ export class GrowthStoryController {
   }
 }
 
+// Singleton instance of the growth story controller managing community endpoints.
+// Exported for registration into application route tables and middleware chains.
+// Coordinates public browsing and authenticated authoring workflows for stories.
 export const growthStoryController = new GrowthStoryController();

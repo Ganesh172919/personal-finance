@@ -37,15 +37,25 @@ import { normalizeAiPlan } from "../schemas/aiPlanSchema";
 import { processAiCoreRequest } from "../services/aiCoreClient";
 import { buildChatMessageCacheKey, ttlMs } from "../services/aiCache";
 import { buildProcessRequest } from "../services/aiRequestBuilder";
-import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements";
+import { recordFeatureUsage, releaseReservationOnResponseEnd, reserveFeatureUsage } from "../services/entitlements";
 import { extractWorkspaceFileText, detectWorkspaceFileKind } from "../services/fileTextExtraction";
 import { buildAiFinanceGrounding } from "../services/financeGrounding";
 import { assertGridFsOwnership, deleteGridFsFile, uploadBufferToGridFs } from "../services/gridfs";
 import { getJournalContextForAi } from "../services/journalContext";
 import { ensureProfileWithMigration } from "../services/profileService";
-import { deleteWorkspaceFileChunks, ensureWorkspaceFileChunks } from "../services/retrievalService";
+import {
+  type ChunkModality,
+  deleteWorkspaceFileChunks,
+  ensureWorkspaceFileChunks,
+  retrieveRelevantWorkspaceChunks,
+} from "../services/retrievalService";
 import { fetchTransactionsForAi } from "../services/transactionService";
+import { performDocumentQA } from "../services/documentQAService";
+import { renderRichAuthoredPdf } from "../services/richDocumentRenderer";
 
+// Validates tenant membership and extracts the active organization identifier.
+// Verifies that the organization ID conforms to a valid MongoDB ObjectId format.
+// Rejects unauthenticated or out-of-scope requests with an HTTP 401 error.
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -54,6 +64,9 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+// Resolves regional configuration settings configured for a target organization.
+// Pulls tenant default currency, locale string, and standard timezone options.
+// Falls back to system defaults when organization settings remain unconfigured.
 const getOrgAiSettings = async (orgId: mongoose.Types.ObjectId) => {
   const org = await OrganizationModel.findById(orgId)
     .select({ currency: 1, locale: 1, timezone: 1 })
@@ -66,6 +79,9 @@ const getOrgAiSettings = async (orgId: mongoose.Types.ObjectId) => {
   };
 };
 
+// Converts an internal workspace file database document into a client-safe DTO.
+// Formats extracted textual previews, structural warnings, and analysis reports.
+// Optionally incorporates the entire extracted text payload based on caller flags.
 const buildWorkspaceFileDto = (doc: any, includeExtractedText = false) => ({
   id: String(doc._id),
   fileId: String(doc.fileId),
@@ -103,6 +119,9 @@ const buildWorkspaceFileDto = (doc: any, includeExtractedText = false) => ({
   updatedAt: doc.updatedAt,
 });
 
+// Prepares an AI prompt instructing the system to perform financial document analysis.
+// Integrates extracted text excerpts while bounding total context size safely.
+// Structures requirements around financial obligations, risks, and next actions.
 const buildFileAnalysisPrompt = (params: {
   fileName: string;
   mimeType: string;
@@ -136,6 +155,9 @@ const buildFileAnalysisPrompt = (params: {
   ].join("\n");
 };
 
+// Formats multiple attached workspace documents into structured AI prompt context.
+// Produces truncated textual snippets alongside file descriptors and metadata kinds.
+// Returns an assembled markdown block ready for injection into chat prompts.
 export const buildWorkspaceFileAttachmentContext = (files: Array<any>) => {
   if (!files.length) return "";
 
@@ -154,6 +176,9 @@ export const buildWorkspaceFileAttachmentContext = (files: Array<any>) => {
   return `Attached workspace files:\n\n${sections.join("\n\n")}`;
 };
 
+// Receives multi-part file uploads, persists them to GridFS, and extracts content.
+// Automatically detects document categories and creates vector retrieval chunks.
+// Responds with created file metadata records ready for immediate workspace usage.
 export const uploadWorkspaceFiles = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -164,6 +189,10 @@ export const uploadWorkspaceFiles = async (req: Request, res: Response) => {
   const files = ((req as any).files || []) as Express.Multer.File[];
   if (!files.length) {
     throw new HttpError(400, "MISSING_FILE", "Missing uploaded file");
+  }
+  const emptyFile = files.find((file) => !file.size || !file.buffer?.length);
+  if (emptyFile) {
+    throw new HttpError(400, "EMPTY_FILE", `Uploaded file is empty: ${emptyFile.originalname || "file"}`);
   }
 
   const created = await Promise.all(
@@ -250,6 +279,9 @@ export const uploadWorkspaceFiles = async (req: Request, res: Response) => {
   });
 };
 
+// Queries workspace files belonging to the requesting user and tenant organization.
+// Supports keyword filtering against document names and extracted content previews.
+// Returns a paginated list of file transfer objects sorted by last modification.
 export const listWorkspaceFiles = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -295,6 +327,9 @@ export const listWorkspaceFiles = async (req: Request, res: Response) => {
   });
 };
 
+// Fetches detailed workspace file metadata and full extracted content by identifier.
+// Verifies caller ownership and tenant isolation constraints before delivering data.
+// Returns the enriched file DTO including historical analysis summaries if present.
 export const getWorkspaceFile = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -314,6 +349,9 @@ export const getWorkspaceFile = async (req: Request, res: Response) => {
   });
 };
 
+// Triggers deep financial intelligence evaluation on an uploaded workspace document.
+// Checks cache keys, reserves entitlement credits, and invokes AI Core engines.
+// Persists structured findings onto the file record and returns the analysis.
 export const analyzeWorkspaceFile = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -324,13 +362,14 @@ export const analyzeWorkspaceFile = async (req: Request, res: Response) => {
   const id = String((req.params as any)?.id || "");
   const prompt = typeof (req.body as any)?.prompt === "string" ? String((req.body as any).prompt) : undefined;
 
-  await enforceFeatureLimit({
+  const reservation = await reserveFeatureUsage({
     orgId,
     userId: user._id,
     feature: "monthly_ai_calls",
     units: 1,
     requestId: req.requestId,
   });
+  releaseReservationOnResponseEnd(res, reservation);
 
   const file = await WorkspaceFileModel.findOne({ _id: id, orgId, userId: user._id });
   if (!file) {
@@ -467,6 +506,7 @@ export const analyzeWorkspaceFile = async (req: Request, res: Response) => {
   ).catch(() => null);
 
   await recordFeatureUsage({
+    reservation,
     orgId,
     userId: user._id,
     feature: "monthly_ai_calls",
@@ -490,6 +530,9 @@ export const analyzeWorkspaceFile = async (req: Request, res: Response) => {
   });
 };
 
+// Removes a workspace document, its underlying GridFS chunks, and search vectors.
+// Verifies ownership boundaries before purging binary data from GridFS storage.
+// Ensures complete deletion across file collections and vector index stores.
 export const deleteWorkspaceFile = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -521,3 +564,99 @@ export const deleteWorkspaceFile = async (req: Request, res: Response) => {
     request_id: req.requestId,
   });
 };
+
+// Executes semantic similarity retrieval over indexed workspace file text segments.
+// Filters document chunks by modality tags and caller-selected document scopes.
+// Delivers ranked excerpt matches alongside relevance scores to the caller.
+export const searchWorkspaceChunks = async (req: Request, res: Response) => {
+  const user = req.user as IUserDocument | undefined;
+  if (!user?._id) {
+    throw new HttpError(401, "UNAUTHORIZED", "Missing user context");
+  }
+
+  const orgId = requireOrgId(req);
+  const { query, modality, selectedWorkspaceFileIds, limit, minConfidence } = req.body;
+
+  const modalities = modality && modality !== "all" ? [modality as ChunkModality] : undefined;
+
+  const chunks = await retrieveRelevantWorkspaceChunks({
+    orgId,
+    userId: user._id,
+    query,
+    modalities,
+    selectedWorkspaceFileIds,
+    limit: limit || 6,
+    minConfidence,
+  });
+
+  return res.json({
+    chunks,
+    total: chunks.length,
+    query,
+    modality: modality || "all",
+    request_id: req.requestId,
+  });
+};
+
+// Performs targeted question-answering across indexed workspace document collections.
+// Extracts grounded answers with citations mapped directly to source documents.
+// Returns structured question-answering results along with confidence metrics.
+export const queryDocumentQA = async (req: Request, res: Response) => {
+  const user = req.user as IUserDocument | undefined;
+  if (!user?._id) {
+    throw new HttpError(401, "UNAUTHORIZED", "Missing user context");
+  }
+
+  const orgId = requireOrgId(req);
+  const { question, workspaceFileIds, minConfidence, limit } = req.body;
+
+  const result = await performDocumentQA({
+    orgId,
+    userId: user._id,
+    question,
+    workspaceFileIds,
+    minConfidence,
+    limit,
+  });
+
+  return res.json({
+    success: true,
+    ...result,
+    request_id: req.requestId,
+  });
+};
+
+// Generates professional PDF document artifacts complete with tables and charts.
+// Integrates user financial profile attributes and structured content blocks.
+// Persists the compiled PDF to workspace storage and returns document references.
+export const createAuthoredDocument = async (req: Request, res: Response) => {
+  const user = req.user as IUserDocument | undefined;
+  if (!user?._id) {
+    throw new HttpError(401, "UNAUTHORIZED", "Missing user context");
+  }
+
+  const orgId = requireOrgId(req);
+  const { title, format, content, kpis, tables, callouts, filenameStem, disclaimer, includeProfileData } = req.body;
+
+  const result = await renderRichAuthoredPdf({
+    orgId,
+    userId: user._id,
+    requestId: req.requestId || new mongoose.Types.ObjectId().toString(),
+    title,
+    format: format || "standard",
+    content,
+    kpis,
+    tables,
+    callouts,
+    filenameStem,
+    disclaimer,
+    includeProfileData,
+  });
+
+  return res.status(201).json({
+    success: true,
+    document: result,
+    request_id: req.requestId,
+  });
+};
+

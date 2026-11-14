@@ -729,3 +729,49 @@ export async function getOrGenerateConversationInsights(params: {
   }
 }
 ```
+
+---
+
+## 8. Distributed Infrastructure & Resilience Services (2026 Additions)
+
+### 8.1 Distributed Leader Election Service (`leaderElection.ts`)
+Coordinates singleton background processes (newsletter scheduler, delayed workflow sweeper, nightly learning optimization runs) across multiple horizontally scaled gateway replicas:
+- **Primary Redis Lease**: Atomic `SET leader:<name> <holder> NX PX <ttlMs>` with compare-and-pexpire Lua scripts for safe renewal by the active holder only.
+- **Fail-Safe MongoDB TTL Fallback**: When Redis is unconfigured or unavailable, automatically falls back to atomic `findOneAndUpdate` operations on the `leader_locks` collection using `expiresAt` expiration.
+- **Self-Healing Lease Handover**: Crashed leader nodes forfeit their lease upon TTL expiry, permitting healthy replicas to elect a new leader without human intervention.
+
+### 8.2 Gateway AI Core Transport & Circuit Breaker (`aiCoreResilience.ts`, `aiCoreTransport.ts`)
+Protects against cascading failures and AI Core saturation:
+- **3-State Circuit Breaker**: Closed (normal), open (load shedding with immediate fallback), and half-open (single probe allowed through after cooldown).
+- **Neutral Status Handling**: HTTP 503 responses carrying `Retry-After` headers are treated as neutral backpressure rather than hard server failures.
+- **Jittered Exponential Backoff**: Prevents thundering herds during AI Core recovery.
+
+### 8.3 Dead-Letter Queue & Resilient Job Replay Service (`deadLetterJobs.ts`, `jobRetry.ts`)
+Provides durable storage and operational recovery for background tasks:
+- **Terminal Routing**: Captures background jobs (exports, document generation, webhooks) that exhaust retry attempts into `dead_letter_jobs` with full error stack traces and original payloads.
+- **Administrative Inspection & Replay API**: Supports querying failed jobs by queue and status, and provides one-click resurrection (`POST /api/v1/admin/dead-letter-jobs/:id/replay`).
+- **Prometheus Saturation Telemetry**: Emits `finwise_dlq_size` gauge for alerting.
+
+### 8.4 Continuous AI Learning & Alignment Client (`aiLearningClient.ts`, `aiLearningOptOut.ts`)
+Coordinates user feedback collection and model alignment:
+- **Feedback Dispatch**: Submits user ratings (thumbs-up/down) and corrections to the AI Core learning engine.
+- **User Privacy Opt-Out**: Honors tenant and user opt-out preferences (`isUserOptedOutOfLearning`) by immediately suppressing feedback dispatch.
+- **Nightly Optimization Trigger (`aiOptimizeScheduler.ts`)**: Triggers scheduled offline prompt optimization runs via leader-elected cron passes.
+
+### 8.5 Cross-Replica Realtime Event Bus (`redisEventBus.ts`)
+Scales real-time Server-Sent Events (SSE) across distributed instances:
+- **Org-Scoped Pub/Sub**: Dynamically subscribes to `finwise:events:<orgId>` channels only when local clients are connected.
+- **Instance Deduplication**: Attaches process `instanceId` to messages to ignore self-published events and prevent duplicate event fanout.
+- **Local Fallback**: Automatically reverts to local in-memory event bus if Redis connectivity degrades.
+
+### 8.6 Auth Cache & Token Invalidation (`authCache.ts`, `authCacheStore.ts`)
+High-speed in-memory / Redis cache for verified JWT sessions, eliminating repeated MongoDB lookups on hot request paths:
+- **5-Minute Memoization**: Stores verified user identity documents for 300 seconds.
+- **Cache Invalidation**: Automatically clears cache on user updates, password resets, and organization role changes (`invalidateAuthCache`).
+
+---
+
+**Evidence:**
+- `server/src/services/` (`leaderElection.ts`, `aiCoreResilience.ts`, `aiCoreTransport.ts`, `deadLetterJobs.ts`, `jobRetry.ts`, `aiLearningClient.ts`, `aiLearningOptOut.ts`, `aiOptimizeScheduler.ts`, `authCache.ts`, `authCacheStore.ts`)
+- `server/src/modules/realtime/` (`redisEventBus.ts`)
+- `server/src/models/` (`deadLetterJobModel.ts`, `leaderLockModel.ts`)

@@ -591,3 +591,54 @@ mindmap
 │    └─► Stream formatted recommendations and evidence citations to user │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 8) 2026 AI Core Multi-Agent Orchestration & Resiliency Architecture
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#9333ea', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#7e22ce', 'lineColor': '#a855f7', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((AI Core Orchestration))
+    SubAgentManager
+      Kahn Topological Scheduler
+      ThreadPool Concurrency
+      120s SHA-256 State TTL Cache
+      5-Failure Circuit Breaker Gate
+      Deterministic Rule Fallback
+    Canary Validation Gate
+      Zero-Sum Invariant Sum dB = 0
+      Number Safety Cand in Ref
+      PII Regex Redaction
+    10 Specialist Agents
+      Cashflow & Liquidity Agent
+      Debt Payoff Simulator Agent
+      Portfolio Allocation Agent
+      Tax & DTAA Optimization Agent
+      Macro Stress Testing Agent
+      Compliance & AML Agent
+      Digest Synthesis Agent
+      Grounded Document RAG Agent
+      Mathematical Invariant Agent
+      Audit & Lineage Agent
+```
+
+### 8.1 Topological Scheduling & Parallel Execution
+
+The AI Core coordinates 10 autonomous financial specialist agents using Kahn's algorithm to analyze the dependency DAG:
+
+1. **Independent Stage**: Cashflow, Debt, and Portfolio agents run concurrently via Python's `concurrent.futures.ThreadPoolExecutor`.
+2. **Intermediate Stage**: Tax and Scenario agents consume the output of Stage 1 to project tax liabilities and macro shocks.
+3. **Consolidation Stage**: The Aggregator agent resolves budget contention and enforces strict mathematical invariants before returning insights to the user.
+
+---
+
+### 8.2 Sub-Agent Invariant Verification Matrix
+
+| Agent Name | Primary Tool Calls | Invariant Checked | Fallback Behavior on Failure |
+| :--- | :--- | :--- | :--- |
+| **Cashflow Specialist** | `calculate_runway`, `project_burn` | Runway must be positive or zero | Uses historical 90-day moving average |
+| **Debt Specialist** | `simulate_avalanche`, `simulate_snowball` | Total interest saved $\ge 0$ | Standard minimum balance payment schedule |
+| **Portfolio Specialist** | `compute_asset_allocation`, `calculate_wht` | Sum of portfolio weights $\sum w_i = 1.0$ | Market-cap weighted benchmark allocation |
+| **Budget Health Specialist** | `evaluate_health_score`, `propose_zero_sum` | $\sum \Delta B_i = 0$ (Zero-Sum Shift) | Reverts to existing monthly budget |
+| **Grounded RAG Specialist** | `dense_vector_search`, `bm25_text_match` | Grounding Score $G \ge 0.70$ | Rejects answer; reports "Insufficient source data" |

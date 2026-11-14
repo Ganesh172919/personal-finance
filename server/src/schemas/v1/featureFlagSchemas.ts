@@ -18,6 +18,9 @@
  */
 import { z } from "zod";
 
+// Validates feature flag key parameter from the route URL.
+// Enforces naming conventions with lowercase alphanumeric characters and standard delimiters.
+// Guarantees consistent feature flag identification across environments.
 export const featureFlagKeyParamSchema = z
   .object({
     key: z
@@ -28,6 +31,9 @@ export const featureFlagKeyParamSchema = z
   })
   .strict();
 
+// Validates search and filter query parameters when listing feature flags.
+// Supports filtering by key namespace prefix and stringified boolean enabled state.
+// Transforms input enabled strings into native boolean filter values.
 export const listFeatureFlagsQuerySchema = z
   .object({
     key_prefix: z.string().trim().toLowerCase().min(1).max(120).optional(),
@@ -41,6 +47,9 @@ export const listFeatureFlagsQuerySchema = z
   })
   .strict();
 
+// Validates the request body for inserting or updating a feature flag.
+// Enforces enabled status flag, optional variant tag, rollout percentage, and metadata object.
+// Prevents unrecognized configuration fields from entering the feature flag store.
 export const upsertFeatureFlagBodySchema = z
   .object({
     enabled: z.boolean(),

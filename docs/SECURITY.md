@@ -246,3 +246,64 @@ export async function verifyPassword(hash: string, plainText: string): Promise<b
 | **Information Disclosure** | Error Responses & Logging | Leaking stack traces or database internal IDs | Global error handler sanitization, Pino redaction of tokens and passwords |
 | **Denial of Service** | Ingress API Gateway | High-volume endpoint flooding | Redis sliding-window rate limiter (200 req/min per caller, 10 req/min on auth routes) |
 | **Elevation of Privilege** | Organization Roles | Member attempting administrative actions | Role-Based Access Control (`requireRole("admin")`) and tenant membership verification |
+
+---
+
+## 6. Mathematical Invariant Truth & Regulatory Financial Security
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#dc2626', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#b91c1c', 'lineColor': '#ef4444', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((Mathematical Security))
+    Number Safety Invariant
+      Extracted Numbers Subset Check
+      Rejects Hallucinated Financial Figures
+    Zero-Sum Budget Invariant
+      Conservation of Capital (sum dB = 0)
+      Guarantees No Phantom Money Creation
+    Accounting Invariant Checks
+      Assets - Liabilities = Net Worth
+      Income - Expenses = Net Cashflow
+    DLQ Sanitization Policy
+      Redacts Tokens, Keys, and Card Numbers
+```
+
+In automated personal finance and fiduciary planning, numerical hallucinations represent regulatory and compliance vulnerabilities. FinWise enforces strict mathematical security:
+
+1. **Number Safety Gate**: Extracted candidate numbers must be a mathematical subset of source context numbers ($C_{\text{cand}} \subseteq C_{\text{ref}}$). Hallucinated percentages, returns, or balances are rejected at the compiler boundary.
+2. **Conservation of Capital**: Every reallocation proposal must strictly satisfy $\sum_{i=1}^N \Delta B_i = 0$, guaranteeing zero capital leakage.
+3. **Automated PII & Secret Scrubbing**: Any job payload entering the Dead-Letter Queue (`bull:finwise-dlq`) is stripped of bearer tokens, API keys, and 16-digit credit card sequences using `scrubPayloadForDLQ()`.
+
+
+---
+
+## 7. Zero-PII Learning Feedback Redaction & GDPR Opt-Out (`learning/redact.py`, `aiLearningOptOut.ts`)
+
+To ensure compliance with GDPR (Right to Object) and prevent personal financial leakage into AI training corpora:
+- **Automatic PII Redaction (`redact.py`)**: Prior to persisting any user-submitted chat feedback or correction into the AI Core run store, text undergoes automated regex redaction scrubbing 16-digit credit card PANs, SSNs, phone numbers, and IBANs.
+- **Tenant & User Privacy Opt-Out (`aiLearningOptOut.ts`)**: Users and organizations can opt out of all continuous AI learning loops (`/api/v1/users/me/ai-opt-out`). When opted out, feedback ingestion endpoints immediately drop signals without forwarding them to AI Core.
+
+---
+
+## 8. Ingress Request ID Hardening & Log Injection Defenses (`tracing.ts`)
+
+Inbound `X-Request-Id` headers are treated as untrusted user input:
+- **Strict Whitelist Validation**: Enforces `^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$` to eliminate newline character (`\r\n`) injection into structured log streams (log forging) and HTTP header splitting attacks.
+- **Safe Fallback**: Any header failing validation is discarded and replaced with a fresh cryptographically random UUIDv4 (`randomUUID()`).
+
+---
+
+## 9. Fast-Path Cached Authentication & Invalidation Integrity (`cachedJwtStrategy.ts`, `authCacheStore.ts`)
+
+To prevent authorization desynchronization when caching JWT user payloads:
+- **Cookie Identity Binding**: The cached user object is reused only if the incoming raw cookie token strictly matches the verified session token on the current request.
+- **Immediate Eviction**: Password resets, organization member removals, and role updates trigger synchronous cache evictions via `invalidateAuthCache(userId)`.
+
+---
+
+**Evidence:**
+- `server/src/config/cachedJwtStrategy.ts`
+- `server/src/observability/tracing.ts`
+- `server/src/services/aiLearningOptOut.ts`
+- `server/src/utils/authCacheInvalidation.ts`
+- `server/AI_Core/learning/redact.py`

@@ -22,6 +22,9 @@ import { z } from "zod";
 
 import { periodKeySchema } from "./financeSchemas";
 
+// Validates query parameters for recurring transaction detection routines.
+// Sets allowable lookback horizons, result limits, and occurrence thresholds.
+// Ensures consistent input bounds for computational financial intelligence operations.
 export const recurringCandidatesQuerySchema = z
   .object({
     days_back: z.coerce.number().int().min(30).max(730).optional(),
@@ -30,11 +33,25 @@ export const recurringCandidatesQuerySchema = z
   })
   .strict();
 
+// Validates parameters when requesting envelope budget intelligence calculations.
+// Supports filtering budgets by a recognized global currency code identifier.
+// Prevents unapproved currencies or arbitrary strings from querying budget envelopes.
+export const budgetEnvelopesQuerySchema = z
+  .object({
+    currency: z.enum(["USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY"]).optional(),
+    fresh: z.literal("true").optional(),
+  })
+  .strict();
+
+// Validates parameters supplied for generating cash flow projections and forecasts.
+// Checks starting monthly period, forecast duration up to 24 months, and category limits.
+// Validates target currency ISO codes to maintain financial reporting consistency.
 export const forecastQuerySchema = z
   .object({
     period_key: periodKeySchema.optional(),
     months: z.coerce.number().int().min(1).max(24).optional(),
     top_categories: z.coerce.number().int().min(0).max(50).optional(),
+    currency: z.enum(["USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY"]).optional(),
   })
   .strict();
 

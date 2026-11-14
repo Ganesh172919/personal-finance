@@ -33,6 +33,9 @@ import { ApiError, parseApiError } from "../apiError";
 import { clearActiveOrgId, getActiveOrgId } from "../orgContext";
 import { getRequestContextRevision } from "../requestContext";
 
+// Enumerates idempotent HTTP methods that do not alter persistent server state.
+// Used to bypass CSRF token validation and permit automated read retry cycles.
+// Restricts mutations like POST, PUT, and DELETE to strict security verification.
 /**
  * HTTP methods that do not modify state.
  * These methods skip CSRF token injection.
@@ -42,6 +45,9 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 /** In-memory CSRF token cache (set by fetchCsrfToken or AuthContext) */
 let csrfToken: string | null = null;
 
+// Reads the authenticated user's ID string persisted within browser localStorage.
+// Implements safe SSR checks to prevent window reference errors during compilation.
+// Used to verify that active user context has not shifted across async operations.
 const storedUserId = () => {
   try { return typeof window === "undefined" ? null : window.localStorage.getItem("userId"); }
   catch { return null; }
@@ -49,14 +55,43 @@ const storedUserId = () => {
 
 export { ApiError };
 
+// Updates the client's cached in-memory anti-CSRF token used for mutating requests.
+// Invoked when receiving a fresh CSRF token from dedicated authentication handshakes.
+// Ensures future POST, PUT, and DELETE requests transmit current validation headers.
 /** Set the CSRF token (called after fetching from /auth/csrf) */
 export const setCsrfToken = (token: string | null) => {
   csrfToken = token;
 };
 
+// Returns the currently active cached CSRF protection token string.
+// Provides debugging utilities and raw network transports access to auth tokens.
+// Returns null if the token has not yet been fetched from the backend server.
 /** Get the current CSRF token (for debugging or external use) */
 export const getCsrfToken = () => csrfToken;
 
+// Assembles standard HTTP headers incorporating multi-tenancy and security tokens.
+// Sets JSON application mime types, injects CSRF headers, and appends org IDs.
+// Shared across regular JSON fetch requests and real-time streaming connections.
+/** Build the same authentication context headers for JSON and raw streaming requests. */
+export function buildApiRequestHeaders(method: string, options: RequestInit, activeOrgId: string | null) {
+  const headers = new Headers(options.headers || {});
+  const isFormDataBody = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (!headers.has("Content-Type") && !isFormDataBody) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (!SAFE_METHODS.has(method.toUpperCase()) && csrfToken) {
+    headers.set("X-CSRF-Token", csrfToken);
+  }
+  const orgHeaderInjected = Boolean(activeOrgId && !headers.has("X-Org-Id"));
+  if (activeOrgId && orgHeaderInjected) {
+    headers.set("X-Org-Id", activeOrgId);
+  }
+  return { headers, orgHeaderInjected };
+}
+
+// Fetches a fresh anti-CSRF security token from the backend authentication service.
+// Updates the local in-memory token cache and returns the resolved token string.
+// Invoked on initial application boot and during automatic CSRF retry recovery.
 /**
  * Fetches a fresh CSRF token from the server and caches it.
  * Called on app mount and when a CSRF error occurs.
@@ -67,6 +102,9 @@ export async function fetchCsrfToken(): Promise<string> {
   return response.csrf_token;
 }
 
+// Root public HTTP client wrapper providing unified request dispatch and error parsing.
+// Automatically applies cookie credentials, tenant context, and error boundaries.
+// Standardizes API access across all client-side data fetching and mutation services.
 /**
  * The main API client function. All API calls should go through this.
  *
@@ -80,6 +118,9 @@ export async function apiClient<T>(endpoint: string, options: RequestInit = {}):
   return apiClientInternal(endpoint, options, { retriedCsrf: false, retriedOrg: false });
 }
 
+// Executes HTTP requests with contextual tracking and automatic recovery retries.
+// Intercepts 402 feature limit errors to display modal upgrade prompts to users.
+// Safely retries expired CSRF tokens and cleared stale organization context headers.
 /**
  * Internal API client with retry state tracking.
  *
@@ -98,26 +139,7 @@ const apiClientInternal = async <T>(
   const isCurrentContext = () => contextRevision === getRequestContextRevision()
     && activeOrgId === getActiveOrgId() && userId === storedUserId();
   const method = String(options.method || "GET").toUpperCase();
-  const isFormDataBody = typeof FormData !== "undefined" && options.body instanceof FormData;
-
-  // Build headers — merge caller-provided headers with automatic ones
-  const headers = new Headers(options.headers || {});
-
-  // Set Content-Type for JSON bodies (skip for FormData — browser sets multipart boundary)
-  if (!headers.has("Content-Type") && !isFormDataBody) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  // Inject CSRF token for state-changing methods (Double Submit Cookie pattern)
-  if (!SAFE_METHODS.has(method) && csrfToken) {
-    headers.set("X-CSRF-Token", csrfToken);
-  }
-
-  // Inject org context for multi-tenancy (server scopes data to this org)
-  const orgHeaderInjected = Boolean(activeOrgId && !headers.has("X-Org-Id"));
-  if (activeOrgId && orgHeaderInjected) {
-    headers.set("X-Org-Id", activeOrgId);
-  }
+  const { headers, orgHeaderInjected } = buildApiRequestHeaders(method, options, activeOrgId);
 
   // Always include credentials (HTTP-only JWT cookie)
   const config: RequestInit = {

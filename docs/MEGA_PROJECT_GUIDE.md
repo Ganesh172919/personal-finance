@@ -1089,3 +1089,176 @@ Converts uploaded bank statements, invoices, and corporate policies into grounde
 - **BullMQ 60-Second Recurring Poller**: Matches user delivery cadences (`DAILY`, `WEEKLY`, `MONTHLY`) and UTC delivery windows.
 - **Quarantining & Scrubbing**: Poisoned jobs are intercepted, sanitized of sensitive secrets, and saved to `bull:finwise-dlq`.
 - **Admin Replay**: Unblocks transient downstream failures via `POST /api/v1/dlq/replay/:id`.
+
+---
+
+## 17) 2026 Enterprise Distributed Subsystems & Platform Topology
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0284c7', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0369a1', 'lineColor': '#0ea5e9', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((2026 Enterprise Platform))
+    ML Merchant Subspace
+      64-Dimensional Unit Vector (FNV-1a)
+      Sector & Brand Anchors (Dims 0-27)
+      Agglomerative Centroid Linkage (C >= 0.70)
+      Automatic CategoryRule Generation
+    Multi-Modal Grounded RAG
+      Physical Form-Feed Page Extraction (\f)
+      Table Header Re-injection on Chunk Splits
+      Hybrid Lexical BM25 + Dense Semantic Fusion
+      Grounding Score Gate (G >= 0.70)
+    Autonomous AI Core
+      Kahn's Topological DAG Scheduler
+      120s SHA-256 State TTL Response Cache
+      KeyPool Provider Failover & Cooldowns
+      Canary Invariant Validation (Sum dB = 0)
+    Distributed Visual Workflows
+      Drag-and-Drop Node Graph Canvas
+      BullMQ Delay Timers & 60s Resumption Sweeper
+      Inbound Webhook Token Verification
+      Dead-Letter Queue (DLQ) PII Scrubbing
+    Global Financial Engine
+      7-Currency Spot Rate Normalization
+      Dividend Withholding Tax (WHT)
+      Double Tax Treaty (DTAA) Relief
+      Zero-Decimal JPY Formatting
+    Offline-First Client
+      LocalStorage Stroke & Draft Persistence
+      Client UUID Idempotency Tokens
+      Network Online Reconnection Batch Sync
+      Interactive SVG Health Gauges (0-100)
+```
+
+### 17.1 ML Merchant Vector Subspace & Centroid Clustering Architecture
+
+The machine learning clustering engine groups heterogeneous, unstructured credit card and bank feed transaction descriptions into clean canonical entities:
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Inbound Bank Feed: "SQ *BLUE BOTTLE COFFEE SAN FRAN CA"                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 1: Lexical Stripping & Subword N-Gram Extraction                  │
+│  ├─ Processor prefixes stripped: "SQ *", "TST *", "AMZN.COM*"          │
+│  └─ Lowercased & tokenized: ["blue", "bottle", "coffee", "san", "fran"]│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 2: 64-Dimensional Vector Projection (`generateMerchantEmbedding`) │
+│  ├─ Dims 0–11:  One-hot Sector Taxonomy (Food & Dining, Travel, etc.)  │
+│  ├─ Dims 12–27: Anchor Brand Signatures (Starbucks, Blue Bottle, etc.) │
+│  ├─ Dims 28–63: Subword 3-Gram FNV-1a Hashing Space                    │
+│  └─ L2 Normalization: ||v||2 = 1.0 (Unit Hypersphere)                  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 3: Agglomerative Centroid Linkage Clustering                      │
+│  ├─ Evaluate Cosine Similarity against active cluster centroids:       │
+│  │     cos(v, c) = v · c                                               │
+│  ├─ If max(cos(v, c)) >= 0.70 ➔ Merge into existing merchant cluster   │
+│  └─ Else ➔ Spawn new centroid candidate                                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 4: UI Cockpit & Rule Promotion                                   │
+│  ├─ User approves cluster in `TransactionReviewQueue.tsx`              │
+│  └─ Spawns persistent `CategoryRule` model in MongoDB 🟢               │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Mathematical Properties
+1. **Unit Length Invariant**:
+   $$\|\vec{v}\|_2 = \sqrt{\sum_{i=0}^{63} v_i^2} = 1.0 \pm 10^{-5}$$
+2. **Cosine Similarity Equivalence**:
+   Because $\|\vec{a}\|_2 = \|\vec{b}\|_2 = 1.0$, the cosine similarity simplifies to a fast inner product:
+   $$\cos(\vec{a}, \vec{b}) = \frac{\vec{a} \cdot \vec{b}}{\|\vec{a}\|_2 \|\vec{b}\|_2} = \sum_{i=0}^{63} a_i b_i$$
+
+---
+
+### 17.2 Multi-Agent Orchestration with SubAgentManager, TTL Caching & Canary Invariants
+
+The multi-agent system orchestrates 10 specialized domain agents with parallel execution, sub-millisecond response caching, and strict mathematical invariant verification:
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Complex Financial Request (e.g. "Optimize $1,200 monthly debt vs 401k")│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 1. Dependency Analysis via Kahn's Topological Sort                     │
+│  ├─ Independent Root Agents: Debt Specialist & Portfolio Specialist   │
+│  └─ Dispatched in parallel via `concurrent.futures.ThreadPoolExecutor` │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 2. SubAgentManager SHA-256 State TTL Response Caching                  │
+│  ├─ Compute Cache Key: sha256(agent_name + sorted_user_state_json)     │
+│  ├─ If timestamp < 120s ➔ Cache Hit (Return in 0ms)                    │
+│  └─ Cache Miss ➔ Invoke LLM Foundation Model via KeyPool Rotation      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 3. Circuit Breakers & Secondary Agent Fallback                         │
+│  ├─ If agent fails > 5 times ➔ Circuit Breaker trips to "OPEN" for 300s│
+│  └─ Automatically routes to deterministic local heuristic rules        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 4. Canary Mathematical Invariant Gate (`canary_validator.py`)          │
+│  ├─ Zero-Sum Budget Invariant: sum(Delta B_i) == 0                     │
+│  ├─ Number Safety Gate: CandidateDigits in ReferenceDigits             │
+│  └─ Synthesize output and stream verified response to client 🟢        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 17.3 Visual Workflow Node Graph Canvas with Delay Timer Queues
+
+Enables end users and financial advisors to build custom automation workflows using an interactive canvas:
+- **Node Types**:
+  - `trigger`: Schedule cron, inbound webhook, high-value transaction ($> \$500$), or budget breach ($> 90\%$).
+  - `condition`: Category filters, merchant regex, amount thresholds.
+  - `delay`: Wait duration ($N$ minutes/hours) with state transition `status: "DELAYED"`.
+  - `action`: Multi-channel email/SMS notification, budget auto-adjustment, or outbound webhook.
+- **Resumption Engine**:
+  A 60-second cron sweeper (`sweepDelayedWorkflowRuns`) polls MongoDB for delayed runs whose `resumeAt` timestamp has elapsed, seamlessly executing downstream nodes to completion.
+
+---
+
+### 17.4 Offline-First Stroke Synchronization & 64-D Semantic Vector Search
+
+The financial journal (`Notes.tsx`) allows offline editing with guaranteed sync:
+1. **LocalStorage Queue**: Drafts and edits are persisted to browser `localStorage` with client-generated UUID idempotency keys (`draft_timestamp_uuid`).
+2. **Reconnection Sync**: `window.addEventListener('online')` triggers a batch sync to `/api/financial-journal/entries/batch-sync`.
+3. **Idempotency Protection**: A unique compound index `{ orgId: 1, userId: 1, clientKey: 1 }` prevents duplicate notes on flaky connections.
+4. **64-D Semantic Vector Search**: Server computes normalized 64-D vector embeddings for each note, allowing users to query their financial journal via natural language semantic search.
+
+---
+
+### 17.5 Global Multi-Currency FX Localization & Withholding Tax (WHT) Modeling
+
+FinWise supports 7 core global currencies: `USD` (base), `EUR`, `GBP`, `INR`, `CAD`, `AUD`, and `JPY`.
+- **Zero-Decimal JPY Precision**: Japanese Yen values are rounded to the nearest integer (`Math.round`), while other currencies use standard two-decimal precision.
+- **Dividend Withholding Tax (WHT)**:
+  $$\text{Net Dividend} = \text{Gross} \times (1.0 - \text{Statutory Rate}) + \text{DTAA Relief Credit}$$
+  Supports bilateral Double Tax Avoidance Agreement (DTAA) relief, reducing statutory 30% US withholding tax to 15% for treaty-eligible international investors.
+
+---
+
+### 17.6 Financial Calendar Reminders & RFC 5545 iCal Feed Synchronization
+
+Provides proactive management of recurring liabilities, estimated taxes, and subscription renewals:
+- **Interactive Calendar Grid**: Monthly visual schedule of upcoming bills, payment amounts, and alert offsets.
+- **One-Click Status Toggle**: Toggle status between `pending` and `completed` with immediate optimistic UI updates.
+- **Live RFC 5545 iCal Feed**: Endpoint `/api/v1/calendar-reminders/export.ics` produces live calendar feeds that sync with Google Calendar, Apple Calendar, and Microsoft Outlook.

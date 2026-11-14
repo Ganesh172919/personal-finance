@@ -26,12 +26,18 @@ import MerchantModel from "../../models/merchantModel";
 import type { IUserDocument } from "../../models/userModel";
 import { HttpError } from "../../middleware/httpError";
 
+// Defines numeric privilege hierarchy for organization membership roles.
+// Establishes rank ordering between member, admin, and owner permissions.
+// Evaluated by role-based guard functions to control administrative operations.
 const roleRank: Record<"member" | "admin" | "owner", number> = {
   member: 1,
   admin: 2,
   owner: 3,
 };
 
+// Validates that organization context is attached to the current request.
+// Throws a 401 unauthorized error if the organization context is missing.
+// Returns the active organization identifier as a MongoDB ObjectId.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -39,6 +45,9 @@ const requireOrgContext = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Enforces that the requesting user possesses administrative permissions in the organization.
+// Evaluates organization context and compares user role rank against the admin threshold.
+// Throws a 403 access denied error when organizational authorization is insufficient.
 const requireOrgAdmin = (req: Request) => {
   const orgId = requireOrgContext(req);
   if (roleRank[req.org!.role] < roleRank.admin) {
@@ -47,6 +56,9 @@ const requireOrgAdmin = (req: Request) => {
   return orgId;
 };
 
+// Cleans and normalizes merchant name strings for standardized storage and lookup.
+// Collapses excessive whitespace, strips special characters, and forces lowercasing.
+// Enforces a maximum length constraint of 160 characters for indexing.
 // Normalizes merchant names for consistent matching: lowercase, collapse whitespace,
 // strip non-alphanumeric chars (except &.-), truncate to 160 chars
 const normalizeMerchantName = (value: string) => {
@@ -56,6 +68,9 @@ const normalizeMerchantName = (value: string) => {
   return stripped.trim().slice(0, 160);
 };
 
+// Formats a raw merchant database record into a standardized API response object.
+// Maps internal MongoDB fields into public JSON structure with normalized names and aliases.
+// Provides sensible fallbacks for optional metadata, timestamps, and default categories.
 const mapMerchant = (merchant: any) => ({
   id: String(merchant._id),
   name: String(merchant.name || ""),
@@ -67,6 +82,9 @@ const mapMerchant = (merchant: any) => ({
   updated_at: merchant.updatedAt || null,
 });
 
+// Lists organization merchants with optional text search and pagination limiting.
+// Performs case-insensitive matching across merchant names, normalized strings, and aliases.
+// Returns the matched merchant array scoped to the requesting organization context.
 export const listMerchants = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const query = req.query as { q?: string; limit?: unknown };
@@ -93,6 +111,9 @@ export const listMerchants = async (req: Request, res: Response) => {
   });
 };
 
+// Creates or updates a merchant record within the organization by normalized name.
+// Normalizes the display name, sets default expense categories, and appends unique aliases.
+// Executes an atomic upsert operation and returns the resulting merchant entity.
 export const upsertMerchant = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;

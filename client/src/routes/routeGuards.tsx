@@ -30,11 +30,23 @@
  * @module routes/routeGuards
  */
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Redirect } from "wouter";                              // wouter's redirect component
 
 import { FullScreenLoader } from "@/components/feedback/FullScreenLoader"; // Loading indicator
 import { useAuth } from "@/context/AuthContext";                  // Authentication context
+import { Button } from "@/components/ui/Button";
+
+// Fallback error UI presented when session authentication checks fail or timeout.
+// Informs the user of the communication obstacle with accessible alert headings.
+// Provides an explicit retry button triggering asynchronous session re-verification.
+function AuthCheckFailure({ message, retry }: { message: string; retry: () => Promise<void> }) {
+  return <main id="main-content" className="mx-auto max-w-md space-y-4 p-6">
+    <h1 className="text-xl font-semibold">Unable to check sign-in</h1>
+    <p role="alert" className="text-sm text-muted-foreground">{message}</p>
+    <Button onClick={() => void retry()}>Try sign-in check again</Button>
+  </main>;
+}
 
 /**
  * Route guard that requires authentication.
@@ -44,8 +56,11 @@ import { useAuth } from "@/context/AuthContext";                  // Authenticat
  *
  * @param children - The content to render if authenticated
  */
+// Route protection boundary ensuring caller possesses an active user session.
+// Displays a full-screen loading skeleton during asynchronous credential validation.
+// Redirects unauthenticated visitors to login while rendering children for users.
 export function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, authError, checkAuthStatus } = useAuth();
 
   // Show loading while checking authentication state
   if (loading) {
@@ -54,6 +69,7 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
 
   // Redirect to login if not authenticated
   if (!user) {
+    if (authError) return <AuthCheckFailure message={authError} retry={checkAuthStatus} />;
     return <Redirect to="/login" />;
   }
 
@@ -70,13 +86,24 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
  *
  * @param children - The content to render if NOT authenticated
  */
+// Route restriction guard reserving child views solely for unauthenticated guests.
+// Prevents authenticated users from viewing registration or login entry screens.
+// Automatically routes existing sessions to the dashboard while verifying state.
 export function PublicOnlyRoute({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, authError, checkAuthStatus } = useAuth();
+  const [timedOut, setTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (!loading) return;
+    const timer = setTimeout(() => setTimedOut(true), 1500);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   // Show loading while checking authentication state
-  if (loading) {
+  if (loading && !timedOut) {
     return <FullScreenLoader label="Checking your session..." />;
   }
+  if (!user && authError && !timedOut) return <AuthCheckFailure message={authError} retry={checkAuthStatus} />;
 
   // Redirect to dashboard if already authenticated
   if (user) {

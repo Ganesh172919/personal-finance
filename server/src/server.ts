@@ -106,11 +106,15 @@ import { logger } from "./config/logger";                       // Pino JSON log
 import { processPendingDomainEvents } from "./services/domainEventTriggers"; // Domain event polling
 import { startPluginManager } from "./modules/plugins/pluginManager";        // Plugin lifecycle manager
 import { startDomainEventFanout } from "./modules/realtime/domainEventFanout"; // Realtime event fanout (SSE)
+import { shutdownEventBus } from "./modules/realtime/eventBus"; // Redis pub/sub cleanup
 import { startWorkflowScheduler } from "./services/workflowScheduler";        // Background workflow cron
 import { startNewsletterScheduler } from "./services/newsletterScheduler";    // Daily newsletter delivery
 import { closeRedis } from "./config/redis";                    // Redis connection cleanup
 import { initTelemetry, shutdownTelemetry } from "./config/telemetry"; // OpenTelemetry tracing
 import { ensureTransactionExternalIdIndex } from "./services/transactionIndexes";
+import { ensureJournalClientDraftIndex } from "./services/journalIndexes";
+import { applyServerTimeouts, markShuttingDown, resolveShutdownConfig } from "./lifecycle"; // Drain state + timeouts
+import { registerVoiceStream } from "./services/gnaniVoiceStream";
 
 // ── Module-Level State ────────────────────────────────────────────────
 // These variables hold references to running services so they can be cleaned up during shutdown.
@@ -118,6 +122,7 @@ import { ensureTransactionExternalIdIndex } from "./services/transactionIndexes"
 
 // The HTTP server instance (returned by app.listen())
 let server: ReturnType<ReturnType<typeof createApp>["listen"]> | null = null;
+let stopVoiceStream: (() => void) | undefined;
 // Guard flag to prevent double-shutdown (e.g., SIGINT followed quickly by SIGTERM)
 let shuttingDown = false;
 // Interval handle for the domain event polling loop
@@ -149,27 +154,41 @@ let newsletterSchedulerStop: (() => void) | null = null;
  * @param reason - The signal or event that triggered shutdown (e.g., "SIGINT", "uncaughtException")
  * @param exitCode - Process exit code (0 for clean shutdown, 1 for error)
  */
+// Coordinates comprehensive graceful shutdown sequence across all server infrastructure.
+// Stops inbound HTTP traffic, drains connections, cancels schedulers, and closes databases.
+// Enforces safety watchdog timer to guarantee container process exit within configured ceilings.
 const shutdown = async (reason: string, exitCode = 0) => {
   // Prevent re-entrant shutdown (e.g., SIGINT followed by SIGTERM)
   if (shuttingDown) {
     return;
   }
   shuttingDown = true;
+  // /readyz now answers 503 so the load balancer stops routing new requests here.
+  markShuttingDown();
 
-  logger.info(`Received ${reason}. Starting graceful shutdown...`);
+  const { drainMs, forceExitMs } = resolveShutdownConfig(process.env);
+  logger.info({ reason, drainMs, forceExitMs }, `Received ${reason}. Starting graceful shutdown...`);
 
   // Safety net: force exit if graceful shutdown takes too long
-  // This prevents zombie processes in containerized environments (Docker, K8s)
+  // This prevents zombie processes in containerized environments (Docker, K8s).
+  // The ceiling must cover in-flight AI calls (45s upstream timeout) plus the drain delay.
   const forceExitTimer = setTimeout(() => {
     logger.error("Graceful shutdown timeout reached. Forcing process exit.");
     process.exit(exitCode || 1);
-  }, 15_000); // 15 seconds
+  }, drainMs + forceExitMs);
   forceExitTimer.unref(); // Don't keep process alive just for this timer
 
   try {
+    // Step 0: Keep serving (with /readyz failing) long enough for the balancer to notice.
+    // Skipped on fatal errors: the process state can no longer be trusted.
+    if (drainMs > 0 && exitCode === 0) {
+      await new Promise<void>(resolve => setTimeout(resolve, drainMs));
+    }
+
     // Step 1: Stop accepting new HTTP connections
     // server.close() stops listening but lets existing requests finish
     if (server) {
+      stopVoiceStream?.();
       await new Promise<void>(resolve => {
         server!.close(() => resolve());
       });
@@ -199,6 +218,9 @@ const shutdown = async (reason: string, exitCode = 0) => {
       newsletterSchedulerStop = null;
     }
 
+    // Close the pub/sub subscriber before the shared Redis connection.
+    await shutdownEventBus();
+
     // Step 4: Close database connections
     await closeDB();    // MongoDB via Mongoose
     await closeRedis(); // Redis via ioredis
@@ -227,6 +249,9 @@ const shutdown = async (reason: string, exitCode = 0) => {
  * 4. Background services start alongside the app
  * 5. Signal handlers are registered last (after everything is running)
  */
+// Master bootstrapping lifecycle for the FinWise web and API server application.
+// Initializes telemetry, database connections, background schedulers, and Express listener.
+// Registers process signal traps for production container lifecycle management.
 async function start() {
   // Load and validate all environment variables
   // getEnv() uses Zod validation and will throw if config is invalid
@@ -243,13 +268,14 @@ async function start() {
   // Connect to MongoDB (falls back to in-memory for dev/test if MONGO_URI is missing)
   await connectDB();
   await ensureTransactionExternalIdIndex();
+  await ensureJournalClientDraftIndex();
 
   // Start background services and store their stop functions for graceful shutdown
   pluginManagerStop = startPluginManager().stop;           // Plugin lifecycle management
   domainEventFanoutStop = startDomainEventFanout().stop;   // Realtime SSE event fanout
 
   // Only start the workflow scheduler if async jobs are not handled by a separate worker process
-  // ASYNC_JOBS_ENABLED=true means a dedicated BullMQ worker handles scheduled workflows
+  // ASYNC_JOBS_ENABLED=true means the dedicated MongoDB polling worker handles scheduled workflows
   if (env.NODE_ENV !== "test" && !env.ASYNC_JOBS_ENABLED) {
     workflowSchedulerStop = startWorkflowScheduler({ label: "server" }).stop;
   }
@@ -266,12 +292,12 @@ async function start() {
   server = app.listen(env.PORT, () => {
     logger.info(`Server is running on http://localhost:${env.PORT}`);
   });
+  stopVoiceStream = registerVoiceStream(server);
 
-  // Set server timeouts to prevent slow-loris attacks and hung connections
-  // requestTimeout: max time to receive the complete request body
-  // headersTimeout: max time to receive request headers (must be > requestTimeout)
-  server.requestTimeout = 30_000;  // 30 seconds
-  server.headersTimeout = 35_000;  // 35 seconds (slightly more than requestTimeout)
+  // Server timeouts: bound slow-loris/hung connections AND keep idle keep-alive sockets
+  // open longer than any load balancer's idle timeout (otherwise intermittent 502s).
+  // See lifecycle.ts for the ordering constraints between the three values.
+  applyServerTimeouts(server);
 
   // Start domain event polling (only in non-test environments)
   // This polls MongoDB for pending domain events and processes them
@@ -317,16 +343,22 @@ async function start() {
     void shutdown("uncaughtException", 1);
   });
 
-  // Fatal: unhandled promise rejection (missing .catch() on a promise)
-  process.once("unhandledRejection", reason => {
-    logger.error({ reason }, "Unhandled rejection");
-    void shutdown("unhandledRejection", 1);
+  // Non-fatal: an unhandled promise rejection is a bug (a missing .catch()), but it
+  // is almost always confined to one request or background task. Exiting here would
+  // drop every other user's in-flight request and long AI stream on this instance, so
+  // log it loudly and keep serving. `on` (not `once`) so every occurrence is reported.
+  // Genuinely corrupt state surfaces as uncaughtException, which stays fatal above.
+  process.on("unhandledRejection", reason => {
+    logger.error({ reason, event: "unhandled_rejection" }, "Unhandled rejection (continuing to serve)");
   });
 }
 
 // ── Entry Point ───────────────────────────────────────────────────────
 // Call start() and handle any startup failures
 // If initialization fails (e.g., bad config, DB connection refused), exit immediately
+// Top-level execution entry point initiating server startup with fatal exception handling.
+// Traps and logs any catastrophic failure encountered during server bootstrap sequence.
+// Terminates Node.js execution with non-zero exit code on startup errors.
 start().catch(error => {
   logger.error({ error }, "Failed to start server");
   process.exit(1); // Exit with error code 1 (general error)

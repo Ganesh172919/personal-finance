@@ -35,6 +35,9 @@ import { useEffect, useRef, useState, type ImgHTMLAttributes } from "react";
  * blur-up transition for a premium feel.
  */
 
+// Property structure definition for the performance-optimized lazy image component.
+// Configures low-resolution placeholder sources, error fallbacks, and root margins.
+// Inherits standard HTML image attributes while customizing source handling.
 interface LazyImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> {
   src: string;
   /** Optional low-res placeholder for blur-up effect */
@@ -47,6 +50,9 @@ interface LazyImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, "src"
   imageClassName?: string;
 }
 
+// Viewport-aware image component leveraging IntersectionObserver for deferred loading.
+// Displays pulsing shimmer skeletons and smooth opacity transitions upon load completion.
+// Gracefully falls back to backup assets or decorative surfaces on network errors.
 export function LazyImage({
   src,
   placeholderSrc,

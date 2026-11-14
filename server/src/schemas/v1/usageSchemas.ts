@@ -12,6 +12,9 @@
  */
 import { z } from "zod";
 
+// Validates query parameters when retrieving usage ledger records.
+// Checks optional period key formatted as year and month (YYYY-MM).
+// Disallows unrecognized query parameters using strict schema checking.
 export const usageLedgerQuerySchema = z
   .object({
     period_key: z.string().trim().regex(/^\d{4}-\d{2}$/, "Invalid period key (expected YYYY-MM)").optional(),

@@ -4,6 +4,9 @@
 > *Distributed Multi-Tier Architecture, Express 5 Composition, LangGraph SubAgent DAGs, RAG Phase 2, and Invariant Verification*  
 > **Release Target:** 2026 Enterprise Edition · **Runtime:** Node.js `>=24.14.1 <25` · Python `3.11+` · React `18.3` · MongoDB `7.0` · Redis `7.0`
 
+> [!WARNING]
+> This is a historical design blueprint, not an operational runbook. The active runtime uses `/api/v1` with compatible `/api` aliases and a MongoDB-backed worker (`server/src/worker/worker.ts`); it does **not** use BullMQ. Verify configuration in `server/src/config/env.ts` and API routes in `packages/contracts/openapi/v1/openapi.yaml`.
+
 ---
 
 ## 1. System Topology Mindmap
@@ -34,7 +37,7 @@ mindmap
         OrgScopePlugin Auto orgId Injection
         Dual Auth Bearer JWT & SHA-256 API Keys
       Business Domain Logic 60 Services
-      BullMQ Async Queues & Dead Letter Quarantining
+      MongoDB-backed asynchronous worker and recovery
       RAG Phase 2 BM25 Bounded Window Chunker
     AI Core - Python 3.11 FastAPI - Port 8001
       LangGraph StateGraph DAG Orchestration
@@ -76,7 +79,7 @@ mindmap
 │    ├─► 🔍 RAG Phase 2 Engine: Bounded Window Chunker (1800 ch / 260 ch overlap) + BM25 Lexical Scorer  │
 │    ├─► 📊 Operational Services: commandCenterService • budgetHealthService • transactionReview         │
 │    ├─► 📄 Export & Print: PDFKit Server-Side Compilation streaming to MongoDB GridFS                   │
-│    └─► ⚙️ Async Queue: BullMQ + Redis for Scheduled Newsletters, Webhook Sync, and DLQ Quarantining    │
+│    └─► ⚙️ Async Work: MongoDB records for workflows, exports, and scheduled delivery                   │
 └─────────────────────────┬──────────────────────────────────────────┬───────────────────────────────────┘
                           │                                          │
          💾 Read / Write Operations                         ⚡ High-Speed IPC / HTTP
@@ -89,7 +92,7 @@ mindmap
 │  │   • Workspace Knowledge Chunks             │  │  ├─► Aggregator Zero-Sum Budget & Invariant Audit   │
 │  ├─► Redis 7.0 Cluster                        │  │  ├─► Multi-Key KeyPool Rotation & 6-Tier Failover   │
 │  │   • Sliding Rate Limiter Buckets           │  │  ├─► Deterministic Python Financial Calculators     │
-│  │   • BullMQ Job Queues & Dead Letter Queue  │  │  ├─► SQLite FTS5 Memory & Checkpointed Sessions     │
+│  │   • MongoDB worker records & recovery      │  │  ├─► SQLite FTS5 Memory & Checkpointed Sessions     │
 │  │   • Pub/Sub Domain Event Bus               │  │  └─► Automated Evaluation Suite (Invariant Testing) │
 │  └─► GridFS Blob Storage                      │  └─────────────────────────────────────────────────────┘
 │      • PDF Statements, Receipts, Exports      │
@@ -139,28 +142,23 @@ export function orgScopePlugin(schema: Schema) {
 
 ---
 
-## 5. Tier 3: Asynchronous Queues & Resilient DLQ
+## 5. Tier 3: Asynchronous Work and Recovery
 
-FinWise decouples heavy background workloads using **BullMQ 5** backed by **Redis 7**:
+Durable background work is represented by MongoDB records and claimed atomically by the dedicated worker:
 
 ```text
-┌─────────────────┐       ┌────────────────────┐       ┌───────────────────┐
-│ Service Action  ├──────►│ BullMQ Redis Queue ├──────►│ Background Worker │
-└─────────────────┘       └────────────────────┘       └─────────┬─────────┘
-                                                                 │
-                                                       [Repeated Failures?]
-                                                               /       \
-                                                             YES        NO
-                                                             /           \
-                                                            v             v
-                                                 ┌────────────────┐  ┌─────────┐
-                                                 │ Dead Letter Q  │  │ Success │
-                                                 │ (Quarantined)  │  │ Done    │
-                                                 └────────────────┘  └─────────┘
+┌─────────────────┐       ┌─────────────────────┐       ┌───────────────────┐
+│ Service Action  ├──────►│ MongoDB job record  ├──────►│ Background Worker │
+└─────────────────┘       └─────────────────────┘       └─────────┬─────────┘
+                                                                   │
+                                                     ┌─────────────┴─────────────┐
+                                                     ▼                           ▼
+                                              succeeded / next run        failed / recovered
 ```
 
-- **Queues Handled**: `newsletter-dispatch`, `pdf-compilation`, `csv-statement-import`, `workflow-execution`.
-- **Dead Letter Queue (`deadLetterQueue.ts`)**: Quarantines poisoned jobs after 3 consecutive failures. Stores the full stack trace, attempt history, and payload for administrative replay.
+- **Worker records**: workflow runs, integration-sync runs, export jobs, and due scheduled exports. Claims use `findOneAndUpdate` status transitions to avoid duplicate processing.
+- **Scheduler responsibilities**: workflow schedules are started with the worker; newsletter delivery is handled by its application scheduler.
+- **Recovery**: `jobRecovery.ts` and worker stale-job recovery return abandoned running work to a retryable state. The diagnostic dead-letter helper is bounded in process and is not a Redis/BullMQ queue.
 
 ---
 
@@ -290,7 +288,7 @@ export class DistributedEventBus extends EventEmitter {
 │ 2. Redis 7.0 Cluster / Sentinel (Leader + Replica)                      │
 │    • Persistence: Append-Only File (AOF) with everysec fsync           │
 │    • Eviction Policy: volatile-lru (rate limit buckets & query cache)  │
-│    • BullMQ Queues: newsletter, pdf-exports, dead-letter-queue         │
+│    • Worker records: workflows, integration syncs, exports              │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 3. GridFS Distributed Blob Storage                                     │
 │    • Chunks Collection: fs.chunks (255KB binary chunks)                │
@@ -323,7 +321,7 @@ mindmap
     Business Domain Plane
       Modular Express 5 Routers
       Domain Event Bus Subscribers
-      BullMQ Background Processors
+      MongoDB Background Worker
     Persistence Plane
       Mongoose Schema Plugins
       Compound Index Definitions
@@ -350,7 +348,7 @@ mindmap
                   │                                               │
                   ├───────────────────────┐                       ├───────────────────────┐
                   ▼                       ▼                       ▼                       ▼
-          [Domain Service]        [BullMQ Worker]         [SSE Fanout]           [Audit Logger]
+          [Domain Service]        [MongoDB Worker]        [SSE Fanout]           [Audit Logger]
           Business Logic          Async Background        Live Client Update      Compliance Trail
                   │                       │
                   ▼                       ▼
@@ -448,3 +446,145 @@ During server boot, `transactionIndexes.ts` inspects MongoDB collections to guar
 - Verifies compound index `{ orgId: 1, date: -1 }` on `transactions`.
 - Automatically builds missing indexes in background mode (`background: true`).
 - Guarantees sub-10ms query execution across 100,000+ transaction ledgers.
+
+### 11.6 Machine Learning Merchant Embedding Clustering & Normalization Engine
+The financial ledger incorporates an on-device machine-learning classification and clustering subsystem (`merchantEmbeddingClustering.ts`):
+- **64-Dimensional Vector Space**: Subdivides into Sector Taxonomies (dims 0–11), Brand Anchor Aliases (dims 12–27), and FastText subword character n-gram FNV-1a hashing (dims 28–63).
+- **L2 Unit Normalization**: Ensures $\|\vec{v}\|_2 = 1.0 \pm 10^{-5}$, enabling direct dot-product calculation for pairwise cosine similarity.
+- **Agglomerative Centroid Clustering**: Merges noisy card terminal descriptions (`AMZN MKTP US*2A41B`, `Amazon Prime Video`, `Amazon.com*MB92`) into canonical entities when cosine similarity satisfies $\text{sim}(\vec{v}_i, \vec{c}_j) \ge 0.70$.
+- **1-Click Review Queue Promotion**: Surfaces clusters in `TransactionReviewQueue.tsx` with semantic similarity badges and provides 1-click batch application to all matching ledger entries while generating a permanent `CategoryRule`.
+
+### 11.7 Multi-Modal Dense Vector Grounded RAG Subsystem
+The RAG Phase 2 pipeline (`retrievalService.ts`) indexes multi-modal workspace documents (text, tables, image OCR, structured financial data) into 64-D dense embeddings stored in `workspaceKnowledgeChunks`:
+- **Physical Page Retention**: Preserves form-feed page markers (`\f`) across PDF parsing to maintain 1:1 fidelity with printed statement pages.
+- **Table-Aware Header Preservation**: Maintains Markdown table header rows across chunk boundaries, preventing tabular data fragmentation.
+- **Hybrid Grounding Formula**: Evaluates combined semantic and lexical score:
+  $$G = 0.55 \cdot S_{\text{cosine}} + 0.45 \cdot R_{\text{lexical\_norm}}$$
+- **Grounding Gate ($G \ge 0.70$)**: Only candidate chunks meeting or exceeding the threshold receive verified grounding tags and interactive `[docId:chunkIndex]` citations in the client evidence drawer.
+
+### 11.8 Visual Workflow Node Graph Canvas & Delayed Pipelines
+The automation workflow subsystem (`workflows.ts`, `Workflows.tsx`) provides an interactive drag-and-drop node graph canvas:
+- **Delay Timers**: Actions can specify asynchronous delays from 1 second up to 30 days, tracked in `WorkflowRun.delays_executed`.
+- **Inbound Webhooks**: Secure cryptographic 48-character tokens allow third-party systems to trigger workflows via `POST /api/workflows/webhook/:token`.
+- **Conditional Branching Rules**: Evaluates trigger payload contexts against comparison operators (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `contains`), logging bypassed steps in `actions_skipped`.
+- **Runtime Variable Interpolation**: Dynamically replaces `{{field}}` variables in task titles and notifications.
+
+### 11.9 Peer Spending Benchmarks & Zero-Sum Auto-Rebalancing Invariant
+The Budget Health engine (`budgetHealthService.ts`, `BudgetHealthCard.tsx`) integrates cohort intelligence and autonomous budget rebalancing:
+- **Cohort IQR Benchmarks**: Compares user category expenditures against standard household peer cohorts, identifying frugal vs. elevated categories.
+- **Peer Alignment Index**: A 0–100% composite score indicating structural alignment with healthy household financial profiles.
+- **Mathematical Invariant $\sum \Delta B_i = 0$**: Proposes automated zero-sum transfers from surplus envelopes (where $\text{spent} < \text{planned}$) to deficit envelopes (where $\text{spent} > \text{planned}$), strictly preserving the aggregate monthly budget cap.
+
+### 11.10 Authenticated Bank-Feed Import Simulator
+The transaction ingestion subsystem supports authenticated test ingestion via `POST /api/transactions/bank-feed`; it is not exposed as a live provider callback:
+- **Idempotency & Deduplication**: Enforces a unique sparse compound index on `{ orgId: 1, externalId: 1 }` to eliminate duplicate ledger inserts from bank webhook retries.
+- **Confidence Scoring**: Computes an algorithmic confidence metric ($0.10 \le C \le 1.00$). Charges with $C < 0.70$ route automatically to the Transaction Review Queue with triage flags.
+- **Interactive In-App Simulator**: Provides a sandbox simulation modal in `Transactions.tsx` for developers and testers to inject mock bank webhook events and observe instant reactive UI updates.
+
+
+### 11.11 Continuous Production AI Canary Invariant Validation Engine
+FinWise integrates a dual-layer AI Canary validation engine (`aiCanaryService.ts` and `canary_validator.py`) that mathematically tests every synthesized financial recommendation against 5 core identities:
+- **Invariant 1 (Number Safety)**: $D_{\text{cand}} \subseteq D_{\text{ref}} \cup D_{\text{allowlist}}$, strictly barring invented amounts or APR rates.
+- **Invariant 2 (Zero-Sum Budget)**: $\sum_{i=1}^N \Delta B_i = 0$ with $\text{Proposed}_i \ge 0$, guaranteeing envelope adjustments never inflate aggregate budgets.
+- **Invariant 3 (Balance Sheet)**: $|\text{Assets} - \text{Liabilities} - \text{Net Worth}| \le 0.01$.
+- **Invariant 4 (Cash Flow)**: $|\text{Income} - \text{Expenses} - \text{Net Cash Flow}| \le 0.01$.
+- **Invariant 5 (Debt Amortization)**: $|\text{Principal} + \text{Interest} - \text{Total Payment}| \le 0.01$.
+
+The validation engine first invokes the Python microservice (`POST http://localhost:8001/canary/validate`). If the microservice times out or is unreachable, the engine falls back seamlessly to deterministic local TypeScript decimal math in `aiCanaryService.ts`.
+
+### 11.12 AI System Diagnostics Cockpit & Multi-Model Health Inspection (`AiStatusDialog.tsx`)
+Accessible via Command Bar (`Cmd+K`) or the header status pill, this 4-tab cockpit provides real-time observability:
+- **Overview Tab**: Live system health state (HEALTHY, DEGRADED, OUTAGE), active LLM provider, p50/p95 latency percentiles.
+- **KeyPool Health Tab**: Active API keys, token usage buckets, rotation strategies (`health_weighted`, `round_robin`), cooldown timers, and circuit breaker status (`CLOSED`, `OPEN`, `HALF-OPEN`).
+- **Model Catalog Tab**: Model capability registry with token context windows, pricing, and modalities.
+- **Canary Invariants Tab**: Real-time pass/fail rates for each of the 5 mathematical identities, along with an interactive probe runner to simulate and audit synthetic transactions on demand.
+
+### 11.13 Cross-Silo Unified Context Engine with Reciprocal Rank Fusion (`unifiedContextRetrievalService.ts`)
+Unifies three distinct data silos (User Memory Facts, Workspace Documents, Ledger Transactions) into a single ranked context vector:
+- **Reciprocal Rank Fusion (RRF)** with smoothing parameter $k = 60$:
+  $$\text{RRF}(d) = \sum_{s \in \{M, F, T\}} \frac{w_s}{60 + r_s(d)}$$
+- **Query-Intent Biasing**: Boosts relevant sources by $+35\%$ based on semantic query intent keywords.
+- **Exponential Recency Decay**: Applies a 90-day half-life decay function to transaction scores to prioritize recent activity.
+- **Grounded Prompt Assembly**: Automatically formats verified facts into structured markdown context injected into LLM copilot prompts.
+
+### 11.14 Financial Calendar Live RFC 5545 iCal Streaming Feed (`calendarReminderController.ts`, `FinancialCalendar.tsx`)
+Streams standardized RFC 5545 `VCALENDAR` feeds via `GET /api/v1/calendar-reminders/export.ics`:
+- Automatically detects recurring payment cadences (monthly, quarterly) from historical ledger entries.
+- Emits `VEVENT` blocks with `UID`, `DTSTAMP`, `DTSTART;VALUE=DATE`, `SUMMARY`, and `VALARM` notifications.
+- Enables two-way synchronization with Apple Calendar, Google Calendar, and Microsoft Outlook.
+
+### 11.15 Offline-First Financial Journal Synchronization (`Notes.tsx`, `journalEmbeddingService.ts`)
+Provides offline-capable stylus note capture and handwriting recognition:
+- Stores drafts locally in browser `localStorage` with client-generated UUID idempotency keys.
+- On network reconnect, automatically batches sync via `POST /api/financial-journal/entries/batch-sync`.
+- Guarantees zero duplicate entries via compound unique index `{ orgId: 1, userId: 1, clientKey: 1 }`.
+- Generates 64-D semantic embeddings for conceptual vector search across notes and receipts.
+
+
+### 11.16 Multi-Domain Follow-Through Learning & Ranking Engine (`followThroughService.ts`, `follow_through_ranking.py`)
+The autonomous follow-through subsystem aggregates activity signals across 6 financial silos:
+- **Urgency Weighting**: Tasks due today or overdue receive top prioritization with automatic badge elevations.
+- **Adaptive Preference Scoring**: Tracks user feedback to dynamically customize recommendation ordering.
+- **Multi-Tenant Scoping**: All feedback histories and learned weights are strictly isolated by `{ orgId, userId }`.
+
+### 11.17 Document Authorship Studio & Grounded Document Q&A Engine (`documentQAService.ts`, `richDocumentRenderer.ts`)
+Combines multi-modal RAG retrieval with publication-grade PDF compilation:
+- **Form-Feed Parity (`\f`)**: Physical PDF page boundaries are retained during document ingestion, ensuring citations directly correspond to printed document pages.
+- **Structured Financial Schemas**: Standardized templates for Tax Summaries, Cash Flow Audits, and Amortization Schedules with strict math verification.
+- **Zero-Hallucination Guard**: Cross-verifies all numbers in generated text against input documents using `canary_validator.py`.
+
+### 11.18 Conversation Summary Capacity Coordination & Generation-Only Accounting (`summaryCapacityService.ts`)
+Manages distributed token budgets and inference coalescing for multi-agent conversation recaps:
+- **In-Process Promise Coalescing**: Duplicate in-flight requests for the same conversation share a single promise, reducing redundant LLM calls.
+- **Generation-Only Token Accounting**: Strictly isolates prompt-token caching metrics from completion-token billing to optimize provider expenses.
+- **Bounded Snapshots**: Persists structured summaries in MongoDB with a dual-TTL policy (120s clean, 15s fallback).
+
+### 11.19 Distributed High-Availability Leader Election & Lease Coordination (`leaderElection.ts`, `LeaderLockModel.ts`)
+To coordinate singleton recurring processes across multiple horizontally scaled gateway replicas (such as the newsletter scheduler, domain event fanout poller, and nightly learning optimization sweeps):
+- **Primary Redis Lua Leases**: Uses an atomic Redis `SET leader:<name> <holder> NX PX <ttlMs>` with compare-and-pexpire Lua scripts for safe lease renewal by the active holder only.
+- **Fail-Safe MongoDB TTL Fallback**: When Redis is unconfigured or experiences a partition, the cluster automatically falls back to atomic `findOneAndUpdate` operations on the `leader_locks` collection using `expiresAt` expiration.
+- **Self-Healing Lease Handover**: Crashed leader nodes automatically forfeit their lease upon expiration, permitting healthy replicas to elect a new leader without human intervention.
+
+### 11.20 Cross-Replica Realtime Event Bus (`redisEventBus.ts`)
+Scales live Server-Sent Events (SSE) and reactive push notifications across distributed instances:
+- **Org-Scoped Channels**: Replicas dynamically subscribe to Redis pub/sub channels (`finwise:events:<orgId>`) only when local clients are connected, eliminating bandwidth waste on dormant tenants.
+- **Instance Deduplication**: Pub/sub wire messages encapsulate the originating `instanceId`; receiving replicas ignore self-published messages and apply local deduplication windows to prevent event double-firing.
+- **Zero-Downtime Fallback**: If Redis connectivity degrades, each replica automatically routes events through its local in-memory event bus, ensuring local SSE clients remain responsive.
+
+### 11.21 Gateway Resiliency, Circuit Breakers & Request Idempotency (`aiCoreResilience.ts`, `idempotency.ts`, `cachedJwtStrategy.ts`)
+Hardens the Express API gateway against downstream AI Core saturations and network transients:
+- **Stateful Circuit Breaker**: Implements a 3-state circuit breaker (`closed`, `open`, `half_open`). When consecutive failures breach the threshold, the gateway trips open for a configurable cooldown window (`CIRCUIT_BREAKER_OPEN_MS`), instantly shedding load.
+- **Neutral 503 Load-Shedding**: HTTP 503 responses carrying `Retry-After` headers are treated as neutral backpressure rather than hard server failures, protecting healthy breaker states.
+- **Idempotency-Key Protocol**: Guarantees zero duplicate billing on AI analysis runs by holding atomic distributed locks in Redis/Memory and replaying stored 2xx/4xx responses with `Idempotent-Replay: true`.
+- **Cached JWT Strategy (`cachedJwtStrategy.ts`)**: Avoids duplicate database lookups by memoizing verified user identity tokens across middleware boundaries and utilizing the high-speed `authCacheStore`.
+
+### 11.22 Continuous AI Alignment & Offline Learning Loop (`aiLearningRoutes.ts`, `server/AI_Core/learning/`)
+Provides a closed-loop reinforcement and alignment pipeline:
+- **Flagged Output Review Queue**: Endpoints (`/api/v1/agent-outputs/review-queue`) allow compliance officers to inspect low-confidence agent recommendations and inject corrective annotations.
+- **Contextual Bandit Policy & Rollout**: Selects optimal prompts and sub-agent routing weights via Thompson sampling, dynamically adjusting routing parameters as user satisfaction trends evolve.
+- **Memory Consolidation & PII Redaction**: Periodic offline consolidation workers redact sensitive PII (names, card numbers, tax IDs) using `learning/redact.py` before persisting feedback vectors to long-term memory.
+- **Versioned Artifact Promotion & Rollback**: Enables zero-downtime hot-promotion and instantaneous rollback of prompt templates and adapter weights via `/api/v1/ai/artifacts/:id/promote`.
+
+### 11.23 Terminal Failure Dead-Letter Queue & Resilient Job Replay (`deadLetterJobs.ts`, `DeadLetterJobModel.ts`)
+Durable management of background job failures:
+- **Exhaustion Routing**: Background jobs (PDF rendering, batch exports, webhooks) that exceed their maximum retry backoff are routed into `dead_letter_jobs` with full error stack traces and original payloads.
+- **Admin Inspection & Replay API**: Provides paginated administrative APIs (`GET /api/v1/admin/dead-letter-jobs`) and atomic re-enqueue capabilities (`POST .../replay`) with attempt counters reset.
+- **Prometheus Saturation Telemetry**: Emits the `finwise_dlq_size` gauge into platform observability dashboards for automated on-call PagerDuty alerting.
+
+### 11.24 Platform Prometheus Telemetry & W3C Distributed Tracing (`platformMetrics.ts`, `tracing.ts`)
+Comprehensive observability across distributed services:
+- **Real-Time Prometheus Scrapes**: Centralized metrics registry on `/metrics` exposing SSE stream counts (`finwise_sse_connections`), event bus latency (`finwise_event_bus_lag_ms`), cache hit layers (`finwise_cache_requests_total`), and MongoDB connection pool utilization.
+- **W3C Distributed Tracing**: Strictly validates inbound `X-Request-Id` and `traceparent` headers (`REQUEST_ID_PATTERN`), deriving deterministic trace contexts downstream to the AI Core microservice.
+
+---
+
+**Evidence:**
+- `server/src/services/` (`followThroughService.ts`, `documentQAService.ts`, `richDocumentRenderer.ts`, `summaryCapacityService.ts`, `unifiedContextRetrievalService.ts`)
+- `server/AI_Core/evals/` (`follow_through_evaluator.py`, `conversation_summary_evaluator.py`, `document_creation_evaluator.py`, `document_qa_evaluator.py`)
+- `client/src/pages/` (`Files.tsx`, `Notes.tsx`, `Workflows.tsx`, `FinancialCalendar.tsx`, `TransactionReviewQueue.tsx`)
+- `server/src/services/` (`leaderElection.ts`, `aiCoreResilience.ts`, `deadLetterJobs.ts`)
+- `server/src/modules/realtime/` (`redisEventBus.ts`)
+- `server/src/middleware/` (`idempotency.ts`)
+- `server/src/observability/` (`platformMetrics.ts`, `tracing.ts`)
+- `server/src/config/` (`cachedJwtStrategy.ts`, `rateLimitStore.ts`)
+- `server/AI_Core/learning/` (`bandit.py`, `optimizer.py`, `memory_consolidation.py`, `rollout.py`, `redact.py`)

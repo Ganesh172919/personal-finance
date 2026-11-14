@@ -33,14 +33,23 @@ import { SimpleOTPInput } from "@/components/ui/InputOtp";
 import { useAuth } from "@/hooks/useAuth";
 import { sanitizeNextPath } from "@/lib/url";
 
+// Storage key identifying post-authentication target redirect routes.
+// Preserves the user destination through the OTP confirmation step.
+// Cleared upon successful verification and session token establishment.
 const POST_AUTH_REDIRECT_KEY = "finwise.post_auth_redirect";
 
+// Explanatory steps displayed alongside email verification input.
+// Clarifies authentication security benefits and dev-mode OTP helpers.
+// Guides the user through unlocking full workspace and dashboard features.
 const steps = [
   "Account created and secured with email authentication.",
   "Verification unlocks the full dashboard, chat, and workflow surface.",
   "Development mode keeps the OTP visible so local testing stays fast.",
 ];
 
+// Email OTP code verification page completing user registration flow.
+// Accepts 6-digit confirmation codes, pre-populating dev codes when available.
+// Triggers auth verification, refreshes session tokens, and navigates to destination.
 export default function VerifyEmail() {
   const { checkAuthStatus } = useAuth();
   const [, navigate] = useLocation();

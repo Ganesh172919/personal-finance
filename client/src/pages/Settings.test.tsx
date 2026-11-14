@@ -222,6 +222,46 @@ describe("Settings Page", () => {
     });
   });
 
+  it("keeps the sign-in email read-only and does not send it on profile save", async () => {
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("edit-profile-btn")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("edit-profile-btn"));
+
+    const emailInput = screen.getByTestId("profile-email-input") as HTMLInputElement;
+    expect(emailInput).toBeDisabled();
+    expect(emailInput.readOnly).toBe(true);
+
+    fireEvent.click(screen.getByTestId("save-profile-btn"));
+    await waitFor(() => {
+      expect(mockSettingsApi.updateProfile).toHaveBeenCalled();
+    });
+    expect(mockSettingsApi.updateProfile.mock.calls.at(-1)?.[0]).not.toHaveProperty("email");
+  });
+
+  it("blocks a new password that does not meet the upper/lower/numeric policy", async () => {
+    renderComponent();
+
+    fireEvent.click(screen.getByTestId("tab-security"));
+    await waitFor(() => {
+      expect(screen.getByTestId("current-password-input")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByTestId("current-password-input"), { target: { value: "OldPassword123!" } });
+    fireEvent.change(screen.getByTestId("new-password-input"), { target: { value: "alllowercase" } });
+    fireEvent.change(screen.getByTestId("confirm-password-input"), { target: { value: "alllowercase" } });
+    fireEvent.click(screen.getByTestId("change-password-btn"));
+
+    await waitFor(() => {
+      expect(mockToast.toast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: "Password must include upper, lower, and numeric characters" })
+      );
+    });
+    expect(mockSettingsApi.changePassword).not.toHaveBeenCalled();
+  });
+
   it("changes account password when valid inputs are provided", async () => {
     renderComponent();
 

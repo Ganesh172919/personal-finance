@@ -14,6 +14,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, WifiOff } from "lucide-react";
 
+// Sticky notification banner monitoring real-time browser network connectivity.
+// Informs users when network connectivity drops and cached offline data is shown.
+// Automatically invalidates active query caches upon reconnection to synchronize data.
 export function OfflineBanner() {
   const [isOnline, setIsOnline] = useState<boolean>(() =>
     typeof navigator !== "undefined" ? navigator.onLine : true

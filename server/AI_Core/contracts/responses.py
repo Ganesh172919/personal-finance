@@ -84,6 +84,9 @@ from .tool_calls import ToolCall
 from .trace import WorkflowTraceEntry
 
 
+# LLM token telemetry and financial cost accounting schema for requests.
+# Tracks prompt token consumption, generated output tokens, and total usage.
+# Aggregates estimated USD compute expenses and identifies participating models.
 class UsageMetadata(BaseModel):
     """LLM token and cost usage for the current request."""
     tokens_in: int = 0
@@ -93,6 +96,9 @@ class UsageMetadata(BaseModel):
     models: List[str] = Field(default_factory=list)
 
 
+# Top-level API response contract for the multi-agent processing pipeline.
+# Encapsulates synthesized plans, execution traces, evidence, and session tokens.
+# Carries automated client tool call proposals and runtime model telemetry.
 class ProcessResponse(BaseModel):
     success: bool = True
     final_output: str

@@ -42,6 +42,9 @@ import { ApiError, createTasksFromPlan, submitAgentOutputFeedback } from "@/lib/
 import { useToast } from "@/hooks/useToast";
 
 // Re-using the markdown styles from AICommandBar for consistency
+// Custom React Markdown element styling configuration for insight detail modal text.
+// Defines accessible typography classes for headings, paragraphs, lists, and code blocks.
+// Ensures uniform prose presentation across AI recommendations and analytical deep-dives.
 const markdownComponents = {
   h1: ({children}: any) => <h1 className="text-xl font-bold text-foreground mb-3 mt-4">{children}</h1>,
   h2: ({children}: any) => <h2 className="text-lg font-semibold text-foreground mb-2 mt-3">{children}</h2>,
@@ -54,12 +57,18 @@ const markdownComponents = {
   pre: ({children}: any) => <pre className="bg-muted p-3 rounded overflow-x-auto my-3">{children}</pre>,
 };
 
+// Property structure definition for the individual AI insight detail dialog.
+// Captures the target insight output identifier alongside visibility toggles.
+// Provides callback dispatchers for modal dismissal and route redirection.
 interface InsightDetailModalProps {
   insightId: string | null;
   isOpen: boolean;
   onClose: () => void;
 }
 
+// Comprehensive modal dialog presenting detailed AI financial recommendations.
+// Formats analytical insights with full Markdown styling, task creators, and ratings.
+// Provides direct deep-linking action dispatchers to resolve identified friction points.
 export function InsightDetailModal({ insightId, isOpen, onClose }: InsightDetailModalProps) {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();

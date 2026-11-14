@@ -81,20 +81,23 @@
 
 import mongoose from "mongoose";
 import PQueue from "p-queue";
-import axios from "axios";
 
 import { getEnv } from "../config/env";
 import { logger } from "../config/logger";
+import { processAiCoreNewsletter } from "./aiCoreClient";
 import NewsletterPreferenceModel from "../models/newsletterPreferenceModel";
 import TransactionModel from "../models/transactionModel";
 import type { INewsletterPreferenceDocument } from "../models/newsletterPreferenceModel";
 import { sendEmail } from "../utils/sendEmail";
-import { renderNewsletterHtml, type NewsletterSectionData, type NewsletterTemplateData } from "./newsletterTemplate";
+import { renderNewsletterHtml, type NewsletterSectionData, type NewsletterTemplateData, type HealthPillarData, type DailySpendTrendItem } from "./newsletterTemplate";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
+// Intermediate data structure aggregating recent financial activity for a user.
+// Contains transaction records, spending summaries, budget alerts, and health scores.
+// Supplies complete personal context to newsletter generation and AI prompting.
 interface FinancialData {
   userId: string;
   orgId: string;
@@ -109,8 +112,9 @@ interface FinancialData {
     totalSpent: number;
     totalIncome: number;
     netCashFlow: number;
-    topCategories: Array<{ category: string; amount: number }>;
+    topCategories: Array<{ category: string; amount: number; percentage?: number }>;
     transactionCount: number;
+    dailyTrend?: DailySpendTrendItem[];
   };
   budgetAlerts: Array<{
     budgetName: string;
@@ -130,6 +134,7 @@ interface FinancialData {
     label: string;
     changeFromLastWeek?: number;
     highlights?: string[];
+    pillars?: HealthPillarData[];
   };
 }
 
@@ -137,8 +142,14 @@ interface FinancialData {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Converts a Date instance into an ISO date string format (YYYY-MM-DD).
+// Extracts calendar date components for daily bucket categorization.
+// Used as key identifiers when grouping transaction spending by day.
 const toDayKey = (value: Date) => value.toISOString().slice(0, 10);
 
+// Formats numeric currency amounts into standardized US Dollar representations.
+// Uses Intl.NumberFormat to render localized currency symbols and separators.
+// Ensures consistent currency display across synthesized newsletter sections.
 const formatCurrency = (amount: number): string =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
 
@@ -150,12 +161,16 @@ const formatCurrency = (amount: number): string =>
  * Collects financial data for a user from the last 24 hours and near-future items.
  * Queries TransactionModel, and returns structured data for newsletter generation.
  */
+// Collects multi-dimensional financial context spanning transactions, alerts, and bills.
+// Calculates 7-day rolling spending trends, top expense categories, and cash flow.
+// Synthesizes raw database records into structured financial inputs for newsletters.
 export const collectFinancialData = async (
   userId: mongoose.Types.ObjectId,
   orgId: mongoose.Types.ObjectId
 ): Promise<FinancialData> => {
   const now = new Date();
   const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const next7d = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   // Transactions in last 24 hours
@@ -175,6 +190,15 @@ export const collectFinancialData = async (
     type: t.type ? String(t.type) : undefined,
   }));
 
+  // Transactions in rolling 7 days for trend velocity chart
+  const rolling7dTransactions = await TransactionModel.find({
+    orgId,
+    userId,
+    date: { $gte: last7d, $lte: now },
+  })
+    .select({ amount: 1, date: 1 })
+    .lean();
+
   // Spending summary
   let totalIncome = 0;
   let totalSpent = 0;
@@ -186,15 +210,50 @@ export const collectFinancialData = async (
       totalIncome += amount;
     } else {
       totalSpent += Math.abs(amount);
+      const cat = String((tx as any).category || "Uncategorized");
+      categoryMap.set(cat, (categoryMap.get(cat) || 0) + Math.abs(amount));
     }
-    const cat = String((tx as any).category || "Uncategorized");
-    categoryMap.set(cat, (categoryMap.get(cat) || 0) + Math.abs(amount));
   }
 
+  // Top categories with percentage share
   const topCategories = Array.from(categoryMap.entries())
-    .map(([category, amount]) => ({ category, amount }))
+    .map(([category, amount]) => {
+      const percentage = totalSpent > 0 ? Math.round((amount / totalSpent) * 100) : 0;
+      return { category, amount, percentage };
+    })
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 5);
+
+  // 7-day daily spend trend
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dailySpendMap = new Map<string, number>();
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+    const key = toDayKey(d);
+    dailySpendMap.set(key, 0);
+  }
+
+  for (const tx of rolling7dTransactions) {
+    const amount = Number((tx as any).amount || 0);
+    if (amount < 0 && (tx as any).date) {
+      const key = toDayKey(new Date((tx as any).date));
+      if (dailySpendMap.has(key)) {
+        dailySpendMap.set(key, (dailySpendMap.get(key) || 0) + Math.abs(amount));
+      }
+    }
+  }
+
+  const dailyTrend: DailySpendTrendItem[] = Array.from(dailySpendMap.entries()).map(([dateStr, amount], idx) => {
+    const d = new Date(dateStr + "T00:00:00Z");
+    const day = weekdays[d.getUTCDay()];
+    return {
+      date: dateStr,
+      day,
+      amount: Math.round(amount * 100) / 100,
+      isToday: idx === 6,
+    };
+  });
 
   const spendingSummary = {
     totalSpent,
@@ -202,6 +261,7 @@ export const collectFinancialData = async (
     netCashFlow: totalIncome - totalSpent,
     topCategories,
     transactionCount: transactions.length,
+    dailyTrend,
   };
 
   // Budget alerts - query BudgetAllocationModel if available
@@ -271,26 +331,61 @@ export const collectFinancialData = async (
   };
 };
 
+// Evaluates personal financial wellness across four distinct financial pillars.
+// Assesses cash flow, budget adherence, spending volatility, and savings rates.
+// Calculates consolidated health scores and generates actionable highlights.
 const computeHealthScore = (
   summary: FinancialData["spendingSummary"],
   alerts: FinancialData["budgetAlerts"]
 ): FinancialData["healthScore"] => {
-  let score = 70; // baseline
+  // 1. Cashflow Health pillar (max 25)
+  let cashflowScore = 18;
+  if (summary.netCashFlow > 0) cashflowScore = 25;
+  else if (summary.netCashFlow < -500) cashflowScore = 10;
+  else if (summary.netCashFlow < 0) cashflowScore = 14;
 
-  // Positive cash flow boosts score
-  if (summary.netCashFlow > 0) score += 15;
-  else if (summary.netCashFlow < 0) score -= 15;
+  const cashflowStatus: "good" | "fair" | "poor" =
+    cashflowScore >= 20 ? "good" : cashflowScore >= 14 ? "fair" : "poor";
 
-  // Budget overruns reduce score
+  // 2. Budget Discipline pillar (max 25)
   const exceededCount = alerts.filter((a) => a.status === "exceeded").length;
   const warningCount = alerts.filter((a) => a.status === "warning").length;
-  score -= exceededCount * 10;
-  score -= warningCount * 5;
+  let budgetScore = 25;
+  if (exceededCount > 0) budgetScore = Math.max(5, 25 - exceededCount * 8);
+  else if (warningCount > 0) budgetScore = Math.max(12, 25 - warningCount * 4);
 
-  // Clamp to 0-100
-  score = Math.max(0, Math.min(100, score));
+  const budgetStatus: "good" | "fair" | "poor" =
+    budgetScore >= 20 ? "good" : budgetScore >= 14 ? "fair" : "poor";
 
-  const label = score >= 80 ? "Excellent" : score >= 60 ? "Good" : score >= 40 ? "Fair" : "Needs Attention";
+  // 3. Spending Stability pillar (max 25)
+  const dailyAmounts = (summary.dailyTrend || []).map((d) => d.amount);
+  const avgDaily = dailyAmounts.length > 0 ? dailyAmounts.reduce((a, b) => a + b, 0) / dailyAmounts.length : 0;
+  const maxDaily = dailyAmounts.length > 0 ? Math.max(...dailyAmounts) : 0;
+  let stabilityScore = 22;
+  if (avgDaily > 0 && maxDaily > avgDaily * 3) stabilityScore = 14;
+  else if (avgDaily === 0) stabilityScore = 20;
+
+  const stabilityStatus: "good" | "fair" | "poor" =
+    stabilityScore >= 20 ? "good" : stabilityScore >= 14 ? "fair" : "poor";
+
+  // 4. Savings & Reserve pillar (max 25)
+  let savingsScore = 20;
+  if (summary.totalIncome > 0) {
+    const savingsRatio = Math.max(0, summary.netCashFlow / summary.totalIncome);
+    savingsScore = Math.min(25, Math.round(10 + savingsRatio * 15));
+  }
+  const savingsStatus: "good" | "fair" | "poor" =
+    savingsScore >= 20 ? "good" : savingsScore >= 14 ? "fair" : "poor";
+
+  const totalScore = Math.max(0, Math.min(100, cashflowScore + budgetScore + stabilityScore + savingsScore));
+  const label = totalScore >= 80 ? "Excellent" : totalScore >= 60 ? "Good" : totalScore >= 40 ? "Fair" : "Needs Attention";
+
+  const pillars: HealthPillarData[] = [
+    { name: "Cashflow Health", score: cashflowScore, maxScore: 25, status: cashflowStatus },
+    { name: "Budget Discipline", score: budgetScore, maxScore: 25, status: budgetStatus },
+    { name: "Spending Stability", score: stabilityScore, maxScore: 25, status: stabilityStatus },
+    { name: "Savings & Reserve", score: savingsScore, maxScore: 25, status: savingsStatus },
+  ];
 
   const highlights: string[] = [];
   if (summary.netCashFlow > 0) {
@@ -302,7 +397,7 @@ const computeHealthScore = (
     highlights.push(`${exceededCount} budget${exceededCount > 1 ? "s" : ""} exceeded`);
   }
 
-  return { score, label, highlights };
+  return { score: totalScore, label, highlights, pillars };
 };
 
 // ---------------------------------------------------------------------------
@@ -313,11 +408,13 @@ const computeHealthScore = (
  * Generates newsletter content by calling the AI Core newsletter agent.
  * Falls back to template-based content if AI Core is unavailable.
  */
+// Generates personalized newsletter sections aligned with subscriber preferences.
+// Dispatches aggregated context to AI Core with deterministic template fallbacks.
+// Combines algorithmic spending metrics with personalized advice and action items.
 export const generateNewsletterContent = async (
   financialData: FinancialData,
   preferences: INewsletterPreferenceDocument
 ): Promise<NewsletterSectionData> => {
-  const env = getEnv();
   const contentPrefs = preferences.contentPreferences;
 
   const sections: NewsletterSectionData = {};
@@ -347,8 +444,8 @@ export const generateNewsletterContent = async (
 
   // AI-generated sections (financial tip + action items)
   try {
-    const aiResponse = await axios.post(
-      `${env.PYTHON_API_URL}/api/agents/newsletter`,
+    // Shared AI Core client: breaker, connect/read timeouts, jittered retries, batch-priority queue.
+    const aiResponse = await processAiCoreNewsletter(
       {
         financial_context: financialData,
         content_preferences: {
@@ -356,10 +453,7 @@ export const generateNewsletterContent = async (
           actionableRecommendations: contentPrefs.actionableRecommendations,
         },
       },
-      {
-        timeout: 30_000,
-        headers: { "Content-Type": "application/json" },
-      }
+      { timeoutMs: 30_000, priority: "batch" }
     );
 
     const aiData = aiResponse.data;
@@ -384,6 +478,9 @@ export const generateNewsletterContent = async (
   return sections;
 };
 
+// Generates rule-based financial advice when AI generation services are offline.
+// Evaluates cash flow conditions and transaction velocity to tailor advice.
+// Returns encouraging insights and spending guardrails based on recent trends.
 const generateFallbackTip = (data: FinancialData): NewsletterSectionData["financialTip"] => {
   if (data.spendingSummary.netCashFlow < 0) {
     return {
@@ -406,6 +503,9 @@ const generateFallbackTip = (data: FinancialData): NewsletterSectionData["financ
   };
 };
 
+// Generates deterministic action recommendations when external AI is unavailable.
+// Scans exceeded budget limits and near-term bill due dates to prioritize tasks.
+// Returns prioritized action items guiding users toward immediate financial tasks.
 const generateFallbackActionItems = (data: FinancialData): NewsletterSectionData["actionItems"] => {
   const items: NonNullable<NewsletterSectionData["actionItems"]> = [];
 
@@ -449,6 +549,9 @@ const generateFallbackActionItems = (data: FinancialData): NewsletterSectionData
  * Generates and sends a newsletter to a single user.
  * Full pipeline: fetch prefs -> collect data -> generate content -> render HTML -> send email -> update lastSentAt.
  */
+// Executes the end-to-end newsletter generation, rendering, and delivery pipeline.
+// Verifies active subscriptions, collects data, builds HTML, and sends email.
+// Persists successful dispatch timestamps and logs delivery outcomes.
 export const generateAndSendNewsletter = async (
   userId: mongoose.Types.ObjectId,
   orgId: mongoose.Types.ObjectId
@@ -523,6 +626,9 @@ export const generateAndSendNewsletter = async (
 /**
  * Generates newsletter content for preview (without sending).
  */
+// Renders a complete newsletter preview for a user without dispatching emails.
+// Resolves preferences, gathers context data, and generates responsive HTML.
+// Enables users and administrative interfaces to inspect rendered email layouts.
 export const previewNewsletter = async (
   userId: mongoose.Types.ObjectId,
   orgId: mongoose.Types.ObjectId

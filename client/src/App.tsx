@@ -26,6 +26,9 @@ import { AppRouter } from "@/routes/AppRouter";               // Application rou
  *
  * Wraps the router with all necessary providers (auth, theme, queries, etc.)
  */
+// Top-level root component orchestrating global contexts and application routes.
+// Envelops the application router within AppProviders for universal state access.
+// Forms the root of the React virtual DOM tree mounted by the client runtime.
 function App() {
   return (
     <AppProviders>

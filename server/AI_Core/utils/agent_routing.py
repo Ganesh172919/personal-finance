@@ -88,6 +88,62 @@ ASCII FLOW
 import re
 from typing import Any, Dict, List, Optional
 
+_EDUCATION = re.compile(r"\b(?:what is|how does|explain|define|hypothetical|worked example|generic examples?)\b", re.I)
+_ILLUSTRATIVE_REQUEST = re.compile(
+    r"\b(?:compare|explain|illustrate|describe|what (?:risk|benefit)s?\b|how (?:would|does)\b)"
+    r".*\b(?:hypothetical|generic|worked) examples?\b",
+    re.I,
+)
+_CONCEPT_COMPARISON = re.compile(
+    r"^(?:compare|contrast)\s+(?:an?\s+)?(?:emergency funds?|sinking funds?)\s+(?:and|with|versus|vs\.?)\s+"
+    r"(?:an?\s+)?(?:emergency funds?|sinking funds?)\b",
+    re.I,
+)
+_DEBT_METHOD_EXPLANATION = re.compile(
+    r"\b(?:explain|describe|define)\s+(?:the\s+)?(?:debt\s+)?(?:avalanche|snowball)\b",
+    re.I,
+)
+_PERSONAL_DEBT_ACTION = re.compile(
+    r"\b(?:should i|what should|help me|for me|my (?:debts?|credit cards?|loans?|payments?)|which (?:debt|card|loan))\b",
+    re.I,
+)
+_PERSONAL = re.compile(r"\b(?:my|mine|our|ledger|saved transactions?|attached|should i|create|delete|transfer)\b", re.I)
+_EDUCATION_FOLLOW_UP = re.compile(
+    r"^(?:(?:and )?(?:what|how) (?:about|if)\b|and (?:after|if|over|for|at)\b|"
+    r"(?:can you )?(?:explain (?:that|it)|give (?:me )?(?:(?:a|one) (?:generic |simple |worked |hypothetical )?|an )example\b|"
+    r"show (?:me )?the (?:math|calculation))|"
+    r"(?:in (?:one|two|a) (?:short )?sentences?,\s*)?what happens (?:to|after|when)\b)",
+    re.I,
+)
+
+
+def is_illustrative_education(question: str) -> bool:
+    return not _PERSONAL.search(question) and (
+        bool(_ILLUSTRATIVE_REQUEST.search(question) or _CONCEPT_COMPARISON.search(question))
+        or bool(_DEBT_METHOD_EXPLANATION.search(question) and not _PERSONAL_DEBT_ACTION.search(question))
+    )
+
+
+def education_follow_up(question: str, history: Optional[list[dict[str, str]]]) -> list[str]:
+    """Keep a short chain of user examples when answering an educational follow-up."""
+    if not _EDUCATION_FOLLOW_UP.search((question or "").strip()) or _PERSONAL.search(question):
+        return []
+    turns = [turn.get("content", "") for turn in (history or []) if turn.get("role") == "user"]
+    context = []
+    for turn in reversed(turns[-3:]):
+        if not isinstance(turn, str) or len(turn) > 700 or _PERSONAL.search(turn):
+            break
+        if _EDUCATION_FOLLOW_UP.search(turn.strip()):
+            context.insert(0, turn.strip())
+        elif _EDUCATION.search(turn) or is_illustrative_education(turn):
+            return [turn.strip(), *context]
+        else:
+            break
+    return []
+
+# Regex keyword patterns matching primary financial domain specialists.
+# Organizes compiled expressions for cash flow, budgeting, investing, and debts.
+# Provides baseline pattern catalog for evaluating user intent and domain scores.
 DOMAIN_PATTERNS = {
     "income_expense_analyzer": (
         r"\bexpenses?\b", r"\bspend(?:ing)?\b", r"\bincome\b", r"\bcash\s*flow\b", r"\btransactions?\b",
@@ -118,11 +174,17 @@ _FOLLOW_UP = re.compile(
 )
 
 
+# Evaluates text query against domain patterns counting matching keywords.
+# Iterates through pre-compiled regular expressions for each specialist domain.
+# Returns dictionary mapping specialist names to match counts.
 def domain_scores(text: str) -> Dict[str, int]:
     return {name: sum(bool(pattern.search(text or "")) for pattern in patterns)
             for name, patterns in _COMPILED_DOMAINS.items()}
 
 
+# Constructs unified context text for intent routing from query and history.
+# Inherits earlier user turn context only for ambiguous follow-up queries.
+# Returns combined text string preserving user focus for domain classification.
 def routing_text(
     user_input: str,
     conversation_history: Optional[List[Dict[str, str]]] = None,
@@ -148,6 +210,9 @@ def routing_text(
     return f"{text}\n{summary}" if summary else text
 
 
+# Selects optimal specialist agent names based on query and user data presence.
+# Falls back to financial educator if no user profile information exists.
+# Filters domain specialists according to availability of transactions or debts.
 def select_specialists(
     user_input: str,
     user_profile: Optional[Dict[str, Any]],

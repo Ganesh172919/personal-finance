@@ -15,12 +15,18 @@
  */
 import { z } from "zod";
 
+// Validates request payload submitted when verifying a two-factor authentication TOTP code.
+// Enforces trimmed token string presence bounded between 1 and 20 characters.
+// Prevents unpermitted properties from bypassing strict verification rules.
 export const verify2FABodySchema = z
   .object({
     token: z.string().trim().min(1).max(20),
   })
   .strict();
 
+// Validates request payload submitted to deactivate two-factor authentication.
+// Requires security token or one-time backup code verifying user authorization.
+// Restricts extra parameters to maintain secure credential deactivation interfaces.
 export const disable2FABodySchema = z
   .object({
     token: z.string().trim().min(1).max(20),

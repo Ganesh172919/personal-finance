@@ -87,12 +87,19 @@ import mongoose from "mongoose";
 import NewsletterPreferenceModel from "../models/newsletterPreferenceModel";
 import { logger } from "../config/logger";
 import { generateAndSendNewsletter } from "./newsletterService";
+import { tryAcquireLeadership, releaseLeadership } from "./leaderElection";
+
+const LEADER_LOCK_NAME = "newsletter-scheduler";
+const LEADER_TTL_MS = 90_000;
 
 const CHECK_INTERVAL_MS = 60_000; // Check every minute
 
 /**
  * Converts a Date to HH:mm string in the given IANA timezone.
  */
+// Converts a standard UTC Date object into a 24-hour HH:mm string for a timezone.
+// Employs Intl.DateTimeFormat with error handling and fallback UTC formatting.
+// Used to align user local delivery preferences with the scheduler polling tick.
 const getHHmmInTimezone = (date: Date, timezone: string): string => {
   try {
     const formatter = new Intl.DateTimeFormat("en-US", {
@@ -116,6 +123,9 @@ const getHHmmInTimezone = (date: Date, timezone: string): string => {
 /**
  * Gets a date key (YYYY-MM-DD) for a Date in the given timezone.
  */
+// Computes an ISO calendar date string (YYYY-MM-DD) within a specific timezone.
+// Formats year, month, and day components using Canadian locale conventions.
+// Provides timezone-accurate daily idempotency keys to avoid duplicate deliveries.
 const getDateKeyInTimezone = (date: Date, timezone: string): string => {
   try {
     const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -135,20 +145,18 @@ const getDateKeyInTimezone = (date: Date, timezone: string): string => {
  *
  * Returns a handle with `started` flag and a `stop()` function for graceful shutdown.
  */
+// Initializes the background timer polling and dispatching periodic newsletters.
+// Acquires distributed leader leases and delivers newsletters at local scheduled times.
+// Returns an operational handle containing lifecycle state and graceful stop hooks.
 export const startNewsletterScheduler = (): { started: boolean; stop: () => void } => {
   let stopped = false;
 
-  // Track recently sent newsletters to prevent duplicates within the same day
-  const recentlySent = new Set<string>();
-
-  // Clean up old entries every hour
-  const cleanupTimer = setInterval(() => {
-    recentlySent.clear();
-  }, 60 * 60 * 1000);
-  cleanupTimer.unref();
-
+  // De-duplication is persisted (NewsletterPreference.lastSentAt, claimed with an atomic
+  // compare-and-set) so it survives restarts and works across replicas; the leader lease just
+  // avoids every replica scanning all subscribers every minute.
   const tick = async () => {
     if (stopped) return;
+    if (!(await tryAcquireLeadership(LEADER_LOCK_NAME, LEADER_TTL_MS))) return;
 
     const now = new Date();
 
@@ -157,7 +165,7 @@ export const startNewsletterScheduler = (): { started: boolean; stop: () => void
       const prefs = await NewsletterPreferenceModel.find({
         isSubscribed: true,
       })
-        .select({ userId: 1, orgId: 1, deliveryTime: 1, timezone: 1 })
+        .select({ userId: 1, orgId: 1, deliveryTime: 1, timezone: 1, lastSentAt: 1 })
         .lean();
 
       let matched = 0;
@@ -181,13 +189,18 @@ export const startNewsletterScheduler = (): { started: boolean; stop: () => void
 
         // Check if we already sent today
         const dateKey = getDateKeyInTimezone(now, timezone);
-        const dedupeKey = `${userId}:${dateKey}`;
-        if (recentlySent.has(dedupeKey)) {
+        if (pref.lastSentAt && getDateKeyInTimezone(new Date(pref.lastSentAt), timezone) === dateKey) {
           continue;
         }
 
-        // Mark as sent immediately to prevent duplicate processing
-        recentlySent.add(dedupeKey);
+        // Claim today's send atomically (CAS on the previous lastSentAt); losers skip.
+        const claimed = await NewsletterPreferenceModel.updateOne(
+          { _id: pref._id, lastSentAt: pref.lastSentAt ?? null },
+          { $set: { lastSentAt: now } }
+        );
+        if (!claimed.modifiedCount) {
+          continue;
+        }
 
         // Enqueue newsletter generation (fire-and-forget)
         generateAndSendNewsletter(
@@ -271,7 +284,7 @@ export const startNewsletterScheduler = (): { started: boolean; stop: () => void
     stop: () => {
       stopped = true;
       clearInterval(timer);
-      clearInterval(cleanupTimer);
+      void releaseLeadership(LEADER_LOCK_NAME).catch(() => undefined);
     },
   };
 };

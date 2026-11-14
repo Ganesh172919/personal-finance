@@ -4,18 +4,39 @@ import { Check, ChevronRight, Circle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// Root context menu wrapper component triggered by right-click interactions.
+// Re-exports Radix UI ContextMenuPrimitive Root to manage menu open state.
+// Coordinates nested submenus, items, checkboxes, and radio options.
 const ContextMenu = ContextMenuPrimitive.Root;
 
+// Target wrapper element listening for right-click or long-press pointer events.
+// Re-exports Radix UI ContextMenuPrimitive Trigger to anchor the popup menu.
+// Attaches standard context menu event listeners to child JSX components.
 const ContextMenuTrigger = ContextMenuPrimitive.Trigger;
 
+// Semantic grouping container organizing related context menu items together.
+// Re-exports Radix UI ContextMenuPrimitive Group for accessibility grouping.
+// Manages focus navigation across items within the same logical category.
 const ContextMenuGroup = ContextMenuPrimitive.Group;
 
+// Portal container rendering context menu contents into the document body.
+// Re-exports Radix UI ContextMenuPrimitive Portal to break out of overflow clipping.
+// Prevents z-index layering conflicts and container boundary constraints.
 const ContextMenuPortal = ContextMenuPrimitive.Portal;
 
+// Submenu container orchestrating cascading nested flyout menus.
+// Re-exports Radix UI ContextMenuPrimitive Sub for nested menu management.
+// Coordinates open state and hover triggers between parent and child menus.
 const ContextMenuSub = ContextMenuPrimitive.Sub;
 
+// Radio group container enforcing single-selection among nested radio items.
+// Re-exports Radix UI ContextMenuPrimitive RadioGroup with value binding.
+// Manages keyboard arrow navigation across mutually exclusive options.
 const ContextMenuRadioGroup = ContextMenuPrimitive.RadioGroup;
 
+// Trigger button opening a nested cascading submenu on hover or click.
+// Renders right-facing chevron icon indicating secondary menu availability.
+// Supports optional inset indentation for alignment with checked items.
 const ContextMenuSubTrigger = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.SubTrigger>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.SubTrigger> & {
@@ -37,6 +58,9 @@ const ContextMenuSubTrigger = React.forwardRef<
 ));
 ContextMenuSubTrigger.displayName = ContextMenuPrimitive.SubTrigger.displayName;
 
+// Floating flyout menu container rendered when hovering ContextMenuSubTrigger.
+// Applies popover borders, shadows, and smooth directional slide animations.
+// Houses secondary nested context menu options and nested action triggers.
 const ContextMenuSubContent = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.SubContent>
@@ -52,6 +76,9 @@ const ContextMenuSubContent = React.forwardRef<
 ));
 ContextMenuSubContent.displayName = ContextMenuPrimitive.SubContent.displayName;
 
+// Main floating menu container rendered at pointer coordinates on right-click.
+// Wraps items within a portal with popover styling and entrance animations.
+// Constrains max height with smooth scrolling for lengthy menu lists.
 const ContextMenuContent = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Content>
@@ -69,6 +96,9 @@ const ContextMenuContent = React.forwardRef<
 ));
 ContextMenuContent.displayName = ContextMenuPrimitive.Content.displayName;
 
+// Standard selectable action item within a context menu list.
+// Highlights on hover or keyboard focus with accent background styling.
+// Supports optional inset property to align labels with checkbox markers.
 const ContextMenuItem = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Item> & {
@@ -87,6 +117,9 @@ const ContextMenuItem = React.forwardRef<
 ));
 ContextMenuItem.displayName = ContextMenuPrimitive.Item.displayName;
 
+// Multi-select menu item rendering an interactive boolean checkbox indicator.
+// Displays an animated Check icon when checked attribute evaluates to true.
+// Forwards DOM references and manages checked state changes on selection.
 const ContextMenuCheckboxItem = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.CheckboxItem>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.CheckboxItem>
@@ -111,6 +144,9 @@ const ContextMenuCheckboxItem = React.forwardRef<
 ContextMenuCheckboxItem.displayName =
   ContextMenuPrimitive.CheckboxItem.displayName;
 
+// Single-select radio menu item displaying a filled circle indicator when active.
+// Used within a ContextMenuRadioGroup for selecting one of multiple choices.
+// Forwards DOM references and handles keyboard selection events seamlessly.
 const ContextMenuRadioItem = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.RadioItem>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.RadioItem>
@@ -133,6 +169,9 @@ const ContextMenuRadioItem = React.forwardRef<
 ));
 ContextMenuRadioItem.displayName = ContextMenuPrimitive.RadioItem.displayName;
 
+// Non-interactive heading label providing section titles within the menu.
+// Applies bold typography and muted foreground colors for visual distinction.
+// Supports inset indentation matching preceding or following menu items.
 const ContextMenuLabel = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.Label>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Label> & {
@@ -151,6 +190,9 @@ const ContextMenuLabel = React.forwardRef<
 ));
 ContextMenuLabel.displayName = ContextMenuPrimitive.Label.displayName;
 
+// Visual horizontal rule separating distinct logical groups of menu items.
+// Styled with thin border line and vertical spacing for menu organization.
+// Forwards DOM references to the underlying Radix Separator primitive.
 const ContextMenuSeparator = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.Separator>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Separator>
@@ -163,6 +205,9 @@ const ContextMenuSeparator = React.forwardRef<
 ));
 ContextMenuSeparator.displayName = ContextMenuPrimitive.Separator.displayName;
 
+// Right-aligned accessory span displaying keyboard shortcut key combinations.
+// Renders small, tracked-out typography indicating shortcut equivalents.
+// Placed inside context menu items to provide quick reference hotkeys.
 const ContextMenuShortcut = ({
   className,
   ...props

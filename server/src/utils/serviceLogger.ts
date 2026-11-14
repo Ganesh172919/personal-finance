@@ -34,25 +34,13 @@
 import type { Logger } from "pino";
 import { logger } from "../config/logger";
 
-/**
- * Creates a child logger scoped to a specific service.
- *
- * The returned logger automatically includes a `service` field in every
- * log entry, making it easy to filter logs by service in aggregation tools.
- *
- * @param {string} serviceName - Name of the service (e.g., "aiCoreClient", "transactionService")
- * @returns {Logger} Pino child logger with service binding
- */
+// Creates a dedicated Pino child logger tagged with the specified service module name.
+// Standardizes structured service context across log messages for aggregated querying.
 export const createServiceLogger = (serviceName: string): Logger =>
   logger.child({ service: serviceName });
 
-/**
- * Logs the entry (start) of a service operation at debug level.
- *
- * @param {Logger} serviceLogger - The service-scoped Pino logger
- * @param {string} operation - Name of the operation (e.g., "fetchTransactionsForAi")
- * @param {Record<string, unknown>} [context] - Additional context fields (e.g., orgId, userId)
- */
+// Emits a debug log event recording the start of a specific service operation.
+// Enriches the log event with optional contextual parameters such as user or org IDs.
 export const logEntry = (
   serviceLogger: Logger,
   operation: string,
@@ -61,14 +49,8 @@ export const logEntry = (
   serviceLogger.debug({ operation, ...context }, `${operation} started`);
 };
 
-/**
- * Logs the exit (completion) of a service operation at debug level.
- *
- * @param {Logger} serviceLogger - The service-scoped Pino logger
- * @param {string} operation - Name of the operation
- * @param {Record<string, unknown>} [context] - Additional context fields
- * @param {number} [durationMs] - Duration of the operation in milliseconds
- */
+// Emits a debug log event indicating the successful conclusion of an operation.
+// Records elapsed duration in milliseconds alongside operation context for performance monitoring.
 export const logExit = (
   serviceLogger: Logger,
   operation: string,
@@ -85,18 +67,8 @@ export const logExit = (
   );
 };
 
-/**
- * Logs a warning if an operation exceeded a duration threshold.
- *
- * This is useful for identifying slow operations that may need optimization.
- * The threshold is configurable per call so different operations can have
- * different acceptable durations.
- *
- * @param {Logger} serviceLogger - The service-scoped Pino logger
- * @param {string} operation - Name of the operation
- * @param {number} durationMs - Actual duration in milliseconds
- * @param {number} threshold - Threshold in milliseconds; warn if durationMs > threshold
- */
+// Evaluates operation execution time and emits a warning if it exceeds the specified threshold.
+// Pinpoints performance bottlenecks by logging overage durations for diagnostic alerts.
 export const logSlowOperation = (
   serviceLogger: Logger,
   operation: string,

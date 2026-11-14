@@ -18,7 +18,7 @@
  * @module middleware/requestContext
  */
 
-import { randomUUID } from "crypto"; // Node.js crypto module for UUID generation
+import { sanitizeRequestId } from "../observability/tracing"; // Validates inbound ids, else generates a UUID
 import { NextFunction, Request, Response } from "express"; // Express types
 
 /**
@@ -30,10 +30,13 @@ import { NextFunction, Request, Response } from "express"; // Express types
  * @param {Response} res - Express response object
  * @param {NextFunction} next - Express next function
  */
+// Injects a correlation request ID into request state and sets the outgoing X-Request-Id header.
+// Reuses incoming trace headers if present or generates cryptographically random UUID identifiers.
 export const requestContext = (req: Request, res: Response, next: NextFunction) => {
   // Get request ID from header or generate new one
   const headerRequestId = req.header("x-request-id");
-  const requestId = headerRequestId && headerRequestId.trim().length > 0 ? headerRequestId : randomUUID();
+  // Malformed ids (control chars, oversize, odd charset) are replaced, never echoed.
+  const requestId = sanitizeRequestId(headerRequestId);
 
   // Attach request ID to request object
   req.requestId = requestId;

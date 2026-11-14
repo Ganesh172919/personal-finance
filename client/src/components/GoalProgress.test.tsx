@@ -74,7 +74,8 @@ it("renders goals with pacing and status badges", () => {
 
   expect(screen.getByText("Emergency Fund")).toBeInTheDocument();
   expect(screen.getByText("50% complete")).toBeInTheDocument();
-  expect(screen.getByText("On Track")).toBeInTheDocument();
+  expect(screen.getByText("In Progress")).toBeInTheDocument();
+  expect(screen.queryByText("On Track")).not.toBeInTheDocument();
   expect(screen.getByText(/Need USD \d+\/mo/)).toBeInTheDocument();
 
   expect(screen.getByText("Vacation")).toBeInTheDocument();

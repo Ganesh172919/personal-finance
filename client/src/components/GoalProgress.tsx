@@ -31,6 +31,9 @@ import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import { useToast } from "@/hooks/useToast";
 import { createTask } from "@/lib/api/tasks";
 
+// Dashboard card component visualizing ongoing savings goals and target drift.
+// Computes required monthly allocations against disposable income surpluses.
+// Offers one-click automated task generation to help users catch up on overdue targets.
 export function GoalProgress() {
   const { formatMoney } = useOrgFormatters();
   const queryClient = useQueryClient();
@@ -159,7 +162,8 @@ export function GoalProgress() {
     } else {
       const monthlyNeeded = Math.ceil(remaining / diffMonths);
       statusText = `Need ${formatMoney(monthlyNeeded, { maximumFractionDigits: 0 })}/mo • ${diffMonths} ${diffMonths === 1 ? "mo" : "mos"} left`;
-      badge = { label: "On Track", variant: "outline" };
+      // A future deadline alone does not establish a user's funding pace.
+      badge = { label: "In Progress", variant: "outline" };
     }
 
     return { progress, remaining, statusText, badge };

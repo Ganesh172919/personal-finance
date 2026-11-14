@@ -983,3 +983,284 @@ GET /api/v1/calendar-reminders/export.ics HTTP/1.1
 Authorization: Bearer <user_token>
 ```
 Response: Standard RFC 5545 `text/calendar` stream compatible with Google Calendar, Outlook, and Apple Calendar.
+
+---
+
+## 12) 2026 Production API Playbook & Integration Endpoints
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#047857', 'lineColor': '#10b981', 'secondaryColor': '#0284c7', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((2026 API Playbook))
+    Merchant & Banking Feeds
+      GET /api/financial-data/merchant-clusters
+      POST /api/financial-data/bank-feed
+    Offline Financial Journal
+      POST /api/financial-journal/entries/batch-sync
+      GET /api/financial-journal/entries/semantic-search
+    Budget Health & Zero-Sum
+      GET /api/v1/finance/budgets/health
+      POST /api/v1/finance/budgets/rebalance-apply
+    Calendar & Reminders
+      GET /api/v1/calendar-reminders
+      GET /api/v1/calendar-reminders/export.ics
+    Visual Workflows
+      POST /api/v1/workflows/:id/trigger
+      POST /api/v1/workflows/webhook/:token
+    Newsletter & AI Core
+      POST /api/v1/newsletter/test-dispatch
+      POST /api/v1/ai-core/ai/sessions/:id/resume
+```
+
+### 12.1 `GET /api/financial-data/merchant-clusters`
+Returns clustered merchant entities discovered via 64-D embedding centroid linkage.
+
+**Headers:**
+```http
+Authorization: Bearer <JWT_TOKEN>
+x-org-id: org_enterprise_01
+```
+
+**Response (`200 OK`):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "cluster_1",
+      "canonicalName": "Blue Bottle Coffee",
+      "transactionIds": ["tx_901", "tx_902", "tx_904"],
+      "suggestedCategory": "Coffee & Cafes",
+      "confidence": 0.92,
+      "transactionCount": 3,
+      "totalSpent": 34.50
+    }
+  ]
+}
+```
+
+---
+
+### 12.2 `POST /api/financial-data/bank-feed`
+Inbound webhook endpoint receiving real-time raw transaction batches from banking aggregators.
+
+**Request Body (`application/json`):**
+```json
+{
+  "feedSource": "plaid_direct",
+  "transactions": [
+    {
+      "externalId": "bank_tx_88192",
+      "accountId": "acc_checking_01",
+      "amount": -54.20,
+      "currency": "USD",
+      "rawDescription": "AMZN MKTP US*2B01924 SEATTLE WA",
+      "postedAt": "2026-11-01T14:30:00Z"
+    }
+  ]
+}
+```
+
+**Response (`200 OK`):**
+```json
+{
+  "success": true,
+  "ingested": 1,
+  "duplicatesSkipped": 0,
+  "clusterAssignments": [
+    { "externalId": "bank_tx_88192", "clusterId": "cluster_amazon", "confidence": 0.98 }
+  ]
+}
+```
+
+---
+
+### 12.3 `POST /api/financial-journal/entries/batch-sync`
+Offline-first synchronization endpoint accepting arrays of locally queued journal drafts with client idempotency tokens.
+
+**Request Body (`application/json`):**
+```json
+{
+  "entries": [
+    {
+      "clientKey": "draft_1730452900_a81f",
+      "title": "Cash payment for French bistro dinner",
+      "content": "Paid 85 EUR in cash at Le Comptoir. Need to claim 40 EUR as business meal.",
+      "tags": ["travel", "cash", "meals"],
+      "updatedAt": "2026-11-01T19:40:00Z"
+    }
+  ]
+}
+```
+
+**Response (`200 OK`):**
+```json
+{
+  "success": true,
+  "syncedCount": 1,
+  "skippedDuplicates": 0,
+  "vectorIndexed": true
+}
+```
+
+---
+
+### 12.4 `GET /api/v1/calendar-reminders/export.ics`
+Streams standard RFC 5545 `text/calendar` feed of upcoming bills and reminders for live calendar subscriptions.
+
+**Response (`200 OK`):**
+```http
+Content-Type: text/calendar; charset=utf-8
+Content-Disposition: attachment; filename="finwise-reminders.ics"
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//FinWise OS//Financial Reminders v1.0//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:rem_991823@finwise.local
+DTSTAMP:20261102T020000Z
+DTSTART:20261115T090000Z
+SUMMARY:Pay Property Tax Quarterly Installment
+DESCRIPTION:Amount: $2,450.00 USD. Status: Pending
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR
+```
+
+---
+
+### 12.5 `GET /api/v1/ai/canary/status`
+Fetches real-time status of the Continuous Production AI Canary Invariant Suite across all 5 mathematical accounting identities.
+
+**Headers:**
+```http
+Authorization: Bearer <JWT_TOKEN>
+x-org-id: org_enterprise_01
+```
+
+**Response (`200 OK`):**
+```json
+{
+  "status": "success",
+  "request_id": "req_canary_status_001",
+  "reachable": true,
+  "source": "fastapi",
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0
+  },
+  "checks": [
+    {
+      "probe_id": "probe_num_safety",
+      "timestamp": "2026-11-02T02:20:00Z",
+      "invariant": "number_safety",
+      "passed": true,
+      "message": "Candidate digits subset of reference context"
+    },
+    {
+      "probe_id": "probe_zero_sum",
+      "timestamp": "2026-11-02T02:20:00Z",
+      "invariant": "zero_sum_budget",
+      "passed": true,
+      "message": "Proposed budget sum matches initial allocation identically"
+    }
+  ]
+}
+```
+
+---
+
+### 12.6 `POST /api/v1/ai/canary/validate`
+Executes on-demand mathematical verification for candidate AI recommendations, budget shifts, or balance sheet reports.
+
+**Request Body (`application/json`):**
+```json
+{
+  "candidate": "Reallocated $150.00 from Dining Out to Emergency Savings.",
+  "reference": "Dining budget balance: $150.00. Current savings: $2,500.00.",
+  "initial_allocations": { "Dining Out": 500, "Savings": 200 },
+  "proposed_allocations": { "Dining Out": 350, "Savings": 350 },
+  "assets": 125000,
+  "liabilities": 45000,
+  "net_worth": 80000
+}
+```
+
+**Response (`200 OK`):**
+```json
+{
+  "request_id": "req_val_098",
+  "passed": true,
+  "source": "fastapi",
+  "checks": [
+    { "probe_id": "val_num_safety", "invariant": "number_safety", "passed": true },
+    { "probe_id": "val_zero_sum", "invariant": "zero_sum_budget", "passed": true },
+    { "probe_id": "val_balance_sheet", "invariant": "balance_sheet_identity", "passed": true }
+  ]
+}
+```
+
+
+### 12.7 Unified Context Retrieval Endpoints
+
+#### `GET /api/v1/unified-context/query`
+- **Query Params**:
+  - `q`: string (required) - Search query
+  - `limit`: number (optional, default 15, max 50)
+  - `minScore`: number (optional, default 0, max 100)
+  - `sources`: comma-separated string (`memory,file,transaction`)
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": {
+      "query": "groceries spending",
+      "total": 8,
+      "breakdown": { "memory": 2, "file": 1, "transaction": 5 },
+      "results": [
+        {
+          "id": "672b1c8a...",
+          "sourceType": "transaction",
+          "title": "Trader Joe's (-$84.20)",
+          "score": 94.2,
+          "rrfScore": 0.021739,
+          "citation": "txn:2b1c8a"
+        }
+      ],
+      "groundedContextPrompt": "..."
+    }
+  }
+  ```
+
+#### `POST /api/v1/unified-context/prompt`
+- **Request Body**: `{ "query": "string", "sources": ["memory", "file", "transaction"], "limit": 15 }`
+- **Response**: Returns structured prompt block formatted for LLM system prompt injection.
+
+
+### 12.8 Follow-Through Recommendation & Feedback Endpoints
+
+#### `GET /api/v1/follow-through/recommendations`
+- Returns prioritized action signals scored by urgency, impact, domain affinity, and 14-day exponential half-life time decay.
+- Query params: `limit` (default 10), `domain` (optional filter).
+
+#### `POST /api/v1/follow-through/feedback`
+- Records user action (`completed`, `dismissed`, `snoozed`, `viewed`) to reinforce domain affinities.
+
+### 12.9 Document Q&A & Rendered Statement Endpoints
+
+#### `POST /api/v1/files/document-qa`
+- Request body: `{ "question": "string", "workspaceFileIds": ["string"] }`
+- Returns verified passages, physical PDF page numbers, and grounding score ($G \ge 0.70$).
+
+#### `POST /api/v1/files/render-authored`
+- Compiles rich multi-format PDF statements (`executive_brief`, `tax_prep_summary`, etc.) and streams directly into MongoDB GridFS.
+
+### 12.10 Summary Capacity & Staging Benchmarks
+
+#### `GET /api/v1/ai/summary-capacity/metrics`
+- Returns real-time L1/L2 cache hit ratios, in-flight coalescing efficiency, token accounting, and RPS estimates.
+
+#### `POST /api/v1/ai/summary-capacity/benchmark`
+- Triggers synthetic concurrent load tests across staging clusters to verify cache stability.

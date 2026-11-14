@@ -1,20 +1,81 @@
 # Personal Finance Project - Improvement and Test Report
 
-Updated on 31 October 2026. This report records verified local work, including incoming code changes. It distinguishes automated tests, browser observations, and checks that need staging or working external accounts.
+Updated on 10 November 2026. This report records verified local work, including incoming code changes. It distinguishes automated tests, browser observations, and checks that need staging or working external accounts. The product goal is to help users understand spending, review uncertain records, and choose a concrete next action.
+
+## 10 November 2026 — AI Core and release verification
+
+AI Core passed 671 unit tests and evaluations. Ruff passed on the changed
+Python modules. The full client suite passed 543 tests across 64 files and
+client lint passed. The full gateway suite passed 527 tests across 103 files,
+with four additional passing fixture guard tests added after collection.
+Both TypeScript production builds passed, and the live API smoke passed 33/33.
+Both npm production dependency audits returned zero known advisories. The
+client entry chunk is 690 KB minified.
+
+The inbuilt browser used a synthetic account in the isolated local QA database
+and real provider calls for educational chat. It also exercised the saved-task
+starter, generated a one-page PDF from saved records, cited a recorded expense,
+opened the exact page and original PDF, and saved the file using the inbuilt
+browser download API. A normal download click began a transfer but the browser
+canceled it. The portfolio's phone-width JPY selection reached the real summary
+endpoint and received HTTP 200. The chart's fabricated intermediate values were
+removed in code. A published growth story was outside this browser pass.
+Automatic approval review blocked restarting the local AI QA service after the
+last Python edits. The compound-interest and spending-trend fixes have automated
+coverage. They are pending a live rerun against the restarted service.
+
+| Priority | Remaining release check |
+| --- | --- |
+| P0 | The configured Gemini key was denied access. Groq failover worked locally. Verify the deployment project's Gemini access and run live research and independent verification before enabling those flows publicly. |
+| P0 | Verify production containers, ingress, backups and payment/authentication checks below. Docker is unavailable locally. Automatic approval review rejected production startup as blocked by policy. |
+| P1 | Inventory legacy seeded content and review remaining user-facing simulations and fixed FX rates. This pass removed the Growth Stories curve and restricted sample seeds to an explicit local fixture database. |
+| P1 | Verify downloads with a normal user session and a pre-existing installed PWA in staging. The browser helper saved the bytes locally, while ordinary click completion remains open. |
+
+## 8 November 2026 — Earlier release check
+
+The 6 November report below remains historical. Current evidence is in
+DATA_INTEGRITY_QA_20261108.md and BUTTON_COVERAGE_20261108.md: client 511/59 and
+AI 470 pass; Ruff, client lint and both builds pass; API smoke 33/33. Server full
+run was 363/364, followed by repair of its sole parser failure and passing 22/22
+chat/title regressions plus another server build. The full server suite was not
+repeated after that narrow fix.
+
+The inbuilt browser verified saved-data recommendations, empty-state controls,
+phone/tablet navigation, exact PDF citations, actual original-PDF rendering and
+download. Workbox now excludes API navigation from app-shell fallback. A clean
+local PWA install passes; old installed-worker upgrade behavior remains open.
+
+**This was the pre-security-pass baseline; the repairs are recorded below.** At
+that point, billing could fabricate paid records and education caching and canary
+telemetry required privacy repairs. Other simulation and FX assumptions still
+need removal/disclosure. Live payments, provider access, external delivery and
+containers are unverified. A previous automatic approval review rejected
+production `npm start` as “blocked by policy”; it was not retried or bypassed.
+Secrets and financial records were preserved.
+
+### 8 November security verification update
+
+The later security pass closed cross-workspace idempotency replay, cross-replica stale membership authorization, and media access outside the current organization. Enabled 2FA now gates both password and Google sign-in before a full session is issued; enrollment replaces old sessions, and TOTP steps/recovery codes are consumed atomically. Billing no longer grants unverified credit packs or creates fabricated paid invoices; the credit-pack purchase UI is disabled, and production stub checkout and retry paths fail closed. The financial educator no longer shares question-derived answers between users; shared canary health omits raw events and client-defined source names, and does not invent passing probe results.
+
+After these changes and the follow-up below: gateway **526/526** tests across 103 files and client **543/543** tests across 64 files passed. AI Core **470/470** unit tests and **194/194** evaluation tests passed before the follow-up (its Python files were unchanged). Both production builds, server TypeScript check, client lint and Python Ruff passed. Production dependency audits reported zero known advisories in the npm registry at check time. The client suite emitted expected jsdom navigation and error-boundary logs without test failures. The tests used local/in-memory dependencies; they do not certify deployment.
+
+**Follow-up verification:** Raw AI streaming POSTs now use the normal CSRF and organization headers, refresh an expired token once, and refuse to replay a retired account/workspace request. Canceled or past-due subscriptions resolve to free limits without paid overrides, and plan changes invalidate the current cached entitlement period. Stripe annual checkout fails closed rather than silently billing a monthly price, the annual UI is explicitly an unavailable preview, and the billing page no longer labels a canceled paid subscription as the current paid plan. Regression tests cover these paths. Existing financial-history caps and multi-month cash-flow fixes were checked against their source and regression tests; the older market audit is a historical snapshot, not a statement that those paths remain unchanged.
+
+**Public deployment is still blocked:** provider-backed payment collection and verified invoice ingestion are not proven (real Stripe payments do not yet create downloadable invoice records; credit packs deliberately return unavailable); annual prices need distinct verified Stripe price IDs before annual sales resume. MFA enrollment and disablement still lack a recent-authentication step-up; on an account without MFA, a stolen valid session can enroll an attacker-controlled factor. This requires a password/Google reauthentication design and tests. Other documented simulation/FX assumptions require review; multi-replica behavior, persistent backup/restore, external integrations, container startup and load/SLO tests need staging evidence. Authentication now adds a fresh user lookup as well as a fresh membership lookup on each request, so its capacity impact must be measured. Do not represent a successful local suite as release approval.
 
 ## Project scope and architecture
 
 The project is a personal finance tracker with an AI assistant. Users can record income, expenses, and investments; maintain goals and debts; organize files; review financial summaries; and create tasks and workflows. Supporting screens include analytics, a financial calendar, notes, receipts, exports, organization settings, notifications, and billing. The current work follows the improvement plans already present in the repository, with particular attention to AI efficiency, reliability, and deployment preparation.
 
-The frontend uses React, TypeScript, Vite, React Query, and Zustand. The Node API uses Express, Mongoose, cookie authentication, CSRF protection, organization scoping, and GridFS for uploaded files. FastAPI runs financial calculators, specialist agents, deterministic planning, optional narration, and retrieval context. Finance calculations and matching document quotations can work without a model call; open-ended interpretation still needs a provider. The capability-status document distinguishes this implementation from semantic retrieval, dedicated Perplexity research, independent Gemini fact checking, and other roadmap items.
+The frontend uses React, TypeScript, Vite, React Query, and Zustand. The Node API uses Express, Mongoose, cookie authentication, CSRF protection, organization scoping, and GridFS for uploaded files. FastAPI runs financial calculators, specialist agents, deterministic planning, optional narration, and retrieval context. Finance calculations and matching document quotations can work without a model call; open-ended interpretation still needs a provider. The capability-status document distinguishes hashed-vector/lexical passage matching from learned semantic retrieval, dedicated Perplexity research and independent Gemini fact checking. Those independent research and verification integrations are not proven by the local tests.
 
 | Component | Verified local arrangement | Deployment role |
 |---|---|---|
-| Browser | Built frontend on 127.0.0.1:5180; earlier checks used 5173 | Nginx serves the built client and proxies /api |
+| Browser | Built frontend on 127.0.0.1:5181; earlier checks used 5180/5173 | Nginx serves the built client and proxies /api |
 | Node API | Local API on port 3000 | Compiled JavaScript process on Node 24 |
 | AI Core | FastAPI on port 8001 | Internal service protected by a shared token |
-| Database | Dedicated QA database on port 27019 | Persistent MongoDB supplied by the operator |
-| Optional worker | Compiled worker entry point | Separate process when asynchronous jobs are enabled |
+| Database | Dedicated QA database on port 27019 | Persistent MongoDB in Compose or managed storage |
+| Optional worker | Compiled worker entry point | MongoDB polling process for asynchronous jobs |
 
 ## Test data and boundaries
 
@@ -46,9 +107,9 @@ The original server start command depended on a development TypeScript runner. T
 
 ## Packaging and operational behavior
 
-Dockerfiles now exist for the client, server, and AI service, with a Compose file connecting them. Source secrets and node_modules are excluded from build contexts. The client uses same-origin API calls, which avoids a separate browser-facing AI endpoint. Only the web service is mapped to a loopback port in the supplied Compose setup. A TLS ingress or reverse proxy is still required for public hosting. MongoDB is deliberately supplied through configuration rather than an unprotected database port in the example.
+Dockerfiles exist for the client, server, and AI service. Compose now includes MongoDB, Redis, API, worker, client and AI Core, with health checks and persistent volumes. Source secrets and node_modules are excluded from build contexts. The client uses same-origin API calls, which avoids a separate browser-facing AI endpoint. Only the web service is mapped to a loopback port in the supplied Compose setup. A TLS ingress or reverse proxy is still required for public hosting. Database and cache ports remain private; a managed database can be substituted through the deployment configuration.
 
-The AI memory database has a persistent Compose volume. Both services receive the same required AI token. Runtime and readiness probes are included. Generated PDF links now use the correct route/fileId validation, with ownership tests. A later receipt change imported a missing dead-letter export and blocked startup; the shared bounded queue API was restored, deep health gained operation counts, and readiness recovered. Docker and production-mode startup remain staging checks.
+The AI memory database has a persistent Compose volume. Both services receive the same required AI token. Runtime and readiness probes are included. Generated PDF links now use the correct route/fileId validation, with ownership tests. A later receipt change imported a missing dead-letter export and blocked startup; the shared bounded queue API was restored, deep health gained operation counts, and readiness recovered. Canonical /api/v1 and compatible /api routes share implementations. Credential-attempt limits now cover both auth prefixes and share one budget; the new alias regression first returned 400 after the budget was exhausted, then returned the required 429 after repair. General API limits remain unchanged. Docker and production-mode startup remain staging checks.
 
 <!-- page -->
 
@@ -56,11 +117,13 @@ The AI memory database has a persistent Compose volume. Both services receive th
 
 ## Efficient request execution
 
-Selective routing avoids unnecessary model work. Saved-activity review and document lookup each use one read-only step with zero model calls. Conversation summaries now bypass financial-plan fanout, use bounded owned snapshots and link to reviewed chats. Optional narration has two provider attempts at most; invalid output uses a factual recap. User/workspace/context snapshots last two minutes, or 15 seconds when degraded; identical requests coalesce. Explicit Refresh bypasses reuse. The latest local generation took 545ms with two attempts and factual fallback; a repeat took 61ms with zero calls. Generation enforces the existing AI quota; cached reads consume no extra unit.
+Selective routing avoids unnecessary model work. Saved-activity review and document lookup each use one read-only step with zero model calls. The browser's singular one next step request had entered the full planner; it now uses activity review and names the first owned open task. Conversation summaries bypass planning fanout, use bounded owned snapshots and link to reviewed chats. Optional narration has at most two attempts; invalid output uses a factual recap. Snapshots last two minutes, or 15 seconds when degraded; identical requests coalesce. Refresh bypasses reuse. Generation enforces the existing AI quota; cached reads consume no extra unit.
 
-Retries count actual attempts; request accounting is isolated across concurrent work. AI Core cache copies are safe and its in-memory expiry uses a monotonic clock. Node preserves timing, tokens, fallback, and cache metrics. Scoped lexical retrieval retains physical PDF pages, including blanks, and extraction-limit warnings. Matching passages are quoted before the plan, with escaped document markup and no inferred fees or page numbers. Both ordinary and SSE endpoints include these quotations; the education SSE branch also initializes its optional plan correctly.
+Retries count actual attempts; request accounting is isolated across concurrent work. AI Core cache copies are safe and its in-memory expiry uses a monotonic clock. Node preserves timing, tokens, fallback, and cache metrics. Scoped lexical and hashed-vector retrieval retains verified physical PDF pages, including blanks, and extraction-limit warnings. Matching passages are quoted before the plan, with escaped document markup and no inferred fees or page numbers. Both ordinary and SSE endpoints include these quotations; the education SSE branch also initializes its optional plan correctly.
 
-On 26 October, a browser question exposed a relevance problem: the plan contained a debt ratio but omitted the requested monthly-income calculation. Synthesis now receives the current question and adds deterministic answers for these metric requests. The verified reply showed USD 90,000 / 12 = USD 7,500 per month and USD 60 / USD 7,500 x 100 = 0.80%, with zero LLM calls. Missing income or minimum-payment data produces an explicit request for data instead of an invented ratio. Nine additional tests cover these cases.
+New document regressions found invented default balances, hardcoded tax figures and dollar-labelled EUR amounts. Authored profile documents now read the current user's workspace profile and currency. Zero balances remain zero, cash deficits remain negative, and missing profiles have no fabricated metrics. Debt tables contain saved instruments only; net worth output identifies its limited coverage. Tax templates request supporting records rather than assuming deductions, filing status or tax liability.
+
+Document Q&A now quotes source wording without converting unlabelled numeric entities to dollars. Unknown physical pages stay unknown in answers, citations and links. Retrieval match scores describe passage similarity; they do not independently verify a fact. Profile inclusion can be disabled explicitly. Format changes preserve custom notes, and PDF generation plus lookup still bypass unnecessary agent fanout.
 
 ## Percentage correctness and provider failures
 
@@ -94,42 +157,66 @@ Private query caches and screen instances now belong to one account/workspace. C
 
 Goal/debt inputs accept cents, fractional interest, and editable ISO deadlines. Portfolio totals refresh after additions, calendar controls have names, and file errors offer retry. Explicit chat requests create a PDF from text after Content: and retain download/open cards. Ask about this PDF selects the saved file without another upload. New PDFs are parsed for verified physical-page citations; parsing failure retains text with a warning and no page locations. Selection stays in its conversation, clears on success, and survives send failure. Creation needs no model call; file routes enforce ownership.
 
-## Calendar and browser observations
+## Document handoff and mobile navigation
 
-The calendar now requests supported transaction page sizes and fetches subsequent pages instead of sending an unsupported limit of 500. Local calendar date keys prevent the first day of a month from becoming the previous UTC date in India. These are functional consistency fixes, not only visual adjustments. Labels on the scenario and account forms were improved as well.
+The newer Files screen had a broken Ask Copilot link: chat ignored both attachment and question query parameters. Chat now loads the authorized saved file, shows a removable chip, prefills a draft, and waits for the user to send. Invalid and unavailable documents have visible recovery states. Loading blocks premature submission; late lookups are ignored, and removing a file does not reattach it when a session is created. Each Q&A passage has its own source action, including when several files cite the same page number.
 
-Browser checks completed sign-in, dashboard and ledger loading, transaction creation, AI messaging, persisted chat history, plan tasks, feedback, action simulation, and synthetic file upload/extraction. The follow-up saved a budget and merchant rule, calculated a scenario, verified API-key listing, tested the free-plan export gate, activated Pro only in local stub billing, and generated CSV/PDF exports. The monthly PDF downloaded successfully. API checks also verified account creation and workflow idempotency.
+Document navigation now wraps on phones and uses shorter labels. Fake financial preview figures and the misleading Load Profile button were removed. Metric inputs have accessible names. Rate-limited or unavailable authentication checks no longer sign out a previously verified user. On a cold start, private content remains hidden behind a retry screen rather than a misleading login redirect. Unauthorized replies still retire identity and workspace state.
 
-All 24 routes fit a measured 390 CSS-pixel phone viewport. Financial Story's full-record query repairs its crash; session reads no longer exhaust credential-attempt limits. Copilot clears mobile navigation, tasks support keyboards and empty journal paging disables Next. Phone dialogs now keep margins and scroll vertically; CSV actions stack and empty Preview is disabled. Analytics preserves opening balances, signed outflows, workspace currency and cents. Mixed-currency net worth is not combined, and failures offer retry instead of zero totals.
+<!-- page -->
+
+# Ledger trust, mobile actions, and worker evidence
+
+## Preserve the user's actual amounts
+
+The 5-6 November button review created a synthetic USD 12.34 expense. Changing the display to EUR showed an estimated EUR 11.35, but Edit incorrectly used that converted figure as the new USD amount. Edit, Split and Recurring now require original ledger values. A missing original value produces an error rather than a guessed write. The rebuilt phone form retained USD 12.34 while the list showed its EUR estimate. Saved splits total USD 12.34, and the monthly rule stores both amount bounds as 12.34. Display rates are identified as fixed reference estimates.
+
+Split Save and Clear previously announced success before the request completed. They now wait for confirmation, disable conflicting actions while pending and retain the draft with an inline error on failure. Split controls have names, accept cents and retain custom categories. Merchant matches use a keyboard-accessible disclosure so a long suggestion list no longer pushes the ledger far down the phone screen. Goal cards now say In Progress for future deadlines; a future date alone does not establish that funding is on track.
+
+## Review once, reopen when values change
+
+Approve removed a row locally while subsequent server reads recomputed its flags. The service now binds approval to a SHA-256 fingerprint of the reviewed amount, type, date, category, description, merchant and splits. An unchanged approved record skips heuristic queries and stays out of the queue. A material change through ordinary or bulk writes reopens it. Older approvals without a value fingerprint need reapproval. Single and bulk operations remain scoped to the authenticated user and workspace. Review actions refresh ledger, review and summary caches. Four API regressions cover reloads, unchanged edits, changed values, split changes and foreign-user protection. The phone browser confirmed the approved QA row stayed absent after reload while other pending rows remained visible.
+
+## Follow through without losing work
+
+Task completion now refreshes the open detail sheet as well as the list. The saved QA task shows Completed and disables Mark completed. Task outcome fields have labels and cent precision. A profile cache refresh no longer clears draft effects or replaces their retry key. Single and batch calendar sync were sending fields rejected by the API; both now send date, title and description within the API limits. The corrected sync saved a local reminder, visible on its 5 December due date. ICS export contains a valid event and the same due date. No payment or external calendar account was involved.
+
+Calendar estimates previously assumed USD 5,000, inferred an expense from a date in a title and invented USD 50 when no amount was present. The repair requires an explicit opening balance for each selected month, preserves zero, negative values and cents, includes investment outflows, and excludes reminders without an explicit USD amount. Forecast actions remain disabled while inputs or data are unavailable. The estimate explains its assumptions and fixed FX rates; it does not promise a bank balance or protection from overdraft.
+
+Chat starter questions are native keyboard-accessible buttons and avoid invented personal amounts. Copy now waits for the actual clipboard promise, disables repeated writes and reports rejection instead of claiming success immediately. Success and rejection regressions cover the exact quoted text. Browser automation's clipboard read remained empty, so clipboard transport is not certified. Organization dialogs gained accessible descriptions.
+
+## Verify the asynchronous path separately
+
+A development worker used a separate QA database. It claimed a queued CSV job, wrote one downloadable artifact, retained signed USD cents and excluded another workspace's transaction. An invalid monthly PDF job failed; a later CSV succeeded, demonstrating failure isolation. The interactive run started correctly, but Ctrl+C through the development watcher did not demonstrate graceful drain. Production worker startup, duplicate delivery under multiple workers and SIGTERM shutdown remain staging checks. The manual local workflow independently reached succeeded and created its expected QA task.
 
 <!-- page -->
 
 # Verification evidence and remaining risks
 
-## Automated checks
+## Current automated verification
 
-The unchanged backend retains its earlier 192-test pass across 49 files, plus 38 and 32 targeted rechecks. Coverage includes transactions, organization isolation, tasks/workflows, files, retrieval, security and rate limits. Summary tests cover cache expiry, owner/context separation, coalescing, forced refresh, storage failure, usage accounting and quotas. Balance tests preserve opening balances, signed outflows, cents and credit liabilities. Receipt/background failures share a bounded dead-letter queue. Tests use a verified local MongoDB binary.
+The latest full server run passed 322 tests across 74 files, including the auth-prefix repair. Four new approval regressions passed after the later review fix, and the final typechecked server/worker build passed. Earlier 44 configuration and 11 transport checks remain supporting evidence. Do not add overlapping targeted counts to a full-suite count. Historical totals are snapshots rather than evidence for later untested changes.
 
-On 31 October the final frontend run passed 271 tests across 45 files. Regressions cover private cache/draft isolation, late auth/chat replies, stream cleanup, empty finances, and retired API retries/dialogs. Current-owner CSRF and safe-read recovery still pass. Unchanged AI Core retains 392 tests/evaluations for summary HTTP/SSE behavior, grounded fallback, bounded attempts and default failover. Mobile Settings controls have accessible names. Client lint and type-checked builds pass. Earlier npm production-dependency audits reported zero known vulnerabilities; these are snapshots, not a security certification.
+The final frontend suite passed 451 tests across 54 files after the calendar, clipboard, dialog and presentation repairs. Client lint and the typechecked release build pass. The earlier Files timing failure passed on isolated and later complete runs. An outdated dashboard copy assertion was corrected before the final complete rerun. AI Core passes 442 tests/evaluations, including one-step activity routing and valid/missing/invalid internal tokens. These tests do not establish provider access or production throughput.
 
-| Check | Evidence already obtained | Meaning |
+| Check | Current evidence | Scope and limit |
 |---|---|---|
-| Server integration | 192 passed / 49 files | Balances, isolation, queues and credential limits |
-| Frontend unit/integration | 271 passed / 45 files | Full final run, privacy, streams, retries and recovery |
-| AI core final full run | 392 passed | Summary routing, bounded attempts and existing evaluations |
-| Live narrative | Groq fallback succeeded | Gemini 3.5 Flash-Lite key currently denied |
-| LoRA data validation | 18 train / 6 evaluation | Structure and split validation only |
-| Dependency audit | Zero production-dependency vulnerabilities reported | Snapshot of installed Node dependency metadata |
+| Node API full suite | 322 tests / 74 files | Before the later approval repair |
+| Final server regressions | 4 approval checks + server build | Owner scope, persistence and material edits |
+| Client release suite | 451 tests / 54 files | Final calendar, clipboard and presentation repairs |
+| AI Core tests/evaluations | 442 passed | Routing, memory, fallbacks and invariants |
+| Live API smoke | 33 passed | Local account and dedicated QA database |
+| Frontend and server builds | Passed | Compiled artifacts; no production runtime sign-off |
 
-## Live local API coverage
+## Browser evidence and test boundaries
 
-On 31 October all 33 live local API checks passed. Browser workspace switching hid the original goals/chats in an empty fixture and restored them on return. The same file returned 200 in its original workspace and 404 in the other. Fresh chat created/downloaded Isolation release check 31 Oct. Its follow-up quoted USD 25.25 toward USD 1250.50, deadline 2027-05-01, on physical page 1 with zero model calls. Source reload, return, Copy response and logout/sign-in passed at 390/320px. The separate workspace was seeded only in the QA database; product creation/billing was not bypassed in application code.
+On 5 November the inbuilt browser created an EUR invoice PDF, downloaded it, and followed the repaired attachment link. Its answer preserved EUR 545.50 and Net 30 days, with a reloadable physical page-1 source and Copy response. On 6 November chat created Mobile release review from saved goals/open tasks and downloaded it. The follow-up quoted the laptop's USD 25.25 saved, USD 1250.50 target and 2027-05-01 deadline on physical page 1. Creation and lookup used zero model calls; the latter took 1ms locally. The source action opened the exact owned file with its return-to-chat link. This is deterministic document evidence, not proof of live provider access.
 
-## External and release checks still required
+Phone checks cover navigation and rendered routes at 390 CSS pixels plus chat at 320 pixels. The route inventory records headings, controls and visible alerts; it is not a claim that every destructive, payment or externally connected button was submitted. Rapid full-page navigation hit the unchanged API limit and exposed the now-covered auth recovery defect. Screenshots and structured records identify the actual tested paths.
 
-Gemini key/model access, SMTP delivery, Google OAuth in the final domain, Stripe live/webhook behavior, bank connectors, receipt OCR quality across real samples, and separate-worker/Redis behavior need staging verification. Stub billing tested no real payment. Docker is unavailable locally. Automatic approval review previously blocked the production startup command without a detailed reason, so production-mode API runtime is not signed off. The local API, built frontend, browser interactions, and automated tests provide the verified evidence; public launch still needs final-environment checks.
+## Remaining release prerequisites
 
-The 24-route mobile inventory and source journey are recorded in browser-test results. Screenshot capture recovered in the inbuilt browser; current images show the empty-state fix and cited answer at phone widths. Every rendered page of this report was inspected. Public launch still needs staging with final domains, secrets, provider accounts and PWA updates. Local memory pressure prevented some test workers from starting; sequential checks with owned QA services paused recovered verification. This is not a production capacity test.
+Public launch still requires Docker/Compose in CI, production API/worker startup and drain, TLS/domain checks, secrets review, backup/restore, provider access, SMTP, OAuth and Stripe webhooks. Bank callbacks and real S3/GCS delivery remain unavailable. A development worker now has separate success/failure evidence. Cached PWA upgrades need staging: the final local preview moved to port 5181 when another project occupied 5180, leaving that process untouched. Missing service-authentication/encryption values were added only to ignored local environment files. The approximately 673KB entry chunk and large incoming dirty change set need release review. Automatic approval review previously rejected production startup as blocked by policy; local readiness and builds do not replace that evidence.
 
 <!-- page -->
 
@@ -137,13 +224,13 @@ The 24-route mobile inventory and source journey are recorded in browser-test re
 
 ## Configure the environment
 
-Use Node 24 and npm 11 for JavaScript, and Python 3.11 for the current AI dependencies. The old local virtual environment points to a removed interpreter, so checks used an isolated uv environment. Recreate a dedicated environment and keep LoRA dependencies separate. Updated ignored local .env files use the 5180 client origin, loopback API/AI URLs, concurrency 4 globally/1 per user, and a 20-second model attempt timeout with zero internal retries. Provider keys and database/authentication secrets were preserved. Replace local values for staging.
+Use Node 24 and npm 11 for JavaScript, and Python 3.11 for AI dependencies. The old virtual environment points to a removed interpreter, so checks used isolated uv. Keep LoRA dependencies separate. Ignored local .env files retain the 5180 origin; the QA launcher now overrides it to 5181. API/AI addresses are loopback, concurrency is 4 globally/1 per user, and model attempts time out at 20 seconds with zero internal retries. Provider and database/authentication secrets were preserved. Replace local values for staging.
 
 Set server MONGO_URI, JWT_SECRET, CLIENT_URL, and CORS_ORIGINS for the final host. Generate a strong shared AI_CORE_INTERNAL_TOKEN and supply the same value to Node and FastAPI. Keep all provider keys on the server. Configure real SMTP before expecting verification emails in production. Behind the intended TLS ingress, use secure cookies, a suitable SameSite policy, and an explicitly bounded trusted proxy configuration. The local QA environment uses loopback HTTP and must not be copied wholesale into a public deployment.
 
 ## Build and stage
 
-For a non-container deployment, install with npm ci in client and server, run their build commands, serve client/dist with SPA fallback, and start the API with npm start from server. Start FastAPI with uvicorn api_service:app on the internal interface and port. Preserve persistent MongoDB/GridFS storage and the AI memory path. If asynchronous jobs are enabled, configure Redis and run the worker entry point from the same release artifact. Verify jobs are handled once and shutdown drains outstanding work.
+For a non-container deployment, install with npm ci in client and server, run their build commands, serve client/dist with SPA fallback, and start the API with npm start from server. Start FastAPI with uvicorn api_service:app on the internal interface and port. Preserve persistent MongoDB/GridFS storage and the AI memory path. If asynchronous jobs are enabled, run the MongoDB polling worker entry point from the same release artifact. Redis provides optional caching rather than the durable job ledger. Verify jobs are handled once and shutdown drains outstanding work.
 
 For the supplied container setup, create server/.env and server/AI_Core/.env from their examples. Put the shared AI token in an ignored root .env. Run docker compose config first, then docker compose up --build in an environment with Docker available. The web container listens through 127.0.0.1:8080 in the example. Put a properly configured TLS ingress in front of it for public access. Keep the Node and AI ports private, and confirm /readyz and AI /health before allowing traffic.
 
@@ -469,3 +556,13 @@ else
   exit 1
 fi
 ```
+
+
+---
+
+## 2026 Enterprise Canary & Multi-Tier Health Probes
+
+Production deployments must register the following automated health checks:
+- **Canary Invariant Readiness Probe**: `GET /api/v1/ai/canary/status` (Verifies FastAPI connection and evaluates internal TypeScript math fallback).
+- **Unified Context Probe**: `GET /api/v1/unified-context/query?q=health` (Verifies MongoDB collection indexes on memory, documents, and transactions).
+- **RFC 5545 Calendar Feed Probe**: `GET /api/v1/calendar-reminders/export.ics` (Streams valid VCALENDAR payload).

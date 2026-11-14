@@ -29,6 +29,9 @@ import type {
   PurchaseCreditsResponse,
 } from "@/types/apiTypes";
 
+// Models historical subscription invoice receipts and transaction line items.
+// Captures invoice numbers, tier names, currency conversions, taxes, and payment states.
+// Supplies the data contract for invoice history tables and financial bookkeeping.
 export interface BillingInvoice {
   id: string;
   invoice_number: string;
@@ -49,6 +52,9 @@ export interface BillingInvoice {
   issued_at: string;
 }
 
+// Encapsulates subscription dunning recovery state and payment grace periods.
+// Tracks failed charge attempts, days remaining in grace, and retry histories.
+// Powers warning banners and grace period timers when subscription payments fail.
 export interface DunningState {
   in_dunning: boolean;
   status: "active" | "recovered" | "exhausted" | "none";
@@ -67,11 +73,17 @@ export interface DunningState {
   }>;
 }
 
+// Represents the API response envelope returning organization dunning health status.
+// Bundles the active dunning state record alongside server request tracing IDs.
+// Guides client components whether to display payment recovery notifications.
 export interface DunningStateResponse {
   dunning: DunningState;
   request_id?: string;
 }
 
+// Models the outcome of a manual on-demand subscription payment retry attempt.
+// Reports whether payment recovered successfully, invoice references, and updated state.
+// Powers feedback banners when users attempt immediate invoice settlements.
 export interface DunningRetryResponse {
   success: boolean;
   recovered: boolean;
@@ -81,6 +93,9 @@ export interface DunningRetryResponse {
   request_id?: string;
 }
 
+// Initiates a hosted checkout flow for upgrading or renewing account subscriptions.
+// Transmits selected plan tiers, billing cycles, seats, and redirect URLs.
+// Returns the external provider checkout URL for client browser navigation.
 /** Create a checkout session for subscribing to a plan. */
 export async function createBillingCheckout(payload: BillingCheckoutRequest): Promise<BillingCheckoutResponse> {
   return apiClient("/billing/checkout", {
@@ -89,6 +104,9 @@ export async function createBillingCheckout(payload: BillingCheckoutRequest): Pr
   });
 }
 
+// Fetches a self-service customer billing portal URL for payment method management.
+// Accepts an optional return destination URL for post-management redirection.
+// Enables customers to update cards, view receipts, and modify plans directly.
 /**
  * Get a URL to the customer billing portal for self-service management.
  * `returnUrl` specifies where to redirect after the user exits the portal.
@@ -98,6 +116,9 @@ export async function getBillingPortal(returnUrl?: string): Promise<BillingPorta
   return apiClient(`/billing/portal${query}`, { method: "GET" });
 }
 
+// Submits an order for specialized usage credit packs like AI tokens or OCR pages.
+// Transmits the pack identifier and allocates purchased credits immediately.
+// Returns updated credit balances and transaction confirmation metadata.
 /** Purchase an on-demand credit pack booster. */
 export async function purchaseCreditPack(payload: PurchaseCreditsRequest): Promise<PurchaseCreditsResponse> {
   return apiClient("/billing/credits", {
@@ -106,17 +127,26 @@ export async function purchaseCreditPack(payload: PurchaseCreditsRequest): Promi
   });
 }
 
+// Retrieves invoice payment histories for the active tenant organization.
+// Supports localized currency formatting options to display regional invoice costs.
+// Populates past billing statement tables and receipt download interfaces.
 /** Fetch invoice receipts history for the current organization with optional currency conversion. */
 export async function getBillingInvoices(currency?: string): Promise<{ currency?: string; invoices: BillingInvoice[] }> {
   const query = currency ? `?currency=${encodeURIComponent(currency)}` : "";
   return apiClient(`/billing/invoices${query}`, { method: "GET" });
 }
 
+// Queries the active subscription dunning status and payment recovery state.
+// Checks whether the account has overdue payments or active grace period protection.
+// Determines whether payment failure alerts should be rendered in UI dashboards.
 /** Fetch current subscription dunning and grace period status. */
 export async function getDunningStatus(): Promise<DunningStateResponse> {
   return apiClient("/billing/dunning", { method: "GET" });
 }
 
+// Triggers an immediate retry of a failed subscription charge via payment gateways.
+// Bypasses scheduled retry delays when a customer updates their billing card.
+// Returns instant recovery feedback to unlock restricted account features.
 /** Trigger an immediate payment retry for past-due subscriptions. */
 export async function retryDunningPayment(): Promise<DunningRetryResponse> {
   return apiClient("/billing/dunning/retry", {
@@ -125,6 +155,9 @@ export async function retryDunningPayment(): Promise<DunningRetryResponse> {
   });
 }
 
+// Simulates a subscription charge failure for developer testing and verification.
+// Triggers dunning transition logic and grace period countdown timers safely.
+// Useful for end-to-end testing of dunning recovery alerts in preview environments.
 /** Simulate a payment failure for testing grace period and dunning workflows. */
 export async function simulateDunningFailure(reason?: string): Promise<DunningStateResponse & { simulated: boolean }> {
   return apiClient("/billing/dunning/simulate-failure", {
@@ -133,6 +166,9 @@ export async function simulateDunningFailure(reason?: string): Promise<DunningSt
   });
 }
 
+// Downloads a rendered PDF invoice receipt directly to the user's browser.
+// Attaches active organization headers, triggers stream downloads, and revokes URLs.
+// Provides users formal receipt documents for accounting and tax records.
 /** Download an invoice PDF receipt. */
 export async function downloadInvoicePdf(invoiceId: string, invoiceNumber: string): Promise<void> {
   const headers = new Headers();

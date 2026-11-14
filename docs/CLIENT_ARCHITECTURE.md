@@ -545,3 +545,70 @@ mindmap
 │    └─► Seamless background refetch updates UI with zero flicker 🟢     │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 8) 2026 Advanced Client Architectures (Offline Sync, Multi-Currency FX, and SVG Gauges)
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#3b82f6', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((2026 Client Subsystems))
+    Offline Sync Engine
+      LocalStorage Draft Queue
+      UUID Client Idempotency Keys
+      Online Window Listener Reconnect
+      Automatic Batch Sync Endpoint
+    Multi-Currency Localization
+      7 Currency Context
+      Spot Conversion Hook
+      Zero-Decimal JPY Formatter
+      Dividend WHT Relief Breakdown
+    Data Visualization Cockpits
+      BudgetHealthCard SVG Gauge
+      TransactionReviewQueue ML Clusters
+      FinancialCalendar iCal Stream Sync
+```
+
+### 8.1 Offline-First Draft Synchronization Engine (`client/src/lib/api/journal.ts`)
+
+The client architecture guarantees that user financial notes and ledger draft changes are never lost, even when network connectivity drops during transit:
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ User Types Note: "Cash withdrawal 100 EUR at airport ATM"             │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 1. LocalStorage Atomic Queue Persistence                               │
+│  ├─ Key: `finwise_offline_journal_drafts`                              │
+│  ├─ Generates clientKey: `draft_${Date.now()}_${crypto.randomUUID()}`   │
+│  └─ UI immediately reflects "Saved locally (Offline)" 🟡               │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 2. Connection Listener: `window.addEventListener('online', onOnline)`  │
+│  ├─ Detects network restoration                                        │
+│  ├─ POST `/api/financial-journal/entries/batch-sync`                   │
+│  ├─ Server deduplicates via `{ orgId, clientKey }`                     │
+│  └─ UI transitions to "Synced with cloud" 🟢                           │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 8.2 Multi-Currency FX Normalization & Presentation Hooks
+
+```typescript
+// client/src/lib/currencyFx.ts
+export type SupportedCurrency = 'USD' | 'EUR' | 'GBP' | 'INR' | 'CAD' | 'AUD' | 'JPY';
+
+export function formatCurrencyValue(amount: number, currency: SupportedCurrency): string {
+  if (currency === 'JPY') {
+    return new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(amount);
+  }
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
+}
+```

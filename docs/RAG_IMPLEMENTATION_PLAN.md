@@ -65,11 +65,13 @@ FinWise already has partial retrieval primitives, but not a full RAG system.
 - on-demand and command-line backfill for existing uploads
 - scoped deletion cleanup and rejection of deleted or foreign source files
 
-### What is not implemented yet
+### Production Implemented Engine (RAG Phase 2 & Unified Retrieval)
 
-- embedding generation
-- vector similarity search
-- hybrid ranking
+- **64-Dimensional Vector Embeddings:** Deterministic L2-normalized embeddings (`retrievalService.ts`) with financial concept clusters (dims 0-7), modality projections (dims 8-15), and sub-token n-gram hashing (dims 16-63).
+- **Dense Vector Similarity Search:** Dot-product cosine similarity bounded in $[0, 1]$ executed in-memory and indexed in MongoDB.
+- **Hybrid Dense + Lexical Ranking:** Composite score combining BM25 exact term matches and cosine semantic relevance with high-confidence grounding gate ($G \ge 0.70$).
+- **Reciprocal Rank Fusion (RRF $k=60$):** Cross-silo rank aggregation across User Memory, Workspace Files, and Transactions (`unifiedContextRetrievalService.ts`).
+- **Strict Physical Page Grounding:** Form-feed (`\f`) pagination preserving physical page coordinates in Document Q&A (`documentQAService.ts`).
 
 ## 2. Product goal
 

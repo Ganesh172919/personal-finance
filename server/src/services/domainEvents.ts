@@ -106,6 +106,9 @@ import { getEventBus } from "../modules/realtime/eventBus"; // In-memory pub/sub
  * - eventType: What happened (e.g., "transaction.created", "budget.exceeded")
  * - actionLinkId: Optional link to the action that triggered this event
  */
+// Parameter specification for publishing domain events across the application.
+// Captures tenant scope, DDD aggregate classification, event type, and payload data.
+// Accommodates optional MongoDB client sessions for transactional consistency.
 export type PublishDomainEventInput = {
   orgId: Types.ObjectId; // Organization scope (multi-tenancy)
   userId: Types.ObjectId; // User who triggered the event
@@ -131,6 +134,9 @@ export type PublishDomainEventInput = {
  *
  * @param {PublishDomainEventInput} event - The event to publish
  */
+// Persists a new domain event and dispatches real-time notifications to subscribers.
+// Defers in-memory bus broadcast when executed within an active database transaction.
+// Triggers asynchronous background event processing pipelines without blocking request execution.
 export const publishDomainEvent = async (event: PublishDomainEventInput) => {
   // STEP 1: Persist the event to MongoDB (always, even in transactions)
   const document = new DomainEventModel({

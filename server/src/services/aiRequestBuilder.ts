@@ -108,6 +108,9 @@ const DEFAULT_TIMEZONE = "UTC"; // IANA timezone fallback
  *
  * Represents a message in the conversation history.
  */
+// Represents a single turn in a conversational dialogue history between user and AI.
+// Captures the speaker role designation alongside raw textual message content.
+// Passed to AI Core to supply historical context for multi-turn chats.
 export type ConversationMessage = { role: "user" | "assistant"; content: string };
 
 /**
@@ -115,6 +118,9 @@ export type ConversationMessage = { role: "user" | "assistant"; content: string 
  *
  * Represents a transaction with flexible types for normalization.
  */
+// Loose interface describing incoming transaction entities prior to validation.
+// Accommodates unparsed strings, arbitrary objects, and varying database representations.
+// Processed by normalization routines to build clean uniform transaction structures.
 type TransactionLike = {
   amount: unknown; // Transaction amount
   category?: unknown; // Transaction category
@@ -128,6 +134,9 @@ type TransactionLike = {
  *
  * Contains transactions and total count for processing.
  */
+// Context container encapsulating transaction records and total aggregate counts.
+// Provides historical financial activity data needed for grounding model prompts.
+// Distinguishes between loaded transactions and the overall available transaction volume.
 type TransactionsContext = {
   transactions?: Array<TransactionLike>; // Array of transactions
   totalTransactions?: number; // Total number of transactions
@@ -138,6 +147,9 @@ type TransactionsContext = {
  *
  * Contains organization-specific settings for AI processing.
  */
+// Structure holding organization localization parameters such as currency and timezone.
+// Enables regionalized advice generation tailored to user country and locale conventions.
+// Provides safe fallback values when explicit organization configurations are absent.
 type OrgSettingsLike = {
   currency?: unknown; // Currency code
   locale?: unknown; // Locale setting
@@ -149,6 +161,9 @@ type OrgSettingsLike = {
  *
  * Represents a user's financial profile for AI processing.
  */
+// Flexible representation of a user's financial profile containing balances and goals.
+// Encapsulates income, expense estimates, debt ledgers, savings goals, and risk profiles.
+// Safely digested by request builders to craft normalized financial context payloads.
 type FinancialProfileLike = {
   age?: unknown; // User's age
   annual_income?: unknown; // Annual income
@@ -185,6 +200,9 @@ type FinancialProfileLike = {
  * Safe number conversion. Returns 0 for NaN, Infinity, null, undefined, etc.
  * Used throughout to prevent Math operations on non-numeric values.
  */
+// Safely converts arbitrary input values to finite numbers, defaulting to zero on error.
+// Guards mathematical computations against NaN, Infinity, null, or undefined values.
+// Ensures calculations remain numerically stable during data transformation.
 const toNumberOrZero = (value: unknown) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -196,6 +214,9 @@ const toNumberOrZero = (value: unknown) => {
  * @param {unknown} value - Value to convert
  * @returns {string} String value or empty string
  */
+// Converts arbitrary values into clean strings, substituting empty strings for nullish input.
+// Protects string manipulation methods from throwing null pointer exceptions.
+// Produces standardized string representations across transformation functions.
 const toStringOrEmpty = (value: unknown) => (value === undefined || value === null ? "" : String(value));
 
 /**
@@ -209,6 +230,9 @@ const toStringOrEmpty = (value: unknown) => (value === undefined || value === nu
  * Returns null for invalid dates rather than throwing.
  * The AI service expects dates in this specific format for consistency.
  */
+// Normalizes date representations into standard ISO calendar strings in YYYY-MM-DD format.
+// Rejects unparseable or invalid timestamps by returning null instead of throwing.
+// Standardizes transaction and deadline date values for model consumption.
 const normalizeDateToYmd = (value: unknown): string | null => {
   const date = value instanceof Date ? value : new Date(String(value));
   if (Number.isNaN(date.getTime())) {
@@ -223,6 +247,9 @@ const normalizeDateToYmd = (value: unknown): string | null => {
  * @param {string} [deadline] - Deadline date string
  * @returns {number} Timeline in months (minimum 1)
  */
+// Calculates remaining timeline duration in months from an optional deadline date string.
+// Computes calendar month deltas against current time, enforcing a minimum of one month.
+// Falls back to a twelve-month horizon default when deadlines are unspecified.
 const getTimelineMonths = (deadline?: string) => {
   if (!deadline) {
     return DEFAULT_GOAL_TIMELINE_MONTHS;
@@ -253,6 +280,9 @@ const getTimelineMonths = (deadline?: string) => {
  * when the type is missing or unrecognized. This handles CSV imports where the
  * type column may be empty.
  */
+// Normalizes transaction type classifications into income, expense, or investment buckets.
+// Infers missing types heuristically based on the mathematical sign of the amount.
+// Standardizes inconsistent categorizations stemming from varied financial CSV sources.
 const normalizeTransactionType = (value: unknown, amount: number): "income" | "expense" | "investment" => {
   const normalized = toStringOrEmpty(value).toLowerCase().trim();
   if (normalized === "income" || normalized === "expense" || normalized === "investment") {
@@ -272,6 +302,9 @@ const normalizeTransactionType = (value: unknown, amount: number): "income" | "e
  * Validates currency codes against ISO 4217 format (3 uppercase letters).
  * Returns DEFAULT_CURRENCY ("USD") for any invalid input.
  */
+// Validates currency identifiers against ISO 4217 three-letter uppercase standards.
+// Sanitizes input casing and defaults safely to USD when codes are invalid or absent.
+// Ensures uniform currency representation in financial model prompt prompts.
 const normalizeCurrencyCode = (value: unknown) => {
   const normalized = toStringOrEmpty(value).toUpperCase().trim();
   if (normalized.length === 3 && /^[A-Z]{3}$/.test(normalized)) {
@@ -286,6 +319,9 @@ const normalizeCurrencyCode = (value: unknown) => {
  * @param {unknown} value - Locale value
  * @returns {string} Normalized locale string
  */
+// Cleans and normalizes BCP-47 locale strings representing user language preferences.
+// Trims string whitespace and applies the system default en-US locale upon empty inputs.
+// Used to guide AI output formatting according to regional language conventions.
 const normalizeLocale = (value: unknown) => {
   const normalized = toStringOrEmpty(value).trim();
   return normalized || DEFAULT_LOCALE;
@@ -297,6 +333,9 @@ const normalizeLocale = (value: unknown) => {
  * @param {unknown} value - Timezone value
  * @returns {string} Normalized timezone string
  */
+// Normalizes IANA timezone identifier strings to format time-sensitive output.
+// Trims whitespace and falls back to UTC whenever the supplied timezone is missing.
+// Ensures accurate timestamp translations during report generation.
 const normalizeTimezone = (value: unknown) => {
   const normalized = toStringOrEmpty(value).trim();
   return normalized || DEFAULT_TIMEZONE;
@@ -307,6 +346,9 @@ const normalizeTimezone = (value: unknown) => {
  *
  * Contains the normalized user profile and transaction statistics.
  */
+// Output container combining the normalized user profile with transaction statistics.
+// Details total available transactions, retained items, and pruned volume tallies.
+// Communicates payload composition metrics to logging mechanisms and user interfaces.
 export type BuildUserProfileResult = {
   user_profile: Record<string, unknown>; // Normalized user profile
   stats: {
@@ -357,6 +399,9 @@ export type BuildUserProfileResult = {
  * @param {OrgSettingsLike} [opts.orgSettings] - Org-level currency/locale/timezone
  * @returns {BuildUserProfileResult} Normalized profile + statistics about what was sent/dropped
  */
+// Transforms raw database financial profiles and transactions into normalized AI payloads.
+// Filters out stale transactions, enforces volume limits, and sanitizes currency settings.
+// Returns the shaped profile dictionary along with transaction inclusion telemetry.
 export const buildAiCoreUserProfile = (
   profile: FinancialProfileLike,
   txContext: TransactionsContext = {},
@@ -488,6 +533,9 @@ export const buildAiCoreUserProfile = (
  *   - request: The complete payload ready to send to aiCoreClient
  *   - stats: Statistics about transaction processing (for logging/UI)
  */
+// Assembles a complete process request payload ready for transmission to AI Core.
+// Unifies normalized user profiles, conversation history, grounding context, and flags.
+// Translates internal entity models into the schema expected by the Python AI service.
 export const buildProcessRequest = (params: {
   userInput: string;
   profile: FinancialProfileLike | null;

@@ -21,7 +21,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/Button";
@@ -33,6 +33,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Textarea } from "@/components/ui/TextArea";
 import { useToast } from "@/hooks/useToast";
+import { ArrowRight, CheckSquare, ChevronLeft, ChevronRight, FileText, GripVertical, Mail, Timer, Trash2, Zap } from "lucide-react";
 import { reportClientError } from "@/lib/runtimeLogger";
 import { getSearchParam } from "@/lib/url";
 import type { ToolCall } from "@/types/ai.types";
@@ -61,12 +62,47 @@ import {
   workflowActionLabel,
 } from "@/features/workflows/toolCalls";
 
+// Formats workflow API error instances into user-facing notification strings.
+// Appends server request identifiers when present on ApiError objects.
+// Returns a fallback message if error details cannot be determined.
 const formatError = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
+// Counts elements in an array safely without throwing on non-array values.
+// Returns zero if the provided value is null, undefined, or not an array.
+// Facilitates pluralization and outcome summary generation.
+const countOf = (value: unknown) => (Array.isArray(value) ? value.length : 0);
+// Returns a singular or pluralized word string based on the given count.
+// Appends an s suffix when the count differs from exactly one.
+// Used for human-readable run outcome and action summaries.
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// Generates human-readable summary text describing completed workflow run results.
+// Counts tasks created, exports generated, and notifications dispatched.
+// Returns queued notification text when runs are in-flight or backgrounded.
+/** Summarises a `workflows.run` execution so users can see what the run produced. */
+const describeRunResult = (result: Record<string, unknown> | undefined): string | null => {
+  const run = (result as { run?: { status?: string; result?: Record<string, unknown> } } | undefined)?.run;
+  if (!run) return null;
+  if ((result as { queued?: boolean }).queued || run.status === "queued" || run.status === "running") {
+    return "Workflow run queued. Results will appear when it finishes.";
+  }
+  const outcome = run.result || {};
+  const parts = [
+    countOf(outcome.tasks_created) ? plural(countOf(outcome.tasks_created), "task") + " created" : "",
+    countOf(outcome.exports_created) ? plural(countOf(outcome.exports_created), "export") + " created" : "",
+    countOf(outcome.notifications_sent) ? plural(countOf(outcome.notifications_sent), "notification") + " sent" : "",
+    countOf(outcome.actions_skipped) ? plural(countOf(outcome.actions_skipped), "action") + " skipped" : "",
+  ].filter(Boolean);
+  return parts.length ? `Workflow run ${run.status || "finished"}: ${parts.join(", ")}.` : `Workflow run ${run.status || "finished"}.`;
+};
+
+// Splits multi-line string input into a sanitized array of action step strings.
+// Trims whitespace from individual lines, discards blanks, and limits to 20 steps.
+// Prepares task creation instructions from raw textarea form values.
 const normalizeSteps = (raw: string) =>
   raw
     .split("\n")
@@ -74,6 +110,28 @@ const normalizeSteps = (raw: string) =>
     .filter(Boolean)
     .slice(0, 20);
 
+// Predefined time delay increments for workflow execution pauses.
+// Maps duration labels (1m to 1d) to exact duration values in seconds.
+// Used when configuring delay nodes inside multi-step automated workflows.
+const DELAY_PRESETS = [
+  { label: "1m", seconds: 60, id: "1m" },
+  { label: "5m", seconds: 300, id: "5m" },
+  { label: "15m", seconds: 900, id: "15m" },
+  { label: "1h", seconds: 3600, id: "1h" },
+  { label: "1d", seconds: 86400, id: "1d" },
+];
+
+// Type guard verifying if a given workflow action is a delay step.
+// Narrows the WorkflowAction union to the delay action interface.
+// Powers delay configuration controls within the visual workflow builder.
+const isDelayAction = (
+  action: WorkflowAction
+): action is Extract<WorkflowAction, { type: "delay" }> =>
+  action.type === "delay";
+
+// Returns the current year and month as a standard YYYY-MM period key.
+// Pads single-digit months with a leading zero for ISO format consistency.
+// Used as the default period parameter for scheduled export report actions.
 const defaultPeriodKey = () => {
   const now = new Date();
   const y = now.getUTCFullYear();
@@ -81,20 +139,51 @@ const defaultPeriodKey = () => {
   return `${y}-${m}`;
 };
 
+// Type guard verifying if an action represents a monthly summary PDF export.
+// Confirms that the action type matches export_report with monthly_summary_pdf format.
+// Used for conditional rendering of monthly period selection parameters.
 const isExportActionMonthly = (
   action: WorkflowAction
 ): action is Extract<WorkflowAction, { type: "export_report"; export_type: "monthly_summary_pdf" }> =>
   action.type === "export_report" && (action as any).export_type === "monthly_summary_pdf";
 
+// Type guard verifying if an action represents a transactions CSV export.
+// Ensures that the action type matches export_report with transactions_csv format.
+// Used for displaying transaction date filter parameters in workflow nodes.
 const isExportActionCsv = (
   action: WorkflowAction
 ): action is Extract<WorkflowAction, { type: "export_report"; export_type: "transactions_csv" }> =>
   action.type === "export_report" && (action as any).export_type === "transactions_csv";
 
+// Visual automation workflows builder and management dashboard.
+// Allows constructing multi-step trigger-action flows with drag-and-drop ordering.
+// Manages manual execution, run history tracking, and trigger activation toggles.
 export default function WorkflowsPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [location, navigate] = useLocation();
+  const [, navigate] = useLocation();
+  // wouter v3: useLocation() is pathname-only; the query string comes from useSearch().
+  const search = useSearch();
+
+  const [draggedNodeIndex, setDraggedNodeIndex] = useState<number | null>(null);
+
+  const moveAction = (fromIndex: number, toIndex: number) => {
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= draft.actions.length ||
+      toIndex >= draft.actions.length
+    ) {
+      return;
+    }
+    setDraft((prev) => {
+      const updated = [...prev.actions];
+      const [moved] = updated.splice(fromIndex, 1);
+      updated.splice(toIndex, 0, moved);
+      return { ...prev, actions: updated };
+    });
+  };
 
   const [activeTab, setActiveTab] = useState<"workflows" | "create" | "templates">("workflows");
 
@@ -142,7 +231,7 @@ export default function WorkflowsPage() {
   }));
 
   useEffect(() => {
-    const raw = getSearchParam(location, "template");
+    const raw = getSearchParam(`?${search}`, "template");
     if (!raw) return;
     const request = parseWorkflowTemplateParam(raw);
     if (!request) {
@@ -154,7 +243,7 @@ export default function WorkflowsPage() {
     setActiveTab("create");
     toast({ title: "Template loaded", description: `Ready to create: ${request.name}` });
     navigate("/workflows");
-  }, [location, navigate, toast]);
+  }, [search, navigate, toast]);
 
   const workflowsQuery = useQuery({
     queryKey: ["v1/workflows"],
@@ -178,13 +267,13 @@ export default function WorkflowsPage() {
 
   const executeMutation = useMutation({
     mutationFn: async (toolCall: ToolCall) => executeToolCall(toolCall, { confirm: true, idempotency_key: toolCall.id }),
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       await Promise.allSettled([
         queryClient.invalidateQueries({ queryKey: ["v1/workflows"] }),
         queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }),
         queryClient.invalidateQueries({ queryKey: ["v1/exports"] }),
       ]);
-      toast({ title: "Done", description: "Action executed successfully." });
+      toast({ title: "Done", description: describeRunResult(data?.result) || "Action executed successfully." });
       setPending(null);
     },
     onError: (error) => {
@@ -219,6 +308,15 @@ export default function WorkflowsPage() {
   };
 
   const addAction = (type: WorkflowAction["type"]) => {
+    if (type === "delay") {
+      const next: WorkflowAction = {
+        type: "delay",
+        duration_seconds: 300,
+        description: "Wait 5 minutes before next step",
+      } as any;
+      setDraft((prev) => ({ ...prev, actions: [...prev.actions, next] }));
+      return;
+    }
     if (type === "create_task") {
       const next: WorkflowAction = {
         type: "create_task",
@@ -273,6 +371,13 @@ export default function WorkflowsPage() {
       return;
     }
     for (const action of draft.actions as any[]) {
+      if (action?.type === "delay") {
+        const sec = Number(action?.duration_seconds);
+        if (!Number.isFinite(sec) || sec < 1 || sec > 86400 * 30) {
+          toast({ title: "Invalid delay", description: "Delay action duration must be between 1 second and 30 days.", variant: "destructive" });
+          return;
+        }
+      }
       if (action?.type !== "export_report") continue;
       if (action.export_type !== "monthly_summary_pdf") continue;
       const key = String(action?.params?.period_key || "").trim();
@@ -377,6 +482,45 @@ export default function WorkflowsPage() {
                               {(wf as any).actions.length > 6 ? <li>...</li> : null}
                             </ul>
                           ) : null}
+                          {/* Visual pipeline ribbon */}
+                          <div className="flex items-center gap-1.5 flex-wrap pt-2" data-testid={`workflow-pipeline-${wf.id}`}>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground border border-border">
+                              <Zap className="w-3 h-3 text-amber-500" />
+                              <span>Trigger: {(wf as any).trigger?.type || "manual"}</span>
+                            </span>
+                            {Array.isArray((wf as any).actions) && (wf as any).actions.map((act: WorkflowAction, aIdx: number) => (
+                              <div key={aIdx} className="inline-flex items-center gap-1.5">
+                                <ArrowRight className="w-3 h-3 text-muted-foreground" />
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border ${
+                                  act.type === "delay"
+                                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                                    : act.type === "create_task"
+                                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                                    : act.type === "send_notification"
+                                    ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
+                                    : "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20"
+                                }`}>
+                                  {act.type === "delay" && <Timer className="w-3 h-3" />}
+                                  {act.type === "create_task" && <CheckSquare className="w-3 h-3" />}
+                                  {act.type === "send_notification" && <Mail className="w-3 h-3" />}
+                                  {act.type === "export_report" && <FileText className="w-3 h-3" />}
+                                  <span>
+                                    {act.type === "delay"
+                                      ? `Delay: ${Math.round((act as any).duration_seconds / 60)}m`
+                                      : act.type === "create_task"
+                                      ? (act as any).title || "Task"
+                                      : act.type === "send_notification"
+                                      ? (act as any).subject || "Email"
+                                      : (act as any).export_type || "Export"}
+                                  </span>
+                                  {(act as any).condition?.field ? (
+                                    <span className="text-[9px] font-mono opacity-80">(cond)</span>
+                                  ) : null}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
                         </div>
 
                         <div className="flex flex-wrap gap-2 justify-end">
@@ -487,6 +631,193 @@ export default function WorkflowsPage() {
                 )}
               </div>
 
+                            {/* Visual Drag-and-Drop Node Graph Canvas Editor */}
+              <div className="rounded-lg border border-border bg-card p-4 space-y-3" data-testid="card-workflow-node-canvas">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-semibold text-foreground">Interactive Node Pipeline Flow</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Visual graph representation of workflow execution. Drag nodes to reorder execution steps or use the arrows.
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-medium text-muted-foreground mr-1">Quick Add:</span>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => addAction("delay")} data-testid="btn-canvas-add-delay">
+                      <Timer className="w-3 h-3 mr-1 text-amber-500" />
+                      + Delay
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => addAction("create_task")} data-testid="btn-canvas-add-task">
+                      <CheckSquare className="w-3 h-3 mr-1 text-emerald-500" />
+                      + Task
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => addAction("send_notification")} data-testid="btn-canvas-add-notify">
+                      <Mail className="w-3 h-3 mr-1 text-blue-500" />
+                      + Email
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => addAction("export_report")} data-testid="btn-canvas-add-export">
+                      <FileText className="w-3 h-3 mr-1 text-purple-500" />
+                      + Export
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto py-3 px-2 rounded-md border border-border/60 bg-muted/20 flex items-center gap-2.5 min-h-[130px]">
+                  {/* Trigger Node */}
+                  <div
+                    className="shrink-0 rounded-lg border-2 border-primary/40 bg-card p-3 shadow-sm min-w-[150px] max-w-[180px] space-y-1.5"
+                    data-testid="node-canvas-trigger"
+                  >
+                    <div className="flex items-center justify-between text-xs font-semibold text-primary">
+                      <span className="flex items-center gap-1">
+                        <Zap className="w-3.5 h-3.5" />
+                        Trigger
+                      </span>
+                      <span className="text-[10px] font-mono uppercase px-1.5 py-0.2 rounded bg-primary/10">Root</span>
+                    </div>
+                    <div className="text-sm font-medium text-foreground capitalize truncate">
+                      {(draft.trigger as any).type}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground truncate">
+                      {(draft.trigger as any).type === "cron"
+                        ? (draft.trigger as any).cron || "0 9 * * 1"
+                        : (draft.trigger as any).type === "event"
+                        ? (draft.trigger as any).event_type || "Event"
+                        : (draft.trigger as any).type === "webhook"
+                        ? "Inbound HTTP"
+                        : "On-demand execution"}
+                    </div>
+                  </div>
+
+                  {/* Connector Arrow from Trigger to First Action */}
+                  {draft.actions.length > 0 && (
+                    <div className="shrink-0 flex items-center px-1 text-muted-foreground">
+                      <ArrowRight className="w-4 h-4" />
+                    </div>
+                  )}
+
+                  {/* Action Nodes */}
+                  {draft.actions.map((act: WorkflowAction, idx: number) => (
+                    <div key={idx} className="shrink-0 flex items-center gap-2.5">
+                      <div
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("text/plain", String(idx));
+                          setDraggedNodeIndex(idx);
+                        }}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const fromStr = e.dataTransfer.getData("text/plain");
+                          const fromIdx = Number(fromStr);
+                          if (!isNaN(fromIdx) && fromIdx !== idx) {
+                            moveAction(fromIdx, idx);
+                          }
+                          setDraggedNodeIndex(null);
+                        }}
+                        onDragEnd={() => setDraggedNodeIndex(null)}
+                        className={`shrink-0 rounded-lg border p-3 min-w-[170px] max-w-[210px] bg-card transition-all cursor-move ${
+                          draggedNodeIndex === idx
+                            ? "opacity-50 border-primary border-dashed shadow-md"
+                            : "border-border shadow-sm hover:border-primary/50"
+                        }`}
+                        data-testid={`node-canvas-action-${idx}`}
+                      >
+                        <div className="flex items-center justify-between text-xs mb-1.5">
+                          <span className="flex items-center gap-1 font-semibold text-muted-foreground">
+                            <GripVertical className="w-3 h-3 cursor-grab" />
+                            Step {idx + 1}
+                          </span>
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                            act.type === "delay"
+                              ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                              : act.type === "create_task"
+                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              : act.type === "send_notification"
+                              ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                              : "bg-purple-500/10 text-purple-600 dark:text-purple-400"
+                          }`}>
+                            {act.type === "delay" && <Timer className="w-3 h-3" />}
+                            {act.type === "create_task" && <CheckSquare className="w-3 h-3" />}
+                            {act.type === "send_notification" && <Mail className="w-3 h-3" />}
+                            {act.type === "export_report" && <FileText className="w-3 h-3" />}
+                            {act.type === "delay" ? "Delay" : act.type === "create_task" ? "Task" : act.type === "send_notification" ? "Email" : "Export"}
+                          </span>
+                        </div>
+
+                        <div className="text-xs font-medium text-foreground truncate">
+                          {act.type === "delay"
+                            ? `Wait ${(act as any).duration_seconds}s`
+                            : act.type === "create_task"
+                            ? (act as any).title || "Task"
+                            : act.type === "send_notification"
+                            ? (act as any).subject || "Email"
+                            : (act as any).export_type || "Export"}
+                        </div>
+
+                        {(act as any).condition?.field ? (
+                          <div className="text-[10px] font-mono text-muted-foreground truncate mt-1 bg-muted/60 px-1.5 py-0.5 rounded">
+                            if {(act as any).condition.field} {(act as any).condition.operator} {String((act as any).condition.value)}
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-muted-foreground/60 italic mt-1">Always run</div>
+                        )}
+
+                        <div className="flex items-center justify-between pt-2 mt-2 border-t border-border/50">
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                              disabled={idx === 0}
+                              onClick={() => moveAction(idx, idx - 1)}
+                              data-testid={`btn-canvas-move-up-${idx}`}
+                              title="Move step earlier"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                              disabled={idx === draft.actions.length - 1}
+                              onClick={() => moveAction(idx, idx + 1)}
+                              data-testid={`btn-canvas-move-down-${idx}`}
+                              title="Move step later"
+                            >
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                            disabled={draft.actions.length <= 1}
+                            onClick={() => removeAction(idx)}
+                            data-testid={`btn-canvas-delete-${idx}`}
+                            title="Remove step"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Connector Arrow between consecutive actions */}
+                      {idx < draft.actions.length - 1 && (
+                        <div className="shrink-0 flex items-center px-1 text-muted-foreground">
+                          <ArrowRight className="w-4 h-4" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -494,6 +825,7 @@ export default function WorkflowsPage() {
                     <div className="text-xs text-muted-foreground">Actions run in sequence. Optional branch conditions evaluate against payload context.</div>
                   </div>
                   <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => addAction("delay")} data-testid="btn-add-action-delay"><Timer className="w-3.5 h-3.5 mr-1 text-amber-500" />Add delay</Button>
                     <Button size="sm" variant="outline" onClick={() => addAction("create_task")} data-testid="btn-add-action-task">Add task</Button>
                     <Button size="sm" variant="outline" onClick={() => addAction("export_report")} data-testid="btn-add-action-export">Add export</Button>
                     <Button size="sm" variant="outline" onClick={() => addAction("send_notification")} data-testid="btn-add-action-notify">Add email</Button>
@@ -504,7 +836,31 @@ export default function WorkflowsPage() {
                   <div key={index} className="rounded-md border border-border p-4 space-y-4" data-testid={`action-card-${index}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="text-sm font-medium text-foreground">{index + 1}. {workflowActionLabel(action)}</div>
-                      <Button size="sm" variant="destructive" onClick={() => removeAction(index)} disabled={draft.actions.length <= 1}>Remove</Button>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => moveAction(index, index - 1)}
+                          disabled={index === 0}
+                          data-testid={`btn-action-move-up-${index}`}
+                        >
+                          Up
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => moveAction(index, index + 1)}
+                          disabled={index === draft.actions.length - 1}
+                          data-testid={`btn-action-move-down-${index}`}
+                        >
+                          Down
+                        </Button>
+                        <Button size="sm" variant="destructive" className="h-7 px-2 text-xs" onClick={() => removeAction(index)} disabled={draft.actions.length <= 1}>
+                          Remove
+                        </Button>
+                      </div>
                     </div>
 
                     {/* Conditional Branch Logic Configuration */}
@@ -618,6 +974,56 @@ export default function WorkflowsPage() {
                         </div>
                       ) : null}
                     </div>
+
+                    {isDelayAction(action) ? (
+                      <div className="space-y-4" data-testid={`action-delay-config-${index}`}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <Label>Delay Duration (seconds)</Label>
+                            <Input
+                              className="mt-1"
+                              type="number"
+                              min={1}
+                              max={2592000}
+                              value={action.duration_seconds ?? 300}
+                              onChange={(e) => {
+                                const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                updateAction(index, { ...action, duration_seconds: val });
+                              }}
+                              data-testid={`input-delay-seconds-${index}`}
+                            />
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {DELAY_PRESETS.map((p) => (
+                                <Button
+                                  key={p.id}
+                                  type="button"
+                                  size="sm"
+                                  variant={action.duration_seconds === p.seconds ? "secondary" : "outline"}
+                                  className="h-6 text-[11px] px-2"
+                                  onClick={() => updateAction(index, { ...action, duration_seconds: p.seconds })}
+                                  data-testid={`btn-delay-preset-${index}-${p.id}`}
+                                >
+                                  {p.label}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <Label>Description / Purpose (Supports {"{{field}}"} tags)</Label>
+                            <Input
+                              className="mt-1"
+                              placeholder="e.g. Wait 5 minutes before checking transaction confirmation"
+                              value={action.description || ""}
+                              onChange={(e) => updateAction(index, { ...action, description: e.target.value })}
+                              data-testid={`input-delay-description-${index}`}
+                            />
+                            <span className="text-[11px] text-muted-foreground mt-1 block">
+                              Interpolated context variables from webhook payloads can be referenced with <code className="font-mono">{"{{variable}}"}</code>.
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
 
                     {action.type === "create_task" ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

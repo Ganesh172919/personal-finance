@@ -559,3 +559,50 @@ mindmap
 │    ► Vite dev server running at http://localhost:5173 🟢               │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 5. Local Testing Workflows for 2026 Distributed Subsystems
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4f46e5', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#3730a3', 'lineColor': '#6366f1', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((Local Subsystem Dev))
+    Merchant Clustering
+      POST /api/financial-data/bank-feed
+      Inspect in Review Queue Cockpit
+    Multi-Modal RAG
+      Upload PDF Statement
+      Verify Grounding Score G >= 0.70
+    Offline Journal Sync
+      Toggle Offline in DevTools
+      Queue Local Notes
+      Toggle Online and Inspect Sync
+    Canary Verification
+      Open AiStatusDialog Modal
+      Inspect 5 Invariant Proofs
+```
+
+### 5.1 Testing Merchant Clustering & Bank Feed Ingestion
+To simulate real-time banking webhooks locally:
+
+```bash
+curl -X POST http://localhost:3000/api/financial-data/bank-feed \
+  -H "Authorization: Bearer <DEV_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "feedSource": "plaid_sandbox",
+    "transactions": [
+      { "externalId": "tx_mock_1", "amount": -14.50, "currency": "USD", "rawDescription": "SQ *BLUE BOTTLE COFFEE SF" },
+      { "externalId": "tx_mock_2", "amount": -12.00, "currency": "USD", "rawDescription": "BLUE BOTTLE COFFEE #4" }
+    ]
+  }'
+```
+
+### 5.2 Simulating Offline-First Journal Drafting in Chrome DevTools
+1. Open `http://localhost:5173/notes`
+2. Open Chrome DevTools (`F12`) ➔ **Network** tab ➔ set throttling to **Offline**
+3. Create a new journal entry: "Dinner paid with 40 EUR cash"
+4. Observe the badge: `"Saved offline (pending sync)"`
+5. Switch throttling back to **No throttling** (Online)
+6. Observe automatic batch sync to `/api/financial-journal/entries/batch-sync` and badge transition to `"Synced with cloud" 🟢`!

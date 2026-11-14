@@ -34,6 +34,8 @@ import passport from "../config/passport";
  * @param res - Express response object
  * @param next - Express next function
  */
+// Express middleware executing non-blocking JWT authentication to opportunistically hydrate req.user.
+// Forwards the request to downstream middleware regardless of whether authentication credentials exist.
 export const optionalJwtAuth: RequestHandler = (req, res, next) => {
   passport.authenticate(
     "jwt",
@@ -45,6 +47,9 @@ export const optionalJwtAuth: RequestHandler = (req, res, next) => {
       }
       if (user) {
         (req as any).user = user; // Attach user to request (if JWT was valid)
+        // Remember the verified identity so per-route passport.authenticate("jwt")
+        // and orgContext reuse it instead of re-verifying / re-loading the user.
+        (req as any).auth = { token: (req as any).cookies?.jwt, user };
       }
       // Always continue to next middleware (even if no user)
       next();

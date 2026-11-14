@@ -19,32 +19,45 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Paperclip, Send, X } from "lucide-react";
+import { Loader2, Paperclip, Send, X, Mic, Upload } from "lucide-react";
 
 import { useToast } from "@/hooks/useToast";
 import { uploadWorkspaceFiles } from "@/lib/api/files";
+import { transcribeVoice } from "@/lib/api/voice";
+import { transcribeLiveVoice } from "@/lib/liveVoice";
+import { prepareVoiceRecording } from "@/lib/voiceRecording";
 import { Button } from "@/components/ui/Button";
 import { Switch as ToggleSwitch } from "@/components/ui/Switch";
 import type { IChatAttachment } from "@/types/chat.types";
 
+// Property definition contract for the conversational chat input component.
+// Configures send dispatchers, loading states, custom placeholders, and attachments.
+// Connects parent notification callbacks for composer busy state changes.
 interface ChatInputProps {
   onSend: (message: string, options?: { narrative?: boolean; fileIds?: string[] }) => Promise<boolean>;
   isSending: boolean;
   placeholder?: string;
+  initialMessage?: string;
+  sessionId?: string | null;
   workspaceAttachments?: IChatAttachment[];
   onRemoveWorkspaceAttachment?: (id: string) => void;
   onBusyChange?: (busy: boolean) => void;
 }
 
+// Interactive message composer supporting multi-line text and file uploads.
+// Coordinates workspace file attachment staging, uploading, and error recovery.
+// Implements narrative mode toggles and keyboard shortcuts for prompt submission.
 export function ChatInput({
   onSend,
   isSending,
+  initialMessage = "",
+  sessionId,
   workspaceAttachments = [],
   onRemoveWorkspaceAttachment,
   onBusyChange,
   placeholder = "Ask me anything about your finances or attach files for context...",
 }: ChatInputProps) {
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(initialMessage);
   const [narrative, setNarrative] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -56,6 +69,74 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { toast } = useToast();
+  const [dictationOpen, setDictationOpen] = useState(false);
+  const [dictationPhase, setDictationPhase] = useState("");
+  const [canFinishDictation, setCanFinishDictation] = useState(false);
+  const [dictationError, setDictationError] = useState("");
+  const dictation = useRef<AbortController | null>(null);
+  const finishDictation = useRef<(() => void) | null>(null);
+  const dictationFile = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setDictationPhase("");
+    setCanFinishDictation(false);
+    setDictationError("");
+    setDictationOpen(false);
+    return () => {
+      dictation.current?.abort();
+      dictation.current = null;
+      finishDictation.current = null;
+    };
+  }, [sessionId]);
+
+  const dictate = async (clip?: File) => {
+    if (dictation.current || inFlightRef.current || isSending) return;
+    const controller = new AbortController();
+    dictation.current = controller;
+    const { signal } = controller;
+    setDictationError("");
+    setDictationPhase(clip ? "Transcribing audio with Gnani Prisma…" : "Allow microphone access to start dictation…");
+    try {
+      let text: string;
+      if (clip) {
+        if (clip.size > 8 * 1024 * 1024) throw new Error("Choose a short audio file under 8 MB.");
+        const wav = await prepareVoiceRecording(clip, false).catch(() => {
+          throw new Error("Choose a supported audio clip of 30 seconds or less.");
+        });
+        signal.throwIfAborted();
+        const result = await transcribeVoice({ audioBlob: wav, language: "auto", codeMixed: true }, signal);
+        if (result.provider !== "gnani_prisma_v3_live") throw new Error("Live transcription is unavailable. Try again or type your question.");
+        text = result.transcript;
+      } else {
+        const result = await transcribeLiveVoice({
+          signal,
+          registerCommit: commit => {
+            finishDictation.current = commit;
+            setCanFinishDictation(true);
+          },
+          onEvent: event => {
+            if (signal.aborted) return;
+            if (event === "processing") setCanFinishDictation(false);
+            setDictationPhase(event === "processing" ? "Transcribing audio with Gnani Prisma…" : "Listening. Pause or select Finish dictation.");
+          },
+        });
+        text = result.text;
+      }
+      if (signal.aborted) return;
+      if (!text.trim()) throw new Error("No speech was detected. Try a clearer recording.");
+      setMessage(previous => [previous.trimEnd(), text.trim()].filter(Boolean).join(" ").slice(0, 4000));
+      setDictationOpen(false);
+      textareaRef.current?.focus();
+    } catch (error) {
+      if (!signal.aborted) setDictationError(error instanceof Error ? error.message : "Dictation failed. Try again.");
+    } finally {
+      if (dictation.current === controller) {
+        dictation.current = null;
+        finishDictation.current = null;
+        setCanFinishDictation(false);
+        setDictationPhase("");
+      }
+    }
+  };
   useEffect(() => {
     if (workspaceAttachments.length) textareaRef.current?.focus();
   }, [workspaceAttachments.length]);
@@ -102,7 +183,7 @@ export function ChatInput({
     const trimmedMessage = message.trim();
     const hasMessage = Boolean(trimmedMessage);
     const hasFiles = selectedFiles.length > 0 || workspaceAttachments.length > 0;
-    if ((!hasMessage && !hasFiles) || isSending || inFlightRef.current) return;
+    if ((!hasMessage && !hasFiles) || isSending || inFlightRef.current || dictation.current) return;
     inFlightRef.current = true;
     setIsSubmitting(true);
     onBusyChange?.(true);
@@ -203,6 +284,33 @@ export function ChatInput({
         ) : null}
 
         {sendError ? <p role="alert" className="mb-3 text-sm text-destructive">{sendError}</p> : null}
+        {dictationOpen && <div className="mb-3 space-y-2 rounded-lg border border-border p-2">
+          {dictationPhase && <p role="status" className="text-sm">{dictationPhase}</p>}
+          {dictationError && <p role="alert" className="text-sm text-destructive">{dictationError}</p>}
+          <div className="flex flex-wrap gap-2">
+            {!dictationPhase && <>
+              <Button type="button" size="sm" variant="outline" disabled={isBusy} onClick={() => void dictate()}>Start microphone dictation</Button>
+              <Button type="button" size="sm" variant="outline" disabled={isBusy} onClick={() => dictationFile.current?.click()}>
+                <Upload aria-hidden="true" className="mr-2 size-4" /> Import audio for dictation
+              </Button>
+            </>}
+            {canFinishDictation && <Button type="button" size="sm" variant="outline" onClick={() => finishDictation.current?.()}>Finish dictation</Button>}
+            <Button type="button" size="sm" variant="ghost" onClick={() => {
+              dictation.current?.abort();
+              dictation.current = null;
+              finishDictation.current = null;
+              setCanFinishDictation(false);
+              setDictationError("");
+              setDictationPhase("");
+              setDictationOpen(false);
+            }}>{dictationPhase ? "Cancel dictation" : "Close dictation"}</Button>
+          </div>
+          <input ref={dictationFile} type="file" accept="audio/*,.wav,.webm" aria-label="Dictation audio file" hidden onChange={event => {
+            const clip = event.target.files?.[0];
+            event.target.value = "";
+            if (clip) void dictate(clip);
+          }} />
+        </div>}
 
         <div className="gradient-border rounded-xl p-1">
           <div className="flex items-end gap-3 rounded-lg bg-background p-3">
@@ -214,6 +322,18 @@ export function ChatInput({
               disabled={isBusy}
             >
               <Paperclip className="h-4 w-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDictationOpen((prev) => !prev)}
+              className="inline-flex h-10 items-center justify-center rounded-2xl border border-border/70 bg-muted/20 px-3 text-muted-foreground transition-colors hover:text-foreground"
+              aria-label="Dictate with Gnani Prisma"
+              aria-expanded={dictationOpen}
+              disabled={isBusy}
+              title="Dictate a draft with Gnani Prisma"
+            >
+              <Mic className="h-4 w-4" />
             </button>
 
             <input ref={fileInputRef} type="file" multiple className="hidden" aria-label="Choose files for chat" disabled={isBusy} onChange={handleFileSelection} />
@@ -235,7 +355,7 @@ export function ChatInput({
             <Button
               aria-label={isBusy ? "Sending message" : "Send message"}
               onClick={() => void handleSend()}
-              disabled={(!message.trim() && selectedFiles.length === 0 && workspaceAttachments.length === 0) || isBusy}
+              disabled={(!message.trim() && selectedFiles.length === 0 && workspaceAttachments.length === 0) || isBusy || Boolean(dictationPhase)}
               size="sm"
               className="flex-shrink-0 rounded-2xl"
             >

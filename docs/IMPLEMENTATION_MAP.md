@@ -362,3 +362,16 @@ export function registerApplicationRoutes(appRouter: Router): void {
   appRouter.use("/api/v1", apiV1);
 }
 ```
+
+---
+
+## 5. 2026 Enterprise Architecture Implementation Map
+
+| Subsystem | Key Files to Touch | Verification Test Command |
+| :--- | :--- | :--- |
+| **AI Canary Engine** | `server/src/services/aiCanaryService.ts`<br>`server/src/controllers/v1/aiCanaryController.ts`<br>`server/AI_Core/evals/canary_validator.py` | `npm test -- server/src/test/aiCanary.test.ts`<br>`pytest server/AI_Core/tests/test_canary_validator.py` |
+| **Unified Context Engine** | `server/src/services/unifiedContextRetrievalService.ts`<br>`server/src/controllers/v1/unifiedContextController.ts`<br>`client/src/lib/api/unifiedContext.ts` | `npm test -- server/src/test/unifiedContext.test.ts` |
+| **ML Merchant Clustering** | `server/src/services/merchantEmbeddingClustering.ts`<br>`client/src/components/TransactionReviewQueue.tsx` | `npm test -- server/src/test/merchantEmbeddingClustering.test.ts` |
+| **RFC 5545 iCalendar** | `server/src/controllers/v1/calendarReminderController.ts`<br>`client/src/pages/FinancialCalendar.tsx` | `npm test -- server/src/test/calendarReminders.test.ts` |
+| **Offline Financial Journal** | `client/src/pages/Notes.tsx`<br>`server/src/controllers/financialJournalController.ts`<br>`server/src/services/journalEmbeddingService.ts` | `npm test -- server/src/test/journalOfflineSyncAndSemanticSearch.test.ts` |
+| **Visual Workflows & Delays** | `server/src/services/workflows.ts`<br>`client/src/pages/Workflows.tsx` | `npm test -- server/src/test/workflows.test.ts` |

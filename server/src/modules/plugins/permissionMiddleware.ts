@@ -21,6 +21,9 @@ import { logger } from "../../config/logger";
  *   req.body.plugin_key — the executing plugin's key
  *   req.org.orgId — the org context
  */
+// Express middleware enforcing plugin permission grants prior to executing tool calls.
+// Verifies active plugin installation in database and matches requested tools against granted permissions.
+// Blocks unauthorized calls with 403 Forbidden responses using fail-closed security enforcement.
 export const enforcePluginPermissions: RequestHandler = async (req, res, next) => {
   const toolName = req.body?.tool;
   const pluginKey = req.body?.plugin_key;
@@ -106,6 +109,9 @@ export const enforcePluginPermissions: RequestHandler = async (req, res, next) =
  * Validation endpoint handler for plugin manifest permission review.
  * Used by the marketplace install flow to show users what a plugin wants.
  */
+// Request handler auditing permissions requested by a plugin during installation.
+// Evaluates permission array against known catalog and identifies high-risk scopes.
+// Returns validation details and warning notices for marketplace installation screens.
 export const validatePluginManifest: RequestHandler = (req, res) => {
   const permissions = req.body?.permissions;
 

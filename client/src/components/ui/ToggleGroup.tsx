@@ -7,6 +7,9 @@ import { type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { toggleVariants } from "@/components/ui/Toggle";
 
+// React context instance passing variant and size options to nested toggle items.
+// Defaults to default size and transparent variant styling.
+// Enables consistent sizing and appearance across all grouped toggle buttons.
 const ToggleGroupContext = React.createContext<
   VariantProps<typeof toggleVariants>
 >({
@@ -14,6 +17,9 @@ const ToggleGroupContext = React.createContext<
   variant: "default",
 });
 
+// Group container for a set of related two-state buttons built on Radix UI.
+// Coordinates single or multiple selection modes across grouped toggle items.
+// Provides variant styling context and flexbox gap alignment for child items.
 const ToggleGroup = React.forwardRef<
   React.ElementRef<typeof ToggleGroupPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof ToggleGroupPrimitive.Root> &
@@ -32,6 +38,9 @@ const ToggleGroup = React.forwardRef<
 
 ToggleGroup.displayName = ToggleGroupPrimitive.Root.displayName;
 
+// Individual toggle button item nested inside a ToggleGroup container.
+// Inherits variant and size properties from ToggleGroupContext unless overridden.
+// Manages pressed state styling and accessible keyboard navigation in the group.
 const ToggleGroupItem = React.forwardRef<
   React.ElementRef<typeof ToggleGroupPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof ToggleGroupPrimitive.Item> &

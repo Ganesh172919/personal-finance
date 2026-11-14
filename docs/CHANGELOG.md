@@ -10,6 +10,102 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 > **Developer Guide: Building & Extending on This Project**  
 > For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
 
+## [2.3.0] - 2026-11-08
+
+### Added
+
+#### Distributed Leader Election & Cluster Coordination
+- `leaderElection.ts` & `LeaderLockModel.ts` — High-availability distributed lease management using Redis `SET NX PX` with Lua renewal scripts and automatic MongoDB TTL fallback (`leader_locks`).
+- Coordinates newsletter generation, delayed workflow processing, and nightly AI optimization without worker race conditions.
+
+#### Gateway AI Core Resilience & Circuit Breaker
+- `aiCoreResilience.ts` & `aiCoreTransport.ts` — 3-state circuit breaker (`closed`, `open`, `half_open`) with jittered exponential backoff and transparent retry classification.
+- Handles HTTP 503 load-shedding with `Retry-After` as neutral backpressure without tripping healthy circuits.
+
+#### Terminal Failure Dead-Letter Queue & Job Resurrection
+- `deadLetterJobs.ts` & `DeadLetterJobModel.ts` — Captures failed background jobs exceeding maximum retries with complete error stack traces and original payloads into `dead_letter_jobs`.
+- Endpoints: `GET /api/v1/admin/dead-letter-jobs`, `POST /api/v1/admin/dead-letter-jobs/:id/replay`.
+
+#### Continuous AI Learning Loop & Feedback Review Queue
+- `aiLearningRoutes.ts`, `aiLearningController.ts`, and `server/AI_Core/learning/` (`bandit.py`, `optimizer.py`, `memory_consolidation.py`, `redact.py`, `rollout.py`) — Alignment pipeline supporting human feedback review, contextual bandit routing via Thompson sampling, zero-PII scrubbing, and zero-downtime artifact promotion/rollback.
+- Endpoints: `GET /api/v1/agent-outputs/review-queue`, `POST /api/v1/agent-outputs/:id/review`, `GET /api/v1/ai/learning/status`, `GET /api/v1/ai/learning/artifacts`, `GET /api/v1/ai/learning/reports`, `POST /api/v1/ai/learning/optimize`, `POST /api/v1/ai/artifacts/:id/promote`, `POST /api/v1/ai/artifacts/:id/rollback`.
+
+#### Cross-Replica Realtime Event Bus
+- `redisEventBus.ts` — Redis Pub/Sub domain event bus scaling Server-Sent Events (SSE) across multi-instance gateway deployments with instance ID deduplication and local in-memory fallback.
+
+#### Platform Prometheus Metrics & W3C Distributed Tracing
+- `platformMetrics.ts` & `tracing.ts` — Enterprise infrastructure metrics (`finwise_sse_connections`, `finwise_event_bus_lag_ms`, `finwise_cache_requests_total`, `finwise_llm_tokens_total`, `finwise_llm_cost_cents_total`, `finwise_dlq_size`, `finwise_mongo_pool_*`).
+- Request ID whitelist sanitization (`REQUEST_ID_PATTERN`) preventing log injection and automatic W3C `traceparent` header derivation.
+
+#### Cached JWT Authentication Strategy & Idempotency Protocol
+- `cachedJwtStrategy.ts` & `authCacheStore.ts` — Single-cookie fast-path auth caching reducing database roundtrips on verified JWTs.
+- `idempotency.ts` — Header-based `Idempotency-Key` distributed lock in Redis/Memory replaying stored responses with `Idempotent-Replay: true` and rejecting concurrent collisions with HTTP 409.
+
+---
+
+## [2.2.0] - 2026-11-08
+
+### Added
+
+#### Cross-Silo Unified Context Engine
+- `unifiedContextRetrievalService.ts` & `unifiedContextController.ts` — Reciprocal Rank Fusion ($k = 60$) uniting User Memories, Workspace Documents, and Ledger Transactions with 90-day exponential recency decay.
+- Endpoints: `GET /api/v1/search/unified-context`, `POST /api/v1/search/unified-context`.
+
+#### Adaptive Follow-Through & Ranking Engine
+- `followThroughService.ts` & `follow_through_ranking.py` — Multi-domain activity signal extraction across 6 domains (`task`, `goal`, `budget`, `reminder`, `recurring`, `debt`) with overdue precedence and adaptive preference learning via exponential time decay.
+- `FollowThroughPreferenceModel.ts` — Per-user preference weights and feedback event history.
+- Endpoints: `GET /api/v1/follow-through/recommendations`, `POST /api/v1/follow-through/feedback`, `GET /api/v1/follow-through/preferences`, `PUT /api/v1/follow-through/preferences`.
+
+#### Document QA Studio & Rich Document Authorship
+- `documentQAService.ts` & `richDocumentRenderer.ts` — Grounded document question-answering with strict physical page citations (`\f`), and PDFKit document generation across 6 publication-grade financial formats (`standard`, `executive_brief`, `tax_prep_summary`, `cash_flow_audit`, `debt_payoff_schedule`, `net_worth_statement`).
+- Endpoints: `POST /api/files/qa`, `POST /api/files/search`, `POST /api/files/authored-document`.
+
+#### Conversation Summary Capacity Coordination
+- `summaryCapacityService.ts` & `summaryCapacityController.ts` — In-process promise coalescing, snapshot cache hit tracking, and generation-only token accounting.
+- Endpoints: `GET /api/chat/insights/coordination-metrics`, `POST /api/chat/insights/capacity-benchmark`.
+
+#### Zero-Sum Budget Allocation Rebalancing
+- `financeBudgetsController.ts` — Enforces $\sum \Delta B_i = 0$ mathematical invariant on inter-envelope rebalances.
+- Endpoint: `POST /api/v1/finance/budgets/:periodKey/rebalance`.
+
+#### Financial Calendar Reminders Batch Operations
+- `calendarReminderController.ts` — Batch completion and cleanup for reminder cadences.
+- Endpoints: `POST /api/v1/calendar-reminders/batch-complete`, `POST /api/v1/calendar-reminders/clear-completed`.
+
+#### Automated Invariant Verification Suites (19 Evals Passed)
+- `test_follow_through_eval.py` (5 tests), `test_conversation_summary_eval.py` (4 tests), `test_document_creation_eval.py` (5 tests), `test_document_qa_eval.py` (5 tests).
+
+## [2.1.0] - 2026-11-02
+
+### Added
+
+#### Continuous Production AI Canary Invariant Engine
+- `aiCanaryService.ts` & `aiCanaryController.ts` — Evaluates 5 mathematical accounting identities with dual-layer FastAPI + local Express fallback execution.
+- `canary_validator.py` — Python AI Core validator enforcing Number Safety ($C_{\text{cand}} \subseteq C_{\text{ref}}$) and Zero-Sum Budget Conservation ($\sum \Delta B_i = 0$).
+- `AiStatusDialog.tsx` — 4-tab developer diagnostics cockpit (Overview, KeyPool, Model Catalog, Canary Invariants).
+- Endpoints: `GET /api/v1/ai/canary/status`, `POST /api/v1/ai/canary/validate`, `POST /api/v1/ai/canary/run-probes`, `GET /api/v1/ai/status`.
+
+#### Machine Learning Merchant Vector Clustering
+- `merchantEmbeddingClustering.ts` — Normalized 64-D embedding space ($\|\vec{v}\|_2 = 1.0$), FNV-1a subword 3-gram hashing, and agglomerative centroid linkage ($C \ge 0.70$).
+- Endpoints: `GET /api/financial-data/merchant-clusters`, `POST /api/financial-data/bank-feed`.
+
+#### Multi-Modal Grounded RAG (Phase 2)
+- `retrievalService.ts` — Form-feed page preservation (`\f`), markdown table boundary re-injection, bounded 1,800-char chunks, and dense+BM25 hybrid score fusion ($G \ge 0.70$).
+- `WorkspaceKnowledgeChunkModel.ts` — 64-D vector schema with compound index `{ orgId: 1, sourceDocument: 1, pageNumber: 1 }`.
+
+#### Visual Node Workflow Canvas & Delayed Pipelines
+- `workflows.ts` & `Workflows.tsx` — Visual node graph canvas supporting Trigger, Condition, Delay, and Action nodes.
+- 60-second background delay sweeper (`sweepDelayedWorkflowRuns`) for durable delay timers.
+
+#### Offline-First Financial Journal Synchronization
+- `Notes.tsx` & `journalEmbeddingService.ts` — LocalStorage draft queueing, client UUID idempotency tokens, batch sync endpoint (`/api/financial-journal/entries/batch-sync`), and 64-D semantic search.
+
+#### Global Multi-Currency FX Engine
+- `currencyFx.ts` — Spot conversion across 7 currencies (`USD`, `EUR`, `GBP`, `INR`, `CAD`, `AUD`, `JPY`), zero-decimal JPY rounding, and Dividend Withholding Tax (WHT) with 15% DTAA treaty relief.
+
+#### Financial Calendar & Live iCal Streaming
+- `FinancialCalendar.tsx` & `calendarReminderController.ts` — Recurring reminder grid, status toggle, and live RFC 5545 `.ics` subscription stream (`GET /api/v1/calendar-reminders/export.ics`).
+
 ## [2.0.0] - 2026-05-06
 
 ### Added

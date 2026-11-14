@@ -27,10 +27,16 @@ import { AlertTriangle, CheckCircle2, ChevronDown, Copy, RefreshCw } from "lucid
 
 import { errorReporting } from "@/services/errorReporting";
 
+// Property structure definition for the top-level React application error boundary.
+// Encloses child element subtrees to isolate and catch unexpected rendering crashes.
+// Facilitates graceful degradation when runtime JavaScript exceptions occur.
 type AppErrorBoundaryProps = {
   children: ReactNode;
 };
 
+// Reactive internal state tracked by the class-based application error boundary.
+// Records captured exception objects, component stack frames, and report delivery flags.
+// Manages collapsible technical debug panels and clipboard confirmation states.
 type AppErrorBoundaryState = {
   hasError: boolean;
   error: Error | null;
@@ -40,6 +46,9 @@ type AppErrorBoundaryState = {
   reportSent: boolean;
 };
 
+// Top-level React error boundary intercepting unhandled render exceptions.
+// Transmits diagnostic stack traces to the error reporting service automatically.
+// Renders a robust recovery fallback screen with reload actions and technical details.
 export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
   state: AppErrorBoundaryState = {
     hasError: false,

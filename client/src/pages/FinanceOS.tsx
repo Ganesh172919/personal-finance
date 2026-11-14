@@ -88,6 +88,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Globe,
   ShieldAlert,
   Sparkles,
   Square,
@@ -96,6 +97,7 @@ import {
   WalletCards,
 } from "lucide-react";
 
+import { BharatVoiceAssistant } from "@/components/voice/BharatVoiceAssistant";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -116,6 +118,13 @@ import {
 import { useToast } from "@/hooks/useToast";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import {
+  CURRENCY_LABELS,
+  CURRENCY_SYMBOLS,
+  FX_RATES_TO_USD,
+  SUPPORTED_CURRENCIES,
+  type SupportedCurrency,
+} from "@/lib/currencyFx";
+import {
   createAccount,
   deleteBudgetAllocation,
   createRecurringRule,
@@ -135,6 +144,9 @@ import {
   type RecurringRuleStatus,
 } from "@/lib/apiClient";
 
+// Generates the default financial period key using current UTC year and month.
+// Returns a standard ISO formatted year-month string like YYYY-MM.
+// Ensures consistent initial period selection across budgeting and reporting.
 const defaultPeriodKey = () => {
   const now = new Date();
   const y = now.getUTCFullYear();
@@ -142,6 +154,9 @@ const defaultPeriodKey = () => {
   return `${y}-${m}`;
 };
 
+// Shifts an existing YYYY-MM period key forward or backward by month delta.
+// Performs calendar math in UTC to avoid timezone shift inconsistencies.
+// Returns the original period string if input parsing fails or is malformed.
 const shiftPeriodKey = (period: string, delta: number) => {
   const parts = period.trim().split("-");
   const y = Number(parts[0]);
@@ -151,6 +166,9 @@ const shiftPeriodKey = (period: string, delta: number) => {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 };
 
+// Provides default suggested budget category names for rapid budget configuration.
+// Covers essential living expenses, discretionary spending, and savings channels.
+// Used in dropdown presets when creating or updating spending budgets.
 const BUDGET_CATEGORY_PRESETS = [
   "Housing",
   "Groceries",
@@ -166,6 +184,9 @@ const BUDGET_CATEGORY_PRESETS = [
   "Investments",
 ];
 
+// Converts a datetime-local input string into an ISO 8601 UTC timestamp.
+// Trims whitespace and validates that the date object yields a valid time.
+// Returns undefined if the string is empty or cannot be parsed into a date.
 const toIsoFromDatetimeLocal = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
@@ -174,37 +195,55 @@ const toIsoFromDatetimeLocal = (value: string) => {
   return asDate.toISOString();
 };
 
+// Defines status, severity, and priority literal unions for finance management.
+// Classifies cashflow stability, proactive alert urgency, and suggested action order.
+// Used across health metrics, dashboard notifications, and financial triage views.
 type CashflowStatus = "healthy" | "watch" | "at_risk";
 type AlertSeverity = "info" | "warning" | "critical";
 type ActionPriority = "high" | "medium" | "low";
 
+// Formats numerical money amounts with two decimal digits and a currency label.
+// Handles null, undefined, or invalid numeric values gracefully with fallback text.
+// Standardizes currency presentation across accounts, merchants, and budgets.
 const formatMoney = (value: number | null | undefined, currency: string) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "Unavailable";
   return `${Number(value).toFixed(2)} ${currency}`;
 };
 
+// Maps cashflow health statuses to semantic Tailwind border and background classes.
+// Applies emerald styling for healthy states, amber for watch, and red for risk.
+// Enables consistent status badge and container coloring across the interface.
 const statusTone: Record<CashflowStatus, string> = {
   healthy: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   watch: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   at_risk: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
 };
 
+// Maps system alert severities to corresponding background and border styling.
+// Distinguishes between informational, warning, and critical notification cards.
+// Enhances visual hierarchy for financial risks and actionable system alerts.
 const severityTone: Record<AlertSeverity, string> = {
   info: "border-blue-500/25 bg-blue-500/10",
   warning: "border-amber-500/25 bg-amber-500/10",
   critical: "border-red-500/25 bg-red-500/10",
 };
 
+// Maps recommended action priority tiers to badge component variant types.
+// Assigns destructive badge styling to high-priority items and outline to low.
+// Directs user focus to urgent financial remediations and debt optimizations.
 const priorityTone: Record<ActionPriority, "destructive" | "secondary" | "outline"> = {
   high: "destructive",
   medium: "secondary",
   low: "outline",
 };
 
+// Central operating system page for accounts, merchants, budgets, and recurring expenses.
+// Coordinates multi-currency accounts, recurring rules detection, and cashflow health.
+// Provides tab-based navigation for financial configuration, budgets, and intelligence.
 export default function FinanceOS() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const validTabs = ["accounts", "merchants", "budgets", "insights", "recurring"];
+  const validTabs = ["accounts", "merchants", "budgets", "insights", "recurring", "voice"];
   const currentTab = validTabs.includes(requestedTab || "") ? requestedTab! : "accounts";
 
   const handleTabChange = (nextTab: string) => {
@@ -306,14 +345,22 @@ export default function FinanceOS() {
   const [budgetCategory, setBudgetCategory] = useState("");
   const [budgetAmount, setBudgetAmount] = useState("");
   const [budgetCurrency, setBudgetCurrency] = useState(orgCurrency);
+  const [selectedReportingCurrency, setSelectedReportingCurrency] = useState<SupportedCurrency>("USD");
 
   useEffect(() => {
     setBudgetCurrency(orgCurrency);
+    if (orgCurrency && (orgCurrency in FX_RATES_TO_USD)) {
+      setSelectedReportingCurrency(orgCurrency as SupportedCurrency);
+    }
   }, [orgCurrency]);
 
   const allocationsQuery = useQuery({
-    queryKey: ["v1/finance/budgets", budgetPeriodKey],
-    queryFn: () => listBudgetAllocations(budgetPeriodKey, { limit: 300 }),
+    queryKey: ["v1/finance/budgets", budgetPeriodKey, selectedReportingCurrency],
+    queryFn: () =>
+      selectedReportingCurrency !== "USD"
+        ? listBudgetAllocations(budgetPeriodKey, { limit: 300, currency: selectedReportingCurrency })
+        : listBudgetAllocations(budgetPeriodKey, { limit: 300 }),
+    enabled: /^\d{4}-(0[1-9]|1[0-2])$/.test(budgetPeriodKey.trim()),
   });
 
   const totalBudgeted = useMemo(() => {
@@ -327,7 +374,9 @@ export default function FinanceOS() {
       toast({ title: "Budget updated" });
       setBudgetCategory("");
       setBudgetAmount("");
-      await allocationsQuery.refetch();
+      // Envelopes carry planned/remaining; without a refetch they keep planned=0 and
+      // the table shows the whole spend as "over" until a full reload.
+      await Promise.allSettled([allocationsQuery.refetch(), envelopesQuery.refetch()]);
     },
     onError: (error: any) => {
       toast({
@@ -406,11 +455,14 @@ export default function FinanceOS() {
   });
 
   const periodKeyNormalized = budgetPeriodKey.trim();
-  const periodKeyValid = useMemo(() => /^\d{4}-\d{2}$/.test(periodKeyNormalized), [periodKeyNormalized]);
+  const periodKeyValid = useMemo(() => /^\d{4}-(0[1-9]|1[0-2])$/.test(periodKeyNormalized), [periodKeyNormalized]);
 
   const envelopesQuery = useQuery({
-    queryKey: ["v1/finance/budgets/envelopes", periodKeyNormalized],
-    queryFn: () => getBudgetEnvelopes(periodKeyNormalized),
+    queryKey: ["v1/finance/budgets/envelopes", periodKeyNormalized, selectedReportingCurrency],
+    queryFn: () =>
+      selectedReportingCurrency !== "USD"
+        ? getBudgetEnvelopes(periodKeyNormalized, selectedReportingCurrency)
+        : getBudgetEnvelopes(periodKeyNormalized),
     enabled: periodKeyValid,
   });
 
@@ -430,12 +482,13 @@ export default function FinanceOS() {
   const [forecastMonths, setForecastMonths] = useState("3");
 
   const forecastQuery = useQuery({
-    queryKey: ["v1/finance/forecast", periodKeyNormalized, forecastMonths],
+    queryKey: ["v1/finance/forecast", periodKeyNormalized, forecastMonths, selectedReportingCurrency],
     queryFn: () =>
       getForecast({
         period_key: periodKeyNormalized,
         months: Number(forecastMonths) || undefined,
         top_categories: 8,
+        currency: selectedReportingCurrency !== "USD" ? selectedReportingCurrency : undefined,
       }),
     enabled: periodKeyValid,
   });
@@ -462,7 +515,15 @@ export default function FinanceOS() {
 
   const [isSmartSuggestionsOpen, setIsSmartSuggestionsOpen] = useState(false);
   const [smartSuggestionBuffer, setSmartSuggestionBuffer] = useState<number>(10);
-  const [selectedSmartCats, setSelectedSmartCats] = useState<string[]>([]);
+  const [selectedSmartCats, setSelectedSmartCats] = useState<string[] | null>(null);
+  const [isApplyingSmartSuggestions, setIsApplyingSmartSuggestions] = useState(false);
+  // Recommendations must use the API's native currency, independently of the
+  // display-only FX selector and the manual allocation form's currency.
+  const recommendationHistoryQuery = useQuery({
+    queryKey: ["v1/finance/forecast", budgetPeriodKey, forecastMonths, "native-budget-history"],
+    queryFn: () => getForecast({ period_key: budgetPeriodKey, months: Number(forecastMonths) || undefined, top_categories: 8 }),
+    enabled: isSmartSuggestionsOpen && periodKeyValid,
+  });
 
   const prevPeriodKey = useMemo(() => shiftPeriodKey(budgetPeriodKey, -1), [budgetPeriodKey]);
   const prevAllocationsQuery = useQuery({
@@ -481,61 +542,25 @@ export default function FinanceOS() {
     const list: Array<{ category: string; historicalMonthlyAvg: number; suggestedCap: number; isUnbudgeted: boolean }> = [];
     const existing = new Set((allocationsQuery.data?.allocations || []).map((a) => a.category.toLowerCase()));
 
-    if (forecastQuery.data?.top_categories?.length) {
-      for (const cat of forecastQuery.data.top_categories) {
-        const avg = Number(cat.expense_monthly_avg || 0);
-        if (avg > 0) {
+    if (recommendationHistoryQuery.data?.currency && recommendationHistoryQuery.data?.baseline?.transaction_count > 0) {
+      for (const cat of recommendationHistoryQuery.data.top_categories || []) {
+        const avg = Number(cat.expense_monthly_avg);
+        if (Number.isFinite(avg) && avg > 0) {
           list.push({
             category: cat.category,
             historicalMonthlyAvg: avg,
-            suggestedCap: Math.round(avg * (1 + smartSuggestionBuffer / 100)),
+            suggestedCap: Math.round(avg * (1 + smartSuggestionBuffer / 100) * 100) / 100,
             isUnbudgeted: !existing.has(cat.category.toLowerCase()),
           });
         }
       }
-    } else if (envelopesQuery.data?.envelopes?.length) {
-      for (const env of envelopesQuery.data.envelopes) {
-        const spent = Number(env.spent || 0);
-        if (spent > 0) {
-          list.push({
-            category: env.category,
-            historicalMonthlyAvg: spent,
-            suggestedCap: Math.round(spent * (1 + smartSuggestionBuffer / 100)),
-            isUnbudgeted: !existing.has(env.category.toLowerCase()) || env.unbudgeted,
-          });
-        }
-      }
-    }
-
-    if (list.length === 0) {
-      const defaultCaps: Record<string, number> = {
-        Housing: 1500,
-        Groceries: 500,
-        "Food & Dining": 350,
-        Transportation: 250,
-        Utilities: 200,
-        Entertainment: 150,
-        Healthcare: 150,
-        Investments: 400,
-      };
-      for (const [cat, baseAmount] of Object.entries(defaultCaps)) {
-        list.push({
-          category: cat,
-          historicalMonthlyAvg: baseAmount,
-          suggestedCap: Math.round(baseAmount * (1 + smartSuggestionBuffer / 100)),
-          isUnbudgeted: !existing.has(cat.toLowerCase()),
-        });
-      }
     }
 
     return list;
-  }, [forecastQuery.data, envelopesQuery.data, allocationsQuery.data, smartSuggestionBuffer]);
+  }, [recommendationHistoryQuery.data, allocationsQuery.data, smartSuggestionBuffer]);
 
-  useEffect(() => {
-    if (isSmartSuggestionsOpen && smartRecommendations.length > 0) {
-      setSelectedSmartCats(smartRecommendations.map((r) => r.category));
-    }
-  }, [isSmartSuggestionsOpen, smartRecommendations]);
+  const smartCategoriesSelected = selectedSmartCats ?? smartRecommendations.map((r) => r.category);
+  const smartHistoryUnavailable = recommendationHistoryQuery.isError || recommendationHistoryQuery.isFetching || !periodKeyValid;
 
   const handleExecuteRollForward = async () => {
     const allocationsToCopy = (prevAllocationsQuery.data?.allocations || []).filter((a) =>
@@ -549,7 +574,8 @@ export default function FinanceOS() {
         allocationsToCopy.map((alloc) =>
           upsertBudgetAllocation(budgetPeriodKey, {
             category: alloc.category,
-            amount: Math.round(Number(alloc.amount) * mult),
+            // Keep cents: rounding to whole units silently changed e.g. 350.75 -> 351.
+            amount: Math.round(Number(alloc.amount) * mult * 100) / 100,
             currency: alloc.currency || budgetCurrency || orgCurrency,
           })
         )
@@ -567,28 +593,31 @@ export default function FinanceOS() {
   };
 
   const handleApplySmartSuggestions = async () => {
-    const recsToApply = smartRecommendations.filter((r) => selectedSmartCats.includes(r.category));
-    if (recsToApply.length === 0) return;
+    const recsToApply = smartRecommendations.filter((r) => smartCategoriesSelected.includes(r.category));
+    if (recsToApply.length === 0 || smartHistoryUnavailable || isApplyingSmartSuggestions) return;
 
+    setIsApplyingSmartSuggestions(true);
     try {
       await Promise.all(
         recsToApply.map((r) =>
           upsertBudgetAllocation(budgetPeriodKey, {
             category: r.category,
             amount: r.suggestedCap,
-            currency: budgetCurrency || orgCurrency,
+            currency: recommendationHistoryQuery.data!.currency,
           })
         )
       );
       toast({
         title: "Recommended Caps Applied",
-        description: `Set spending caps for ${recsToApply.length} categories in ${budgetPeriodKey}.`,
+        description: `Set spending caps for ${recsToApply.length} ${recsToApply.length === 1 ? "category" : "categories"} in ${budgetPeriodKey}.`,
       });
       setIsSmartSuggestionsOpen(false);
       await Promise.allSettled([allocationsQuery.refetch(), envelopesQuery.refetch()]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to apply recommended budget caps.";
       toast({ title: "Apply Failed", description: msg, variant: "destructive" });
+    } finally {
+      setIsApplyingSmartSuggestions(false);
     }
   };
 
@@ -621,7 +650,8 @@ export default function FinanceOS() {
     const category = budgetCategory.trim();
     const amount = Number(budgetAmount);
     if (!category) return;
-    if (!Number.isFinite(amount) || amount < 0) {
+    // Number("") is 0, so an empty amount would silently save a zero budget.
+    if (!budgetAmount.trim() || !Number.isFinite(amount) || amount < 0) {
       toast({ title: "Invalid amount", description: "Amount must be a non-negative number.", variant: "destructive" });
       return;
     }
@@ -644,6 +674,10 @@ export default function FinanceOS() {
     }
     if (amountMax !== undefined && (!Number.isFinite(amountMax) || amountMax < 0)) {
       toast({ title: "Invalid max amount", variant: "destructive" });
+      return;
+    }
+    if (amountMin !== undefined && amountMax !== undefined && amountMin > amountMax) {
+      toast({ title: "Invalid amount range", description: "Amount min must not exceed amount max.", variant: "destructive" });
       return;
     }
 
@@ -673,6 +707,7 @@ export default function FinanceOS() {
           <TabsTrigger value="budgets">Budgets</TabsTrigger>
           <TabsTrigger value="insights">Insights</TabsTrigger>
           <TabsTrigger value="recurring">Recurring</TabsTrigger>
+          <TabsTrigger value="voice" className="text-indigo-400 font-semibold">🎙️ Bharat Voice AI</TabsTrigger>
         </TabsList>
 
         <TabsContent value="accounts" className="mt-4">
@@ -902,7 +937,7 @@ export default function FinanceOS() {
                     size="sm"
                     variant="secondary"
                     className="h-8 text-xs gap-1.5"
-                    onClick={() => { setSelectedSmartCats(smartRecommendations.map((r) => r.category)); setIsSmartSuggestionsOpen(true); }}
+                    onClick={() => { setSelectedSmartCats(null); setIsSmartSuggestionsOpen(true); }}
                     data-testid="auto-budget-suggest-btn"
                     disabled={!canAdmin}
                   >
@@ -1019,23 +1054,91 @@ export default function FinanceOS() {
                 </div>
               </div>
 
+              {/* Multi-Currency FX Normalization Toolbar */}
+              <div
+                className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border border-primary/20 bg-primary/5 shadow-xs"
+                data-testid="card-envelope-currency-normalization"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-primary" />
+                    Currency Normalization:
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {SUPPORTED_CURRENCIES.map((curr) => {
+                      const isActive = selectedReportingCurrency === curr;
+                      return (
+                        <button
+                          key={curr}
+                          type="button"
+                          onClick={() => setSelectedReportingCurrency(curr)}
+                          data-testid={`btn-budget-currency-${curr}`}
+                          className={`text-xs px-2.5 py-1 rounded-md font-medium transition-all ${
+                            isActive
+                              ? "bg-primary text-primary-foreground shadow-xs"
+                              : "bg-background/80 hover:bg-background text-muted-foreground hover:text-foreground border border-border/60"
+                          }`}
+                        >
+                          {curr}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <select
+                    aria-label="Budget Reporting Currency"
+                    data-testid="select-budget-currency"
+                    value={selectedReportingCurrency}
+                    onChange={(e) => setSelectedReportingCurrency(e.target.value as SupportedCurrency)}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground ml-1"
+                  >
+                    {SUPPORTED_CURRENCIES.map((curr) => (
+                      <option key={curr} value={curr}>
+                        {CURRENCY_LABELS[curr]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className="text-xs font-semibold bg-background/90"
+                    data-testid="badge-budget-reporting-currency"
+                  >
+                    Reporting: {selectedReportingCurrency} ({CURRENCY_SYMBOLS[selectedReportingCurrency]})
+                  </Badge>
+                  {selectedReportingCurrency !== "USD" && (
+                    <Badge
+                      variant="secondary"
+                      className="text-xs font-mono"
+                      data-testid="badge-envelope-fx-rate"
+                    >
+                      1 USD = {FX_RATES_TO_USD[selectedReportingCurrency]} {selectedReportingCurrency}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
               {/* Budget Totals and Spend Adherence */}
               <div className="flex flex-wrap items-center justify-between gap-4 p-3 rounded-lg border border-border/60 bg-muted/10">
                 <div className="text-sm text-muted-foreground">
-                  Total budgeted: {totalBudgeted.toFixed(2)} {budgetCurrency || orgCurrency}
+                  Total budgeted: {totalBudgeted.toFixed(2)} {selectedReportingCurrency || budgetCurrency || orgCurrency}
                 </div>
                 {envelopesQuery.data?.totals && (
                   <div className="flex items-center gap-4 text-xs">
                     <div>
                       <span className="text-muted-foreground">Spent to date:</span>{" "}
-                      <strong className="text-foreground">
-                        {Number(envelopesQuery.data.totals.spent || 0).toFixed(2)} {budgetCurrency || orgCurrency}
+                      <strong className="text-foreground" data-testid="text-budget-spent">
+                        {Number(envelopesQuery.data.totals.spent || 0).toFixed(2)} {selectedReportingCurrency || budgetCurrency || orgCurrency}
                       </strong>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Remaining:</span>{" "}
-                      <strong className={Number(envelopesQuery.data.totals.remaining || 0) < 0 ? "text-destructive font-bold" : "text-emerald-600 dark:text-emerald-400 font-medium"}>
-                        {Number(envelopesQuery.data.totals.remaining || 0).toFixed(2)} {budgetCurrency || orgCurrency}
+                      <strong
+                        data-testid="text-budget-remaining"
+                        className={Number(envelopesQuery.data.totals.remaining || 0) < 0 ? "text-destructive font-bold" : "text-emerald-600 dark:text-emerald-400 font-medium"}
+                      >
+                        {Number(envelopesQuery.data.totals.remaining || 0).toFixed(2)} {selectedReportingCurrency || budgetCurrency || orgCurrency}
                       </strong>
                     </div>
                   </div>
@@ -1695,6 +1798,10 @@ export default function FinanceOS() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="voice" className="mt-4">
+          <BharatVoiceAssistant />
+        </TabsContent>
       </Tabs>
       {/* Roll Forward Dialog */}
       <Dialog open={isRollForwardOpen} onOpenChange={setIsRollForwardOpen}>
@@ -1756,7 +1863,7 @@ export default function FinanceOS() {
                   {prevAllocationsQuery.data.allocations.map((alloc) => {
                     const isChecked = selectedRollForwardCats.includes(alloc.category);
                     const mult = Number(rollForwardMultiplier) || 1.0;
-                    const adjusted = Math.round(Number(alloc.amount) * mult);
+                    const adjusted = Math.round(Number(alloc.amount) * mult * 100) / 100;
 
                     return (
                       <div
@@ -1812,7 +1919,10 @@ export default function FinanceOS() {
       </Dialog>
 
       {/* Smart Recommendations Dialog */}
-      <Dialog open={isSmartSuggestionsOpen} onOpenChange={setIsSmartSuggestionsOpen}>
+      <Dialog open={isSmartSuggestionsOpen} onOpenChange={(open) => {
+        setIsSmartSuggestionsOpen(open);
+        if (!open) setSelectedSmartCats(null);
+      }}>
         <DialogContent className="sm:max-w-lg" data-testid="dialog-smart-budget-suggestions">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1820,17 +1930,17 @@ export default function FinanceOS() {
               Smart Budget Recommendations
             </DialogTitle>
             <DialogDescription>
-              AI & history-based spending caps calculated from actual expenditure patterns.
+              Review limits based on your recorded spending, with a buffer you choose. These are estimates, not AI-generated financial advice.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label className="text-xs">Safety Buffer</Label>
-              <div className="flex gap-2">
+              <Label className="text-xs">Spending buffer</Label>
+              <div className="flex flex-wrap gap-2">
                 {[
                   { label: "+5% Buffer", val: 5 },
-                  { label: "+10% (Recommended)", val: 10 },
+                  { label: "+10% Buffer", val: 10 },
                   { label: "+15% Buffer", val: 15 },
                 ].map((buf) => (
                   <Button
@@ -1840,6 +1950,8 @@ export default function FinanceOS() {
                     variant={smartSuggestionBuffer === buf.val ? "default" : "outline"}
                     className="text-xs flex-1 h-8"
                     onClick={() => setSmartSuggestionBuffer(buf.val)}
+                    aria-pressed={smartSuggestionBuffer === buf.val}
+                    disabled={isApplyingSmartSuggestions}
                   >
                     {buf.label}
                   </Button>
@@ -1847,37 +1959,59 @@ export default function FinanceOS() {
               </div>
             </div>
 
-            <div className="space-y-2">
+            {recommendationHistoryQuery.isFetching ? (
+              <p role="status" className="text-sm text-muted-foreground">Loading your spending history…</p>
+            ) : recommendationHistoryQuery.isError ? (
+              <div role="alert" className="space-y-2 text-sm">
+                <p>Could not load your spending history. No recommendations can be applied.</p>
+                <Button variant="outline" size="sm" onClick={() => recommendationHistoryQuery.refetch()}>Retry spending history</Button>
+              </div>
+            ) : smartRecommendations.length === 0 ? (
+              <div className="space-y-2 text-sm" data-testid="smart-budget-no-history">
+                <p>No recorded spending is available for recommendations.</p>
+                <p className="text-muted-foreground">Add or import transactions, or set a budget manually using your own amounts.</p>
+                <Button variant="outline" size="sm" onClick={() => setIsSmartSuggestionsOpen(false)}>Set a budget manually</Button>
+              </div>
+            ) : <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Recorded monthly averages over {recommendationHistoryQuery.data?.baseline.days_covered} days in {recommendationHistoryQuery.data?.currency}. Limited history may understate your needs. Applying a cap replaces that category’s existing allocation.
+              </p>
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>Suggested spending limits for {budgetPeriodKey}:</span>
                 <button
                   type="button"
                   onClick={() => {
-                    if (selectedSmartCats.length === smartRecommendations.length) {
+                    if (smartCategoriesSelected.length === smartRecommendations.length) {
                       setSelectedSmartCats([]);
                     } else {
                       setSelectedSmartCats(smartRecommendations.map((r) => r.category));
                     }
                   }}
                   className="text-primary hover:underline"
+                  disabled={isApplyingSmartSuggestions}
                 >
-                  {selectedSmartCats.length === smartRecommendations.length ? "Deselect All" : "Select All"}
+                  {smartCategoriesSelected.length === smartRecommendations.length ? "Deselect All" : "Select All"}
                 </button>
               </div>
 
               <div className="max-h-56 overflow-y-auto space-y-1.5 border rounded-md p-2">
                 {smartRecommendations.map((rec) => {
-                  const isChecked = selectedSmartCats.includes(rec.category);
+                  const isChecked = smartCategoriesSelected.includes(rec.category);
 
                   return (
-                    <div
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={isChecked}
+                      aria-label={`Apply ${rec.category} cap`}
+                      disabled={isApplyingSmartSuggestions}
                       key={rec.category}
-                      className="flex items-center justify-between p-1.5 rounded hover:bg-muted/30 cursor-pointer text-xs"
+                      className="flex w-full flex-wrap gap-2 items-center justify-between p-2 rounded hover:bg-muted/30 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={() => {
                         if (isChecked) {
-                          setSelectedSmartCats(selectedSmartCats.filter((c) => c !== rec.category));
+                          setSelectedSmartCats(smartCategoriesSelected.filter((c) => c !== rec.category));
                         } else {
-                          setSelectedSmartCats([...selectedSmartCats, rec.category]);
+                          setSelectedSmartCats([...smartCategoriesSelected, rec.category]);
                         }
                       }}
                     >
@@ -1897,26 +2031,26 @@ export default function FinanceOS() {
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <span>Avg: {rec.historicalMonthlyAvg.toFixed(2)}</span>
                         <ArrowRight className="w-3 h-3" />
-                        <strong className="text-foreground">{rec.suggestedCap.toFixed(2)} {orgCurrency}</strong>
+                        <strong className="text-foreground">{rec.suggestedCap.toFixed(2)} {recommendationHistoryQuery.data?.currency}</strong>
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
-            </div>
+            </div>}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setIsSmartSuggestionsOpen(false)}>
+            <Button variant="outline" size="sm" disabled={isApplyingSmartSuggestions} onClick={() => setIsSmartSuggestionsOpen(false)}>
               Cancel
             </Button>
             <Button
               size="sm"
               onClick={handleApplySmartSuggestions}
-              disabled={selectedSmartCats.length === 0}
+              disabled={smartCategoriesSelected.length === 0 || smartHistoryUnavailable || isApplyingSmartSuggestions}
               data-testid="confirm-apply-smart-suggestions-btn"
             >
-              Apply {selectedSmartCats.length} Recommended Caps
+              {isApplyingSmartSuggestions ? "Applying…" : `Apply ${smartCategoriesSelected.length} Recommended Caps`}
             </Button>
           </DialogFooter>
         </DialogContent>

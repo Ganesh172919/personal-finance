@@ -30,6 +30,8 @@ import type { Response } from "express"; // Express response type
  *
  * Defines the structure of error response options.
  */
+// Defines configuration properties for creating structured error responses.
+// Encapsulates error messages, optional error codes, diagnostic details, and trace IDs.
 type ErrorResponseOptions = {
   message: string; // Error message
   code?: string; // Error code for client-side handling
@@ -37,20 +39,8 @@ type ErrorResponseOptions = {
   requestId?: string; // Request ID for tracing
 };
 
-/**
- * Creates an error response body object.
- *
- * This function creates a standardized error response body with:
- * - success: false
- * - message: Error message
- * - data: null
- * - code: Optional error code
- * - details: Optional error details
- * - request_id: Optional request ID
- *
- * @param {ErrorResponseOptions} options - Error response options
- * @returns {object} Error response body
- */
+// Constructs a standardized JSON error response body structure.
+// Injects false success status, null data payload, and optional tracking identifiers.
 export const createErrorResponseBody = ({
   message,
   code,
@@ -67,17 +57,8 @@ export const createErrorResponseBody = ({
   };
 };
 
-/**
- * Sends an error response.
- *
- * This function sends a standardized error response with the specified
- * status code and error body.
- *
- * @param {Response} res - Express response object
- * @param {number} statusCode - HTTP status code
- * @param {ErrorResponseOptions} options - Error response options
- * @returns {Response} Express response object
- */
+// Dispatches an HTTP error response using the specified status code and formatted payload.
+// Serializes the generated error body and transmits it to the calling HTTP client.
 export const sendErrorResponse = (
   res: Response,
   statusCode: number,

@@ -1146,6 +1146,104 @@ mindmap
 
 ---
 
+---
+
+## 15. Advanced AI Core Engineering (KeyPool, Catalog, Health & Resumable Sessions)
+
+### 15.1 Multi-Key Provider KeyPool & Circuit Breaking (`utils/key_pool.py`)
+
+To eliminate rate limit disruption (HTTP 429), the `KeyPool` module manages thread-safe pools of API keys per provider:
+
+```python
+# Key Selection & Circuit Breaker Logic in server/AI_Core/utils/key_pool.py
+class KeyPool:
+    def get_healthy_key(self, strategy: str = "health_weighted") -> Optional[str]:
+        with self._lock:
+            # 1. Filter out keys currently on cooldown or in OPEN circuit state
+            healthy_keys = [k for k in self.keys if k.is_available()]
+            if not healthy_keys:
+                return None
+
+            if strategy == "round_robin":
+                key = healthy_keys[self._rr_index % len(healthy_keys)]
+                self._rr_index += 1
+                return key.key
+            elif strategy == "least_used":
+                best = min(healthy_keys, key=lambda k: k.total_requests)
+                return best.key
+            elif strategy == "health_weighted":
+                # High success rate and low latency receives highest weight
+                best = max(healthy_keys, key=lambda k: k.success_rate / (max(0.1, k.avg_latency_ms)))
+                return best.key
+            return healthy_keys[0].key
+```
+
+#### Cooldown & Circuit Breaker Policies:
+- **Rate Limit (429):** Puts the specific key into cooldown for **60 seconds**; immediate failover to the next healthy key in the pool.
+- **Authentication Error (403):** Puts the key into cooldown for **1 hour** (3600 seconds).
+- **Circuit Breaker:** After **5 consecutive failures**, the key transitions to `OPEN` state and is excluded from rotation for **5 minutes**. After the recovery period, it allows one `HALF-OPEN` probe request to verify service restoration.
+
+---
+
+### 15.2 Universal Model Catalog (`utils/model_catalog.py`)
+
+The Universal Model Catalog dynamically reads `data/model_catalog.json` to resolve model metadata, context window constraints, pricing, and modality capabilities across all major 2026 foundation models:
+
+| Provider | Model Identifier | Context Window | Modalities | Best Suited For |
+| :--- | :--- | :--- | :--- | :--- |
+| **Google** | `gemini-2.5-pro` / `gemini-2.0-flash` | 1,000,000 tokens | Text, Vision, Function | Primary reasoning, multi-page document RAG |
+| **Groq** | `llama-3.3-70b-versatile` | 128,000 tokens | Text | Sub-second rapid intent routing and plan execution |
+| **OpenRouter**| `deepseek/deepseek-chat-v3` | 64,000 tokens | Text | Deep financial math & cost-effective specialist analysis |
+| **Anthropic** | `claude-3-5-sonnet-20241022` | 200,000 tokens | Text, Vision | High-stakes synthesis & portfolio risk audit |
+| **Ollama** | `llama3.2:latest` | 32,000 tokens | Text | 100% offline local privacy fallback |
+
+---
+
+### 15.3 Real-Time Model Health Tracking (`utils/model_health.py`)
+
+The `ModelHealthTracker` monitors active provider endpoints via non-blocking background probes:
+- Computes rolling $P_{50}$, $P_{95}$, and $P_{99}$ request latencies.
+- Tracks error percentages over 10-minute sliding windows.
+- Automatically demotes providers to secondary fallback status if the error rate exceeds **15%**.
+
+---
+
+### 15.4 Session Lifecycle & Resumable Checkpointing (`utils/session_manager.py`)
+
+Long-running multi-agent workflows are checkpointed at each distinct execution phase in an SQLite database:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 💾 LANGGRAPH MULTI-PHASE CHECKPOINT LIFECYCLE (session_manager.py)                              │
+├─────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                 │
+│  Phase 1: ROUTING Node ─────► save_checkpoint(session_id, Phase.ROUTING, state)                 │
+│                                    │                                                            │
+│  Phase 2: PLANNING Node ────► save_checkpoint(session_id, Phase.PLANNING, state)                │
+│                                    │                                                            │
+│  Phase 3: EXECUTION Node ───► save_checkpoint(session_id, Phase.EXECUTION, state)               │
+│                                    │                                                            │
+│  Phase 4: VERIFICATION ─────► save_checkpoint(session_id, Phase.VERIFICATION, state)            │
+│                                    │                                                            │
+│  Phase 5: SYNTHESIS ────────► save_checkpoint(session_id, Phase.SYNTHESIS, state)               │
+│                                                                                                 │
+│  Crash or Pause Event?                                                                          │
+│  POST /api/v1/ai-core/ai/sessions/:id/resume ──► Replays state from the latest verified phase   │
+│                                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 15.5 Evaluation Harness & Mathematical Invariants (`evals/`)
+
+The evaluation suite (`server/AI_Core/evals/`) comprises **175 continuous invariant tests**:
+- **Zero-Hallucination Invariant:** Verifies that candidate monetary values in LLM narrative output match the deterministic ledger input ($cand \subseteq ref$).
+- **Zero-Sum Budget Rebalancing:** Asserts that recommended envelope adjustments balance to exactly zero: $\sum \Delta B_i = 0$.
+- **Latency SLAs:** Validates that routing and deterministic planning complete in $< 1.5$ seconds.
+
+---
+
 ## Production Implementation Blueprints
 
 ### 1. Kahn's Topological Subtask Scheduler (`server/AI_Core/agents/sub_agent_manager.py`)

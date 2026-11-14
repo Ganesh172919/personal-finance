@@ -2,6 +2,9 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+// Responsive tabular data container with horizontal scroll overflow wrapper.
+// Sets full width, small typography, and bottom-positioned table caption styling.
+// Forwards DOM references to the underlying native HTML table element.
 const Table = React.forwardRef<
   HTMLTableElement,
   React.HTMLAttributes<HTMLTableElement>
@@ -16,6 +19,9 @@ const Table = React.forwardRef<
 ));
 Table.displayName = "Table";
 
+// Table header section element grouping column header definition rows.
+// Applies bottom border styling across contained table header rows.
+// Forwards DOM references to the underlying thead element.
 const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
@@ -24,6 +30,9 @@ const TableHeader = React.forwardRef<
 ));
 TableHeader.displayName = "TableHeader";
 
+// Table body container element holding data rows in the table.
+// Clears bottom border on final row to ensure clean table framing.
+// Forwards DOM references to the underlying tbody element.
 const TableBody = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
@@ -36,6 +45,9 @@ const TableBody = React.forwardRef<
 ));
 TableBody.displayName = "TableBody";
 
+// Table footer section element summarizing data columns or totals.
+// Applies subtle muted background color and top border line.
+// Forwards DOM references to the underlying tfoot element.
 const TableFooter = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
@@ -51,6 +63,9 @@ const TableFooter = React.forwardRef<
 ));
 TableFooter.displayName = "TableFooter";
 
+// Table row element rendering a single horizontal data record or header line.
+// Applies bottom border lines, hover highlights, and selected state colors.
+// Forwards DOM references to the underlying native tr table row element.
 const TableRow = React.forwardRef<
   HTMLTableRowElement,
   React.HTMLAttributes<HTMLTableRowElement>
@@ -66,6 +81,9 @@ const TableRow = React.forwardRef<
 ));
 TableRow.displayName = "TableRow";
 
+// Column header cell component establishing label and sorting orientation.
+// Applies medium font weight, vertical centering, and muted foreground color.
+// Forwards DOM references to the underlying native th element.
 const TableHead = React.forwardRef<
   HTMLTableCellElement,
   React.ThHTMLAttributes<HTMLTableCellElement>
@@ -81,6 +99,9 @@ const TableHead = React.forwardRef<
 ));
 TableHead.displayName = "TableHead";
 
+// Standard tabular data cell component displaying individual cell contents.
+// Configures consistent padding and vertical alignment across table rows.
+// Forwards DOM references to the underlying native td element.
 const TableCell = React.forwardRef<
   HTMLTableCellElement,
   React.TdHTMLAttributes<HTMLTableCellElement>
@@ -93,6 +114,9 @@ const TableCell = React.forwardRef<
 ));
 TableCell.displayName = "TableCell";
 
+// Explanatory title or descriptive summary rendered beneath a table.
+// Formats muted small typography providing context for assistive technologies.
+// Forwards DOM references to the underlying native caption element.
 const TableCaption = React.forwardRef<
   HTMLTableCaptionElement,
   React.HTMLAttributes<HTMLTableCaptionElement>

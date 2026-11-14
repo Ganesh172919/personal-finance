@@ -121,6 +121,7 @@ from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from registry import get_prompt, record_verification, render_prompt
 from tools import PlanInputs, build_plan, render_plan_markdown
 from utils import create_llm
 from utils.agent_helpers import get_currency_code
@@ -128,6 +129,9 @@ from utils.agent_helpers import get_currency_code
 logger = logging.getLogger(__name__)
 
 
+# Synthesizes distributed sub-agent results into a cohesive financial strategy.
+# Reconciles cross-domain recommendations from budget, debt, and investment agents.
+# Validates narrative consistency against underlying mathematical calculations.
 class AggregatorAgent:
     """Merges sub-agent results into a unified financial plan.
 
@@ -136,22 +140,37 @@ class AggregatorAgent:
     shape that ``MasterFinancialStrategistAgent.synthesize_plan()`` returns.
     """
 
+    # Initializes aggregator agent with configured LLM instance and prompt overrides.
+    # Connects to master strategy model with fallback provider resilience.
+    # Maintains prompt override reference for testing and dynamic tuning.
     def __init__(self):
         self.llm = create_llm("master")
 
-        self.system_prompt = SystemMessage(
-            content=(
-                "You are a financial plan synthesizer. "
-                "Combine multiple specialist analyses into a clear, actionable plan. "
-                "Be concise, practical, and specific. "
-                "Do NOT introduce any new numbers or change existing values."
-            )
-        )
+        # Resolved through the artifact registry at call time (baked-in default
+        # when empty); assigning ``system_prompt`` overrides it.
+        self._system_prompt_override: Optional[SystemMessage] = None
+
+    # Resolves active system prompt from artifact registry or explicit overrides.
+    # Enforces aggregator role guidelines and factual numerical synthesis constraints.
+    # Yields LangChain SystemMessage instance for model invocation calls.
+    @property
+    def system_prompt(self) -> SystemMessage:
+        override = getattr(self, "_system_prompt_override", None)
+        if override is not None:
+            return override
+        return SystemMessage(content=get_prompt("aggregator.system"))
+
+    @system_prompt.setter
+    def system_prompt(self, value: SystemMessage) -> None:
+        self._system_prompt_override = value
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
+    # Merges individual sub-agent recommendations into a complete financial action plan.
+    # Normalizes diverse agent payloads, computes deterministic plan models, and polishes prose.
+    # Returns standardized plan dictionary matching MasterFinancialStrategistAgent contracts.
     def aggregate(
         self,
         sub_agent_results: Dict[str, Any],
@@ -229,6 +248,9 @@ class AggregatorAgent:
     # Result normalisation
     # ------------------------------------------------------------------
 
+    # Normalizes sub-agent dictionary keys into canonical analysis categories.
+    # Maps task-keyed results to budget_plan, income_analysis, and debt_optimization.
+    # Ensures compatibility with input specifications expected by build_plan.
     def _normalise_results(self, sub_agent_results: Dict[str, Any]) -> Dict[str, Any]:
         """Map subtask_id-keyed results to analysis-type-keyed results.
 
@@ -275,6 +297,9 @@ class AggregatorAgent:
     # LLM narrative polish (same pattern as master agent)
     # ------------------------------------------------------------------
 
+    # Polishes deterministic markdown text using LLM narrative generation.
+    # Preserves numerical facts strictly by rejecting hallucinations via canary guards.
+    # Returns polished markdown and fallback flag indicating whether raw text was used.
     def _polish_with_llm(self, deterministic_markdown: str, context: Optional[Dict[str, Any]]) -> tuple:
         """Ask the LLM to improve prose without changing numbers.
 
@@ -286,20 +311,12 @@ class AggregatorAgent:
             session_summary = str(context.get("session_summary") or "")
             history = context.get("conversation_history") if isinstance(context.get("conversation_history"), list) else []
 
-        prompt = f"""Rewrite the following financial plan for clarity and readability.
-
-Rules (critical):
-- Do NOT introduce any new numbers. Keep every numeric value exactly as provided.
-- Do NOT change currency/percent values or add extra numeric examples.
-- Keep the same structure and meaning; you may improve wording and formatting only.
-
-Optional chat context (for relevance; do not add new facts):
-Session summary: {session_summary[:800]}
-Recent messages: {history[-6:]}
-
-PLAN (do not change numbers):
-{deterministic_markdown}
-"""
+        prompt = render_prompt(
+            get_prompt("aggregator.polish"),
+            session_summary=session_summary[:800],
+            recent_messages=history[-6:],
+            plan=deterministic_markdown,
+        )
 
         llm_response, llm_fallback_used = self.llm.invoke_with_fallback(
             [self.system_prompt, HumanMessage(content=prompt)],
@@ -309,30 +326,58 @@ PLAN (do not change numbers):
         candidate = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
         candidate = candidate.strip() + "\n"
 
-        if llm_fallback_used or not self._numbers_are_subset(candidate, deterministic_markdown):
+        guard_ok = (not llm_fallback_used) and self._numbers_are_subset(candidate, deterministic_markdown)
+        if not llm_fallback_used:
+            record_verification(guard_ok)
+        if not guard_ok:
             if not llm_fallback_used:
                 logger.warning("Aggregator: LLM introduced new numbers; using deterministic version.")
             return deterministic_markdown, True
 
         return candidate, False
 
+    # Verifies that every number mentioned in generated prose exists in source reference.
+    # Dispatches checks to production canary telemetry engine to record validation results.
+    # Reverts to helper regex parsing if canary telemetry throws exceptions.
     def _numbers_are_subset(self, candidate: str, reference: str) -> bool:
-        """Check that every number in candidate already exists in reference."""
-        from utils.agent_helpers import numbers_are_subset
-        return numbers_are_subset(candidate, reference)
+        """Check that every number in candidate already exists in reference.
+
+        Also records the verification event into continuous production canary telemetry.
+        """
+        try:
+            from evals.canary_validator import production_canary_engine
+            check = production_canary_engine.evaluate_candidate_narrative(
+                candidate=candidate,
+                reference=reference,
+                source="aggregator_synthesis",
+            )
+            return check.passed
+        except Exception as exc:
+            logger.debug("Canary validation fallback to direct agent_helpers: %s", exc)
+            from utils.agent_helpers import numbers_are_subset
+            return numbers_are_subset(candidate, reference)
 
     # ------------------------------------------------------------------
     # Metadata helpers (delegated to shared agent_helpers)
     # ------------------------------------------------------------------
 
+    # Infers primary financial action type from aggregated sub-agent analyses.
+    # Delegates classification to shared agent helper routines.
+    # Returns action identifier such as budget_rebalance or debt_payoff.
     def _determine_action_type(self, analyses: Dict[str, Any]) -> str:
         from utils.agent_helpers import determine_action_type
         return determine_action_type(analyses)
 
+    # Evaluates composite urgency priority for the aggregated financial plan.
+    # Considers debt interest rates, emergency fund coverage, and income buffers.
+    # Returns standardized priority tier (high, medium, or low).
     def _determine_priority(self, analyses: Dict[str, Any], user_profile: Dict[str, Any]) -> str:
         from utils.agent_helpers import determine_priority
         return determine_priority(analyses, user_profile)
 
+    # Extracts actionable key insight bullet points from aggregated analyses.
+    # Normalizes currency representations according to user profile currency code.
+    # Returns structured list of key insight items for front-end rendering.
     def _extract_key_insights(
         self, analyses: Dict[str, Any], user_profile: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:

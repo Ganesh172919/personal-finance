@@ -22,12 +22,21 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 
 /** Layout modes for route rendering */
-export type AppRouteLayout = "app" | "chat" | "default";
+// Layout presentation mode variant applied to an active route.
+// Supports the full app navigation shell, dedicated chat, or default views.
+// Governs surrounding page containers and responsive sidebar visibility.
+export type AppRouteLayout = "app" | "chat" | "showcase" | "default";
 
 /** Access control levels for routes */
+// Authorization access level classifying route reachability.
+// Dictates whether routes demand authentication, public access, or guest status.
+// Enforced by navigational route guards to prevent unauthorized access.
 export type AppRouteAccess = "protected" | "public" | "public-only";
 
 /** Route definition with access control, layout, and lazy component */
+// Structural specification representing an application route configuration.
+// Associates path patterns with access tiers, layouts, and lazy page components.
+// Utilized by the AppRouter component to construct the application route tree.
 export type AppRouteDefinition = {
   path: string;                    // URL pattern (e.g., "/dashboard", "/chat/:sessionId")
   access: AppRouteAccess;          // Access control level
@@ -36,6 +45,9 @@ export type AppRouteDefinition = {
 };
 
 /** Redirect route definition for legacy URLs */
+// Defines a URL redirection mapping for legacy or alias navigation paths.
+// Captures original incoming paths alongside target destination endpoints.
+// Preserves backwards compatibility during application route migrations.
 export type RedirectRouteDefinition = {
   path: string;        // Old URL path
   redirectTo: string;  // New URL path
@@ -80,6 +92,9 @@ const Settings = lazy(() => import("@/pages/Settings"));
 const Analytics = lazy(() => import("@/pages/Analytics"));
 const FinancialCalendar = lazy(() => import("@/pages/FinancialCalendar"));
 const ActivityFeed = lazy(() => import("@/pages/ActivityFeed"));
+const AiLearning = lazy(() => import("@/pages/AiLearning"));
+const BharatVoicePage = lazy(() => import("@/pages/BharatVoicePage"));
+const SubmissionPage = lazy(() => import("@/pages/SubmissionPage"));
 
 // ── Route Definitions ────────────────────────────────────────────────
 
@@ -92,6 +107,9 @@ const ActivityFeed = lazy(() => import("@/pages/ActivityFeed"));
  * - Core App: /dashboard, /transactions, /finance, etc. (protected, app layout)
  * - Chat: /chat, /chat/:sessionId (protected, chat layout)
  */
+// Master registry containing all application page route configurations.
+// Maps discrete route URLs to code-split components, access guards, and layouts.
+// Iterated by AppRouter to dynamically register declarative wouter routes.
 export const appRoutes: AppRouteDefinition[] = [
   // Authentication routes (public-only: redirect to dashboard if logged in)
   { path: "/login", access: "public-only", component: Login },
@@ -103,8 +121,7 @@ export const appRoutes: AppRouteDefinition[] = [
   { path: "/share/financial-story/:token", access: "public", component: SharedFinancialStory },
 
   // Chat routes (protected, chat layout)
-  { path: "/chat", access: "protected", layout: "chat", component: ChatPage },
-  { path: "/chat/:sessionId", access: "protected", layout: "chat", component: ChatPage },
+  { path: "/chat/:sessionId?", access: "protected", layout: "chat", component: ChatPage },
 
   // Core application routes (protected, app layout with sidebar)
   { path: "/dashboard", access: "protected", layout: "app", component: Dashboard },
@@ -115,6 +132,8 @@ export const appRoutes: AppRouteDefinition[] = [
   { path: "/goals-debts", access: "protected", layout: "app", component: GoalsAndDebts },
   { path: "/transactions", access: "protected", layout: "app", component: Transactions },
   { path: "/finance", access: "protected", layout: "app", component: FinanceOS },
+  { path: "/voice", access: "public", layout: "showcase", component: BharatVoicePage },
+  { path: "/submission", access: "public", layout: "showcase", component: SubmissionPage },
   { path: "/exports", access: "protected", layout: "app", component: Exports },
   { path: "/workflows", access: "protected", layout: "app", component: Workflows },
   { path: "/tasks", access: "protected", layout: "app", component: Tasks },
@@ -133,6 +152,7 @@ export const appRoutes: AppRouteDefinition[] = [
   { path: "/analytics", access: "protected", layout: "app", component: Analytics },
   { path: "/calendar", access: "protected", layout: "app", component: FinancialCalendar },
   { path: "/activity", access: "protected", layout: "app", component: ActivityFeed },
+  { path: "/ai-learning", access: "protected", layout: "app", component: AiLearning },
 ];
 
 // ── Redirect Routes (Legacy URLs) ────────────────────────────────────
@@ -142,6 +162,9 @@ export const appRoutes: AppRouteDefinition[] = [
  * These routes redirect old URLs to their new locations.
  * Useful during URL restructuring to maintain backward compatibility.
  */
+// Table of legacy route paths redirected to current modern application locations.
+// Enables transparent bookmark compatibility and seamless navigation transitions.
+// Processed by AppRouter before evaluating primary application route matches.
 export const redirectRoutes: RedirectRouteDefinition[] = [
   { path: "/app", redirectTo: "/dashboard" },
   { path: "/home", redirectTo: "/dashboard" },
@@ -156,4 +179,7 @@ export const redirectRoutes: RedirectRouteDefinition[] = [
   { path: "/accounts", redirectTo: "/finance?tab=accounts" },
   { path: "/recurring", redirectTo: "/finance?tab=recurring" },
   { path: "/merchants", redirectTo: "/finance?tab=merchants" },
+  { path: "/contest", redirectTo: "/submission" },
+  { path: "/challenge", redirectTo: "/submission" },
+  { path: "/gnani", redirectTo: "/submission" },
 ];

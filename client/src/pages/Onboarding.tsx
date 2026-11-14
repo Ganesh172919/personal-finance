@@ -41,8 +41,14 @@ import {
 } from "@/lib/apiClient";
 import type { IDebt, IFinancialGoal, IFinancialProfile } from "@/types";
 
+// Numeric literal union representing active onboarding wizard steps.
+// Indexes wizard progression from initial basics (0) to review (5).
+// Guides step transitions and progress indicator highlighting.
 type Step = 0 | 1 | 2 | 3 | 4 | 5;
 
+// Ordered configuration array of user onboarding wizard phases.
+// Associates each zero-indexed step with its user-facing label.
+// Renders the horizontal step progress pills across the setup flow.
 const STEPS: Array<{ key: Step; label: string }> = [
   { key: 0, label: "Basics" },
   { key: 1, label: "Income" },
@@ -52,17 +58,26 @@ const STEPS: Array<{ key: Step; label: string }> = [
   { key: 5, label: "Review" },
 ];
 
+// Safely parses a string input into a valid finite numeric value.
+// Returns zero fallback if string conversion yields NaN or infinity.
+// Protects financial calculations against malformed user form inputs.
 const safeNumber = (value: string) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
 };
 
+// Extracts human-readable failure messages and request tracing IDs from errors.
+// Inspects ApiError instances to extract associated backend request IDs.
+// Returns a reliable fallback message when error objects lack details.
 const errorDescription = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
+// State structure for parsing and mapping uploaded transaction CSV files.
+// Holds parsed column headers, raw parsed row records, and field mapping pairs.
+// Bridges external CSV ledger schemas to internal transaction data models.
 type CsvState = {
   fileName: string;
   columns: string[];
@@ -76,6 +91,9 @@ type CsvState = {
   };
 };
 
+// Default blank state for the CSV import file uploader and mapper.
+// Initializes empty arrays and unselected field mappings.
+// Resets file upload state when users clear or replace selected files.
 const emptyCsvState: CsvState = {
   fileName: "",
   columns: [],
@@ -83,6 +101,9 @@ const emptyCsvState: CsvState = {
   mapping: { amount: "", category: "", description: "", date: "", type: "" },
 };
 
+// Automatically maps CSV columns by fuzzy matching against known header candidates.
+// Normalizes column headers to lowercase and performs exact trimmed matches.
+// Returns the first matching column name or empty string if no match is found.
 const pickFirstMatchingColumn = (columns: string[], candidates: string[]) => {
   const normalized = columns.map(col => ({ col, key: col.trim().toLowerCase() }));
   for (const candidate of candidates) {
@@ -93,6 +114,9 @@ const pickFirstMatchingColumn = (columns: string[], candidates: string[]) => {
   return "";
 };
 
+// Renders horizontal step pills showing current progress through onboarding.
+// Highlights active step in primary theme color while past/future remain muted.
+// Provides visual roadmap for new user account and financial configuration.
 function StepIndicator({ step }: { step: Step }) {
   return (
     <div className="flex flex-wrap gap-2 mb-6">
@@ -110,6 +134,9 @@ function StepIndicator({ step }: { step: Step }) {
   );
 }
 
+// Multi-step onboarding wizard for initializing user profile and financial state.
+// Guides users through profile setup, income configuration, goals, debts, and CSV import.
+// Finalizes onboarding status and redirects newly onboarded users to their dashboard.
 export default function Onboarding() {
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();

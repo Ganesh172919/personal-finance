@@ -47,6 +47,8 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
  * @param handler - Async route handler function
  * @returns Express RequestHandler with proper error handling
  */
+// Wraps asynchronous Express route handlers to capture uncaught promise rejections.
+// Forwards caught rejections to Express next() error middleware without unhandled rejections.
 export const asyncRoute = (handler: (req: Request, res: Response, next: NextFunction) => unknown): RequestHandler => {
   return (req, res, next) => {
     // Promise.resolve() handles both sync and async return values

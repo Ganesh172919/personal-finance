@@ -206,6 +206,22 @@ describe("chatStore", () => {
     expect(useChatStore.getState().currentPhase).toBeNull();
   });
 
+  it("keeps only the new assistant reply when regenerating an existing question", async () => {
+    let finish!: (value: Awaited<ReturnType<typeof chatApi.sendMessage>>) => void;
+    vi.mocked(chatApi.sendMessage).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const original = { id: "u1", sessionId: "session-1", role: "user" as const, content: "Question", createdAt: "2026-01-01T00:00:00Z" };
+    const answer = { id: "a1", sessionId: "session-1", role: "assistant" as const, content: "Original", createdAt: "2026-01-01T00:00:01Z" };
+    useChatStore.setState({ currentSessionId: "session-1", messages: [original, answer], sessions: [
+      { id: "session-1", title: "Question", messageCount: 2, createdAt: original.createdAt, lastMessageAt: answer.createdAt },
+    ] });
+    const pending = useChatStore.getState().sendMessage("Question", { regenerateOf: "out1", bypassCache: true });
+    expect(useChatStore.getState().messages.map(message => message.id)).toEqual(["u1", "a1"]);
+    finish({ userMessage: original, assistantMessage: { ...answer, id: "a2", content: "Revised" } });
+    expect(await pending).toBe(true);
+    expect(useChatStore.getState().messages.map(message => message.id)).toEqual(["u1", "a1", "a2"]);
+    expect(useChatStore.getState().sessions[0].messageCount).toBe(3);
+  });
+
   it("prevents duplicate sends while creating the first conversation", async () => {
     const first = useChatStore.getState().sendMessage("Hello");
     const second = useChatStore.getState().sendMessage("Hello");

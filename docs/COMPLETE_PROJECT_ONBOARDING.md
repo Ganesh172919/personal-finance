@@ -1254,3 +1254,33 @@ mindmap
 │    └─► Open http://localhost:5173, create test account, review queue 🟢│
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 6. 2026 Enterprise Distributed Subsystems Architecture Reference
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0284c7', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0369a1', 'lineColor': '#0ea5e9', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((Enterprise Architecture))
+    ML Merchant Intelligence
+      64-D Vector Projection
+      FNV-1a Subword N-Gram Hashing
+      Agglomerative Centroid Linkage (C >= 0.70)
+    Grounded Multi-Modal RAG
+      Form-Feed \f Physical Page Extraction
+      Table Markdown Header Re-injection
+      Dense Semantic + Sparse BM25 Fusion (G >= 0.70)
+    Canary Math Invariants
+      Number Safety: Cand Digits in Ref Digits
+      Zero-Sum Envelopes: Sum dB = 0 and B >= 0
+      Dual-Layer Execution: FastAPI AI Core + Local Fallback
+    Distributed Automation
+      Visual Node Graph Canvas
+      BullMQ Delay Timers (status: DELAYED)
+      60s Resumption Sweeper Loop
+    Global Multi-Currency
+      7 Currency Spot Rate Conversion
+      Dividend Withholding Tax (WHT)
+      Double Tax Avoidance (DTAA) 15% Treaty Relief
+```

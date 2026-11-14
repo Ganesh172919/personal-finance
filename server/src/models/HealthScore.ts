@@ -59,6 +59,9 @@
 
 import mongoose, { Schema, Document, Model } from "mongoose";
 
+// Defines the document structure for historical financial health score snapshots.
+// Stores category score breakdowns across savings, debt, budget, and emergency funds.
+// Tracks calculation periods and overall trajectory indicators for visual dashboards.
 /** Health score document interface */
 export interface IHealthScore extends Document {
   userId: string;
@@ -75,6 +78,9 @@ export interface IHealthScore extends Document {
   computedAt: Date;
 }
 
+// Declares the static method signatures available on the HealthScore model.
+// Provides typed query helpers for fetching current scores and trend trajectories.
+// Includes algorithmic helper methods to determine trend direction across snapshots.
 /** Health score model static methods */
 interface IHealthScoreModel extends Model<IHealthScore> {
   getLatest(userId: string, orgId: string): Promise<IHealthScore | null>;
@@ -82,6 +88,9 @@ interface IHealthScoreModel extends Model<IHealthScore> {
   computeTrend(scores: IHealthScore[]): "improving" | "stable" | "declining";
 }
 
+// Defines the Mongoose schema for persisting user financial health scores over time.
+// Enforces boundary constraints on component scores and validates YYYY-MM period formatting.
+// Automatically manages document creation and modification timestamps on write operations.
 const healthScoreSchema = new Schema<IHealthScore, IHealthScoreModel>(
   {
     userId: {
@@ -126,10 +135,16 @@ const healthScoreSchema = new Schema<IHealthScore, IHealthScoreModel>(
   }
 );
 
+// Configures compound database indexes for rapid user and organization lookups.
+// Enforces unique score records per user and billing period to prevent duplicate entries.
+// Indexes chronological computed dates in descending order to optimize historical lookups.
 // Compound index for efficient queries
 healthScoreSchema.index({ userId: 1, orgId: 1, period: 1 }, { unique: true });
 healthScoreSchema.index({ userId: 1, orgId: 1, computedAt: -1 });
 
+// Retrieves the most recently calculated financial health score record for a user.
+// Filters by tenant identifiers and sorts descending by computation timestamp.
+// Returns the resolved document or null if no historical calculations exist.
 /**
  * Get the most recent health score for a user.
  */
@@ -140,6 +155,9 @@ healthScoreSchema.statics.getLatest = async function (
   return this.findOne({ userId, orgId }).sort({ computedAt: -1 }).exec();
 };
 
+// Queries a chronological series of health score snapshots for trend evaluation.
+// Orders records descending by computation time and limits results to specified months.
+// Supplies the historical data array required for financial trajectory visualization.
 /**
  * Get health score history for trend analysis.
  */
@@ -154,6 +172,9 @@ healthScoreSchema.statics.getTrend = async function (
     .exec();
 };
 
+// Evaluates score progression across recent records to classify directional movement.
+// Compares average point differentials across window segments against a 5-point threshold.
+// Outputs categorical trend classifications of improving, stable, or declining.
 /**
  * Compute trend from a list of scores (most recent first).
  * Uses simple linear regression on the last 3 data points.
@@ -181,6 +202,9 @@ healthScoreSchema.statics.computeTrend = function (
   return "stable";
 };
 
+// Compiles and exports the HealthScore Mongoose model with custom static methods.
+// Exposes data access interfaces for background agents and API dashboard endpoints.
+// Enables persistence and retrieval of multidimensional financial vitals metrics.
 export const HealthScore = mongoose.model<IHealthScore, IHealthScoreModel>(
   "HealthScore",
   healthScoreSchema

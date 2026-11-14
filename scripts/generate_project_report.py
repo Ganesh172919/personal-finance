@@ -1,6 +1,7 @@
-"""Render the reviewed Markdown report as six full, readable A4 pages."""
+"""Render the reviewed Markdown report as full, readable A4 pages."""
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from pathlib import Path
@@ -22,12 +23,18 @@ TOP, BOTTOM = HEIGHT - 74, 48
 BODY_WIDTH = WIDTH - MARGIN * 2
 
 
+# Escapes special characters and normalizes typographic punctuation marks.
+# Replaces smart quotes, en-dashes, and em-dashes with ASCII equivalents.
+# Returns sanitized XML-safe string text for ReportLab PDF rendering.
 def safe(text: str) -> str:
     text = text.replace("\u2014", " - ").replace("\u2013", "-").replace("\u2011", "-")
     text = text.replace("\u2019", "'").replace("\u201c", '"').replace("\u201d", '"')
     return escape(text)
 
 
+# Parses Markdown text lines into formatted ReportLab flowable elements.
+# Constructs structured tables, paragraphs, headers, and spacing elements.
+# Returns a list of layout flowables configured with the requested font size.
 def blocks(markdown: str, size: float):
     body = ParagraphStyle("body", fontName="Helvetica", fontSize=size, leading=size * 1.36,
                           textColor=colors.HexColor("#202b3c"), alignment=TA_LEFT, spaceAfter=8)
@@ -75,16 +82,25 @@ def blocks(markdown: str, size: float):
     return story
 
 
+# Calculates the total vertical height requirement of flowable story elements.
+# Wraps elements across page body width and aggregates margins and spacers.
+# Returns total vertical height in typographic points for page budget checking.
 def measure(story):
     return sum(item.wrap(BODY_WIDTH, 10000)[1] + item.getSpaceBefore() + item.getSpaceAfter() for item in story)
 
 
+# Generates publication-ready A4 PDF project reports from markdown source files.
+# Optimizes typographical scale per page to maintain tight vertical layout budgets.
+# Writes structured PDF output with headers, footers, tables, and pagination.
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, default=OUTPUT, help="Use a separate destination when the previous report is open in a viewer")
+    output = parser.parse_args().output.resolve()
     # Keep incoming planning appendices separate from verified release evidence.
     report = SOURCE.read_text(encoding="utf-8").split("<!-- report-end -->", 1)[0]
     pages = report.split("<!-- page -->")
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    pdf = canvas.Canvas(str(OUTPUT), pagesize=A4)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    pdf = canvas.Canvas(str(output), pagesize=A4)
     pdf.setTitle("Personal Finance Project - Improvement and Test Report")
     pdf.setAuthor("Personal Finance Project")
     metrics = []
@@ -109,7 +125,7 @@ def main():
         pdf.drawString(MARGIN, HEIGHT - 31, "PERSONAL FINANCE PROJECT")
         pdf.setFillColor(colors.HexColor("#526176"))
         pdf.setFont("Helvetica", 9)
-        pdf.drawRightString(WIDTH - MARGIN, HEIGHT - 31, "31 October 2026 | Development report")
+        pdf.drawRightString(WIDTH - MARGIN, HEIGHT - 31, "6 November 2026 | Development report")
         pdf.setStrokeColor(colors.HexColor("#b8c9de"))
         pdf.line(MARGIN, HEIGHT - 43, WIDTH - MARGIN, HEIGHT - 43)
         y = TOP
@@ -128,8 +144,11 @@ def main():
         metrics.append({"page": number, "font_size": size, "body_fill_pct": round(height / (TOP - BOTTOM) * 100, 1)})
         pdf.showPage()
     pdf.save()
-    print(json.dumps({"output": str(OUTPUT), "pages": metrics}, indent=2))
+    print(json.dumps({"output": str(output), "pages": metrics}, indent=2))
 
 
+# Direct script execution entry point for project report PDF generation.
+# Parses command-line destination arguments and executes the build pipeline.
+# Emits JSON metadata summarizing output file paths and page metrics.
 if __name__ == "__main__":
     main()

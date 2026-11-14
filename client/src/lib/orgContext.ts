@@ -22,6 +22,9 @@ import { retireRequestContext } from "./requestContext";
 const STORAGE_KEY = "finwise.active_org_id";
 const CHANGE_EVENT = "finwise:active-org-changed";
 
+// Subscribes listeners to active organization context mutations across tabs and components.
+// Listens for custom same-tab DOM events as well as cross-tab window storage changes.
+// Returns an unbind cleanup function to remove event listeners upon component unmount.
 /** Notify mounted UI immediately when same-tab API organization context changes. */
 export const subscribeActiveOrgId = (listener: () => void) => {
   if (typeof window === "undefined") return () => undefined;
@@ -33,6 +36,9 @@ export const subscribeActiveOrgId = (listener: () => void) => {
   };
 };
 
+// Reads the currently active tenant organization identifier stored in localStorage.
+// Performs safe SSR guards and handles private browsing quota access restrictions.
+// Returns a valid non-empty organization ID string or null when unselected.
 /** Get the active org ID from localStorage (null if not set) */
 export const getActiveOrgId = (): string | null => {
   if (typeof window === "undefined") return null;
@@ -44,6 +50,9 @@ export const getActiveOrgId = (): string | null => {
   }
 };
 
+// Persists the newly selected organization identifier into local browser storage.
+// Evicts stale client request context caches and broadcasts change events across tabs.
+// Ensures synchronous multi-tenant header propagation for subsequent HTTP requests.
 /** Set the active org ID in localStorage (null to clear) */
 export const setActiveOrgId = (orgId: string | null) => {
   if (typeof window === "undefined") return;
@@ -61,6 +70,9 @@ export const setActiveOrgId = (orgId: string | null) => {
   }
 };
 
+// Clears the active organization selection from browser storage and dispatches updates.
+// Invoked when organization permissions are revoked or during user session logout.
+// Reverts API requests to default non-scoped tenant behavior across client views.
 /** Clear the active org ID (used when org access is denied) */
 export const clearActiveOrgId = () => setActiveOrgId(null);
 

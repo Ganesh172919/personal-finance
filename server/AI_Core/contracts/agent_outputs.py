@@ -91,6 +91,9 @@ from pydantic import BaseModel, Field
 
 # ── Income / Expense Analyzer Output ────────────────────────────────────
 
+# High-level aggregate cash flow metrics schema.
+# Encapsulates total income, total expenses, net savings rate, and primary category.
+# Provides baseline figures for comprehensive financial health score calculations.
 class SummaryMetrics(BaseModel):
     """High-level cash-flow metrics."""
     total_income: float = 0.0
@@ -101,6 +104,9 @@ class SummaryMetrics(BaseModel):
     top_category_amount: float = 0.0
 
 
+# Spending breakdown model per individual budget category.
+# Tracks nominal expense amounts, portfolio percentages, and transaction volume.
+# Supplies detailed category analytics for budget recommendations.
 class CategoryBreakdown(BaseModel):
     """Spending per category."""
     category: str
@@ -109,6 +115,9 @@ class CategoryBreakdown(BaseModel):
     transaction_count: int = 0
 
 
+# Detected anomalous spending pattern schema with statistical scoring.
+# Records outlier transaction amounts, category tags, and deviation z-scores.
+# Flags unexpected expenditure spikes for proactive user alerting.
 class Anomaly(BaseModel):
     """A detected spending anomaly."""
     category: str
@@ -117,6 +126,9 @@ class Anomaly(BaseModel):
     description: str = ""
 
 
+# Standardizes analytical transaction outputs for downstream planning pipelines.
+# Output schema contract emitted by the income and expense analyzer agent.
+# Aggregates summary cash flow metrics, category breakdowns, and anomaly lists.
 class IncomeAnalysisOutput(BaseModel):
     """Output contract for IncomeExpenseAnalyzerAgent."""
     summary_metrics: SummaryMetrics = Field(default_factory=SummaryMetrics)
@@ -128,6 +140,9 @@ class IncomeAnalysisOutput(BaseModel):
 
 # ── Budget Planner Output ───────────────────────────────────────────────
 
+# Category-specific budget target allocation contract.
+# Defines planned expenditure limits, budget percentages, and expense flexibility.
+# Differentiates between fixed obligations and discretionary spending targets.
 class BudgetAllocation(BaseModel):
     """A single budget category allocation."""
     category: str
@@ -136,6 +151,9 @@ class BudgetAllocation(BaseModel):
     type: str = "variable"  # "fixed" or "variable"
 
 
+# Monthly funding schedule for a specific financial milestone goal.
+# Calculates required monthly capital allocations and projected completion timelines.
+# Aligns active savings goals with holistic user cash flow capacity.
 class GoalFunding(BaseModel):
     """Monthly funding plan for a financial goal."""
     goal_name: str
@@ -143,6 +161,9 @@ class GoalFunding(BaseModel):
     months_to_target: int = 0
 
 
+# Comprehensive budget plan contract produced by the budget planner agent.
+# Details categorical spending limits, emergency fund goals, and savings targets.
+# Specifies governing allocation frameworks such as standard 50/30/20 rules.
 class BudgetPlanOutput(BaseModel):
     """Output contract for BudgetPlannerAgent."""
     total_income: float = 0.0
@@ -157,12 +178,18 @@ class BudgetPlanOutput(BaseModel):
 
 # ── Investment Advisor Output ───────────────────────────────────────────
 
+# Asset class target weighting schema for investment portfolio construction.
+# Represents targeted allocation percentages across equity, debt, and cash assets.
+# Provides granular asset class targets for portfolio rebalancing.
 class AssetAllocation(BaseModel):
     """Portfolio allocation by asset class."""
     asset_class: str
     percentage: float = 0.0
 
 
+# Risk assessment output schema based on user financial profile parameters.
+# Classifies investor tolerance into conservative, moderate, or aggressive profiles.
+# Details numerical risk scores and underlying demographic weighting factors.
 class RiskProfileResult(BaseModel):
     """Risk assessment result."""
     profile: str = "moderate"  # conservative, moderate, aggressive
@@ -170,6 +197,9 @@ class RiskProfileResult(BaseModel):
     factors: Dict[str, Any] = Field(default_factory=dict)
 
 
+# Portfolio recommendation output schema from the investment advisor agent.
+# Captures target asset allocations, expected annual returns, and rebalance rules.
+# Embeds risk tolerance assessments to guide long-term wealth accumulation.
 class InvestmentAdviceOutput(BaseModel):
     """Output contract for InvestmentAdvisorAgent."""
     risk_profile: str = "moderate"
@@ -182,6 +212,9 @@ class InvestmentAdviceOutput(BaseModel):
 
 # ── Debt Optimizer Output ───────────────────────────────────────────────
 
+# Summary contract for an individual debt obligation or liability account.
+# Captures remaining principal balances, interest rates, and required minimums.
+# Supplies granular debt parameters to debt optimization algorithms.
 class DebtSummary(BaseModel):
     """Summary of a single debt."""
     name: str
@@ -190,6 +223,9 @@ class DebtSummary(BaseModel):
     minimum_payment: float = 0.0
 
 
+# Comparative debt payoff strategy projection schema.
+# Models total interest costs and debt-free horizons for avalanche or snowball.
+# Quantifies financial savings achievable through structured payoff schedules.
 class PayoffStrategy(BaseModel):
     """A debt payoff strategy comparison."""
     method: str  # "snowball" or "avalanche"
@@ -198,6 +234,9 @@ class PayoffStrategy(BaseModel):
     monthly_payment: float = 0.0
 
 
+# Complete debt reduction strategy contract from the debt optimizer agent.
+# Aggregates liability summaries, strategy trade-offs, and consolidation options.
+# Identifies available surplus cash flow capacity for accelerated repayment.
 class DebtOptimizationOutput(BaseModel):
     """Output contract for DebtOptimizerAgent."""
     current_debt_situation: Dict[str, Any] = Field(default_factory=dict)
@@ -210,6 +249,9 @@ class DebtOptimizationOutput(BaseModel):
 
 # ── Financial Educator Output ───────────────────────────────────────────
 
+# Educational guidance output schema from the financial educator agent.
+# Outlines core financial concepts, plain-language explanations, and key takeaways.
+# Tags educational material with appropriate user experience difficulty levels.
 class FinancialEducatorOutput(BaseModel):
     """Output contract for FinancialEducatorAgent."""
     concept: str = ""
@@ -220,4 +262,7 @@ class FinancialEducatorOutput(BaseModel):
 
 
 # Alias for backward compatibility
+# Backward compatibility alias for the financial educator response contract.
+# Preserves legacy contract naming across earlier service integration points.
+# Ensures seamless interoperability with existing client and test callers.
 FinancialEducationOutput = FinancialEducatorOutput

@@ -19,6 +19,9 @@
 
 import { apiClient } from "../core";
 
+// Defines configuration parameters for generating a public financial snapshot link.
+// Configures link expiration horizons, goal visibility, and milestone inclusion flags.
+// Sanitizes what personal financial data is shared with external link recipients.
 /** Options for creating a financial story share. */
 export type FinancialStoryShareCreateRequest = {
   expires_in_days?: number;
@@ -28,6 +31,9 @@ export type FinancialStoryShareCreateRequest = {
   max_milestones?: number;
 };
 
+// Encapsulates the response produced upon generating a shareable financial story link.
+// Delivers the complete one-time security token, share URL, and token prefix details.
+// Enables users to copy temporary sharing links directly to their device clipboard.
 export type FinancialStoryShareCreateResponse = {
   share: {
     id: string;
@@ -40,6 +46,9 @@ export type FinancialStoryShareCreateResponse = {
   request_id?: string;
 };
 
+// Provisions a time-limited public sharing token for a financial story snapshot.
+// Dispatches an authenticated POST request with privacy and inclusion criteria.
+// Returns the public access link along with expiration metadata.
 /** Create a shareable financial story link with configurable data inclusion and expiry. */
 export async function createFinancialStoryShare(
   body: FinancialStoryShareCreateRequest = {}
@@ -50,6 +59,9 @@ export async function createFinancialStoryShare(
   });
 }
 
+// Represents the sanitized financial story content visible to public link recipients.
+// Unpacks overall health scores, asset summaries, active goals, and milestone achievements.
+// Serves as the public data contract rendered in unauthenticated web views.
 export type PublicSharePayloadFinancialStory = {
   type: "financial_story";
   generated_at: string;
@@ -79,6 +91,9 @@ export type PublicSharePayloadFinancialStory = {
   profile_updated_at?: string;
 };
 
+// Encapsulates the public response payload received when accessing a shared link.
+// Combines share identifiers, expiration validity timestamps, and financial story data.
+// Powers public read-only milestone celebration cards and progress dashboards.
 export type PublicFinancialStoryShareResponse = {
   share_id: string;
   type: "financial_story";
@@ -87,6 +102,9 @@ export type PublicFinancialStoryShareResponse = {
   request_id?: string;
 };
 
+// Retrieves a public read-only financial story snapshot using its sharing token.
+// Dispatches an unauthenticated GET request passing the sanitized URL token.
+// Renders the external snapshot view for family members, advisors, or peers.
 /**
  * Fetch a public financial story by its share token (no auth required).
  * The token is URL-encoded to handle special characters safely.

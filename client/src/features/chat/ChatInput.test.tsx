@@ -2,9 +2,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { uploadWorkspaceFiles } from "@/lib/api/files";
 import { ChatInput } from "./ChatInput";
+import { transcribeLiveVoice } from "@/lib/liveVoice";
 
 vi.mock("@/lib/api/files", () => ({ uploadWorkspaceFiles: vi.fn() }));
 vi.mock("@/hooks/useToast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/liveVoice", () => ({ transcribeLiveVoice: vi.fn() }));
 
 const fileId = "507f1f77bcf86cd799439011";
 const savedFile = { workspaceFileId: "507f1f77bcf86cd799439099", fileId: "507f1f77bcf86cd799439098", originalName: "saved-budget.pdf", mimeType: "application/pdf", sizeBytes: 2048 };
@@ -20,6 +22,32 @@ beforeEach(() => { vi.clearAllMocks(); });
 afterEach(cleanup);
 
 describe("chat composer recovery", () => {
+  it("appends a completed dictation to the draft without sending it", async () => {
+    vi.mocked(transcribeLiveVoice).mockResolvedValueOnce({ text: "What is compound interest?" });
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} isSending={false} initialMessage="Please explain in one sentence." />);
+    fireEvent.click(screen.getByRole("button", { name: "Dictate with Gnani Prisma" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start microphone dictation" }));
+    const textbox = screen.getByRole("textbox", { name: "Message to your finance assistant" });
+    await waitFor(() => expect(textbox).toHaveValue("Please explain in one sentence. What is compound interest?"));
+    expect(textbox).toHaveFocus();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("cancels a pending dictation and ignores a stale transcript", async () => {
+    let complete!: (value: { text: string }) => void;
+    vi.mocked(transcribeLiveVoice).mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} isSending={false} initialMessage="Keep this draft" />);
+    fireEvent.click(screen.getByRole("button", { name: "Dictate with Gnani Prisma" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start microphone dictation" }));
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel dictation" }));
+    await act(async () => complete({ text: "Old audio" }));
+    expect(screen.getByRole("textbox")).toHaveValue("Keep this draft");
+    expect(vi.mocked(transcribeLiveVoice).mock.calls.at(-1)?.[0].signal.aborted).toBe(true);
+    expect(onSend).not.toHaveBeenCalled();
+  });
   it("focuses the composer and sends a saved document without uploading again", async () => {
     const onSend = vi.fn().mockResolvedValue(true);
     render(<ChatInput onSend={onSend} isSending={false} workspaceAttachments={[savedFile]} />);

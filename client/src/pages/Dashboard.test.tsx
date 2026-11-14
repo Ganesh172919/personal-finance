@@ -130,7 +130,7 @@ describe("Dashboard page", () => {
 
     expect(screen.getByTestId("dashboard")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-greeting")).toHaveTextContent(/Alex/);
-    expect(screen.getByText(/Track your money, check your goals, and ask the assistant for help/i)).toBeInTheDocument();
+    expect(screen.getByText(/Know where your money went, review anything uncertain, and choose your next action/i)).toBeInTheDocument();
 
     expect(screen.getByTestId("quick-launch-chat")).toHaveAttribute("href", "/chat");
     expect(screen.getByTestId("quick-launch-transactions")).toHaveAttribute("href", "/transactions");

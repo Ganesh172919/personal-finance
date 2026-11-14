@@ -47,18 +47,27 @@ import {
   type ReceiptParseResponse,
 } from "@/lib/apiClient";
 
+// Formats API mutation failures into informative, human-readable error messages.
+// Extracts unique server request tracking IDs for diagnostic audit traceability.
+// Supplies default fallback text when incoming errors lack descriptive messages.
 const formatError = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
+// Safely casts an unknown value into a finite floating-point number.
+// Guards against NaN, null, and undefined values during form input parsing.
+// Returns a provided fallback number when conversion yields an invalid result.
 const toNumberOr = (value: any, fallback: number) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
 };
 
 /** Color-coded confidence score badge */
+// Visual badge chip reflecting OCR optical recognition confidence percentages.
+// Colors scores into emerald, amber, or red tiers based on certainty thresholds.
+// Signals fields that may require manual operator verification or correction.
 const ConfidenceBadge = ({ score, field }: { score?: unknown; field: string }) => {
   const num = Number(score);
   if (!Number.isFinite(num)) return null;
@@ -81,6 +90,9 @@ const ConfidenceBadge = ({ score, field }: { score?: unknown; field: string }) =
   );
 };
 
+// Two-step receipt ingestion dialog automating transaction creation via OCR.
+// Uploads physical receipt images to extract vendor, totals, taxes, and line items.
+// Permits manual review and field editing before committing records to the ledger.
 export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint?: string }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();

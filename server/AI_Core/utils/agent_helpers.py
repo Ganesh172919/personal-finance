@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import re
 from typing import Any, Dict, List, Optional, Set
 
@@ -40,6 +41,9 @@ _CURRENCY_SYMBOLS = {
 }
 
 
+# Formats floating point monetary amount with standard currency symbol.
+# Looks up symbol mapping from ISO 4217 code table with code fallback.
+# Returns formatted currency string with comma-separated thousands and cents.
 def format_currency_amount(amount: float, currency_code: str = "INR") -> str:
     """Format a monetary amount with the appropriate currency symbol.
 
@@ -49,6 +53,9 @@ def format_currency_amount(amount: float, currency_code: str = "INR") -> str:
     return f"{symbol}{amount:,.2f}"
 
 
+# Extracts and validates 3-letter ISO currency code from profile dictionary.
+# Validates string against 3 uppercase alphabetical character pattern.
+# Returns uppercase ISO currency string or defaults to standard INR.
 def get_currency_code(user_profile: Optional[Dict[str, Any]]) -> str:
     """Extract a validated 3-letter currency code from a user profile.
 
@@ -64,6 +71,9 @@ def get_currency_code(user_profile: Optional[Dict[str, Any]]) -> str:
 
 # ── Number Extraction & Safety Guard ─────────────────────────────────────
 
+# Extracts and normalizes all numeric tokens present in text string.
+# Strips currency symbols, thousands commas, and whitespace variations.
+# Returns set of normalized numeric strings for strict subset comparisons.
 def extract_numbers(text: str) -> Set[str]:
     """Extract and normalise all numeric tokens from a string.
 
@@ -71,16 +81,21 @@ def extract_numbers(text: str) -> Set[str]:
     currency/percentage suffixes.  Normalises by stripping currency symbols
     and commas so that "₹1,00,000" and "100000" compare as equal.
     """
-    tokens = re.findall(r"[₹$€£¥]?\d[\d,]*(?:\.\d+)?%?", text)
+    # The lookbehind keeps a hyphen in an ISO date or compact range from
+    # turning the next component into a negative amount.
+    tokens = re.findall(r"(?:(?<!\d)[−-])?(?:[₹$€£¥][−-]?[ \t]*)?\d[\d,]*(?:\.\d+)?%?", text)
     normalized: Set[str] = set()
     for token in tokens:
-        cleaned = token
-        for ch in ("₹", "$", "€", "£", "¥", ","):
+        cleaned = token.replace("−", "-")
+        for ch in ("₹", "$", "€", "£", "¥", ",", " ", "\t"):
             cleaned = cleaned.replace(ch, "")
         normalized.add(cleaned)
     return normalized
 
 
+# Enforces number safety guard ensuring candidate numbers exist in reference.
+# Verifies that candidate numeric set is mathematical subset of baseline.
+# Returns boolean flag indicating candidate introduces no hallucinated digits.
 def numbers_are_subset(candidate: str, reference: str) -> bool:
     """Check that every number in *candidate* already exists in *reference*.
 
@@ -92,6 +107,9 @@ def numbers_are_subset(candidate: str, reference: str) -> bool:
 
 # ── Insight Extraction ───────────────────────────────────────────────────
 
+# Distills headline key insight objects from completed agent analyses.
+# Formats cash flow metrics, budget optimization, risk, and debt advice.
+# Returns list of structured insight dictionaries for dashboard presentation.
 def extract_key_insights(
     analyses: Dict[str, Any],
     currency_code: str = "INR",
@@ -113,11 +131,23 @@ def extract_key_insights(
 
             if analysis_type == "income_analysis":
                 summary_metrics = analysis_data.get("summary_metrics", {})
-                net_flow = summary_metrics.get("net_cash_flow", 0) if isinstance(summary_metrics, dict) else 0
+                if not isinstance(summary_metrics, dict):
+                    continue
+                monthly_fields = ("average_monthly_net_cash_flow", "monthly_net_flow")
+                explicitly_monthly = any(field in summary_metrics for field in monthly_fields)
+                net_flow = next((summary_metrics[field] for field in monthly_fields if summary_metrics.get(field) is not None), None)
+                if not explicitly_monthly:
+                    net_flow = summary_metrics.get("net_cash_flow")
+                if net_flow is None:
+                    continue
+                net_flow = float(net_flow)
+                if not math.isfinite(net_flow):
+                    continue
+                label = "Recorded monthly average cash flow" if explicitly_monthly else "Recorded net cash flow"
                 insight = {
                     "agent": "income_expense_analyzer",
                     "title": "Cash Flow Analysis",
-                    "description": f"Monthly net cash flow: {format_currency_amount(float(net_flow), currency_code)}",
+                    "description": f"{label}: {format_currency_amount(net_flow, currency_code)}",
                     "actionType": "optimize_spending" if net_flow < 0 else "increase_savings",
                 }
 
@@ -159,6 +189,9 @@ def extract_key_insights(
 
 # ── Action Type & Priority ───────────────────────────────────────────────
 
+# Determines primary frontend call-to-action string based on active analyses.
+# Evaluates prioritized order covering debt, investment, budget, and income.
+# Returns action type keyword instructing client navigation routing.
 def determine_action_type(analyses: Dict[str, Any]) -> str:
     """Map the set of completed analyses to a single action type string.
 
@@ -176,6 +209,9 @@ def determine_action_type(analyses: Dict[str, Any]) -> str:
     return "review"
 
 
+# Calculates overall urgency level classification for financial plan.
+# Evaluates critical debt-to-income thresholds and negative cash flow.
+# Returns priority rating string categorized as high, medium, or low.
 def determine_priority(analyses: Dict[str, Any], user_profile: Optional[Dict[str, Any]] = None) -> str:
     """Determine the urgency level of the financial plan.
 
@@ -208,11 +244,17 @@ def determine_priority(analyses: Dict[str, Any], user_profile: Optional[Dict[str
 
 # ── Tool Call Generation ─────────────────────────────────────────────────
 
+# Generates deterministic short identifier for proposed tool call action.
+# Computes SHA-256 hash digest of tool call title truncated to 12 characters.
+# Returns unique idempotent identifier string for tool tracking.
 def _make_tool_call_id(title: str) -> str:
     """Deterministic short ID from a tool call title (SHA-256 truncated)."""
     return hashlib.sha256(title.encode()).hexdigest()[:12]
 
 
+# Generates conditional workflow automation suggestions based on plan metrics.
+# Synthesizes calendar reminders, goal setups, and transaction review tools.
+# Returns list of structured tool call specifications requiring confirmation.
 def build_tool_calls(
     plan_metrics: Dict[str, Any],
     user_profile: Optional[Dict[str, Any]] = None,

@@ -12,6 +12,9 @@
  */
 import { z } from "zod";
 
+// Validates query parameters for retrieving the high-level analytics overview.
+// Accepts an optional billing or calendar period key formatted as YYYY-MM.
+// Rejects unexpected query parameters using strict schema evaluation.
 export const analyticsOverviewQuerySchema = z
   .object({
     period_key: z.string().trim().regex(/^\d{4}-\d{2}$/, "Invalid period key (expected YYYY-MM)").optional(),

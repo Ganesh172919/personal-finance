@@ -84,8 +84,10 @@
  */
 
 import { motion } from "framer-motion";
-import { User, Wand2, Copy, CheckCircle, ListTodo, Paperclip, ThumbsDown, ThumbsUp } from "lucide-react";
-import { useState } from "react";
+import { User, Wand2, Copy, CheckCircle, ListTodo, Paperclip, RefreshCw, ThumbsDown, ThumbsUp, Volume2, VolumeX } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { synthesizeVoice } from "@/lib/api/voice";
+import { prepareChatSpeech } from "@/lib/chatSpeech";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { IChatAttachment, IChatMessage } from "@/types/chat.types";
@@ -111,20 +113,130 @@ import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import type { ToolCall } from "@/types/ai.types";
 import { buildApiUrl } from "@/lib/apiBase";
 import { splitAnswerAndPlan } from "@/lib/chatResponse";
+import { FEEDBACK_CORRECTION_MAX, FEEDBACK_REASONS, type FeedbackReasonCode } from "@/lib/api/chat";
+import { useChatStore } from "@/stores/chatStore";
 import { ChatDocumentCard } from "./ChatDocumentCard";
 
+// Property specifications for rendering an individual conversation message.
+// Supplies the chat message object containing role, body, and AI metadata.
+// Supports custom callbacks for document attachment ingestion and busy states.
 interface ChatMessageProps {
   message: IChatMessage;
   onUseDocument?: (file: IChatAttachment) => void;
   isSending?: boolean;
 }
 
+// Renders rich user prompts and assistant outputs with Markdown and interactive widgets.
+// Embeds source citations, task creation actions, tool approval cards, and ratings.
+// Handles feedback submissions, clipboard copying, and autopilot run simulations.
 export function ChatMessage({ message, onUseDocument, isSending }: ChatMessageProps) {
   const chatLocation = `/chat/${message.sessionId}`;
   const isUser = message.role === "user";
+  const recoveredFailureCount = message.metadata?.recoveredFailureCount ?? message.metadata?.recoveredFailures?.length ?? 0;
+  const usedLanguageModel = message.metadata?.llmCallCount !== 0;
   const responseParts = splitAnswerAndPlan(message.content);
   const [copied, setCopied] = useState(false);
-  const [feedbackRating, setFeedbackRating] = useState<"up" | "down" | null>(null);
+  const [copying, setCopying] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speakingLoading, setSpeakingLoading] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const playbackRequest = useRef(0);
+  const speechCache = useRef<{ text: string; url: string } | null>(null);
+
+  useEffect(() => () => {
+    playbackRequest.current += 1;
+    audioRef.current?.pause();
+    if (utteranceRef.current) window.speechSynthesis.cancel();
+  }, []);
+
+  const handleSpeak = async () => {
+    if (isSpeaking) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (utteranceRef.current) {
+        window.speechSynthesis.cancel();
+        utteranceRef.current = null;
+      }
+      setIsSpeaking(false);
+      return;
+    }
+
+    const request = ++playbackRequest.current;
+    const { cappedText: spokenText, language } = prepareChatSpeech(message.content);
+    if (!spokenText) return;
+    setSpeakingLoading(true);
+    try {
+      let audioUrl = speechCache.current?.text === spokenText ? speechCache.current.url : null;
+      if (!audioUrl) {
+        const result = await synthesizeVoice({ text: spokenText, language, voiceGender: "female" }).catch(() => null);
+        if (request !== playbackRequest.current) return;
+        if (result?.provider === "gnani_timbre_live" && result.audioBase64) {
+          audioUrl = `data:${result.mimeType};base64,${result.audioBase64}`;
+          speechCache.current = { text: spokenText, url: audioUrl };
+        }
+      }
+      if (request !== playbackRequest.current) return;
+
+      if (audioUrl) {
+        const audio = new Audio(audioUrl);
+        audioRef.current = audio;
+        audio.onplay = () => setIsSpeaking(true);
+        audio.onended = () => setIsSpeaking(false);
+        audio.onerror = () => {
+          speechCache.current = null;
+          setIsSpeaking(false);
+        };
+        await audio.play();
+        return;
+      }
+
+      const speech = window.speechSynthesis;
+      const localVoices = speech?.getVoices().filter(voice => voice.localService) ?? [];
+      const voice = localVoices.find(item => item.lang.toLowerCase() === language.toLowerCase())
+        ?? localVoices.find(item => item.lang.toLowerCase().startsWith(language.slice(0, 2)));
+      if (!voice) throw new Error("No local voice available");
+
+      const utterance = new SpeechSynthesisUtterance(spokenText);
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+      utteranceRef.current = utterance;
+      const finish = () => {
+        if (utteranceRef.current !== utterance) return;
+        utteranceRef.current = null;
+        setIsSpeaking(false);
+      };
+      utterance.onend = finish;
+      utterance.onerror = finish;
+      speech.speak(utterance);
+      setIsSpeaking(true);
+    } catch {
+      toast({
+        title: "Voice playback unavailable",
+        description: "Timbre or a compatible device voice is needed to read this answer aloud.",
+        variant: "destructive",
+      });
+    } finally {
+      if (request === playbackRequest.current) setSpeakingLoading(false);
+    }
+  };
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  // Thumbs state is persisted server-side (message.metadata.feedback) so it survives reloads.
+  const persistedRating = message.metadata?.feedback?.rating ?? null;
+  const [feedbackRating, setFeedbackRating] = useState<"up" | "down" | null>(persistedRating);
+  useEffect(() => {
+    if (persistedRating) setFeedbackRating(persistedRating);
+  }, [persistedRating]);
+  const [showFeedbackDetails, setShowFeedbackDetails] = useState(false);
+  const [feedbackReason, setFeedbackReason] = useState<FeedbackReasonCode | null>(null);
+  const [feedbackCorrection, setFeedbackCorrection] = useState("");
+  const [feedbackDetailsSent, setFeedbackDetailsSent] = useState(false);
   const [tasksAdded, setTasksAdded] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
@@ -284,10 +396,27 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
   });
 
   const feedbackMutation = useMutation({
-    mutationFn: (payload: { agentOutputId: string; rating: "up" | "down" }) =>
-      submitAgentOutputFeedback(payload.agentOutputId, { rating: payload.rating }),
+    mutationFn: (payload: {
+      agentOutputId: string;
+      rating: "up" | "down";
+      reasonCode?: FeedbackReasonCode;
+      correction?: string;
+    }) =>
+      submitAgentOutputFeedback(payload.agentOutputId, {
+        rating: payload.rating,
+        ...(payload.reasonCode ? { reasonCode: payload.reasonCode } : {}),
+        ...(payload.correction ? { correction: payload.correction } : {}),
+      }),
     onSuccess: (_data, variables) => {
       setFeedbackRating(variables.rating);
+      if (variables.rating === "down" && !variables.reasonCode && !variables.correction) {
+        // Rating is saved; offer the optional "what went wrong" details.
+        setShowFeedbackDetails(true);
+        setFeedbackDetailsSent(false);
+      } else {
+        setShowFeedbackDetails(false);
+        if (variables.rating === "down") setFeedbackDetailsSent(true);
+      }
       toast({ title: "Thanks for the feedback!" });
     },
     onError: (error: unknown) => {
@@ -310,10 +439,19 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
     return `${value.toFixed(1)}%`;
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(message.content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    if (copying) return;
+    setCopying(true);
+    setCopied(false);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard is unavailable in this browser.");
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+    } catch {
+      toast({ title: "Copy failed", description: "Select the response text to copy it, or try again.", variant: "destructive" });
+    } finally {
+      setCopying(false);
+    }
   };
 
   const handleAddToTasks = () => {
@@ -334,7 +472,40 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
   const handleFeedback = (rating: "up" | "down") => {
     const agentOutputId = message.metadata?.agentOutputId;
     if (!agentOutputId) return;
+    if (rating === "up") setShowFeedbackDetails(false);
     feedbackMutation.mutate({ agentOutputId, rating });
+  };
+
+  const handleSendFeedbackDetails = () => {
+    const agentOutputId = message.metadata?.agentOutputId;
+    const correction = feedbackCorrection.trim();
+    if (!agentOutputId || (!feedbackReason && !correction)) return;
+    feedbackMutation.mutate({
+      agentOutputId,
+      rating: "down",
+      reasonCode: feedbackReason ?? undefined,
+      correction: correction || undefined,
+    });
+  };
+
+  const handleRegenerate = () => {
+    const agentOutputId = message.metadata?.agentOutputId;
+    const store = useChatStore.getState();
+    if (!agentOutputId || store.isSending) return;
+    const index = store.messages.findIndex((m) => m.id === message.id);
+    const previousUser = index > 0 ? [...store.messages.slice(0, index)].reverse().find((m) => m.role === "user") : undefined;
+    if (!previousUser) {
+      toast({ title: "Can't regenerate", description: "The original question isn't available.", variant: "destructive" });
+      return;
+    }
+    // Fresh Idempotency-Key is generated by the store per send; cache is bypassed for a genuinely new answer.
+    void store.sendMessage(previousUser.content, {
+      regenerateOf: agentOutputId,
+      bypassCache: true,
+      ...(previousUser.metadata?.attachments?.length
+        ? { fileIds: previousUser.metadata.attachments.map((attachment) => attachment.workspaceFileId) }
+        : {}),
+    });
   };
 
   const handleOpenAttachment = (fileId: string) => {
@@ -366,10 +537,11 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
       <p className="text-sm text-foreground leading-relaxed mb-3">{children}</p>
     ),
     ul: ({ children }: any) => (
-      <ul className="list-disc list-inside space-y-1 my-3 ml-4 text-foreground">{children}</ul>
+      <ul className="list-disc list-outside space-y-1 my-3 pl-6 text-foreground">{children}</ul>
     ),
+    // list-outside: with list-inside, loose items (wrapped in <p>) put the marker on its own line.
     ol: ({ children }: any) => (
-      <ol className="list-decimal list-inside space-y-1 my-3 ml-4 text-foreground">{children}</ol>
+      <ol className="list-decimal list-outside space-y-1 my-3 pl-6 text-foreground">{children}</ol>
     ),
     li: ({ children }: any) => (
       <li className="text-sm text-foreground leading-relaxed">{children}</li>
@@ -533,7 +705,8 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
           </div>
         ) : null}
 
-        {!isUser && (message.metadata?.confidence || message.metadata?.evidence?.length || message.metadata?.suggestedActions?.length) ? (
+        {!isUser && message.metadata?.analysisType !== "financial_education" &&
+          (message.metadata?.confidence || message.metadata?.evidence?.length || message.metadata?.suggestedActions?.length) ? (
           <div className="mt-2 w-full space-y-2">
             {message.metadata?.confidence ? (
               <div className="rounded-md border border-border bg-background/60 p-3">
@@ -715,16 +888,16 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
               workflowTrace={message.metadata?.workflowTrace || []}
               agentsInvolved={message.metadata?.agentsInvolved || []}
               fallbackUsed={message.metadata?.fallbackUsed || false}
+              recoveredProvider={recoveredFailureCount > 0}
               llmCallCount={message.metadata?.llmCallCount || 0}
             />
           </div>
           )}
 
         {!isUser &&
-        (message.metadata?.activeProvider ||
-          message.metadata?.activeModel ||
+        ((usedLanguageModel && (message.metadata?.activeProvider || message.metadata?.activeModel)) ||
           message.metadata?.fallbackPath?.length ||
-          message.metadata?.recoveredFailures?.length ||
+          recoveredFailureCount > 0 ||
           message.metadata?.sessionId) ? (
           <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
             {message.metadata?.sessionId ? (
@@ -732,19 +905,19 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
                 session {message.metadata.sessionStatus || "active"}
               </span>
             ) : null}
-            {message.metadata?.activeProvider ? (
+            {usedLanguageModel && message.metadata?.activeProvider ? (
               <span className="rounded-full border border-border/70 bg-background/60 px-2 py-1 text-muted-foreground">
                 provider {message.metadata.activeProvider}
               </span>
             ) : null}
-            {message.metadata?.activeModel ? (
+            {usedLanguageModel && message.metadata?.activeModel ? (
               <span className="max-w-[280px] truncate rounded-full border border-border/70 bg-background/60 px-2 py-1 text-muted-foreground">
                 model {message.metadata.activeModel}
               </span>
             ) : null}
-            {message.metadata?.recoveredFailures?.length ? (
-              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-amber-300">
-                recovered {message.metadata.recoveredFailures.length}
+            {recoveredFailureCount > 0 ? (
+              <span className="rounded-full border border-border/70 bg-background/60 px-2 py-1 text-muted-foreground">
+                recovered {recoveredFailureCount}
               </span>
             ) : null}
             {message.metadata?.fallbackPath?.length ? (
@@ -765,13 +938,34 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
               variant="ghost"
               size="sm"
               onClick={handleCopy}
-              aria-label={copied ? "Response copied" : "Copy response"}
+              aria-label={copying ? "Copying response" : copied ? "Response copied" : "Copy response"}
+              disabled={copying}
               className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-100"
             >
               {copied ? (
                 <CheckCircle className="w-3 h-3 text-green-500" />
               ) : (
                 <Copy className="w-3 h-3" />
+              )}
+            </Button>
+          )}
+
+          {!isUser && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSpeak}
+              aria-label={isSpeaking ? "Stop voice" : "Listen to response"}
+              disabled={speakingLoading}
+              title="Read this response aloud"
+              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-100 text-indigo-400"
+            >
+              {speakingLoading ? (
+                <RefreshCw className="w-3 h-3 animate-spin" />
+              ) : isSpeaking ? (
+                <VolumeX className="w-3 h-3 text-red-400" />
+              ) : (
+                <Volume2 className="w-3 h-3" />
               )}
             </Button>
           )}
@@ -812,6 +1006,18 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
               >
                 <ThumbsDown className="w-3 h-3" />
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRegenerate}
+                disabled={isSending || feedbackMutation.isPending}
+                className="h-6 px-2 text-xs"
+                title="Regenerate this answer"
+                aria-label="Regenerate response"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Regenerate</span>
+              </Button>
             </div>
           )}
           
@@ -821,6 +1027,62 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
             </span>
           )}
         </div>
+
+        {!isUser && message.metadata?.agentOutputId && feedbackRating === "down" && showFeedbackDetails && (
+          <div
+            className="mt-2 w-full max-w-md space-y-2 rounded-md border border-border bg-muted/30 p-2 text-xs"
+            data-testid="feedback-details"
+          >
+            <p className="font-medium text-foreground">What went wrong? (optional)</p>
+            <div className="flex flex-wrap gap-1" role="group" aria-label="Feedback reason">
+              {FEEDBACK_REASONS.map((reason) => (
+                <button
+                  key={reason.code}
+                  type="button"
+                  aria-pressed={feedbackReason === reason.code}
+                  onClick={() => setFeedbackReason(feedbackReason === reason.code ? null : reason.code)}
+                  className={`rounded-full border px-2 py-0.5 ${
+                    feedbackReason === reason.code
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {reason.label}
+                </button>
+              ))}
+            </div>
+            <div>
+              <textarea
+                value={feedbackCorrection}
+                onChange={(e) => setFeedbackCorrection(e.target.value.slice(0, FEEDBACK_CORRECTION_MAX))}
+                maxLength={FEEDBACK_CORRECTION_MAX}
+                rows={2}
+                placeholder="What should the answer have said? Avoid account numbers and personal details."
+                aria-label="Suggested correction"
+                className="w-full rounded-md border border-border bg-background p-1.5 text-xs"
+              />
+              <div className="text-right text-[10px] text-muted-foreground">
+                {feedbackCorrection.length}/{FEEDBACK_CORRECTION_MAX}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setShowFeedbackDetails(false)}>
+                Skip
+              </Button>
+              <Button
+                size="sm"
+                className="h-6 px-2 text-xs"
+                disabled={feedbackMutation.isPending || (!feedbackReason && !feedbackCorrection.trim())}
+                onClick={handleSendFeedbackDetails}
+              >
+                Send details
+              </Button>
+            </div>
+          </div>
+        )}
+        {!isUser && feedbackDetailsSent && feedbackRating === "down" && !showFeedbackDetails && (
+          <p className="mt-1 px-2 text-[11px] text-muted-foreground">Details sent. Thank you.</p>
+        )}
       </div>
 
       {isUser && (

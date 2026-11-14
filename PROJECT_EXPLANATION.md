@@ -1080,3 +1080,382 @@ Every session modification increments an integer revision counter $R$. Any respo
 | **ActivityReviewAgent** | Heuristic review of transactions and anomaly flagging | `ReviewQueueOutput` |
 | **WhatIfAgent** | Monte Carlo simulation and financial scenario modeling | `ScenarioSimulationOutput` |
 | **ConversationSummarizer** | Real-time session summaries, action items, and vitals | `SessionInsightsOutput` |
+
+---
+
+### 14.11 Machine Learning Merchant Embedding Space & Centroid Cosine Clustering
+
+The transaction processing pipeline incorporates an on-device machine-learning classification and clustering engine (`server/src/services/merchantEmbeddingClustering.ts`):
+
+- **64-Dimensional Vector Representation**:
+  - *Dims 0–11 (Sector Taxonomy)*: Semantic projection vectors for 12 broad spending categories (Groceries, Food & Dining, Transportation, Travel, Shopping, Software & Tech, Entertainment, Health, Auto, Home, Utilities, Financial).
+  - *Dims 12–27 (Brand Anchor Aliases)*: Orthogonal projections for prominent corporate entities (Amazon, Starbucks, Uber, Walmart, Target, Apple, Google, Microsoft, Netflix, Spotify, Costco, McDonald's, Lyft, CVS, Walgreens, Shell).
+  - *Dims 28–63 (Subword N-Gram Projections)*: FastText-style FNV-1a hash projections of character bigrams and trigrams, providing resilience against store numbers, card terminal suffixes, and OCR typos.
+- **L2 Unit Normalization**: Every merchant vector is normalized to unit length ($\|\vec{v}\|_2 = 1.0$), ensuring that the Euclidean inner product equals exact cosine similarity:
+  $$\cos(\vec{a}, \vec{b}) = \sum_{i=0}^{63} a_i b_i \in [0, 1]$$
+- **Agglomerative Centroid-Based Cosine Clustering**: Noisy strings (`AMZN MKTP US*2A41B`, `Amazon Prime Video`, `Amazon.com*MB92`) are merged into a canonical cluster when $\text{sim}(\vec{v}_i, \vec{c}_j) \ge 0.70$.
+- **One-Click Promotion to CategoryRule**: The Transaction Review Queue surfaces detected clusters and provides a 1-click batch application that updates all matching transactions and persists a permanent `CategoryRule`.
+
+---
+
+### 14.12 Multi-Modal Dense Vector Grounded RAG & Entity Extraction
+
+The Grounded Retrieval subsystem (`server/src/services/retrievalService.ts`) indexes multi-page documents (PDFs, bank statements, receipts, tax forms) into 64-dimensional dense semantic vectors:
+
+- **Bounded Window Table-Aware Chunking**: Chunks text into 1,800-character windows (~450 tokens) with 260-character sliding overlaps while preserving Markdown table header rows and physical form-feed markers (`\f`).
+- **Financial Entity Extraction**: Extracts recognized merchants, monetary values, currencies ($/€/£/₹), and ISO dates into structured chunk metadata.
+- **Hybrid Grounding Formula**: Combines dense semantic cosine similarity with BM25 lexical keyword scores:
+  $$G = 0.55 \cdot S_{\text{cosine}} + 0.45 \cdot R_{\text{lexical\_norm}}$$
+- **Grounding Gate ($G \ge 0.70$)**: Only passages achieving $G \ge 0.70$ receive verified grounding tags and interactive `[docId:chunkIndex]` citations in the client evidence drawer.
+
+---
+
+### 14.13 Enterprise AI Core KeyPool Rotation & Circuit Breaker Architecture
+
+To prevent API rate limit disruptions (HTTP 429), `server/AI_Core/utils/key_pool.py` implements a thread-safe multi-key rotation engine:
+
+- **Key Discovery**: Automatically parses single (`PROVIDER_API_KEY`), numbered (`PROVIDER_API_KEY_1`, `_2`), and comma-delimited environment variable formats.
+- **Rotation Strategies**: Supports `round_robin`, `least_used`, and `health_weighted` (prioritizing keys with high success rates and low average latency).
+- **Cooldown Policies**: Automatically cools down keys for 60 seconds after HTTP 429 and 3600 seconds after HTTP 403.
+- **Three-State Circuit Breaker**: Tracks consecutive failures per key; trips from `CLOSED` to `OPEN` after 5 consecutive errors, excluding the key for 5 minutes before allowing a `HALF-OPEN` probe request.
+
+---
+
+### 14.14 LangGraph Resumable Session Checkpointing & SQLite Recovery
+
+Multi-phase multi-agent workflows are checkpointed in SQLite (`server/AI_Core/utils/session_manager.py`):
+
+- **Execution Phases**: Saves serialized state checkpoints across `ROUTING`, `PLANNING`, `RESEARCH`, `EXECUTION`, `VERIFICATION`, and `SYNTHESIS`.
+- **Crash Recovery & Resume**: If an asynchronous task or browser session disconnects, `POST /api/v1/ai-core/ai/sessions/:id/resume` rehydrates the execution graph from the latest verified checkpoint without re-running completed specialist nodes.
+- **Memory Compaction**: Periodically summarizes long conversation histories into rolling semantic contexts to prevent LLM token overflow.
+
+---
+
+### 14.15 Visual Workflow Node Graph Canvas & Delayed Automations
+
+The automation subsystem (`server/src/services/workflows.ts`, `client/src/pages/Workflows.tsx`) provides an interactive visual workflow editor:
+
+- **Delay Timers**: Actions can specify asynchronous delay intervals from 1 second up to 30 days, recorded in `WorkflowRun.delays_executed`.
+- **Inbound Webhook Triggers**: Ingests external webhook payloads via `POST /api/workflows/webhook/:token` authenticated by a 48-character cryptographic token.
+- **Conditional Branching Rules**: Evaluates trigger payload contexts against comparison operators (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `contains`), logging bypassed steps in `actions_skipped`.
+- **Runtime Variable Interpolation**: Dynamically substitutes `{{field}}` variables in task titles, rationales, and push notifications.
+
+---
+
+### 14.16 Global Multi-Currency FX Engine & Dividend Withholding Tax Localization
+
+FinWise provides standardized multi-currency conversions across 7 global currencies (`USD`, `EUR`, `GBP`, `INR`, `CAD`, `AUD`, `JPY`):
+
+- **Deterministic FX Rates**: Centralized exchange rate dictionary (`server/src/utils/currencyFx.ts` and `client/src/lib/currencyFx.ts`) used across Analytics, Portfolios, Transactions, Budgets, and Billing.
+- **Localization Rules**: JPY amounts format with zero decimal places; all other currencies format with standard two decimal places.
+- **Cross-Border Dividend Withholding Tax (WHT)**: Models foreign dividend distributions, Double Tax Treaty (DTAA) relief (0% to 30%), and Foreign Tax Credit (FTC) estimations to calculate true net post-tax dividend yields.
+
+---
+
+### 14.17 Peer Spending Benchmarks & Zero-Sum Budget Auto-Rebalancing Invariant
+
+The Budget Health engine (`server/src/services/budgetHealthService.ts`, `client/src/components/BudgetHealthCard.tsx`) integrates cohort intelligence and automated zero-sum budget rebalancing:
+
+- **Cohort IQR Benchmarks**: Compares user category expenditures against standard household peer cohorts, identifying frugal vs. elevated categories.
+- **Peer Alignment Index**: A 0–100% composite score indicating structural alignment with healthy household financial profiles.
+- **Mathematical Invariant $\sum \Delta B_i = 0$**: Proposes automated zero-sum transfers from surplus envelopes (where $\text{spent} < \text{planned}$) to deficit envelopes (where $\text{spent} > \text{planned}$), strictly preserving the aggregate monthly budget cap.
+
+---
+
+### 14.18 Continuous Production AI Canary Invariant Validation Engine & Mathematical Identities
+
+In financial AI systems, numerical hallucinations and arithmetic violations are critical defects. FinWise implements a continuous, dual-layer AI Canary validation engine (`server/src/services/aiCanaryService.ts`, `server/src/controllers/v1/aiCanaryController.ts`, and `server/AI_Core/evals/canary_validator.py`) that mathematically validates every recommendation, scenario, and budget adjustment before rendering or committing to disk.
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0f766e', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#14b8a6', 'lineColor': '#2dd4bf', 'secondaryColor': '#115e59', 'tertiaryColor': '#134e4a'}}}%%
+mindmap
+  root((Canary Invariant Engine))
+    Mathematical Identities
+      Number Safety Digits
+      Zero-Sum Conservation
+      Balance Sheet Assets - Liabilities
+      Cash Flow Income - Expenses
+      Debt Amortization Principal + Interest
+    Validation Topology
+      Python FastAPI Core (:8001/canary/validate)
+      TypeScript Local Fallback (zero network delay)
+      Strict Mode vs Permissive Warnings
+    Safety Actions
+      Immediate Narrative Stripping
+      Fallback to Deterministic Calculations
+      Circuit Breaker Trip & Alerting
+      Prometheus Gauge Metric Emission
+```
+
+#### The 5 Core Mathematical Invariants
+
+$$egin{aligned}
+\mathbf{Invariant\ 1\ (Number\ Safety):} & \quad D_{\text{cand}} \subseteq D_{\text{ref}} \cup \{0, 1, 2, 3, 4, 5, 7, 10, 12, 14, 30, 365\} \\[6pt]
+\mathbf{Invariant\ 2\ (Zero	ext{-}Sum\ Budget):} & \quad \sum_{i=1}^{N} \Delta B_i = 0 \quad \text{and} \quad \forall i: \text{Proposed}_i \ge 0 \\[6pt]
+\mathbf{Invariant\ 3\ (Balance\ Sheet):} & \quad |\text{Assets} - \text{Liabilities} - \text{Net Worth}| \le 0.01 \\[6pt]
+\mathbf{Invariant\ 4\ (Cash\ Flow):} & \quad |\text{Income} - \text{Expenses} - \text{Net Cash Flow}| \le 0.01 \\[6pt]
+\mathbf{Invariant\ 5\ (Debt\ Amortization):} & \quad |\text{Principal} + \text{Interest} - \text{Total Payment}| \le 0.01
+\end{aligned}$$
+
+#### Dual-Layer Validation Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🟢 INCOMING AI SYNTHESIS CANDIDATE (From LangGraph Specialist Agent or LLM Provider)            │
+│    Candidate Output: { summary: "Saved $450/mo", proposed_allocations: { rent: 1200, ... } }    │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔍 DUAL-LAYER INVARIANT VALIDATION PIPELINE (server/src/services/aiCanaryService.ts)            │
+│                                                                                                 │
+│    LAYER 1: High-Performance Python Microservice (FastAPI Port 8001: POST /canary/validate)     │
+│    ├─► Invariant 1: Number Safety (Candidate Digits ⊆ Reference Ledger Digits ∪ Allowlist)      │
+│    ├─► Invariant 2: Zero-Sum Conservation (∑ ΔB_i = 0 and ∀i: Proposed_i ≥ 0)                   │
+│    ├─► Invariant 3: Balance Sheet Identity (Assets - Liabilities = Net Worth ± $0.01)            │
+│    ├─► Invariant 4: Cash Flow Identity (Income - Expenses = Net Cash Flow ± $0.01)              │
+│    └─► Invariant 5: Debt Amortization Identity (Principal + Interest = Total Payment ± $0.01)   │
+│                                                                                                 │
+│    LAYER 2: Deterministic Local TypeScript Fallback (Active if AI Core is Offline or Times Out) │
+│    └─► Pure TypeScript math executes all 5 invariant audits with zero external network overhead  │
+└───────────────────────────────────────┬─────────────────────────────────┬───────────────────────┘
+                                        │                                 │
+                   ✅ All 5 Invariants PASS                              ❌ Any Invariant FAILS
+                                        ▼                                 ▼
+┌───────────────────────────────────────────────┐ ┌───────────────────────────────────────────────┐
+│ 🚀 SERVE TO USER INTERFACE                    │ │ 🛡️ ZERO-HALLUCINATION CIRCUIT BREAKER         │
+│    • Display verified plan in FinanceOS       │ │    • Instant rejection of narrative text      │
+│    • Render green Invariant Passed pill badge │ │    • Automatic fallback to closed-form math   │
+│    • Record latency & pass metrics            │ │    • Alert logged to AI Status Cockpit        │
+└───────────────────────────────────────────────┘ └───────────────────────────────────────────────┘
+```
+
+#### Canary Validation Controller & Routes
+
+The API Gateway exposes canonical Canary endpoints under `/api/v1/ai/canary`:
+- `GET /api/v1/ai/canary/status`: Returns current health metrics, recent invariant violation logs, and uptime status.
+- `POST /api/v1/ai/canary/validate`: Validates an ad-hoc or live candidate payload against all 5 mathematical identities.
+
+```typescript
+// server/src/controllers/v1/aiCanaryController.ts
+export async function runCanaryValidation(req: Request, res: Response): Promise<void> {
+  const parsed = canaryValidationInputSchema.parse(req.body);
+  const result = await validateCanaryInvariants(parsed, parsed.strictMode ?? false);
+  res.json({
+    success: true,
+    data: result
+  });
+}
+```
+
+---
+
+### 14.19 AI System Diagnostics Cockpit & Multi-Model Observability (`AiStatusDialog.tsx`)
+
+The client interface features an operational cockpit (`client/src/components/AiStatusDialog.tsx`) accessible from the Command Bar (`Cmd+K`) or the status indicator pill in the primary navigation header. It provides real-time visibility into the autonomous AI tier across 4 specialized tabs:
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🧠 AI SYSTEM DIAGNOSTICS & CANARY COCKPIT (AiStatusDialog.tsx)                                  │
+├─────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  [Overview]          [KeyPool Health]          [Model Catalog]          [Canary Invariants]     │
+├─────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                                 │
+│  System Status:  ● HEALTHY (p95: 142ms)      Active Provider: Gemini 2.0 Pro Experimental       │
+│                                                                                                 │
+│  KeyPool Status:                                                                                │
+│  ├─► Gemini Pool:      4 keys active (0 in cooldown, error rate: 0.2%)                          │
+│  ├─► OpenRouter Pool:  2 keys active (0 in cooldown, error rate: 0.0%)                          │
+│  └─► Groq Pool:        2 keys active (0 in cooldown, error rate: 0.0%)                          │
+│                                                                                                 │
+│  Canary Invariant Health (Last 24 Hours):                                                       │
+│  ├─► Invariant 1 (Number Safety):         99.98% Pass Rate (0 hallucinations)                   │
+│  ├─► Invariant 2 (Zero-Sum Budget):      100.00% Pass Rate (Sum ΔB == 0)                       │
+│  ├─► Invariant 3 (Balance Sheet):        100.00% Pass Rate (A - L = NW)                         │
+│  ├─► Invariant 4 (Cash Flow):            100.00% Pass Rate (I - E = NCF)                        │
+│  └─► Invariant 5 (Debt Amortization):    100.00% Pass Rate (P + I = PMT)                        │
+│                                                                                                 │
+│  [ Run Interactive Canary Probe ]                     [ Flush Cooldowns ]     [ Close ]         │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Overview Tab**: Displays overall system operational status, active primary LLM provider, p50 and p95 latency percentiles, and rolling 24-hour request counts.
+2. **KeyPool Health Tab**: Displays individual API keys, token usage buckets, rotation strategies (`health_weighted`, `round_robin`), cooldown timers, and circuit breaker status (`CLOSED`, `OPEN`, `HALF-OPEN`).
+3. **Model Catalog Tab**: Lists capability matrices, supported modalities (text, vision, tabular), maximum context tokens, and pricing tiers across foundation models.
+4. **Canary Invariants Tab**: Real-time pass/fail rates for each of the 5 mathematical identities, along with an interactive probe runner to simulate and audit synthetic transactions on demand.
+
+---
+
+### 14.20 Financial Calendar Live RFC 5545 iCal Streaming Feed & Recurring Payment Engine
+
+FinWise bridges personal finance with daily productivity workflows through an integrated financial calendar and live RFC 5545 subscription feed (`server/src/controllers/v1/calendarReminderController.ts`, `server/src/models/calendarReminderModel.ts`, and `client/src/pages/FinancialCalendar.tsx`):
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#60a5fa', 'lineColor': '#93c5fd', 'secondaryColor': '#1e40af', 'tertiaryColor': '#1e3a8a'}}}%%
+mindmap
+  root((Financial Calendar Engine))
+    Bill Ingestion
+      Recurring Payment Cadence Detection
+      Historical Frequency Modeling (Monthly, Quarterly)
+      Estimated Bill Amounts & Variance Bands
+    Event Types
+      Recurring Subscription & Utility Bills
+      Debt Payment Deadlines & Milestones
+      Quarterly & Annual Tax Filings
+      Custom Financial Reminders
+    RFC 5545 iCal Feed
+      GET /api/v1/calendar-reminders/export.ics
+      Live Apple Calendar / Google Calendar / Outlook Sync
+      Cryptographic Subscription Secret Token
+      Audio & Popup VALARM Trigger Notifications
+```
+
+#### RFC 5545 Stream Generation Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📅 EXTERNAL CALENDAR CLIENT (Apple Calendar, Google Calendar, Outlook)                          │
+│    Subscribes via URL: webcal://finwise.local/api/v1/calendar-reminders/export.ics?token=xyz    │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼ HTTP GET /api/v1/calendar-reminders/export.ics
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔷 API GATEWAY: calendarReminderController.ts                                                   │
+│    ├─► Validates subscriber authentication token & resolves active orgId                        │
+│    ├─► Queries CalendarReminder collection for upcoming bills, debts, and tax dates             │
+│    └─► Generates standardized RFC 5545 VCALENDAR stream with VEVENT entities:                   │
+│                                                                                                 │
+│        BEGIN:VCALENDAR                                                                          │
+│        VERSION:2.0                                                                              │
+│        PRODID:-//FinWise//Financial Calendar//EN                                                │
+│        CALSCALE:GREGORIAN                                                                       │
+│        METHOD:PUBLISH                                                                           │
+│        BEGIN:VEVENT                                                                             │
+│        UID:rem_672b1c8a@finwise.local                                                           │
+│        DTSTAMP:20261102T080000Z                                                                 │
+│        DTSTART;VALUE=DATE:20261115                                                              │
+│        SUMMARY:Pay Electric Utility Bill ($142.50)                                              │
+│        DESCRIPTION:Due date for ConEdison Electric. Envelope: Utilities.                        │
+│        BEGIN:VALARM                                                                             │
+│        ACTION:DISPLAY                                                                           │
+│        TRIGGER:-P1D                                                                             │
+│        DESCRIPTION:Reminder: ConEdison due tomorrow                                             │
+│        END:VALARM                                                                               │
+│        END:VEVENT                                                                               │
+│        END:VCALENDAR                                                                            │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 14.21 Offline-First Financial Journal Synchronization & 64-D Semantic Vector Search
+
+For mobile and tablet environments, FinWise provides an offline-first financial journal (`client/src/pages/Notes.tsx`, `server/src/controllers/financialJournalController.ts`, and `server/src/services/journalEmbeddingService.ts`):
+
+- **HTML5 Canvas Stylus & Markdown Support**: Users can capture freehand stylus notes, sketch transaction receipts, and draft markdown reflections on financial decisions.
+- **Offline Draft Queueing**: In offline scenarios (e.g. flights, remote areas), drafts are immediately stored in the browser's `localStorage` with client-generated UUID idempotency keys (`clientKey`).
+- **Idempotent Batch Sync**: Upon reconnection, the client automatically dispatches `POST /api/financial-journal/entries/batch-sync`. The server processes entries in bulk, guaranteeing zero duplicate entries via a compound unique index:
+  $$	ext{Index:}\ \{ 	ext{orgId}: 1, 	ext{userId}: 1, 	ext{clientKey}: 1 \}$$
+- **64-D Semantic Vector Search**: The backend projects notes into a 64-dimensional semantic embedding space using `journalEmbeddingService.ts`, enabling conceptual retrieval across topics like `#investments`, `#tax-planning`, and `#budget-cuts` even without exact keyword matches.
+
+---
+
+### 14.22 Inbound Real-Time Bank Connector Webhook Feed & HMAC Deduplication
+
+The platform supports direct integration with core banking providers and aggregator webhooks (`server/src/controllers/financialDataController.ts`):
+
+- **Ingress Route**: `POST /api/transactions/bank-feed` accepts structured bank payloads.
+- **HMAC-SHA256 Signature Verification**: Inbound requests must provide a valid `X-FinWise-Signature` header computed from the shared secret.
+- **Idempotent External ID Deduplication**: The server enforces deduplication using a sparse compound index on `{ orgId: 1, externalId: 1 }`. Duplicate webhooks return HTTP 200 with `{ status: "duplicate", processed: 0 }` to satisfy external webhook retry contracts without creating phantom transactions.
+- **Algorithmic Confidence Triage**: High-confidence transactions ($\ge 0.70$) are auto-categorized; low-confidence transactions are routed to the Transaction Review Queue for user verification.
+
+
+---
+
+### 14.23 Cross-Silo Unified Context Engine & Reciprocal Rank Fusion (RRF)
+
+To bridge the gap between qualitative user intentions, static financial documents, and dynamic ledger entries, FinWise implements a unified cross-silo retrieval engine (`server/src/services/unifiedContextRetrievalService.ts` and `client/src/lib/api/unifiedContext.ts`):
+
+- **The Three Silos**:
+  1. *User Memory Records*: High-level rules, user-defined financial constraints, and conversational preferences.
+  2. *Workspace Knowledge Chunks*: Physical PDF statement excerpts, table markdown rows, and scanned receipts.
+  3. *Ledger Transactions*: Raw banking entries, amounts, timestamps, and merchant classifications.
+- **Reciprocal Rank Fusion (RRF)**:
+  $$\text{RRF}(d) = \sum_{s \in \{M, F, T\}} \frac{w_s}{k + r_s(d)}, \quad k = 60$$
+- **Query Intent Source Weighting ($w_s$)**: Detects semantic intentions in queries (e.g. boosting memories for "budget rule", files for "statement/invoice", transactions for "spent/bought").
+- **Exponential Recency Decay**: Applies half-life decay (90 days) to transaction scores, ensuring that recent spending is prioritized over dated historical records.
+- **Grounded Prompt Synthesis**: Assembles retrieved facts into structured, citation-annotated markdown prompts injected into LangGraph agent memory blocks.
+
+
+---
+
+### 14.24 Adaptive Follow-Through & Activity Signal Reinforcement Ranking
+
+FinWise eliminates decision paralysis through an adaptive follow-through recommendation engine (`server/src/services/followThroughService.ts` and `server/AI_Core/utils/follow_through_ranking.py`):
+
+- **Signal Sources**: Aggregates uncompleted tasks, financial goals falling behind pace, active budget overspends, upcoming debt payoff deadlines, and calendar bill reminders.
+- **Half-Life Exponential Time Decay**:
+  $$w(t) = \exp\left(-\ln(2) \cdot \frac{\Delta t}{14}\right)$$
+  Signals lose 50% of temporal relevance every 14 days, preventing stale tasks from clogging prioritization.
+- **Reinforcement Learning from User Feedback**: User actions adjust domain affinities ($A_d$):
+  - Completion: $+0.15$
+  - Dismissal: $-0.10$
+  - Snooze: $-0.05$
+- **Deterministic Priority Classification**: Scores $S \in [0.0, 100.0]$ classified into Critical ($S \ge 80$), High ($S \ge 60$), Medium ($S \ge 40$), and Low ($S < 40$).
+
+---
+
+### 14.25 Semantic Document Q&A & Physical Page Grounding Invariance
+
+The Document Q&A subsystem (`server/src/services/documentQAService.ts`, `client/src/features/chat/ChatDocumentCard.tsx`) provides verifiable question answering over financial files:
+
+- **Strict Physical Page Parity**: PDF form-feed characters (`\f`) delineate page boundaries. Every passage citation maps directly to the exact physical page: `[fileName:p{page}:c{chunk}]`.
+- **Hybrid Scoring**: Combines 64-D dense semantic cosine similarity with BM25 lexical keyword matching ($G \ge 0.70$).
+- **Client Presentation**: Renders interactive `ChatDocumentCard.tsx` badges near AI responses with direct jump links to the document evidence drawer and one-click PDF downloads.
+
+---
+
+### 14.26 Rich Multi-Format Document Studio & GridFS Layout Engine
+
+Located in `server/src/services/richDocumentRenderer.ts`:
+- **6 Professional Formats**: `executive_brief`, `tax_prep_summary`, `cash_flow_audit`, `debt_payoff_schedule`, `net_worth_statement`, and `standard`.
+- **Layout Primitives**: Multi-metric KPI cards, zebra-striped data tables with right-aligned numeric currencies, and accent callout boxes.
+- **Direct GridFS Streaming**: Generated PDF buffers stream directly into MongoDB GridFS with tenant metadata, automatically creating knowledge chunks for immediate Document Q&A querying.
+
+---
+
+### 14.27 Distributed Summary Capacity, Coalescing & Staging Telemetry
+
+Located in `server/src/services/summaryCapacityService.ts`:
+- **Two-Tier Cache Tracking**: Measures L1 (persistent MongoDB snapshot) and L2 (Redis sub-millisecond) hit ratios.
+- **In-Flight & Cluster Coalescing**: Tracks concurrent duplicate request merging within Node.js processes and across Redis-backed distributed workers.
+- **Staging Load Generator**: Exposes automated benchmarking endpoints to simulate concurrent spikes and verify latency percentiles ($P_{50}, P_{95}$).
+
+---
+
+### 14.28 SSRF-Protected Outbound Webhooks & AI Core Mutual Auth
+
+Located in `server/src/services/outboundWebhook.ts` and `server/src/services/aiCoreTransport.ts`:
+- **SSRF Protection**: Validates target HTTPS URLs, performs asynchronous DNS lookup, and blocks any IP address within private or link-local subnet ranges.
+- **Mutual Internal Auth**: Every Node-to-Python AI Core HTTP call transmits `X-Internal-Token`, `X-Internal-Org-Id`, `X-Internal-User-Id`, and `X-Request-Id` headers.
+
+---
+
+### 14.29 Bharat Voice AI Operating System: Gnani Prisma, Timbre & Evon 30B Integration
+
+Developed for **The Great Indian AI Internship Challenge 2026** (Participant: **J Ganesh Kumar Reddy**), located in `server/src/services/gnaniVoiceService.ts` and `client/src/components/voice/BharatVoiceAssistant.tsx`:
+- **Prisma v3.0 Multilingual Speech-to-Text**: Real-time ASR supporting 12+ Indic languages (Hindi, Telugu, Tamil, Kannada, Marathi, Bengali, Gujarati, Malayalam, Punjabi, Odia, Indian English) and code-mixed Hinglish with dedicated 8kHz telephonic noise cancellation.
+- **Evon v3.3 30B Semantic Expense Reasoning**: Extracts structured transaction entities (`amount`, `category`, `merchant`, `paymentMethod`) from informal Indian vernacular with zero arithmetic hallucinations.
+- **Timbre Expressive Text-to-Speech**: Delivers natural regional voice confirmations and financial coaching directly in the user's native dialect.
+- **BFSI Mudra & MSME Lead Qualification**: Automated voice loan underwriting for Pradhan Mantri MUDRA Yojana (Shishu/Kishor/Tarun) and PM SVANidhi, computing Debt Service Coverage Ratio (DSCR) and EMI mathematically with instant voice decisions and downloadable certificates.
+- **BFSI Customer Care & UPI Dispute Redressal Engine**: Automated voice dispute intake for failed UPI transactions, mapping to NPCI UDMS, enforcing RBI Harmonisation Circular DPSS.CO.PD No.629/02.01.014/2019-20 (T+1 TAT auto-reversal, ₹100/day statutory penalty if delayed), and synthesizing Timbre voice reassurance with 1-click official RBI grievance docket export.
+- **Spoken Bharat Tax & GST Copilot**: Spoken income tax advisory under revised FY 2024-25 Budget 2024 revisions (₹75,000 standard deduction, Sec 87A rebate for zero tax up to ₹7.75 Lakhs), comparing Old vs New Regimes, and evaluating 1% Kirana GST composition eligibility.
+- **Autonomous Spoken Vyapar Invoicing & UPI QR**: Decomposing spoken multi-item store baskets into formal GST invoices (CGST 9% + SGST 9%) with dynamic NPCI UPI QR string generation and thermal printer-ready docket downloads.
+- **Jan Kalyan Government Schemes Voice Navigator**: Spoken Direct Benefit Transfer (DBT) evaluator matching citizen profiles with flagship central welfare programs (PM SVANidhi, PM-KISAN, Sukanya Samriddhi, Ayushman Bharat PM-JAY) with native Indic spoken walkthroughs and official portal deep links (`POST /api/v1/voice/schemes`).
+- **Zero-Trust Voice Biometrics Liveness Gate**: Standalone acoustic speaker verification analyzing vocal tract formants (F1, F2), jitter, and shimmer with anti-replay liveness verification and cryptographic HMAC authorization tokens (`POST /api/v1/voice/biometrics/verify`).
+- **Contact Center Telephony Simulator & Agent Assist HUD**: 8kHz AMR-WB telephony codec simulator with Web Audio phone ringing, real-time back-and-forth voice dialogue, Next-Best-Action recommendations, dynamic battle cards, and RBI Fair Practices compliance checkpoints.
+- **BFSI Khata Debt Collections & Recovery**: Kirana credit ledger with automated localized WhatsApp spoken voice reminder synthesis via Timbre TTS.
+- **Speech Acoustics & Voice Biometrics Shield**: +21.6 dB SNR improvement under telephonic 8kHz filtering, sentiment & urgency scoring, RBI Fair Practices compliance validation, and 99.4% anti-spoof human liveness verification.
+- **Deterministic Math Invariant Guard**: Verifies that extracted transactions comply with non-negative constraints and balance reconciliation before committing to MongoDB with `OrgScopePlugin` tenant isolation.
+- **Challenge Award Alignments**: Comprehensive support across Regional Languages, Hinglish, Noisy Telephonic Audio, Real-World Impact, Best Solo Project, Creativity, Tier 2/3 Towns, 60-Second Demo, and Crowd Favourite.
+

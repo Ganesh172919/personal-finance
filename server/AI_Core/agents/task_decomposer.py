@@ -129,6 +129,7 @@ from typing import Any, Dict, List, Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from graph.state import SubtaskStatus
+from registry import get_prompt, get_routing_config, render_prompt
 from utils import create_llm
 from utils.agent_routing import domain_scores, routing_text, select_specialists
 
@@ -160,6 +161,9 @@ MULTI_DOMAIN_PATTERNS = [
 ]
 
 
+# Task decomposition agent evaluating input breadth and financial complexity.
+# Calculates deterministic complexity metrics from multi-domain query signals.
+# Produces structured DAG subtask plans for parallel specialist orchestration.
 class TaskDecomposerAgent:
     """Evaluates request complexity and decomposes complex requests into subtasks.
 
@@ -169,19 +173,45 @@ class TaskDecomposerAgent:
     plan that the ``SubAgentManager`` executes.
     """
 
+    # Initializes the task decomposer agent with lazy LLM thread locks.
+    # Configures system prompt registries and fallback instruction handlers.
+    # Prepares internal states for deterministic or model-driven decomposition.
     def __init__(self):
         self._llm = None
         self._llm_lock = Lock()
 
-        self.system_prompt = SystemMessage(
-            content=(
-                "You are a financial task decomposition assistant. "
-                "Given a user's financial request, break it into 2-5 discrete subtasks. "
-                "Each subtask must be assigned to exactly one specialist agent. "
-                "Respond ONLY with valid JSON -- no markdown fences, no commentary."
-            )
-        )
+        # Resolved through the artifact registry at call time (baked-in default
+        # when empty); assigning ``system_prompt`` overrides it.
+        self._system_prompt_override: Optional[SystemMessage] = None
 
+    # Obtains the active system instruction message for task decomposition.
+    # Reads configured system prompts from the centralized prompt registry.
+    # Falls back to default multi-agent orchestration guidelines when needed.
+    @property
+    def system_prompt(self) -> SystemMessage:
+        override = getattr(self, "_system_prompt_override", None)
+        if override is not None:
+            return override
+        return SystemMessage(content=get_prompt("decomposer.system"))
+
+    # Overrides the active system prompt instance with a custom system message.
+    # Facilitates dynamic prompt injection during testing and specialized evals.
+    # Stores the provided system message in the local agent instance state.
+    @system_prompt.setter
+    def system_prompt(self, value: SystemMessage) -> None:
+        self._system_prompt_override = value
+
+    # Resolves the effective complexity threshold from routing configurations.
+    # Determines the score cutoff required to trigger subtask decomposition.
+    # Falls back to default constant thresholds when configuration is omitted.
+    @staticmethod
+    def _complexity_threshold() -> float:
+        configured = get_routing_config().decomposer_complexity_threshold
+        return configured if configured != 0.5 else COMPLEXITY_THRESHOLD
+
+    # Lazily initializes and provides thread-safe access to the master LLM.
+    # Uses internal synchronization locks to avoid duplicate model instantiations.
+    # Returns the primary LLM client configured for task decomposition duties.
     @property
     def llm(self):
         with self._llm_lock:
@@ -189,6 +219,9 @@ class TaskDecomposerAgent:
                 self._llm = create_llm("master")
             return self._llm
 
+    # Assigns a mock or specialized language model client to the decomposer.
+    # Secures write access through thread locks for safe runtime modification.
+    # Supports test harness isolation and customized model routing fixtures.
     @llm.setter
     def llm(self, value):
         with self._llm_lock:
@@ -198,6 +231,9 @@ class TaskDecomposerAgent:
     # Public API
     # ------------------------------------------------------------------
 
+    # Evaluates request complexity and generates an optimal subtask decomposition plan.
+    # Routes low-complexity queries directly without creating subtask graphs.
+    # Supports deterministic specialist selection or model-driven DAG generation.
     def decompose(
         self,
         user_input: str,
@@ -217,9 +253,10 @@ class TaskDecomposerAgent:
             dicts), ``decomposition_plan`` (the raw LLM output or None).
         """
         score = self.compute_complexity_score(user_input, user_profile, conversation_history)
-        logger.info("Task complexity score: %.2f (threshold %.2f)", score, COMPLEXITY_THRESHOLD)
+        threshold = self._complexity_threshold()
+        logger.info("Task complexity score: %.2f (threshold %.2f)", score, threshold)
 
-        if score < COMPLEXITY_THRESHOLD and not force:
+        if score < threshold and not force:
             return {
                 "complexity_score": score,
                 "subtasks": [],
@@ -242,6 +279,9 @@ class TaskDecomposerAgent:
     # Deterministic complexity scoring
     # ------------------------------------------------------------------
 
+    # Computes a normalized complexity score between 0.0 and 1.0 using heuristic rules.
+    # Evaluates domain breadth, multi-year timelines, trade-offs, and profile debts.
+    # Quantifies advisory difficulty deterministically without incurring LLM cost.
     def compute_complexity_score(
         self,
         user_input: str,
@@ -327,6 +367,9 @@ class TaskDecomposerAgent:
     # LLM decomposition
     # ------------------------------------------------------------------
 
+    # Invokes the language model to decompose complex inquiries into structured subtasks.
+    # Formats user profiles and requests into structured prompt specifications.
+    # Validates generated JSON responses and reverts to default plans on failure.
     def _llm_decompose(
         self,
         user_input: str,
@@ -339,29 +382,11 @@ class TaskDecomposerAgent:
         """
         profile_summary = self._summarise_profile(user_profile)
 
-        prompt = f"""Decompose the following financial request into 2-5 discrete subtasks.
-
-User request: {user_input}
-
-User profile summary:
-{profile_summary}
-
-Available specialist agents:
-- income_expense_analyzer: Cash flow, spending trends, anomalies
-- budget_planner: Budget allocations, savings plans, expense optimization
-- investment_advisor: Portfolio allocation, risk assessment, retirement planning
-- debt_optimizer: Repayment strategies, consolidation analysis
-- financial_educator: Concept explanations, financial literacy
-
-For each subtask, provide:
-- id: a short unique string (e.g. "subtask_001")
-- description: what the subtask should accomplish (1-2 sentences)
-- assigned_agent: one of the agents listed above
-- priority: 1 (highest) to 5 (lowest)
-- dependencies: list of subtask ids that must complete first (empty list if none)
-
-Respond with a JSON object: {{"subtasks": [...], "rationale": "..."}}
-"""
+        prompt = render_prompt(
+            get_prompt("decomposer.decompose"),
+            user_input=user_input,
+            profile_summary=profile_summary,
+        )
 
         fallback_plan = {
             "subtasks": self._build_default_subtasks(user_input, user_profile),
@@ -398,6 +423,9 @@ Respond with a JSON object: {{"subtasks": [...], "rationale": "..."}}
     # Helpers
     # ------------------------------------------------------------------
 
+    # Summarizes core demographic and balance metrics into concise textual format.
+    # Extracts age, income, active debts, financial goals, and savings amounts.
+    # Builds clean context strings for prompt injection during LLM planning.
     def _summarise_profile(self, user_profile: Optional[Dict[str, Any]]) -> str:
         if not user_profile:
             return "No profile available."
@@ -417,6 +445,9 @@ Respond with a JSON object: {{"subtasks": [...], "rationale": "..."}}
             parts.append(f"Savings: {user_profile['savings']:,.0f}")
         return "; ".join(parts) if parts else "Minimal profile data."
 
+    # Constructs deterministic subtask definitions from identified specialist domains.
+    # Prevents duplicate agent assignments and eliminates artificial dependencies.
+    # Prepares parallelizable subtask lists ready for immediate pool execution.
     def _build_default_subtasks(
         self,
         user_input: str,
@@ -435,6 +466,9 @@ Respond with a JSON object: {{"subtasks": [...], "rationale": "..."}}
             "status": SubtaskStatus.PENDING.value,
         } for index, agent in enumerate(agents, 1)]
 
+    # Parses raw LLM text responses into structured decomposition dictionaries.
+    # Strips surrounding markdown code fences and isolates embedded JSON blocks.
+    # Gracefully logs parsing errors and returns empty dictionaries on failure.
     def _parse_llm_output(self, raw: str) -> Dict[str, Any]:
         """Parse the LLM's JSON output, tolerating markdown fences."""
         import json
@@ -461,6 +495,9 @@ Respond with a JSON object: {{"subtasks": [...], "rationale": "..."}}
             logger.warning("Failed to parse LLM decomposition output.")
             return {}
 
+    # Validates and normalizes candidate subtasks generated by language models.
+    # Enforces known agent names, unique identifiers, and valid priority bounds.
+    # Checks dependency graph acyclicity to prevent execution deadlocks.
     def _validate_subtasks(self, raw_list: List[Any]) -> List[Dict[str, Any]]:
         """Validate and normalise subtask dicts from LLM output."""
         valid_agents = {

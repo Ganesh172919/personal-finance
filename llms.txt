@@ -1,0 +1,34 @@
+# FinWise Personal Finance Documentation Index
+> Autonomous Personal Finance Intelligence Platform and API Reference
+
+## Core Architectural Guides
+- [README](README.md): Platform overview, technology stack, and local quick start.
+- [BUILDING_ON_THIS_PROJECT](BUILDING_ON_THIS_PROJECT.md): 25 end-to-end full-stack feature recipes and blueprints.
+- [ARCHITECTURE](docs/ARCHITECTURE.md): Multi-tier topology, worker model, and RAG Phase 2.
+- [API](docs/API.md): Canonical /api/v1 REST endpoints and real-time SSE streams.
+- [AI_CORE](docs/AI_CORE.md): LangGraph DAG, SubAgentManager, KeyPool, and continuous canary validation.
+- [DATABASE](docs/DATABASE.md): 52 Mongoose models, compound B-tree indexes, and GridFS storage.
+- [SERVICES](docs/SERVICES.md): Comprehensive directory of 60+ domain business logic services.
+- [FRONTEND](docs/FRONTEND.md): FinanceOS 5-surface cockpit, Zustand state stores, and UI atlas.
+- [SECURITY](docs/SECURITY.md): Defense in depth, CSRF protection, and SSRF prevention.
+- [DEPLOYMENT](docs/DEPLOYMENT.md): Docker Compose multi-tier orchestration and cloud readiness.
+- [CHANGELOG](docs/CHANGELOG.md): Semantic version history and release notes.
+
+## AI Core & Invariant Verification
+- [AI_AGENTS_REFERENCE](docs/AI_AGENTS_REFERENCE.md): 11 specialist agents and Pydantic V2 schemas.
+- [AI_PROVIDERS_AND_FAILOVER](docs/AI_PROVIDERS_AND_FAILOVER.md): Multi-key KeyPool and failover ladder.
+- [AI Evaluation Harness](server/AI_Core/evals/README.md): Automated quality gates and invariant benchmarking.
+
+## Documentation Series
+- [01-getting-started](documentation/01-getting-started.md): Quickstart setup guide.
+- [02-architecture](documentation/02-architecture.md): Deep architectural specification.
+- [03-api-reference](documentation/03-api-reference.md): Complete REST endpoint catalog.
+- [04-database-schema](documentation/04-database-schema.md): Database collections and schema index.
+- [05-ai-system](documentation/05-ai-system.md): LangGraph multi-agent cognitive architecture.
+- [06-security](documentation/06-security.md): Threat modeling and security controls.
+- [07-performance](documentation/07-performance.md): Performance budgets, latency, and indexing.
+- [08-deployment](documentation/08-deployment.md): Production deployment and monitoring.
+- [09-testing](documentation/09-testing.md): Automated testing pyramid and verification.
+- [10-troubleshooting](documentation/10-troubleshooting.md): Diagnostic runbooks and symptom resolution.
+- [11-contributing](documentation/11-contributing.md): Contribution guidelines and code standards.
+- [12-future-improvements](documentation/12-future-improvements.md): Architectural roadmap and future extensions.

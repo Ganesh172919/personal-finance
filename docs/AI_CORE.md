@@ -58,7 +58,8 @@ server/AI_Core/
 │   ├── plan_builder.py              # Structured financial plan generator
 │   └── data_processors.py           # Transaction filtering, aggregation, and statistical normalization
 ├── memory/
-│   ├── store.py                     # SQLite persistent storage with FTS5 lexical search
+│   ├── state_store.py               # StateStore: MongoDB (default) or SQLite backend for sessions, checkpoints, memories
+│   ├── store.py                     # MemoryStore facade: tenant-scoped lexical search over the StateStore
 │   └── extract.py                   # Conversation memory, fact extraction, preference indexing
 ├── utils/
 │   ├── agent_execution.py           # Execution wrappers, timeout handling, error containment
@@ -319,3 +320,118 @@ def _numbers_are_subset(self, candidate: str, reference: str) -> bool:
     return cand_numbers.issubset(ref_numbers)
 ```
 
+---
+
+## Latest AI Core Architecture & Resiliency Modules
+
+### 1. Multi-Key Provider KeyPool (`utils/key_pool.py`)
+Thread-safe pool of API keys per provider to eliminate HTTP 429 rate limit disruption:
+- **Discovery**: Auto-discovers single, numbered (`PROVIDER_API_KEY_1`, `_2`), and comma-separated keys.
+- **Rotation Strategies**: `round_robin`, `least_used`, and `health_weighted` (prioritizing high success rates and low latency).
+- **Cooldown Policies**: 60s cooldown for HTTP 429, 3600s cooldown for HTTP 403.
+- **Circuit Breaker**: Trips from `CLOSED` to `OPEN` after 5 consecutive failures, excluding the key for 5 minutes before allowing a `HALF-OPEN` probe.
+
+### 2. Universal Model Catalog (`utils/model_catalog.py`, `data/model_catalog.json`)
+Centralized catalog resolving context window limits, token pricing, and modality capabilities across all major 2026 foundation models (Gemini 2.5/2.0, Claude 3.5 Sonnet, GPT-4o, Groq LLaMA 3.3 70B, DeepSeek V3/R1, Mistral, Ollama).
+
+### 3. Real-Time Model Health Monitoring (`utils/model_health.py`)
+Tracks live latency percentiles ($P_{50}$, $P_{95}$, $P_{99}$) and error rates over 10-minute sliding windows. Automatically demotes providers exceeding 15% error rates to secondary fallback status.
+
+### 4. Resumable Session Checkpointing (`utils/session_manager.py`)
+Multi-phase state checkpoints persisted through the `StateStore` (MongoDB in production, SQLite for local dev; `AI_CORE_STATE_BACKEND`) across `ROUTING`, `PLANNING`, `RESEARCH`, `EXECUTION`, `VERIFICATION`, and `SYNTHESIS`. Allows long-running workflows to pause, resume, and recover from failures without re-running completed specialist nodes.
+
+
+### 5. Continuous Production AI Canary Invariant Validation Engine (`evals/canary_validator.py`)
+Microservice endpoint `POST /canary/validate` exposing continuous mathematical auditing:
+- **Number Safety**: $D_{\text{cand}} \subseteq D_{\text{ref}} \cup D_{\text{allowlist}}$, where allowlist = $\{0, 1, 2, 3, 4, 5, 7, 10, 12, 14, 30, 365\}$.
+- **Zero-Sum Budget Conservation**: $\sum_{i=1}^{N} \Delta B_i = 0$ with $\text{Proposed}_i \ge 0$.
+- **Balance Sheet Identity**: $|\text{Assets} - \text{Liabilities} - \text{Net Worth}| \le 0.01$.
+- **Cash Flow Identity**: $|\text{Income} - \text{Expenses} - \text{Net Cash Flow}| \le 0.01$.
+- **Debt Amortization Identity**: $|\text{Principal} + \text{Interest} - \text{Total Payment}| \le 0.01$.
+
+```python
+# server/AI_Core/evals/canary_validator.py
+class CanaryValidationRequest(BaseModel):
+    candidate_text: Optional[str] = None
+    reference_numbers: Optional[List[float]] = None
+    budget_changes: Optional[List[BudgetChange]] = None
+    balance_sheet: Optional[BalanceSheetCheck] = None
+    cash_flow: Optional[CashFlowCheck] = None
+    debt_payment: Optional[DebtPaymentCheck] = None
+
+def validate_invariants(req: CanaryValidationRequest, strict: bool = False) -> CanaryValidationResult:
+    violations = []
+    # 1. Number Safety Check
+    if req.candidate_text and req.reference_numbers is not None:
+        cand_nums = extract_numbers(req.candidate_text)
+        ref_set = set(round(n, 2) for n in req.reference_numbers)
+        allowed = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0, 10.0, 12.0, 14.0, 30.0, 365.0}
+        for val in cand_nums:
+            if val not in ref_set and val not in allowed:
+                violations.append(f"Number Safety: Unverified digit {val} detected.")
+    # 2. Zero-Sum Check
+    if req.budget_changes:
+        sum_delta = sum(c.delta for c in req.budget_changes)
+        if abs(sum_delta) > 0.01:
+            violations.append(f"Zero-Sum: sum(delta) = {sum_delta} != 0.00")
+    return CanaryValidationResult(valid=len(violations) == 0, violations=violations)
+```
+
+### 6. Persistent Memory Store & Rolling Summaries (`memory/store.py`, `memory/state_store.py`)
+- `StateStore` backends: `MongoStateStore` (default when `AI_CORE_MONGO_URI`/`MONGO_URI` is set) and `SqliteStateStore` (local dev, `AI_CORE_STATE_BACKEND=sqlite`; `memory` selects in-process mongomock for tests).
+- Mongo: sessions (TTL 24h on `updatedAt`), checkpoints (TTL 7d on `createdAt`) and memories; memory text search uses a text index prefixed by `orgId`/`userId`, and every query filters by org and user. Indexes are created idempotently at startup (fails soft); `/ready` reports `state_backend`.
+- SQLite: `FTS5` virtual table with sanitised MATCH queries and `LIKE` fallback.
+- Checkpoints are written at request start and end only (`AI_CORE_CHECKPOINT_MODE=boundary`); intermediate node progress is buffered in process and flushed on completion or failure.
+- Env: `AI_CORE_STATE_BACKEND`, `AI_CORE_MONGO_URI`, `AI_CORE_MONGO_DB`, `AI_CORE_SESSION_TTL_SECONDS`, `AI_CORE_CHECKPOINT_TTL_SECONDS`, `AI_CORE_CHECKPOINT_MODE` (see `docs/ENV_VARIABLES.md`).
+- The agent and sub-task response caches use Redis (`REDIS_URL`, tenant-scoped keys) when available and fall back to a local LRU.
+- Automatic context compression: summarizes lengthy conversation histories into compressed semantic memory blocks when token count exceeds 4,000 tokens.
+
+
+### 7. Personalized Multi-Domain Follow-Through & Ranking Engine (`utils/follow_through_ranking.py`, `evals/follow_through_evaluator.py`)
+Provides dynamic activity signal extraction across 6 domains (`task`, `goal`, `budget`, `reminder`, `recurring`, `debt`):
+- **Overdue Invariant**: Overdue obligations strictly rank ahead of future-dated events regardless of baseline weight.
+- **Adaptive Preference Learning (`utils/preference_learning.py`)**: Feedback events (upvote, dismiss, complete) adjust domain affinity weights with half-life exponential time decay:
+  $$w_{\text{decayed}}(t) = 1.0 + (w_{\text{event}} - 1.0) \cdot e^{-\lambda (t - t_0)}$$
+- **Mathematical Bounding**: Composite priority scores $S$ are strictly bounded in $[0.0, 100.0]$.
+
+### 8. Conversation Summary & Narration Sign-Off Evaluation Harness (`evals/conversation_summary_evaluator.py`)
+Enforces strict production sign-off criteria on multi-agent conversation recaps:
+- **Number Safety Invariant**: Numeric tokens in narration must strictly form a subset of reference context numbers ($D_{\text{cand}} \subseteq D_{\text{ref}}$).
+- **Four Canonical Sections**: Output must contain `Conversation pulse`, `Repeated topics`, `Recommended next moves`, and `Suggested next prompt`.
+- **Conciseness Bound**: Output word count $\le 240$ words (prompt target $\le 220$ words) to eliminate token inflation.
+- **Deterministic Fallback**: Provides a deterministic factual fallback recap if any safety invariant is violated.
+
+### 9. Multi-Format Financial Document Authorship & Rich Layout Engine (`evals/document_creation_evaluator.py`)
+Generates structured financial statements across 6 domain schemas (`executive_brief`, `tax_prep_summary`, `cash_flow_audit`, `debt_payoff_schedule`, `net_worth_statement`, `standard`):
+- **Layout Structure**: Automatic metadata banners, KPI metric cards, zebra-striped multi-column tables, and financial callouts.
+- **Physical Page Pagination**: Emits form-feed markers (`\f`) with running page footers ("Page X of Y") and zero orphaned pages.
+- **Accounting Conservation**: Validates that all presented totals adhere to Balance Sheet ($A - L = NW$) and Cash Flow identities.
+
+### 10. Multi-Modal Document Q&A Semantic Grounding Invariant Engine (`evals/document_qa_evaluator.py`)
+Processes IRS Tax Forms (1040, W-2), brokerage statements, noisy OCR receipts, and invoices:
+- **Zero Hallucination Tolerance**: Asserted numbers in answers must strictly originate from retrieved passages.
+- **Physical Page Attribution**: Every cited reference must match the ground-truth physical page number of the source document.
+- **High-Precision Grounding**: Re-ranks candidate passages with dense semantic cosine similarity plus BM25 lexical alignment ($G \ge 0.70$).
+
+### 11. Continuous Reinforcement & Offline Alignment Learning Engine (`learning/`)
+Provides a complete closed-loop learning and self-improvement architecture:
+- **Asynchronous Feedback Queue (`async_writer.py`)**: Buffered, non-blocking ingestion of thumbs-up/down ratings and user edits. Decouples fast inference response times from analytics persistence.
+- **Contextual Multi-Armed Bandit (`bandit.py`)**: Implements Bayesian Thompson sampling across variant prompts and subagent configurations. Exploits high-performing templates while maintaining controlled exploration.
+- **PII Redaction Guard (`redact.py`)**: Enforces Zero-PII ingestion. Strips credit card PANs, SSNs, phone numbers, and IBAN identifiers using compiled regular expressions before feedback enters dataset pools.
+- **Memory Consolidation (`memory_consolidation.py`)**: Nightly batch worker clusters episodic conversation traces, identifies repeated user financial habits, and consolidates them into long-term factual profile memories.
+- **Artifact Versioning & Canary Rollout (`rollout.py`, `reports.py`)**: Controls canary traffic percentages ($5\% \to 25\% \to 100\%$) for newly optimized system prompts. Automatically generates regression delta reports on number safety and latency.
+
+### 12. Multimodal Financial Vision & Document OCR Pipeline (`vision/`)
+Processes real-world financial documents, receipts, and stylus notes into structured transactional entities:
+- **Receipt Parsing (`receipt_parser.py`)**: Extracts merchant name, transaction timestamp, line items, taxes, tips, and total amounts with confidence scores.
+- **Handwriting Recognition (`handwriting_parser.py`)**: Parses cursive handwriting and stylus tablet entries from the Financial Journal (`Notes.tsx`), extracting dates, amounts, and category tags.
+- **Image Preprocessing (`preprocess.py`, `engine.py`)**: Automatic orientation correction, grayscale normalization, adaptive thresholding, and contrast enhancement before OCR execution.
+
+---
+
+**Evidence:**
+- `server/AI_Core/evals/` (`canary_validator.py`, `follow_through_evaluator.py`, `conversation_summary_evaluator.py`, `document_creation_evaluator.py`, `document_qa_evaluator.py`)
+- `server/AI_Core/utils/` (`activity_signals.py`, `follow_through_ranking.py`, `preference_learning.py`)
+- `server/src/services/` (`unifiedContextRetrievalService.ts`, `documentQAService.ts`, `richDocumentRenderer.ts`, `summaryCapacityService.ts`)
+- `server/AI_Core/learning/` (`async_writer.py`, `bandit.py`, `memory_consolidation.py`, `redact.py`, `rollout.py`, `reports.py`)
+- `server/AI_Core/vision/` (`engine.py`, `receipt_parser.py`, `handwriting_parser.py`, `preprocess.py`)

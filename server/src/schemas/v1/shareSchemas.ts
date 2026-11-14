@@ -18,6 +18,9 @@
  */
 import { z } from "zod";
 
+// Validates URL-safe security tokens used for public resource sharing links.
+// Restricts characters to alphanumeric, underscore, and dash symbols.
+// Enforces token lengths between 16 and 256 characters to avoid weak credentials.
 const tokenSchema = z
   .string()
   .trim()
@@ -25,6 +28,9 @@ const tokenSchema = z
   .max(256)
   .regex(/^[a-zA-Z0-9_-]+$/, "Invalid share token");
 
+// Validates payload attributes when generating a shareable financial summary story.
+// Controls link expiration time horizons and selective visibility of goal milestones.
+// Disallows unrecognized configuration options through strict schema enforcement.
 export const createFinancialStoryShareBodySchema = z
   .object({
     expires_in_days: z.number().int().min(1).max(365).optional(),
@@ -36,6 +42,9 @@ export const createFinancialStoryShareBodySchema = z
   .strict()
   .default({});
 
+// Validates route parameter objects containing a public share access token.
+// Matches the token URL parameter against length and safe regex character criteria.
+// Prevents invalid token inputs from performing database lookups on public shares.
 export const shareTokenParamSchema = z
   .object({
     token: tokenSchema,

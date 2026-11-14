@@ -32,6 +32,9 @@ const roleRank: Record<"member" | "admin" | "owner", number> = {
   owner: 3,
 };
 
+// Validates tenant organization presence on finance account management requests.
+// Converts the raw string organization ID into a strongly-typed MongoDB ObjectId.
+// Aborts request handling with an unauthorized HTTP error if context is missing.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -39,6 +42,9 @@ const requireOrgContext = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Enforces administrative permissions for financial account creation and mutation.
+// Verifies caller membership and evaluates member role ranks against admin tiers.
+// Throws a forbidden HTTP exception if the caller lacks administrative authority.
 const requireOrgAdmin = (req: Request) => {
   const orgId = requireOrgContext(req);
   if (roleRank[req.org!.role] < roleRank.admin) {
@@ -47,6 +53,9 @@ const requireOrgAdmin = (req: Request) => {
   return orgId;
 };
 
+// Serializes stored account documents into client-facing financial account schemas.
+// Incorporates dynamically calculated transaction balance sums and activity counts.
+// Normalizes currency formats, reconciliation stamps, and metadata structures.
 const mapAccount = (account: any, derived?: { current_balance?: number; transaction_count?: number }) => ({
   id: String(account._id),
   name: String(account.name || ""),
@@ -69,6 +78,9 @@ const mapAccount = (account: any, derived?: { current_balance?: number; transact
   updated_at: account.updatedAt || null,
 });
 
+// Queries all financial accounts configured under the target organization tenant.
+// Aggregates real-time transaction amounts to derive current balances dynamically.
+// Delivers active account descriptors complete with opening and current balance figures.
 export const listAccounts = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const accounts = await AccountModel.find({ orgId }).sort({ updatedAt: -1 }).lean();
@@ -114,6 +126,9 @@ export const listAccounts = async (req: Request, res: Response) => {
   });
 };
 
+// Registers a new financial account such as checking, credit, or investment wallet.
+// Records opening balances, institution descriptors, masking tokens, and currencies.
+// Persists the newly configured account document and returns its serialized payload.
 export const createAccount = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;
@@ -145,6 +160,9 @@ export const createAccount = async (req: Request, res: Response) => {
   });
 };
 
+// Mutates properties, reconciliation dates, or active status on an existing account.
+// Enforces tenant scoping and administrative permissions before applying updates.
+// Commits attribute modifications to storage and returns the updated account model.
 export const updateAccount = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;

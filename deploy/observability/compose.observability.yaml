@@ -1,0 +1,48 @@
+# Optional overlay: Prometheus + Grafana next to the FinWise stack (local / staging).
+#
+#   mkdir -p deploy/observability/secrets
+#   printf '%s' "$METRICS_TOKEN" > deploy/observability/secrets/server_metrics_token
+#   printf '%s' "$METRICS_TOKEN" > deploy/observability/secrets/ai_core_metrics_token
+#   METRICS_ENABLED=true AI_CORE_METRICS_TOKEN=$METRICS_TOKEN \
+#     docker compose -f compose.yaml -f deploy/observability/compose.observability.yaml up -d --wait
+#
+# Prometheus: http://127.0.0.1:9090   Grafana: http://127.0.0.1:3001 (admin / GRAFANA_ADMIN_PASSWORD)
+# Import deploy/observability/grafana-dashboard.json in Grafana (Dashboards > Import) and
+# add the Prometheus data source http://prometheus:9090.
+# The secrets directory holds tokens: keep it out of git (see .gitignore note in
+# deploy/observability/README.md). Not exercised against real containers by the author.
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/observability/prometheus-rules.yml:/etc/prometheus/finwise.rules.yml:ro
+      - ./deploy/observability/secrets:/etc/prometheus/secrets:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - server
+      - ai-core
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_HTTP_PORT: "3001"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:

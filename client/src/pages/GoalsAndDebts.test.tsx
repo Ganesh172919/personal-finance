@@ -3,7 +3,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import GoalsAndDebts from "./GoalsAndDebts";
 
-const api = vi.hoisted(() => ({ createGoal: vi.fn(), updateGoal: vi.fn(), createDebt: vi.fn(), createTask: vi.fn() }));
+const api = vi.hoisted(() => ({
+  createGoal: vi.fn(),
+  updateGoal: vi.fn(),
+  createDebt: vi.fn(),
+  createTask: vi.fn(),
+  apiClient: vi.fn(),
+}));
 vi.mock("@/lib/apiClient", () => ({
   ...api, updateDebt: vi.fn(), deleteGoal: vi.fn(), deleteDebt: vi.fn(), ApiError: class extends Error {},
 }));
@@ -287,3 +293,106 @@ it("distributes lump-sum windfall across multiple goals and updates balances", a
   });
 });
 
+
+
+it("renders multi-currency normalization cockpit and switches reporting currencies with live FX rates", async () => {
+  showPage({
+    goals: [
+      { id: "g1", name: "Emergency Reserve", target: 5000, current: 2000, deadline: "2027-12-01", priority: 8 },
+    ],
+    debts: [
+      { id: "d1", name: "Credit Card", balance: 1000, interest_rate: 18.0, minimum_payment: 50, type: "Credit Card" },
+    ],
+  });
+
+  // Verify cockpit presence
+  expect(screen.getByTestId("card-goals-currency-normalization")).toBeInTheDocument();
+  expect(screen.getByTestId("badge-goals-reporting-currency")).toHaveTextContent("Reporting: USD ($)");
+  expect(screen.getByTestId("badge-goals-fx-status")).toHaveTextContent("Deterministic Real-Time FX Conversion Active");
+
+  // Switch to EUR
+  fireEvent.click(screen.getByTestId("btn-goals-currency-EUR"));
+  expect(screen.getByTestId("badge-goals-reporting-currency")).toHaveTextContent("Reporting: EUR (€)");
+  expect(screen.getByTestId("badge-goals-fx-rate")).toHaveTextContent("1 USD = 0.92 EUR");
+
+  // Switch to JPY
+  fireEvent.click(screen.getByTestId("btn-goals-currency-JPY"));
+  expect(screen.getByTestId("badge-goals-reporting-currency")).toHaveTextContent("Reporting: JPY (¥)");
+  expect(screen.getByTestId("badge-goals-fx-rate")).toHaveTextContent("1 USD = 155 JPY");
+
+  // Switch via dropdown
+  fireEvent.change(screen.getByTestId("select-goals-currency"), { target: { value: "GBP" } });
+  expect(screen.getByTestId("badge-goals-reporting-currency")).toHaveTextContent("Reporting: GBP (£)");
+  expect(screen.getByTestId("badge-goals-fx-rate")).toHaveTextContent("1 USD = 0.78 GBP");
+});
+
+it("simulates dynamic savings transfer rules (surplus, roundup, debt sweep, windfall) and schedules tasks", async () => {
+  api.createTask.mockResolvedValue({ task: { id: "rule-task-1" } });
+  showPage({
+    annual_income: 60000, // 5000/mo
+    monthly_expenses: 3000, // 2000 surplus
+    goals: [
+      { id: "g1", name: "Home Downpayment", target: 20000, current: 5000, deadline: "2028-06-01", priority: 9 },
+      { id: "g2", name: "Rainy Day", target: 3000, current: 1000, deadline: "2026-12-01", priority: 5 },
+    ],
+    debts: [
+      { id: "d1", name: "Auto Loan", balance: 8000, interest_rate: 6.5, minimum_payment: 250, type: "Auto" },
+    ],
+  });
+
+  // Verify dynamic savings engine presence
+  expect(screen.getByTestId("card-dynamic-savings-transfer")).toBeInTheDocument();
+  expect(screen.getByTestId("metric-projected-annual-savings")).toBeInTheDocument();
+  expect(screen.getByTestId("metric-rule-impact")).toHaveTextContent(/Accelerates Home Downpayment/);
+
+  // Adjust surplus sweep rate
+  const sweepInput = screen.getByTestId("input-surplus-sweep-pct");
+  fireEvent.change(sweepInput, { target: { value: "75" } });
+  expect(sweepInput).toHaveValue(75);
+
+  // Test Spare-Change Round-Up rule
+  fireEvent.click(screen.getByTestId("btn-rule-roundup"));
+  expect(screen.getByTestId("metric-rule-impact")).toHaveTextContent(/micro-savings/i);
+  fireEvent.change(screen.getByTestId("select-roundup-increment"), { target: { value: "5" } });
+
+  // Test Dynamic Debt Sweep rule
+  fireEvent.click(screen.getByTestId("btn-rule-debt-sweep"));
+  expect(screen.getByTestId("metric-rule-impact")).toHaveTextContent(/Compresses debt amortization/i);
+
+  // Test Smart Windfall Auto-Router rule
+  fireEvent.click(screen.getByTestId("btn-rule-windfall"));
+  expect(screen.getByTestId("metric-rule-impact")).toHaveTextContent(/lump sums/i);
+
+  // Switch destination goal
+  fireEvent.change(screen.getByTestId("select-savings-target-goal"), { target: { value: "g2" } });
+
+  // Schedule task with 1-click
+  const scheduleBtn = screen.getByTestId("btn-schedule-savings-rule");
+  fireEvent.click(scheduleBtn);
+
+  await waitFor(() => {
+    expect(api.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: expect.stringContaining("Dynamic Savings Rule"),
+        priority: "high",
+        kind: "goal",
+        bucket: 30,
+        due_days: 7,
+        steps: expect.any(Array),
+      })
+    );
+  });
+});
+
+it("gracefully calculates dynamic savings transfers when user has no active goals or debts", async () => {
+  showPage({
+    goals: [],
+    debts: [],
+    annual_income: 48000,
+    monthly_expenses: 2500,
+  });
+
+  expect(screen.getByTestId("card-dynamic-savings-transfer")).toBeInTheDocument();
+  expect(screen.getByTestId("metric-projected-annual-savings")).toBeInTheDocument();
+  expect(screen.getByTestId("metric-rule-impact")).toHaveTextContent(/Priority Savings Goal/);
+});

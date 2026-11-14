@@ -506,4 +506,140 @@ describe("Portfolio Page", () => {
       })
     );
   });
+
+  it("renders Multi-Currency FX Cockpit and switches reporting currency to EUR and JPY", async () => {
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Investment Portfolio" });
+
+    // Multi-Currency Cockpit card
+    expect(screen.getByTestId("card-portfolio-currency-localization")).toBeInTheDocument();
+    expect(screen.getByTestId("badge-portfolio-reporting-currency")).toHaveTextContent("Reporting: USD ($)");
+
+    // Currency pills exist for all 7 currencies
+    expect(screen.getByTestId("btn-portfolio-currency-USD")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-portfolio-currency-EUR")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-portfolio-currency-GBP")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-portfolio-currency-INR")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-portfolio-currency-CAD")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-portfolio-currency-AUD")).toBeInTheDocument();
+    expect(screen.getByTestId("btn-portfolio-currency-JPY")).toBeInTheDocument();
+
+    // Switch currency to EUR via quick button
+    fireEvent.click(screen.getByTestId("btn-portfolio-currency-EUR"));
+
+    await waitFor(() => {
+      expect(api.getPortfolioSummary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          currency: "EUR",
+        })
+      );
+    });
+
+    expect(screen.getByTestId("badge-portfolio-reporting-currency")).toHaveTextContent("Reporting: EUR (€)");
+    expect(screen.getByTestId("badge-portfolio-fx-rate")).toHaveTextContent("1 USD = 0.92 EUR");
+
+    // Switch currency to JPY via dropdown
+    const selectCurrency = screen.getByTestId("select-portfolio-currency");
+    fireEvent.change(selectCurrency, { target: { value: "JPY" } });
+
+    await waitFor(() => {
+      expect(api.getPortfolioSummary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          currency: "JPY",
+        })
+      );
+    });
+
+    expect(screen.getByTestId("badge-portfolio-reporting-currency")).toHaveTextContent("Reporting: JPY (¥)");
+    expect(screen.getByTestId("badge-portfolio-fx-rate")).toHaveTextContent("1 USD = 155 JPY");
+  });
+
+  it("models cross-border dividend withholding tax (WHT) localization with DTAA vs statutory rates", async () => {
+    api.getPortfolioSummary.mockResolvedValue({
+      ...mockPortfolioSummary,
+      currency: "EUR",
+      fx_rate: 0.92,
+      currency_symbol: "€",
+      dividends: {
+        ...mockPortfolioSummary.dividends,
+        currency: "EUR",
+        fx_rate: 0.92,
+        currency_symbol: "€",
+        total_received: 782,
+        gross_received: 782,
+        wht_deducted: 117.3,
+        net_received: 664.7,
+        wht_rate_pct: 15,
+        ftc_relief_estimate: 117.3,
+        treaty_country: "DTAA Standard",
+        ttm_received: 690,
+        gross_ttm_received: 690,
+        net_ttm_received: 586.5,
+        portfolio_yield_pct: 3.0,
+        net_portfolio_yield_pct: 2.55,
+        monthly_average: 57.5,
+        net_monthly_average: 48.88,
+        payouts_by_holding: [
+          {
+            holding_name: "Vanguard Total Stock Market ETF",
+            total_amount: 414,
+            gross_amount: 414,
+            wht_deducted: 62.1,
+            net_amount: 351.9,
+            payout_count: 3,
+            invested_amount: 13800,
+            yield_on_cost_pct: 3.0,
+            net_yield_on_cost_pct: 2.55,
+          },
+        ],
+      },
+    });
+
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Investment Portfolio" });
+
+    // Check WHT rate selector
+    const whtSelect = screen.getByTestId("select-wht-rate");
+    expect(whtSelect).toBeInTheDocument();
+    expect(whtSelect).toHaveValue("15");
+    expect(screen.getByTestId("badge-treaty-country")).toHaveTextContent("DTAA Standard");
+
+    // Navigate to Dividends tab
+    selectTab("Dividends");
+
+    // Net vs Gross Stat Cards
+    expect(await screen.findByTestId("metric-net-dividends")).toBeInTheDocument();
+    expect(screen.getByTestId("metric-net-dividends")).toHaveTextContent("€664.70");
+
+    expect(screen.getByTestId("metric-wht-deducted")).toBeInTheDocument();
+    expect(screen.getByTestId("metric-wht-deducted")).toHaveTextContent("€117.30");
+    expect(screen.getByTestId("badge-wht-rate")).toHaveTextContent("15% Rate");
+
+    expect(screen.getByTestId("metric-ftc-relief")).toBeInTheDocument();
+    expect(screen.getByTestId("metric-ftc-relief")).toHaveTextContent("€117.30");
+
+    expect(screen.getByTestId("metric-net-portfolio-yield")).toBeInTheDocument();
+    expect(screen.getByTestId("metric-net-portfolio-yield")).toHaveTextContent("2.55%");
+
+    // Holdings yield on cost shows net & gross
+    expect(screen.getByTestId("table-dividends-by-holding")).toBeInTheDocument();
+    expect(screen.getByText(/351.90/)).toBeInTheDocument();
+    expect(screen.getByText(/2.55% Net Yield/)).toBeInTheDocument();
+
+    // Change WHT selector to 30% Non-Treaty Statutory
+    fireEvent.change(whtSelect, { target: { value: "30" } });
+
+    await waitFor(() => {
+      expect(api.getPortfolioSummary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          wht_rate: 30,
+          treaty_country: "Statutory NRA",
+        })
+      );
+    });
+
+    expect(screen.getByTestId("badge-treaty-country")).toHaveTextContent("Statutory NRA");
+  });
 });

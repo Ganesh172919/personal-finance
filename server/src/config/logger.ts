@@ -27,10 +27,14 @@ import type { Request } from "express"; // Express types
 const isTest = process.env.NODE_ENV === "test";
 const isDev = process.env.NODE_ENV === "development";
 
-// Redaction paths shared across the application
+// Defines object key paths containing sensitive customer and security credentials.
+// Prevents authorization headers, passwords, and tokens from appearing in log streams.
 const REDACT_PATHS = [
   "req.headers.authorization", // JWT tokens
   "req.headers.cookie", // Session cookies
+  'req.headers["x-csrf-token"]',
+  'req.headers["x-api-key"]',
+  'req.headers["x-api-key-id"]',
   "res.headers.set-cookie", // Set-cookie headers
   "req.body.password", // User passwords
   "req.body.otp", // One-time passwords
@@ -43,15 +47,8 @@ const REDACT_PATHS = [
   "req.body.receipt_buffer", // Receipt data
 ];
 
-/**
- * Builds the Pino transport configuration.
- *
- * In development, uses pino-pretty for human-readable output.
- * In production and test, uses the default JSON transport.
- *
- * pino-pretty is imported dynamically via the `transport` option so that
- * the dependency is only loaded when needed (development mode).
- */
+// Configures development-mode log formatting using pino-pretty for human readability.
+// Gracefully falls back to raw JSON stream output if formatting dependencies are omitted.
 const buildTransport = (): pino.TransportSingleOptions | undefined => {
   if (!isDev) return undefined;
   let target: string;
@@ -71,29 +68,8 @@ const buildTransport = (): pino.TransportSingleOptions | undefined => {
   };
 };
 
-/**
- * Application Logger Instance
- *
- * Configured with:
- * - Log level: "silent" in test, otherwise from LOG_LEVEL env var (default: "info")
- * - No base properties (cleaner JSON output)
- * - Sensitive data redaction for security
- * - Pretty-printing in development, JSON in production
- *
- * REDACTED PATHS:
- * - req.headers.authorization (JWT tokens)
- * - req.headers.cookie (session cookies)
- * - res.headers.set-cookie (set-cookie headers)
- * - req.body.password (user passwords)
- * - req.body.otp (one-time passwords)
- * - req.body.token (authentication tokens)
- * - req.body.command (database commands)
- * - req.body.rows (database rows)
- * - req.body.file (file uploads)
- * - req.body.image (image uploads)
- * - req.body.buffer (binary data)
- * - req.body.receipt_buffer (receipt data)
- */
+// Primary application-wide structured JSON logger configured with Pino.
+// Enforces security redaction rules and environment-specific output verbosity levels.
 export const logger = pino({
   level: isTest ? "silent" : process.env.LOG_LEVEL || "info", // Silent in test, configurable otherwise
   base: undefined, // No base properties (pid, hostname) for cleaner output
@@ -104,21 +80,8 @@ export const logger = pino({
   transport: buildTransport(),
 });
 
-/**
- * Creates a child logger enriched with request context.
- *
- * The returned logger includes:
- * - requestId: Unique request ID for tracing
- * - traceId: Distributed trace ID (from X-Trace-Id header or generated UUID)
- * - orgId: Organization ID from request context (if available)
- * - userId: Authenticated user ID (if available)
- *
- * All subsequent log calls through the child logger automatically include
- * these fields, eliminating the need to pass context manually.
- *
- * @param {Request} req - Express request object
- * @returns {pino.Logger} Child logger with request context
- */
+// Instantiates a request-scoped child logger enriched with unique trace and user identities.
+// Binds request IDs, trace headers, organization scopes, and user contexts to all subsequent log events.
 export const createRequestLogger = (req: Request): pino.Logger => {
   const traceId = req.header("x-trace-id") || req.traceId || randomUUID();
 
@@ -133,25 +96,8 @@ export const createRequestLogger = (req: Request): pino.Logger => {
   });
 };
 
-/**
- * HTTP Request/Response Logger Middleware
- *
- * This middleware logs HTTP requests and responses using pino-http.
- *
- * FEATURES:
- * - Uses the application logger instance
- * - Adds custom properties (requestId, traceId, userId, orgId) to each log entry
- * - Custom log level based on HTTP status code:
- *   - 5xx or errors: "error" level
- *   - 4xx: "warn" level
- *   - Everything else: "info" level
- *
- * CUSTOM PROPERTIES:
- * - requestId: Unique request ID for tracing
- * - traceId: Distributed trace ID
- * - userId: ID of the authenticated user (if any)
- * - orgId: Organization ID from request context (if any)
- */
+// Express middleware tracking incoming HTTP transactions and associated execution outcomes.
+// Automatically derives log severity levels from response status codes and records request context.
 export const httpLogger = pinoHttp({
   logger, // Use the application logger
   genReqId: req => (req as any).requestId, // Reuse the existing requestId

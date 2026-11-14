@@ -915,3 +915,103 @@ async def summarize_conversation(transcript: str) -> SessionInsights:
     result_dict = await invoke_llm_json(prompt, schema=SessionInsights)
     return SessionInsights.model_validate(result_dict)
 ```
+
+---
+
+## 12) 2026 Enterprise AI Core Micro-Engine Deep Dive
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#dc2626', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#b91c1c', 'lineColor': '#ef4444', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((2026 AI Core Micro-Engine))
+    Multi-Agent Scheduler
+      Kahn's Topological Sort
+      Parallel ThreadPool Execution
+      SHA-256 State TTL Cache (120s)
+      Circuit Breakers (5 Failures -> 300s OPEN)
+      Heuristic Secondary Agent Fallback
+    Mathematical Invariant Canary
+      Zero-Sum Invariant Sum dB = 0
+      Number Safety Cand in Ref
+      PII Sanitization Regex
+    Vector Subspace Mathematics
+      64-D Unit Hypersphere ||v|| = 1.0
+      FNV-1a Subword N-Gram Hashing
+      Agglomerative Centroid Linkage
+    Grounded Multi-Modal RAG
+      Form-Feed Page Preservation \f
+      Table Split Markdown Header Preservation
+      Hybrid Fusion G = 0.55 Dense + 0.45 Sparse
+      Verification Gate G >= 0.70
+```
+
+### 12.1 `SubAgentManager`: Concurrency, TTL Caching & Circuit Breakers
+
+The `SubAgentManager` manages the execution lifecycle of 10 specialized financial agents (Cashflow, Debt, Investment, Tax, Scenario, Compliance, Newsletter, RAG, Invariant, and Audit).
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Client Query / Automation Event: Enters LangGraph Workflow Router      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Dependency Analysis via Kahn's Topological Sort                        │
+│  ├─ Evaluates in-degree: identifies independent root agents            │
+│  └─ Batches parallelizable agents (e.g. Debt + Investment concurrently)│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ SubAgentManager High-Throughput Layer:                                 │
+│  ├─ Compute SHA-256 Hash: sha256(agent_name + sorted_state_json)       │
+│  ├─ If (now - entry.timestamp < 120s) ➔ Cache Hit (Return in 0ms)      │
+│  ├─ If CircuitBreaker == 'OPEN' ➔ Route to Local Deterministic Fallback │
+│  └─ If Normal ➔ Dispatch via ThreadPoolExecutor to LLM Foundation Model│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Output Aggregation & Canary Math Invariant Gate:                       │
+│  ├─ Assert sum(Delta B_i) == 0 (Zero-Sum Rebalancing)                  │
+│  ├─ Assert CandidateDigits in ReferenceDigits (No hallucinated numbers)│
+│  └─ If assertion fails ➔ Abort synthesis, log Canary alert 🛑          │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Cache Key Derivation & Circuit Breaker Logic
+1. **Deterministic Hashing**:
+   $$\text{Key} = \text{SHA256}\Big(\text{agent\_name} \;\parallel\; \text{JSON.stringify}(\text{sort\_keys}(\text{user\_state}))\Big)$$
+2. **Circuit Breaker State Machine**:
+   - `CLOSED`: Normal operation.
+   - `OPEN`: 5 consecutive network / rate-limit failures within 60s. All calls diverted to offline deterministic rules.
+   - `HALF-OPEN`: Cooldown period of 300s elapsed. Exactly 1 probe request dispatched. If successful, transitions to `CLOSED`; if failed, resets `OPEN` for another 300s.
+
+---
+
+### 12.2 `CanaryValidator`: Zero-Sum Budget & Number Hallucination Invariants
+
+Financial applications cannot tolerate hallucinated numerical metrics or unbalanced ledger changes. `canary_validator.py` executes before any response is rendered:
+
+```python
+# server/AI_Core/evals/canary_validator.py
+import re
+from typing import List, Dict, Any
+
+class CanaryValidator:
+    @staticmethod
+    def validate_budget_zero_sum(rebalance_shifts: List[Dict[str, Any]]) -> bool:
+        total_delta = sum(float(shift.get("delta", 0.0)) for shift in rebalance_shifts)
+        return abs(total_delta) < 1e-4
+
+    @staticmethod
+    def validate_number_safety(candidate_text: str, reference_numbers: List[float]) -> bool:
+        extracted_digits = re.findall(r"\b\d+(?:\.\d+)?\b", candidate_text)
+        candidate_floats = {round(float(d), 2) for d in extracted_digits}
+        ref_set = {round(f, 2) for f in reference_numbers}
+
+        # Ignore common non-financial integers
+        allowlist = {1.0, 2.0, 3.0, 4.0, 5.0, 7.0, 10.0, 12.0, 14.0, 30.0, 365.0}
+        unaccounted = candidate_floats - ref_set - allowlist
+        return len(unaccounted) == 0
+```

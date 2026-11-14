@@ -48,17 +48,26 @@ import {
   type ReceiptStatus,
 } from "@/lib/apiClient";
 
+// Formats error objects into actionable user notification text.
+// Incorporates server request identifiers if present on ApiError instances.
+// Falls back to generic error messaging when detailed descriptions are missing.
 const formatError = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
+// Converts an unknown numeric representation into a verified finite number.
+// Returns a designated fallback number if parsing fails or produces NaN.
+// Prevents unparseable OCR price figures from corrupting financial totals.
 const toNumberOr = (value: any, fallback: number) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
 };
 
+// Optical character recognition (OCR) receipt parsing and reconciliation page.
+// Allows scanning paper receipts, extracting itemized lines, and converting to transactions.
+// Provides side-drawer review for vendor, tax, line items, and approval actions.
 export default function ReceiptsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();

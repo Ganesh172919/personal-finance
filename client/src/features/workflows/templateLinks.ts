@@ -1,7 +1,10 @@
-﻿import type { CreateWorkflowRequest, Workflow } from "@/lib/apiClient";
+import type { CreateWorkflowRequest, Workflow } from "@/lib/apiClient";
 
 import type { WorkflowAction } from "@/types/apiTypes";
 
+// Defines the template structure for pre-configured financial automation workflows.
+// Associates unique identifiers and descriptive summaries with creation requests.
+// Used across workflow creation wizards and template sharing features.
 export type WorkflowTemplate = {
   id: string;
   name: string;
@@ -9,11 +12,20 @@ export type WorkflowTemplate = {
   request: CreateWorkflowRequest;
 };
 
+// Bounded maximum character length permitted for URL-encoded workflow templates.
+// Safeguards against Denial-of-Service and memory exhaustion from oversized queries.
+// Ensures incoming template payloads remain within standard browser URL limits.
 const MAX_TEMPLATE_PARAM_LEN = 20_000;
 
+// Type guard assessing whether an unknown candidate value is a non-null object.
+// Excludes primitives and arrays to ensure valid dictionary payload structures.
+// Used during serialization and schema validation of incoming workflow definitions.
 const isObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
+// Fault-tolerant JSON parser that gracefully handles malformed string values.
+// Wraps JSON.parse within a try-catch block to prevent runtime crashes.
+// Returns null when supplied inputs fail syntax validation or decoding.
 const safeJsonParse = (value: string): unknown => {
   try {
     return JSON.parse(value);
@@ -22,6 +34,9 @@ const safeJsonParse = (value: string): unknown => {
   }
 };
 
+// Encodes arbitrary UTF-8 text into a URL-safe Base64 string representation.
+// Replaces standard plus and slash symbols with URL-compatible dashes and underscores.
+// Trims trailing padding equals signs to maintain clean URL query parameters.
 const base64UrlEncode = (value: string) => {
   const bytes = new TextEncoder().encode(value);
   let binary = "";
@@ -30,6 +45,9 @@ const base64UrlEncode = (value: string) => {
   return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 };
 
+// Decodes a URL-safe Base64 string back into raw UTF-8 decoded text.
+// Restores standard Base64 characters and reconstructs required padding equals signs.
+// Passes normalized binary output through TextDecoder to restore valid Unicode.
 const base64UrlDecode = (value: string) => {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const pad = normalized.length % 4;
@@ -40,6 +58,9 @@ const base64UrlDecode = (value: string) => {
   return new TextDecoder().decode(bytes);
 };
 
+// Validates and extracts a workflow creation payload from a URL query parameter.
+// Decodes Base64Url strings and verifies required trigger and action schemas.
+// Returns a sanitized CreateWorkflowRequest object or null upon invalid input.
 export const parseWorkflowTemplateParam = (raw: string): CreateWorkflowRequest | null => {
   if (!raw) return null;
   const trimmed = raw.trim();
@@ -65,6 +86,9 @@ export const parseWorkflowTemplateParam = (raw: string): CreateWorkflowRequest |
   return { name, enabled, trigger: trigger as any, actions: actions as any };
 };
 
+// Generates a shareable URL containing an encoded workflow configuration template.
+// Serializes workflow request definitions into compact Base64Url query strings.
+// Appends the active origin to construct an absolute web link for sharing.
 export const buildWorkflowTemplateLink = (request: CreateWorkflowRequest): string => {
   const encoded = base64UrlEncode(JSON.stringify(request));
   const relative = `/workflows?template=${encoded}`;
@@ -77,6 +101,9 @@ export const buildWorkflowTemplateLink = (request: CreateWorkflowRequest): strin
   }
 };
 
+// Computes a standardized year-month period string based on current UTC time.
+// Formats timestamps into a YYYY-MM identifier suitable for monthly summaries.
+// Provides a sensible default for period-based export tasks and automated reports.
 const defaultPeriodKey = () => {
   const now = new Date();
   const y = now.getUTCFullYear();
@@ -84,6 +111,9 @@ const defaultPeriodKey = () => {
   return `${y}-${m}`;
 };
 
+// Converts an existing active workflow entity into an unbound template blueprint.
+// Strips execution IDs and forces enabled flags to false to prevent immediate firing.
+// Normalizes trigger events and action payloads for reusable template cloning.
 export const workflowToTemplateRequest = (workflow: Workflow): CreateWorkflowRequest => {
   const safeActions = Array.isArray((workflow as any).actions) ? ((workflow as any).actions as WorkflowAction[]) : [];
   return {
@@ -94,6 +124,9 @@ export const workflowToTemplateRequest = (workflow: Workflow): CreateWorkflowReq
   };
 };
 
+// Factory supplying default built-in automation templates for new workspaces.
+// Includes best-practice presets for weekly check-ins, subscription audits, and PDFs.
+// Populates template selection galleries with ready-to-activate routines.
 export const builtinWorkflowTemplates = (): WorkflowTemplate[] => [
   {
     id: "weekly-check-in",

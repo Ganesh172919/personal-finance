@@ -3,6 +3,9 @@ import * as SwitchPrimitives from "@radix-ui/react-switch";
 
 import { cn } from "@/lib/utils";
 
+// Toggle switch control representing a binary checked/unchecked preference.
+// Built on Radix UI SwitchPrimitives Root with smooth thumb slide transitions.
+// Supports keyboard focus rings, disabled styling, and accessible toggle states.
 const Switch = React.forwardRef<
   React.ElementRef<typeof SwitchPrimitives.Root>,
   React.ComponentPropsWithoutRef<typeof SwitchPrimitives.Root>

@@ -223,3 +223,68 @@ pytest tests/test_key_pool.py -v
 pytest tests/test_llm_wrapper.py -v
 pytest tests/test_provider_usage.py -v
 ```
+
+---
+
+## 7. SubAgentManager Parallel Scheduling, SHA-256 TTL Caching & Canary Invariants
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#dc2626', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#b91c1c', 'lineColor': '#ef4444', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((AI Core SubAgentManager))
+    Parallel Task Execution
+      Kahn's Topological Sort
+      ThreadPoolExecutor Concurrency
+      10 Domain Specialists
+    Response Caching
+      SHA-256 State Hashing
+      120-Second TTL Window
+      Zero-Latency Cache Hits (0ms)
+    Resiliency & Failover
+      5 Failure Threshold
+      300s Circuit Breaker OPEN State
+      Deterministic Heuristic Secondary Fallback
+    Invariant Canary Gates
+      Zero-Sum Envelopes Sum dB = 0
+      Candidate Number Safety Check
+      PII Sanitization Regex Audit
+```
+
+### 7.1 High-Throughput Sub-Agent Execution Lifecycle
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Incoming Complex User Query: Enters AI Core LangGraph Router           │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 1: Kahn's Algorithm Orders Dependent Sub-Agents                   │
+│  ├─ Identify independent agents (e.g. Debt Specialist & Cashflow)      │
+│  └─ Dispatch concurrently via Python `ThreadPoolExecutor(max_workers=4)`│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 2: SHA-256 State Hashing & 120-Second TTL Response Cache          │
+│  ├─ Key = sha256(agent_name + sorted_user_state_json)                  │
+│  ├─ Hit: Return cached output immediately (0ms LLM latency)            │
+│  └─ Miss: Forward request to primary foundation model via KeyPool      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 3: Circuit Breaker State Machine & Secondary Fallback             │
+│  ├─ If primary model fails >= 5 times (HTTP 429, 503, timeout):       │
+│  │     Trip Circuit Breaker to OPEN for 300 seconds                    │
+│  └─ Route request to local deterministic heuristic fallback agent      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 4: Canary Mathematical Invariant Gate (`canary_validator.py`)     │
+│  ├─ Invariant 1: sum(Delta B_i) == 0 (Zero-Sum Budget Rebalancing)     │
+│  ├─ Invariant 2: CandidateDigits in ReferenceDigits (No hallucinations)│
+│  └─ Synthesize output and stream verified response to client 🟢        │
+└────────────────────────────────────────────────────────────────────────┘
+```

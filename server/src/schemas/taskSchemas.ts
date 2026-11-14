@@ -33,12 +33,18 @@ const objectIdRegex = /^[a-f\d]{24}$/i;
 const objectIdString = z.string().regex(objectIdRegex, "Invalid id format");
 const transactionTypeSchema = z.enum(["income", "expense", "investment"]);
 
+// Validates route parameters specifying a unique financial task identifier.
+// Enforces trimmed string lengths bounded between 8 and 128 characters.
+// Prevents empty or malformed task IDs from querying the task database.
 export const taskIdParamSchema = z
   .object({
     id: z.string().trim().min(8).max(128)
   })
   .strict();
 
+// Validates request payloads creating actionable tasks directly from an AI plan.
+// Captures provenance source links including agent output and chat message IDs.
+// Validates the complete embedded AI plan schema using planSchema.
 export const tasksFromPlanBodySchema = z
   .object({
     source: z
@@ -53,6 +59,9 @@ export const tasksFromPlanBodySchema = z
   })
   .strict();
 
+// Defines an enumeration schema for scheduled financial task recurrence cadences.
+// Supports frequencies ranging from none, daily, and weekly up to yearly intervals.
+// Governs automated recurrence generation schedules for recurring tasks.
 export const recurrenceCadenceSchema = z.enum([
   "none",
   "daily",
@@ -63,6 +72,9 @@ export const recurrenceCadenceSchema = z.enum([
   "yearly",
 ]);
 
+// Validates the recurrence configuration and lineage for repeating financial tasks.
+// Tracks recurrence cadence, next due date timestamps, and parent task identifiers.
+// Tracks generation depth counters to prevent infinite repeating task loops.
 export const recurrenceSchema = z
   .object({
     cadence: recurrenceCadenceSchema.default("none"),
@@ -72,6 +84,9 @@ export const recurrenceSchema = z
   })
   .strict();
 
+// Validates request payloads for manually creating a financial action task.
+// Enforces task title, rationale, action steps, priority rank, and impact summary.
+// Configures time horizon buckets, due dates, and recurrence schedules.
 export const createTaskBodySchema = z
   .object({
     title: z.string().trim().min(1).max(200),
@@ -87,6 +102,9 @@ export const createTaskBodySchema = z
   })
   .strict();
 
+// Validates query parameters for filtering and paginating user action tasks.
+// Restricts queries by task status across open, completed, and dismissed states.
+// Coerces and limits result counts to a maximum of 100 tasks per page.
 export const listTasksQuerySchema = z
   .object({
     status: z.enum(["open", "completed", "dismissed"]).optional().default("open"),
@@ -94,6 +112,9 @@ export const listTasksQuerySchema = z
   })
   .strict();
 
+// Validates task side effect payloads that automatically record ledger transactions.
+// Enforces positive transaction amount, category, description, and type.
+// Enables 1-click execution of financial actions recommended by AI tasks.
 const transactionEffectSchema = z
   .object({
     type: z.literal("transaction"),
@@ -109,6 +130,9 @@ const transactionEffectSchema = z
   })
   .strict();
 
+// Validates task side effect payloads applying progress towards a savings goal.
+// Enforces target goal ObjectId, non-negative monetary amounts, and update modes.
+// Supports both additive incrementation and absolute value assignment modes.
 const goalProgressEffectSchema = z
   .object({
     type: z.literal("goal_progress"),
@@ -118,6 +142,9 @@ const goalProgressEffectSchema = z
   })
   .strict();
 
+// Validates task side effect payloads recording liability and debt payments.
+// Enforces a target debt ObjectId and a positive monetary payment amount.
+// Facilitates automated debt balance updates upon completing payoff tasks.
 const debtPaymentEffectSchema = z
   .object({
     type: z.literal("debt_payment"),
@@ -126,6 +153,9 @@ const debtPaymentEffectSchema = z
   })
   .strict();
 
+// Validates task side effect payloads updating top-level user financial profiles.
+// Accepts partial updates to annual income, monthly expenses, or savings balances.
+// Refines input to ensure at least one valid profile field is supplied.
 const profileUpdateEffectSchema = z
   .object({
     type: z.literal("profile_update"),
@@ -140,6 +170,9 @@ const profileUpdateEffectSchema = z
   })
   .strict();
 
+// Discriminated union schema encapsulating all executable side effects for a task.
+// Discriminates across transaction, goal_progress, debt_payment, and profile_update types.
+// Enforces type safety when executing automated mutations triggered by task completion.
 export const taskEffectSchema = z.discriminatedUnion("type", [
   transactionEffectSchema,
   goalProgressEffectSchema,
@@ -147,6 +180,9 @@ export const taskEffectSchema = z.discriminatedUnion("type", [
   profileUpdateEffectSchema,
 ]);
 
+// Validates request payloads modifying task status, notes, or execution effects.
+// Tracks status transitions across open, completed, and dismissed lifecycles.
+// Accommodates completion evidence, apply outcomes, and recurrence updates.
 export const updateTaskBodySchema = z
   .object({
     status: z.enum(["open", "completed", "dismissed"]),
@@ -166,6 +202,9 @@ export const updateTaskBodySchema = z
   })
   .strict();
 
+// Validates request payloads applying a task's executable financial side effects.
+// Supports idempotency keys to ensure safe replay-resistant mutation execution.
+// Validates an array of up to 20 typed side effect actions executed upon completion.
 export const applyTaskBodySchema = z
   .object({
     status: z.literal("completed").optional().default("completed"),
@@ -176,12 +215,18 @@ export const applyTaskBodySchema = z
   })
   .strict();
 
+// Validates route parameters containing an external task integration webhook token.
+// Enforces string length boundaries between 16 and 128 characters for security.
+// Rejects malformed or abbreviated webhook tokens prior to task ingestion.
 export const taskWebhookTokenParamSchema = z
   .object({
     token: z.string().trim().min(16).max(128),
   })
   .strict();
 
+// Validates incoming webhook payloads dispatched by external task management tools.
+// Supports creation and completion actions with task titles, steps, and due dates.
+// Employs passthrough mode to accept foreign third-party tool metadata attributes.
 export const inboundTaskWebhookBodySchema = z
   .object({
     action: z.enum(["create", "complete"]).optional().default("create"),
@@ -200,13 +245,19 @@ export const inboundTaskWebhookBodySchema = z
   })
   .passthrough();
 
+// Validates request payloads exporting financial tasks to external issue trackers.
+// Supports target platforms including Linear, Jira, Todoist, Slack, and generic webhooks.
+// Enforces valid destination URLs, auth headers, and arrays of up to 100 task IDs.
 export const dispatchTasksWebhookBodySchema = z
   .object({
     target: z.enum(["generic", "linear", "todoist", "jira", "slack"]).default("generic"),
     webhook_url: z.string().url("Valid webhook URL required"),
     task_ids: z.array(z.string().trim().min(8).max(128)).min(1).max(100),
-    headers: z.record(z.string(), z.string()).optional(),
+    authorization: z.string().trim().min(1).max(500).optional(),
   })
   .strict();
 
+// Inferred TypeScript type representing a validated task financial side effect.
+// Union type covering transaction, goal, debt, and profile mutation actions.
+// Used across task controllers and execution engines to handle typed side effects.
 export type TaskEffectInput = z.infer<typeof taskEffectSchema>;

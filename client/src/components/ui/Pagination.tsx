@@ -4,6 +4,9 @@ import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ButtonProps, buttonVariants } from "@/components/ui/Button";
 
+// Accessible navigation bar wrapping multi-page pagination controls.
+// Renders an HTML nav element configured with role="navigation" and aria-label.
+// Centers pagination list links horizontally across the viewport width.
 const Pagination = ({ className, ...props }: React.ComponentProps<"nav">) => (
   <nav
     role="navigation"
@@ -14,6 +17,9 @@ const Pagination = ({ className, ...props }: React.ComponentProps<"nav">) => (
 );
 Pagination.displayName = "Pagination";
 
+// Unordered list container organizing sequential page links and buttons.
+// Applies flexbox layout aligning items horizontally with consistent gap.
+// Forwards DOM references to the underlying ul list element.
 const PaginationContent = React.forwardRef<
   HTMLUListElement,
   React.ComponentProps<"ul">
@@ -26,6 +32,9 @@ const PaginationContent = React.forwardRef<
 ));
 PaginationContent.displayName = "PaginationContent";
 
+// Individual list item wrapping a page number link or navigation button.
+// Forwards DOM references to the underlying li list item element.
+// Preserves semantic list structure required for assistive screen readers.
 const PaginationItem = React.forwardRef<
   HTMLLIElement,
   React.ComponentProps<"li">
@@ -34,11 +43,17 @@ const PaginationItem = React.forwardRef<
 ));
 PaginationItem.displayName = "PaginationItem";
 
+// Type definition for interactive pagination links and page buttons.
+// Combines active page state boolean with button size and anchor attributes.
+// Configures visual button variants based on whether the page is active.
 type PaginationLinkProps = {
   isActive?: boolean;
 } & Pick<ButtonProps, "size"> &
   React.ComponentProps<"a">;
 
+// Interactive page number button navigating between pagination pages.
+// Highlights active pages with outline styling and sets aria-current="page".
+// Uses ghost button variant for unselected pages with accessible hover states.
 const PaginationLink = ({
   className,
   isActive,
@@ -59,6 +74,9 @@ const PaginationLink = ({
 );
 PaginationLink.displayName = "PaginationLink";
 
+// Action button navigating backwards to the preceding pagination page.
+// Renders a left-pointing ChevronLeft icon alongside descriptive text.
+// Configures aria-label="Go to previous page" for screen reader clarity.
 const PaginationPrevious = ({
   className,
   ...props
@@ -75,6 +93,9 @@ const PaginationPrevious = ({
 );
 PaginationPrevious.displayName = "PaginationPrevious";
 
+// Action button navigating forward to the subsequent pagination page.
+// Renders descriptive text alongside a right-pointing ChevronRight icon.
+// Configures aria-label="Go to next page" for accessible page navigation.
 const PaginationNext = ({
   className,
   ...props
@@ -91,6 +112,9 @@ const PaginationNext = ({
 );
 PaginationNext.displayName = "PaginationNext";
 
+// Ellipsis indicator representing skipped page ranges in long pagination bars.
+// Renders horizontal three dots with aria-hidden="true" and screen-reader text.
+// Preserves compact layout when paginating across dozens of data pages.
 const PaginationEllipsis = ({
   className,
   ...props

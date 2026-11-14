@@ -619,3 +619,41 @@ applyStreamingChunk: (chunk) => {
   });
 }
 ```
+
+---
+
+## 6. 2026 Client Persistence & Offline State Management
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#3b82f6', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((Client Stores))
+    Offline Journal Store
+      LocalStorage Key finwise_offline_journal_drafts
+      UUID Idempotency Client Keys
+      Automatic Online Reconnection Sync
+    Currency Store
+      Selected Currency (USD, EUR, GBP, INR, CAD, AUD, JPY)
+      Spot Conversion Calculator
+      JPY Zero-Decimal Formatting
+    AI Telemetry Store
+      Live Canary Invariant Proofs
+      Active Provider and Circuit Breaker State
+```
+
+### 6.1 Offline Journal Draft Store (`finwise_offline_journal_drafts`)
+Edits and new entries created in `Notes.tsx` write synchronously to `localStorage`:
+
+```typescript
+// client/src/lib/api/journal.ts
+export function saveLocalDraft(draft: JournalDraft): void {
+  const drafts = getLocalDrafts();
+  const idx = drafts.findIndex(d => d.clientKey === draft.clientKey);
+  if (idx >= 0) drafts[idx] = draft;
+  else drafts.push(draft);
+  localStorage.setItem('finwise_offline_journal_drafts', JSON.stringify(drafts));
+}
+```
+
+### 6.2 Multi-Currency Context & Formatting
+Maintains selected view currency across views (`USD`, `EUR`, `GBP`, `INR`, `CAD`, `AUD`, `JPY`). JPY automatically suppresses decimals (`maximumFractionDigits: 0`), while all other currencies format to 2 decimal places.

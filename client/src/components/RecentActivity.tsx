@@ -28,6 +28,9 @@ import { Button } from "@/components/ui/Button";
 import { RecentActivitySkeleton } from "@/components/ui/CardSkeleton";
 import { motion } from "framer-motion";
 
+// Dashboard activity widget displaying the five most recent financial ledger records.
+// Visualizes categorized cash inflows, expenses, and investment transfers with icons.
+// Formats timestamps and currency values according to active organization locales.
 export function RecentActivity() {
   const [, navigate] = useLocation();
   const { formatMoney, formatDate } = useOrgFormatters();

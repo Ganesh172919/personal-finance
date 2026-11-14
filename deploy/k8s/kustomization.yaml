@@ -1,0 +1,10 @@
+# OPTIONAL reference deployment. FinWise's supported deploy paths are compose.yaml and
+# deploy/aws/ (ECS Fargate). These manifests have only been YAML-parsed, never applied.
+#   kubectl apply -k deploy/k8s
+# Prerequisites (not included): MongoDB replica set, Redis, an Ingress/edge doing what
+# client/nginx.conf does (see docs/DEPLOYMENT.md), and the ConfigMap/Secret in README.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - server.yaml
+  - ai-core.yaml

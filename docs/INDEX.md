@@ -4,6 +4,9 @@
 > *Production Engineering Blueprints, Multi-Agent AI Core References, REST API Contracts, and Operational Runbooks*  
 > **Release Target:** 2026 Enterprise Edition · **Runtime:** Node.js `>=24.14.1 <25` · Python `3.11+` · React `18.3` · MongoDB `7.0` · Redis `7.0`
 
+> [!IMPORTANT]
+> **Current-runtime source of truth (4 November 2026):** routes are mounted at `/api/v1` with compatible `/api` aliases; `server/src/worker/worker.ts` is the MongoDB-backed worker; Redis is optional cache/rate-limit infrastructure; and `server/src/config/env.ts` plus `packages/contracts/openapi/v1/openapi.yaml` are authoritative for configuration and API paths. Several long-form and “mega” guides below are historical design material and must be verified against those sources before use.
+
 ---
 
 ## 1. Master System Knowledge Mindmap
@@ -14,32 +17,38 @@ mindmap
   root((FinWise Documentation Hub))
     Master Deliverables
       README.md Platform Overview
-      BUILDING_ON_THIS_PROJECT.md Developer Handbook
-      PROJECT_EXPLANATION.md Architecture Whitepaper
-      PROJECT_FLOW.md 15 Lifecycle Flows
-      PROJECT_PRESENTATION.md 10-Slide Deck
-      walkthrough.md 10-Phase Master Walkthrough
+      BUILDING_ON_THIS_PROJECT.md 25 Production Blueprints
+      PROJECT_EXPLANATION.md Whitepaper (14 Sections + 28 Subsections)
+      PROJECT_FLOW.md 30 End-to-End Lifecycle Flows
+      PROJECT_PRESENTATION.md 19-Slide Executive Deck
+      walkthrough.md 11-Phase Master Walkthrough
     Architecture & Persistence
       ARCHITECTURE.md Multi-Tier System Topology
       DATABASE.md 52 Mongoose Model Compendium
       SERVICES.md 60 Business Logic Services
       MIDDLEWARE.md Edge Ingress & Tenant Guards
-    AI Core & Intelligence
-      AI_CORE.md LangGraph & SubAgents
+    AI Core & Autonomous Systems
+      AI_CORE.md LangGraph DAG & SubAgentManager
       AI_AGENTS_REFERENCE.md 11 Specialist Agents
       AI_PROVIDERS_AND_FAILOVER.md KeyPool & Fallbacks
-      RAG_IMPLEMENTATION_PLAN.md Bounded Window Chunking
-      RETRIEVAL_DATA_MODEL_SPEC.md Knowledge Chunk Schema
-    Frontend & FinanceOS
+      Continuous Canary Invariants 5 Mathematical Guards
+      Cross-Silo Unified Context RRF k=60 Fusion Engine
+      Adaptive Follow-Through Signal Ranker
+    RAG & Knowledge Studio
+      RAG Phase 2 64-D Vector Embeddings
+      Strict Physical Page Grounding Document Q&A
+      Rich Multi-Format PDFKit Studio 6 Formats
+    Frontend & FinanceOS Cockpits
       FRONTEND.md 5-Surface Cockpit Guide
+      AiStatusDialog 4-Tab Diagnostics Cockpit
       CLIENT_ARCHITECTURE.md Component Design
       HOOK_REFERENCE.md 13 Custom React Hooks
       STORE_REFERENCE.md Zustand State Stores
-    Operations & Verification
-      SECURITY.md Defense In Depth & CSP
+    Operations, Security & Verification
+      SECURITY.md Defense In Depth & DNS SSRF Defense
       DEPLOYMENT.md Docker & Orchestration
-      TESTING.md Multi-Tier Quality Strategy
-      TROUBLESHOOTING.md Incident Decision Trees
+      TESTING.md Multi-Tier Quality Strategy (1,000+ Tests)
+      TROUBLESHOOTING.md Diagnostic Decision Trees
       OBSERVABILITY.md Metrics & Distributed Tracing
 ```
 
@@ -52,11 +61,11 @@ mindmap
 | Document | Description | Format | Target Audience |
 | :--- | :--- | :--- | :--- |
 | [**README.md**](../README.md) | Platform overview, technology stack, local quick start, and system topology | Hub | Everyone |
-| [**BUILDING_ON_THIS_PROJECT.md**](BUILDING_ON_THIS_PROJECT.md) | The definitive developer handbook for extending, customizing, and scaling the platform | Master Blueprint | Full-Stack Engineers & Contributors |
-| [**walkthrough.md**](../walkthrough.md) | Complete 10-phase architectural implementation and verification walkthrough | Walkthrough | Engineers & Reviewers |
-| [**PROJECT_EXPLANATION.md**](../PROJECT_EXPLANATION.md) | Exhaustive engineering whitepaper covering multi-tier design, data models, and math | Whitepaper | Senior Engineers & Architects |
-| [**PROJECT_FLOW.md**](../PROJECT_FLOW.md) | 15 end-to-end computational, request, failover, and data lifecycles | Flow Catalog | Full-Stack Engineers |
-| [**PROJECT_PRESENTATION.md**](../PROJECT_PRESENTATION.md) | 10-slide executive presentation deck with colourful mindmaps and ASCII flows | Slide Deck | Executives & Leads |
+| [**BUILDING_ON_THIS_PROJECT.md**](BUILDING_ON_THIS_PROJECT.md) | The definitive developer handbook with 25 complete architectural blueprints | Master Blueprint | Full-Stack Engineers & Contributors |
+| [**walkthrough.md**](../walkthrough.md) | Complete 11-phase architectural implementation and verification walkthrough | Walkthrough | Engineers & Reviewers |
+| [**PROJECT_EXPLANATION.md**](../PROJECT_EXPLANATION.md) | Exhaustive engineering whitepaper (14 Sections + 28 Subsections) covering math & invariants | Whitepaper | Senior Engineers & Architects |
+| [**PROJECT_FLOW.md**](../PROJECT_FLOW.md) | 30 end-to-end computational, request, failover, Canary, and data lifecycles | Flow Catalog | Full-Stack Engineers |
+| [**PROJECT_PRESENTATION.md**](../PROJECT_PRESENTATION.md) | 19-slide executive presentation deck with colourful mindmaps, ASCII flows & zero-hallucination math | Slide Deck | Executives & Leads |
 
 ---
 
@@ -64,7 +73,7 @@ mindmap
 
 | Document | Description | Key Focus Areas |
 | :--- | :--- | :--- |
-| [**ARCHITECTURE.md**](ARCHITECTURE.md) | Multi-tier system architecture, Express 5 composition root, and BullMQ queues | Gateway topology, Kahn DAG, RAG Phase 2 |
+| [**ARCHITECTURE.md**](ARCHITECTURE.md) | Historical multi-tier design and current-runtime caveat | Gateway topology, worker model, RAG Phase 2 |
 | [**SERVICES.md**](SERVICES.md) | Exhaustive directory of all 60 business logic domain services with code blueprints | Health scoring, newsletter, DLQ, chunker |
 | [**DATABASE.md**](DATABASE.md) | Compendium of all 52 Mongoose models, compound B-Tree indexes, and GridFS storage | Mongoose 8, `OrgScopePlugin`, ERD diagram |
 | [**API.md**](API.md) | Canonical `/api/v1` REST endpoints, query parameters, and SSE streams | 100+ endpoints, Zod schemas, auth tokens |
@@ -118,7 +127,7 @@ mindmap
 | [**MEGA_DATA_MODEL_COMPENDIUM.md**](MEGA_DATA_MODEL_COMPENDIUM.md) | Compendium of 52 multi-tenant schemas and compound B-tree indexes | `OrgScopePlugin`, tenant barriers, GridFS |
 | [**MEGA_DEVELOPER_RECIPES.md**](MEGA_DEVELOPER_RECIPES.md) | Production feature delivery recipes from contracts to UI | Zod validation, ACID sessions, EventBus |
 | [**MEGA_FRONTEND_UI_ATLAS.md**](MEGA_FRONTEND_UI_ATLAS.md) | FinanceOS 5-surface cockpit breakdown and reactive state streams | `useAIStream`, Zustand stores, Framer Motion |
-| [**MEGA_OPERATIONS_RUNBOOK.md**](MEGA_OPERATIONS_RUNBOOK.md) | Production SRE runbook, zero-downtime cutover, and DLQ recovery | BullMQ DLQ replay, health probes, Prometheus |
+| [**MEGA_OPERATIONS_RUNBOOK.md**](MEGA_OPERATIONS_RUNBOOK.md) | Historical SRE runbook; verify against current worker implementation | Health probes, Prometheus |
 | [**MEGA_SECURITY_RUNBOOK.md**](MEGA_SECURITY_RUNBOOK.md) | Defense-in-depth specifications, cryptographic CSRF, and TOTP | Argon2id hashing, double-submit cookie, RBAC |
 | [**MEGA_TESTING_PLAYBOOK.md**](MEGA_TESTING_PLAYBOOK.md) | Testing pyramid handbook, Supertest suites, and invariant testing | Vitest, Supertest tenant isolation, Pytest |
 | [**api-contracts-week4.md**](../server/docs/api-contracts-week4.md) | Task engine execution, idempotent effect application, and provenance | `PATCH /api/tasks/:id`, What-If scenarios |
@@ -189,12 +198,12 @@ cd client && npm install && npm run dev
 cd server/AI_Core && pip install -r requirements.txt && uvicorn main:app --port 8001 --reload
 
 # 3. Execute full platform test verification pyramid
-# Server test suite (49 suites, 193 tests passed)
+# Server test suite (67 suites, 271 tests passed)
 cd server && npm test
 
-# Client test suite (45 suites, 293 tests passed)
+# Client test suite (51 suites, 408 tests passed)
 cd client && npm test
 
-# AI Core evaluation suite (29 suites, 217 tests, 175 evals passed)
+# AI Core evaluation suite (316+ tests, 175 evals passed)
 cd server/AI_Core && pytest tests/ -v && python -m evals.runner
 ```

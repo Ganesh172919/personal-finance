@@ -28,6 +28,8 @@ import nodemailer, { type Transporter } from "nodemailer"; // Email sending libr
 import { getEnv } from "../config/env"; // Environment configuration
 import { logger } from "../config/logger"; // Application logger
 
+// Defines metadata and payload options for email file attachments.
+// Supports file paths, in-memory buffers, custom content types, and display filenames.
 export interface EmailAttachment {
   filename: string;
   content?: string | Buffer;
@@ -35,11 +37,8 @@ export interface EmailAttachment {
   contentType?: string;
 }
 
-/**
- * Email Options Interface
- *
- * Defines the structure of email options.
- */
+// Options interface encapsulating parameters required to compose and deliver an email message.
+// Specifies recipient addresses, subject line, plain text body, HTML markup, and optional attachments.
 export interface EmailOptions {
   to: string; // Recipient email address
   subject: string; // Email subject
@@ -48,33 +47,15 @@ export interface EmailOptions {
   attachments?: EmailAttachment[]; // Attachments (optional)
 }
 
-/**
- * Email Send Result Type
- *
- * Indicates whether email was sent via SMTP or console.
- */
+// Return type specifying whether an email was transmitted via live SMTP or redirected to console logs.
+// Provides operational visibility into delivery execution modes across development and production.
 export type EmailSendResult = { mode: "smtp" | "console" };
 
-/**
- * Cached Transporter
- *
- * Cached Nodemailer transporter instance for reuse.
- */
 let cachedTransporter: Transporter | null = null;
 let cachedTransportSignature = "";
 
-/**
- * Gets or creates a Nodemailer transporter.
- *
- * This function implements a singleton pattern for the email transporter:
- * - Returns cached transporter if configuration hasn't changed
- * - Creates new transporter if configuration changed
- * - Verifies transporter connection before returning
- *
- * @param {Record<string, unknown>} config - Transport configuration
- * @param {string} signature - Configuration signature for caching
- * @returns {Promise<nodemailer.Transporter>} Configured transporter
- */
+// Manages creation and caching of Nodemailer transport instances based on configuration signatures.
+// Reuses verified active connections to minimize connection overhead across outbound email dispatches.
 const getOrCreateTransporter = async (
   config: Record<string, unknown>,
   signature: string
@@ -94,12 +75,8 @@ const getOrCreateTransporter = async (
   return transporter;
 };
 
-/**
- * Extracts domain from email address.
- *
- * @param {string} email - Email address
- * @returns {string} Domain name or "unknown"
- */
+// Extracts the host domain segment from a recipient email address for privacy-safe logging.
+// Sanitizes email tracking records by stripping local user names prior to log output.
 const emailDomainOf = (email: string) => {
   const at = email.lastIndexOf("@");
   if (at <= 0 || at >= email.length - 1) {
@@ -108,20 +85,8 @@ const emailDomainOf = (email: string) => {
   return email.slice(at + 1).toLowerCase();
 };
 
-/**
- * Sends an email using SMTP or console logging.
- *
- * This function:
- * 1. Checks if running in test environment (console mode)
- * 2. Checks if email is configured
- * 3. Creates or retrieves cached transporter
- * 4. Sends email via SMTP
- * 5. Falls back to console mode on failure (non-production)
- *
- * @param {EmailOptions} options - Email options
- * @returns {Promise<EmailSendResult>} Send result with mode
- * @throws {Error} If email is not configured or SMTP fails in production
- */
+// Delivers transactional emails via configured SMTP relays with automatic console fallback in development.
+// Validates credentials, executes delivery with error trapping, and records structured audit metrics.
 export const sendEmail = async (options: EmailOptions): Promise<EmailSendResult> => {
   const env = getEnv();
   const { EMAIL_USER, EMAIL_PASSWORD, EMAIL_FROM } = env;

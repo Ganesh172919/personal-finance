@@ -19,8 +19,14 @@ import { asyncRoute } from "../utils/asyncRoute";
 import { shareTokenParamSchema } from "../schemas/v1/shareSchemas";
 import { getPublicFinancialStoryShare } from "../controllers/v1/shareController";
 
+// Initializes an Express router dedicated to public, unauthenticated asset share links.
+// Serves token-gated financial snapshots designed for external read-only viewing.
+// Mounts into the top-level Express application without requiring user session authentication.
 const router = Router();
 
+// Serves a shared read-only financial transformation story accessed via a secure token.
+// Validates the alphanumeric token parameter using shareTokenParamSchema to prevent injection.
+// Delegates retrieval to getPublicFinancialStoryShare while masking sensitive user information.
 router.get(
   "/shares/financial-story/:token",
   validate({ params: shareTokenParamSchema }),

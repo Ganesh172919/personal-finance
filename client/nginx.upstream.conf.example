@@ -1,0 +1,37 @@
+# OPTIONAL alternative to the resolver+variable proxying in client/nginx.conf.
+#
+# Gives you least_conn balancing, passive health checks and upstream keepalive
+# (fewer TCP handshakes to the gateway at ~50-100 rps). The cost: open-source
+# nginx resolves hostnames inside `upstream {}` ONCE, at startup/reload. If a
+# replica is recreated with a new IP, nginx keeps the stale address until you
+# run `nginx -s reload`. Use this only when the replica set is static or you
+# reload nginx on deploy (or have nginx Plus / a cloud LB, which makes this
+# file unnecessary).
+#
+# How to use with docker compose:
+#   1. Give each replica a stable DNS name (e.g. separate services server-1,
+#      server-2, server-3 sharing a YAML anchor) -- `deploy.replicas` names
+#      resolve to a round-robin set at startup, which also works but is
+#      evaluated once.
+#   2. Copy this file to client/nginx.conf.d/upstream.conf (or merge it into
+#      client/nginx.conf), and replace every
+#          set $upstream http://server:3000;
+#          proxy_pass $upstream;
+#      with
+#          proxy_pass http://finwise_api;
+#      (no variable, so nginx uses the upstream block).
+#   3. Remove the `resolver` line if nothing else needs it.
+
+upstream finwise_api {
+    least_conn;
+    # Passive health checks: eject a replica for 10s after 2 failures.
+    server server-1:3000 max_fails=2 fail_timeout=10s;
+    server server-2:3000 max_fails=2 fail_timeout=10s;
+    server server-3:3000 max_fails=2 fail_timeout=10s;
+    # Idle keepalive connections kept per worker (requires
+    # proxy_http_version 1.1 and an empty Connection header, both already
+    # set in client/nginx.conf).
+    keepalive 32;
+    keepalive_requests 1000;
+    keepalive_timeout 60s;
+}

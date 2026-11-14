@@ -16,11 +16,17 @@
  *  - Pure presentational — no hooks, no state, no API calls.
  *  - Lighter-weight alternative to FullScreenLoader; intended for section-level loading states.
  */
+// Property structure defining options for inline loading state indicators.
+// Accommodates customizable text labels communicating specific pending operations.
+// Allows custom CSS class extensions for padding and positioning flexibility.
 type InlineLoaderProps = {
   label?: string;
   className?: string;
 };
 
+// Lightweight spinner component embedded within cards, tables, and modal dialogs.
+// Pairs a rotating primary accent spinner with concise descriptive status text.
+// Signals asynchronous background activity without blocking full page layouts.
 export function InlineLoader({
   label = "Loading...",
   className = "",

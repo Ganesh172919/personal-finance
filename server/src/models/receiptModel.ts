@@ -1,7 +1,13 @@
 import { Schema, model, Document, Types } from "mongoose";
 
+// Defines lifecycle status values for scanned receipts.
+// Distinguishes between initial OCR parsing and final user-confirmed transactions.
+// Governs transaction creation workflows and reconciliation pipelines.
 export type ReceiptStatus = "parsed" | "confirmed";
 
+// Defines an individual line item extracted from a parsed receipt document.
+// Captures item descriptions, purchased quantities, unit prices, and line confidence.
+// Feeds detailed itemization data to downstream expense categorizers.
 export type ReceiptItem = {
   description: string;
   quantity?: number;
@@ -10,6 +16,9 @@ export type ReceiptItem = {
   confidence?: number;
 };
 
+// Defines the structured entities parsed from receipt OCR scans.
+// Contains vendor names, transaction dates, tax, totals, currency, and line items.
+// Serves as the raw structured payload extracted by AI computer vision models.
 export type ReceiptExtracted = {
   vendor?: string;
   date?: string; // YYYY-MM-DD
@@ -21,6 +30,9 @@ export type ReceiptExtracted = {
   category_suggestion?: string;
 };
 
+// Defines confidence scoring metrics across all extracted receipt fields.
+// Supplies field-level certainty percentages for vendors, totals, dates, and items.
+// Enables user review UIs to highlight low-confidence items needing manual correction.
 export type ReceiptConfidence = {
   vendor?: number;
   date?: number;
@@ -30,6 +42,9 @@ export type ReceiptConfidence = {
   items?: Array<{ description?: number; total?: number; quantity?: number; unit_price?: number; line?: number }>;
 };
 
+// Defines the core domain attributes for a scanned receipt document.
+// Stores multi-tenant references, OCR extractions, user corrections, and transaction links.
+// Bridges uploaded media files with ledger transaction records.
 export interface IReceipt {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;
@@ -45,10 +60,16 @@ export interface IReceipt {
   updatedAt: Date;
 }
 
+// Extends receipt attributes with standard Mongoose Document methods.
+// Exposes database primary keys, lifecycle management methods, and timestamp fields.
+// Represents a persistent receipt document returned by receipt management queries.
 export interface IReceiptDocument extends IReceipt, Document {
   _id: Types.ObjectId;
 }
 
+// Defines the subdocument Mongoose schema for individual receipt line items.
+// Enforces length constraints on descriptions and numerical bounds on prices.
+// Configured with _id: false to optimize subdocument storage overhead.
 const receiptItemSchema = new Schema<ReceiptItem>(
   {
     description: { type: String, required: true, trim: true, maxlength: 250 },
@@ -60,6 +81,9 @@ const receiptItemSchema = new Schema<ReceiptItem>(
   { _id: false }
 );
 
+// Defines the embedded Mongoose schema for structured receipt OCR data.
+// Maps vendors, dates, tax amounts, line item arrays, and raw text representations.
+// Reusable across both initial machine extractions and subsequent user corrections.
 const receiptExtractedSchema = new Schema<ReceiptExtracted>(
   {
     vendor: { type: String, trim: true, maxlength: 250 },
@@ -74,6 +98,9 @@ const receiptExtractedSchema = new Schema<ReceiptExtracted>(
   { _id: false }
 );
 
+// Configures the primary Mongoose schema mapping for the receipt collection.
+// Enforces tenant references, file links, and embedded OCR extraction schemas.
+// Automatically tracks receipt creation and modification timestamps across writes.
 const receiptSchema = new Schema<IReceiptDocument>(
   {
     orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
@@ -90,8 +117,14 @@ const receiptSchema = new Schema<IReceiptDocument>(
   { timestamps: true }
 );
 
+// Configures compound database indexes for receipt history and transaction lookups.
+// Optimizes chronological ordering for fetching user receipts within an organization.
+// Establishes a sparse index on transactionId to accelerate receipt reconciliation queries.
 receiptSchema.index({ orgId: 1, userId: 1, createdAt: -1 });
 receiptSchema.index({ orgId: 1, transactionId: 1 }, { sparse: true });
 
+// Compiles and exports the Mongoose model for scanned receipt records.
+// Exposes data access methods to store OCR results, apply edits, and link transactions.
+// Serves as the primary persistence layer for automated receipt ingestion pipelines.
 const ReceiptModel = model<IReceiptDocument>("Receipt", receiptSchema);
 export default ReceiptModel;

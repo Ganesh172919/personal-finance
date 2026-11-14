@@ -14,6 +14,7 @@ import { errorHandler } from "../middleware/errorHandler";
 import { HttpError } from "../middleware/httpError";
 import { z } from "zod";
 import mongoose from "mongoose";
+import multer from "multer";
 
 // Mock logger
 vi.mock("../config/logger", () => ({
@@ -127,6 +128,20 @@ describe("errorHandler", () => {
     });
   });
 
+  describe("upload errors", () => {
+    it("returns 413 FILE_TOO_LARGE for oversized uploads instead of 500", () => {
+      errorHandler(new multer.MulterError("LIMIT_FILE_SIZE", "files"), req, res, next);
+      expect(res.status).toHaveBeenCalledWith(413);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, code: "FILE_TOO_LARGE" }));
+    });
+
+    it("returns 400 INVALID_UPLOAD for other multer limits", () => {
+      errorHandler(new multer.MulterError("LIMIT_FILE_COUNT"), req, res, next);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: "INVALID_UPLOAD" }));
+    });
+  });
+
   describe("Mongoose errors", () => {
     it("handles CastError with 400 status", () => {
       const err = new mongoose.Error.CastError("ObjectId", "invalid-id", "userId");
@@ -136,8 +151,23 @@ describe("errorHandler", () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           code: "INVALID_ID",
+          details: { field: "userId" },
         })
       );
+    });
+
+    it("does not expose Mongoose validation values or messages", () => {
+      const err = new mongoose.Error.ValidationError();
+      err.addError("email", new mongoose.Error.ValidatorError({
+        path: "email",
+        value: "private@example.com",
+        message: "email private@example.com is invalid",
+      }));
+      errorHandler(err, req, res, next);
+
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.details).toEqual({ fields: ["email"] });
+      expect(JSON.stringify(payload)).not.toContain("private@example.com");
     });
   });
 

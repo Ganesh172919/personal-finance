@@ -28,12 +28,13 @@
  */
 
 import { Suspense, type ReactNode } from "react";
-import { Redirect, Route, Switch } from "wouter";               // Lightweight React router
+import { Link, Redirect, Route, Switch } from "wouter";         // Lightweight React router
 
 import { FullScreenLoader } from "@/components/feedback/FullScreenLoader"; // Loading indicator
 import { useAuth } from "@/context/AuthContext";                  // Authentication context
 import { AppShell } from "@/layouts/AppShell";                    // Main app layout (sidebar)
 import { ChatLayout } from "@/layouts/ChatLayout";               // Chat-specific layout
+import { ThemeToggle } from "@/components/ThemeToggle";
 import NotFound from "@/pages/NotFound";                          // 404 page
 
 import { appRoutes, redirectRoutes, type AppRouteDefinition } from "./routeDefinitions";
@@ -46,6 +47,9 @@ import { ProtectedRoute, PublicOnlyRoute } from "./routeGuards";
  * @param page - The page component to wrap
  * @returns Page wrapped with the appropriate layout
  */
+// Encloses a given page element within its designated layout container.
+// Conditionally applies the AppShell, ChatLayout, or a plain main semantic wrapper.
+// Ensures consistent navigation, sidebar controls, and accessible focus outlines.
 function wrapWithLayout(route: AppRouteDefinition, page: ReactNode) {
   if (route.layout === "app") {
     return <AppShell>{page}</AppShell>;  // Sidebar + main content area
@@ -53,6 +57,23 @@ function wrapWithLayout(route: AppRouteDefinition, page: ReactNode) {
 
   if (route.layout === "chat") {
     return <ChatLayout>{page}</ChatLayout>;  // Chat-specific layout
+  }
+
+  if (route.layout === "showcase") {
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="border-b border-border bg-card">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+            <Link href="/dashboard" className="text-sm font-semibold text-foreground hover:underline">FinWise workspace</Link>
+            <nav aria-label="Voice and submission" className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+              <Link href="/voice" aria-current={route.path === "/voice" ? "page" : undefined} className="hover:text-foreground aria-[current=page]:font-semibold aria-[current=page]:text-foreground">Bharat Voice</Link>
+              <ThemeToggle compact />
+            </nav>
+          </div>
+        </header>
+        <main id="main-content" tabIndex={-1}>{page}</main>
+      </div>
+    );
   }
 
   return <main id="main-content" tabIndex={-1}>{page}</main>;
@@ -69,6 +90,9 @@ function wrapWithLayout(route: AppRouteDefinition, page: ReactNode) {
  * @param route - Route definition
  * @returns Fully wrapped page component
  */
+// Evaluates route access requirements and wraps components in appropriate guards.
+// Injects ProtectedRoute or PublicOnlyRoute barriers before composing the layout.
+// Produces a fully guarded and layout-wrapped React element for router rendering.
 function renderRoute(route: AppRouteDefinition) {
   const Page = route.component;
   let page = <Page />;
@@ -95,6 +119,9 @@ function renderRoute(route: AppRouteDefinition) {
  * - Root route (redirects based on auth state)
  * - Catch-all 404 route
  */
+// Primary routing component orchestrating client-side path resolution via wouter.
+// Incorporates Suspense fallbacks, legacy path redirects, and access guards.
+// Resolves the root entrypoint and fallback 404 views based on auth status.
 export function AppRouter() {
   const { user } = useAuth();
 

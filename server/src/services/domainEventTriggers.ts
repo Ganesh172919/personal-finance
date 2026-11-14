@@ -6,12 +6,18 @@ import { enqueueWorkflowRun } from "./workflows";
 import { logger } from "../config/logger";
 import { HttpError } from "../middleware/httpError";
 
+// Parses and constrains a numeric pagination limit value between 1 and 500.
+// Defaults safely to the fallback value when provided input is non-numeric or absent.
+// Guards background query loops against unbound batch sizes and memory exhaustion.
 const parseLimit = (value: unknown, fallback: number) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.max(1, Math.min(500, Math.floor(numeric)));
 };
 
+// Evaluates a single persisted domain event against active event-triggered workflows.
+// Enqueues associated workflow executions with deterministic idempotency keys.
+// Flags the event document as processed to prevent duplicate processing runs.
 export const processDomainEventById = async (domainEventId: string) => {
   if (!mongoose.Types.ObjectId.isValid(domainEventId)) {
     return { ok: false, reason: "invalid_domain_event_id" };
@@ -86,6 +92,9 @@ export const processDomainEventById = async (domainEventId: string) => {
   return { ok: true, workflows_matched: workflows.length, runs_enqueued: successes, skipped_quota: skippedQuota };
 };
 
+// Queries and processes unhandled domain events in chronological first-in-first-out order.
+// Iterates through unprocessed records to trigger corresponding workflow runs.
+// Returns execution metrics summarizing the count of scanned and processed domain events.
 export const processPendingDomainEvents = async (params: { limit?: number } = {}) => {
   const limit = parseLimit(params.limit, 50);
 

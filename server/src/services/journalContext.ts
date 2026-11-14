@@ -1,6 +1,9 @@
 import type { Types } from "mongoose";
 import JournalEntryModel from "../models/journalEntryModel";
 
+// Retrieves and formats recent handwritten journal notes into prompt context for AI.
+// Applies age cutoffs, per-entry character truncations, and entry count limits.
+// Returns a markdown-formatted notes summary alongside latest update timestamps.
 export const getJournalContextForAi = async (params: {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;

@@ -51,6 +51,9 @@ import { IAgentOutput } from "@/types";
 import { useLocation } from "wouter";
 import { InsightDetailModal } from "@/components/InsightDetailModal";
 
+// Label dictionary mapping internal AI agent identifiers to human-readable titles.
+// Covers master orchestrator, budgeting, education, investments, and debt modules.
+// Used to display friendly source agent attribution badges on insight cards.
 const AGENT_LABELS: Record<string, string> = {
   master: "Master Orchestrator",
   budget_planner: "Budget Planner",
@@ -60,6 +63,9 @@ const AGENT_LABELS: Record<string, string> = {
   income_expense_analyzer: "Income & Expense",
 };
 
+// Formats an insight generation timestamp into a localized calendar date string.
+// Handles string and Date inputs with graceful empty string fallbacks on error.
+// Standardizes date presentation across insight search and filter cards.
 function formatInsightDate(timestamp: Date | string | undefined): string {
   if (!timestamp) return "";
   try {
@@ -71,6 +77,9 @@ function formatInsightDate(timestamp: Date | string | undefined): string {
   }
 }
 
+// Full-page catalog displaying all AI-generated financial insights and recommendations.
+// Supports multi-criteria filtering by priority level, agent source, and text search.
+// Connects insights directly to actionable product workflows and detailed plan modals.
 export default function AllInsights() {
   const { user } = useAuth();
   const userId = user?.id || (user as any)?._id || localStorage.getItem("userId");

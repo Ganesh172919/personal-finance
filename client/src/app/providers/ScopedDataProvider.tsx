@@ -9,6 +9,9 @@ import { useAIStore } from "@/stores/aiStore";
 import { useAppDialogStore } from "@/stores/appDialogStore";
 import { retireRequestContext } from "@/lib/requestContext";
 
+// Encapsulated TanStack Query client provider isolated per active account tenant.
+// Cancels pending network queries and purges cache instances on scope retirement.
+// Prevents cross-account data leaks when users switch accounts or organizations.
 function PrivateQueryProvider({ children }: { children: ReactNode }) {
   const [client] = useState(createQueryClient);
   useEffect(() => () => {
@@ -19,6 +22,9 @@ function PrivateQueryProvider({ children }: { children: ReactNode }) {
 }
 
 /** Retire private caches and component drafts whenever the data owner changes. */
+// Manages multi-tenant cache isolation and reactive state resets on context shifts.
+// Synchronizes active user identity and organization context to detect boundary transitions.
+// Resets transient stores and remounts query caches whenever tenant ownership changes.
 export function ScopedDataProvider({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const orgId = useSyncExternalStore(subscribeActiveOrgId, getActiveOrgId, () => null);

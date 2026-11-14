@@ -22,6 +22,9 @@ import { Button } from "@/components/ui/Button";
 import { ArrowRight, FileText, Link2, LucideIcon, PlusCircle, Target } from "lucide-react";
 import { useLocation } from "wouter";
 
+// Property structure definition for individual quick action launcher buttons.
+// Specifies button labels, Lucide icons, click event handlers, and disabled flags.
+// Supplies hover title text for features that are disabled or pending rollout.
 interface QuickAction {
   label: string;
   icon: LucideIcon;
@@ -30,6 +33,9 @@ interface QuickAction {
   title?: string;
 }
 
+// Dashboard shortcut launcher component rendering primary financial workflow buttons.
+// Provides instant one-click navigation to transactions, goal creation, and reports.
+// Delivers responsive motion hover and tap scale effects for tactile feedback.
 export function QuickActions() {
   const [, navigate] = useLocation();
 

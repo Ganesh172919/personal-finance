@@ -29,6 +29,9 @@ import { CreateBlogForm } from "@/components/forms/CreateBlogForm";
 import { getBlogs, getFeaturedBlogs, getBlogCategories } from "@/lib/apiClient";
 import { useDebounce } from "@/hooks/useDebounce";
 
+// Framer Motion animation configuration for the blog card grid container.
+// Implements staggered entrance timing across rendered blog article cards.
+// Smooths visual entrance when switching categories or clearing search filters.
 const containerVariants = {
   hidden: { opacity: 0 },
   show: {
@@ -39,11 +42,17 @@ const containerVariants = {
   },
 };
 
+// Framer Motion animation configuration for individual blog card items.
+// Controls vertical slide and fade-in transitions for cards entering the grid.
+// Provides fluid micro-interactions as cards populate the catalog view.
 const itemVariants = {
   hidden: { opacity: 0, y: 20 },
   show: { opacity: 1, y: 0 },
 };
 
+// Blog listing directory featuring searchable and category-filtered finance articles.
+// Renders a hero section for featured articles alongside a write-post modal creation flow.
+// Uses debounced text search to query articles dynamically from the server.
 export default function Blogs() {
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");

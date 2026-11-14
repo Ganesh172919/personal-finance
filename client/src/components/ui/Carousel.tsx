@@ -7,11 +7,17 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 
+// Type definition representing the Embla carousel controller API instance.
+// Exposes scroll controls, event listeners, and navigation state methods.
+// Passed to external parent components via setApi callback prop.
 type CarouselApi = UseEmblaCarouselType[1];
 type UseCarouselParameters = Parameters<typeof useEmblaCarousel>;
 type CarouselOptions = UseCarouselParameters[0];
 type CarouselPlugin = UseCarouselParameters[1];
 
+// Configuration properties interface for the Carousel root component.
+// Supports custom embla carousel options, plugin arrays, and orientation.
+// Provides callback hooks to receive the underlying carousel API controller.
 type CarouselProps = {
   opts?: CarouselOptions;
   plugins?: CarouselPlugin;
@@ -19,6 +25,9 @@ type CarouselProps = {
   setApi?: (api: CarouselApi) => void;
 };
 
+// Context values and navigation helper interface for nested carousel components.
+// Exposes scroll references, trigger callbacks, and scroll boundary flags.
+// Merges internal state with the root component's configuration properties.
 type CarouselContextProps = {
   carouselRef: ReturnType<typeof useEmblaCarousel>[0];
   api: ReturnType<typeof useEmblaCarousel>[1];
@@ -28,8 +37,14 @@ type CarouselContextProps = {
   canScrollNext: boolean;
 } & CarouselProps;
 
+// React context instance providing carousel state to nested slide children.
+// Coordinates navigation buttons and scroll containers with Embla carousel.
+// Defaults to null to identify invocation outside of Carousel provider boundaries.
 const CarouselContext = React.createContext<CarouselContextProps | null>(null);
 
+// Custom hook to consume carousel navigation context within subcomponents.
+// Throws an error when executed outside of an active Carousel provider.
+// Returns current scroll boundaries, triggers, and Embla API instances.
 function useCarousel() {
   const context = React.useContext(CarouselContext);
 
@@ -40,6 +55,9 @@ function useCarousel() {
   return context;
 }
 
+// Interactive carousel slider component wrapping the Embla carousel engine.
+// Supports keyboard navigation via arrow keys and touch swipe gestures.
+// Configures horizontal and vertical sliding orientations with reactive state.
 const Carousel = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement> & CarouselProps
@@ -148,6 +166,9 @@ const Carousel = React.forwardRef<
 );
 Carousel.displayName = "Carousel";
 
+// Inner track container wrapping and positioning individual carousel slide items.
+// Applies flexbox layout adjusted for negative margins and scroll overflow.
+// Forwards DOM references to the Embla carousel viewport element.
 const CarouselContent = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
@@ -170,6 +191,9 @@ const CarouselContent = React.forwardRef<
 });
 CarouselContent.displayName = "CarouselContent";
 
+// Individual slide item container within the carousel slider track.
+// Configures flex basis and padding according to active carousel orientation.
+// Marked with role="group" and aria-roledescription="slide" for accessibility.
 const CarouselItem = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
@@ -192,6 +216,9 @@ const CarouselItem = React.forwardRef<
 });
 CarouselItem.displayName = "CarouselItem";
 
+// Navigation button triggering backwards slide movement in the carousel.
+// Automatically disables when the carousel reaches the start boundary.
+// Positioned absolutely adjacent to the carousel track with accessible label.
 const CarouselPrevious = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<typeof Button>
@@ -221,6 +248,9 @@ const CarouselPrevious = React.forwardRef<
 });
 CarouselPrevious.displayName = "CarouselPrevious";
 
+// Navigation button triggering forward slide progression in the carousel.
+// Automatically disables when the carousel reaches the ending boundary.
+// Positioned absolutely opposite to the previous button with accessible label.
 const CarouselNext = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<typeof Button>

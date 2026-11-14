@@ -28,7 +28,22 @@ FINWISE RUNTIME LIFECYCLES CATALOG
 ├── Flow 12: What-If Multi-Scenario Simulation & Monte Carlo Stochastic Risk Bounds
 ├── Flow 13: Dead Letter Queue (DLQ) Silent Failure Quarantining & Administrative Replay
 ├── Flow 14: Private Session Boundary Switch & Monotonic Query Cache Isolation
-└── Flow 15: Assembled Conversation Insights Caching & Coalescing Engine
+├── Flow 15: Assembled Conversation Insights Caching & Coalescing Engine
+├── Flow 16: Machine Learning Merchant Embedding Clustering & Normalization
+├── Flow 17: Multi-Modal Grounded RAG Knowledge Indexing & Hybrid Retrieval
+├── Flow 18: Inbound Real-Time Bank Connector Webhook Feed Engine
+├── Flow 19: Visual Workflow Execution with Multi-Step Delays & Webhooks
+├── Flow 20: Peer Spending Benchmarks & Zero-Sum Budget Auto-Rebalancing Invariant
+├── Flow 21: Continuous Production AI Canary Invariant Validation Engine
+├── Flow 22: Offline-First Financial Journal Synchronization & 64-D Semantic Search
+├── Flow 23: Global Multi-Currency FX Engine across 7 Currencies & Withholding Tax Relief
+├── Flow 24: Financial Calendar Live RFC 5545 iCal Feed & Reminder Engine
+├── Flow 25: AI System Diagnostics Cockpit & Multi-Key Health Inspection
+├── Flow 26: Cross-Silo Unified Context Retrieval & Reciprocal Rank Fusion
+├── Flow 27: Adaptive Follow-Through Recommendation & Preference Reinforcement Lifecycle
+├── Flow 28: Semantic Document Q&A & Physical Page Attribution Lifecycle
+├── Flow 29: Rich Financial Document Studio Compilation & Streaming Ingestion
+└── Flow 30: Secure Outbound Webhook Dispatch with DNS SSRF Validation
 ```
 
 ---
@@ -976,4 +991,1056 @@ mindmap
                                      │    • Normal response: TTL = 120s    │
                                      │    • Degraded response: TTL = 15s   │
                                      └─────────────────────────────────────┘
+```
+
+---
+
+## Flow 16: Machine Learning Merchant Embedding Clustering & Normalization
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#10b981', 'lineColor': '#34d399', 'secondaryColor': '#064e3b', 'tertiaryColor': '#047857'}}}%%
+mindmap
+  root((Flow 16: ML Merchant Clustering))
+    Ingress
+      Raw Bank Statement Descriptions
+      Noisy Terminal Codes & Suffixes
+    Vector Generation
+      Taxonomy Projections (0-11)
+      Brand Anchor Projections (12-27)
+      Subword N-Gram FNV-1a Hashing (28-63)
+      Strict L2 Normalization ||v|| = 1.0
+    Clustering Engine
+      Centroid Cosine Linkage (sim >= 0.70)
+      Dynamic Centroid Updating
+    Resolution & Action
+      Canonical Merchant Name Mapping
+      Predicted Category Inference
+      1-Click Batch Promotion to CategoryRule
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 💳 INCOMING STATEMENT STRINGS: "AMZN MKTP US*2A41B", "Amazon Prime Video", "SBUX #1042"         │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📐 STAGE 1: 64-D DENSE VECTOR EMBEDDING GENERATION (merchantEmbeddingClustering.ts)             │
+│    - Dims [0..11]:  Category & Sector Taxonomy Projections                                      │
+│    - Dims [12..27]: Canonical Brand Anchor Projections (Amazon, Starbucks, Uber, Apple...)      │
+│    - Dims [28..63]: FastText-style Subword Character N-Grams (FNV-1a Hash)                       │
+│    - L2 Normalization: v_norm = v / ||v||_2 (Ensures unit length for dot product cosine sim)    │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔗 STAGE 2: AGGLOMERATIVE CENTROID-BASED COSINE CLUSTERING                                      │
+│    - Pairwise Cosine Similarity: S_ij = dot(v_i, c_j)                                           │
+│    - Merging: If max(S_ij) >= 0.70 ──► Join cluster and update centroid c = normalize(sum(v))  │
+│    - Canonical Resolution: Assigns clean entity name ("Amazon") and predicted category          │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🏷️ STAGE 3: ONE-CLICK BATCH APPLICATION (POST /api/transactions/merchant-clusters/apply)        │
+│    - Updates all matching ledger transactions with clean merchant name and assigned category    │
+│    - Persists permanent CategoryRule to automatically classify future transactions              │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 17: Multi-Modal Grounded RAG Knowledge Indexing & Hybrid Retrieval
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#1d4ed8', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#3b82f6', 'lineColor': '#60a5fa', 'secondaryColor': '#1e3a8a', 'tertiaryColor': '#2563eb'}}}%%
+mindmap
+  root((Flow 17: Multi-Modal RAG))
+    Ingestion
+      PDF Page Boundary Retention (\f)
+      Table Markdown Header Preservation
+      Financial Entity Extraction
+    64-D Vector Indexing
+      Financial Concept Projections
+      Structure & Numeric Density Dims
+      Sub-token N-Gram FNV-1a Hashing
+    Hybrid Ranking
+      BM25 Lexical Term Matching
+      Dense Semantic Cosine Similarity
+      Grounding Score G = 0.55 Cosine + 0.45 BM25
+    Verification & Drawer
+      Grounding Gate G >= 0.70
+      Interactive Citation Badges [doc:chunk]
+      Direct PDF Physical Page Deep-Link
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📄 DOCUMENT UPLOAD: Multi-Page Financial Statement (e.g. Q3_Bank_Statement.pdf)                 │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ✂️ STAGE 1: BOUNDED WINDOW TABLE-AWARE CHUNKING (retrievalService.ts)                            │
+│    - Preserves Form-Feed page boundaries (\f) for physical page parity                          │
+│    - 1,800 character window with 260-character sliding overlap                                  │
+│    - Detects Modality: "text" | "table" | "image_ocr" | "structured_data"                       │
+│    - Extracts entities: Merchants, monetary values, dates, and currency symbols                 │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🧠 STAGE 2: 64-D VECTOR EMBEDDING & STORAGE                                                     │
+│    - Maps text into 64-D normalized vector space                                                │
+│    - Persists to MongoDB `workspaceKnowledgeChunks` collection with compound tenant index       │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼ User Query: "What was our quarterly AWS spend?"
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⚖️ STAGE 3: HYBRID DENSE + LEXICAL BM25 RETRIEVAL                                               │
+│    - Dense Semantic Score: CosineSim(query_vec, chunk_vec) * 16.0                               │
+│    - Lexical BM25 Score: Exact Phrase (+12) + Term Frequency (+2) + Digits (+2)                 │
+│    - Grounding Confidence Score: G = 0.55 * CosineSim + 0.45 * LexicalNorm                      │
+│    - Gate: If G >= 0.70 ──► Tag isGrounded = true, format [docId:chunkIndex] citation           │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🖥️ STAGE 4: FRONTEND EVIDENCE PRESENTATION & DEEP-LINKING (SourceEvidenceList.tsx)              │
+│    - Renders clickable citation badge near answer                                               │
+│    - User click opens Slide-Over Drawer with verified snippet and direct link to physical page  │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 18: Inbound Real-Time Bank Connector Webhook Feed Engine
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0891b2', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#06b6d4', 'lineColor': '#67e8f9', 'secondaryColor': '#164e63', 'tertiaryColor': '#155e75'}}}%%
+mindmap
+  root((Flow 18: Bank Connector Webhook))
+    Ingress
+      POST /api/transactions/bank-feed
+      HMAC-SHA256 Signature Header
+      Multi-Tenant Org & Account Resolution
+    Deduplication Engine
+      externalId Sparse Compound Index
+      O(1) Idempotent Ingestion Check
+    Classification & Triage
+      Rule Engine Exact Match Promotion
+      Heuristic Confidence Scoring (0.10 to 1.00)
+      Low-Confidence (< 0.70) Review Queue Routing
+    Testing & Verification
+      In-App Test Simulator Modal in Transactions.tsx
+      Instant Reactive Query Invalidation
+```
+
+---
+
+## Flow 19: Visual Workflow Execution with Multi-Step Delays & Webhooks
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0f766e', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#14b8a6', 'lineColor': '#2dd4bf', 'secondaryColor': '#115e59', 'tertiaryColor': '#134e4a'}}}%%
+mindmap
+  root((Flow 19: Visual Workflow Execution))
+    Trigger Ingress
+      Inbound Webhook POST /api/workflows/webhook/:token
+      48-Character Cryptographic Secret Token
+      Trigger Payload Context Parsing
+    Branch Evaluation
+      Operators: eq, neq, gt, gte, lt, lte, contains
+      Context Variable Interpolation: {{field}}
+      Skipped Actions Audit Logging
+    Execution Actions
+      Create Action Task with Priority
+      Send Push or Email Notification
+      Export CSV / PDF Financial Statement
+      Multi-Step Delay Timers (1s to 30d)
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⚡ WORKFLOW TRIGGER INGRESS: Webhook POST /api/workflows/webhook/:token                         │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔍 STEP 1: CONTEXT PARSING & BRANCH EVALUATION (workflows.ts)                                    │
+│    - Evaluates conditional rules: operator "gt", field "amount", threshold 500                  │
+│    - Interpolates dynamic template variables: {{merchant}} -> "Apple Store"                     │
+│    - Records bypassed steps into WorkflowRun.actions_skipped                                    │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⏱️ STEP 2: MULTI-STEP DELAY TIMER ENQUEUEING                                                    │
+│    - Dispatches job to BullMQ with delay parameter: delay: 86400000 (24 hours)                  │
+│    - Persists WorkflowRun state with status: "DELAYED" and records delay start timestamp        │
+│    - Sweeper cron (sweepDelayedWorkflowRuns) runs every 60s to detect un-resumed workflows      │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼ Timer Expires / Sweeper Trigger
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🚀 STEP 3: RESUMPTION & ACTION EXECUTION                                                         │
+│    - Resumes workflow execution from target step index                                          │
+│    - Creates prioritized action task in Task collection and dispatches push notification        │
+│    - Finalizes WorkflowRun status: "COMPLETED"                                                  │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 20: Peer Spending Benchmarks & Zero-Sum Budget Auto-Rebalancing Invariant
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#d97706', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#f59e0b', 'lineColor': '#fbbf24', 'secondaryColor': '#b45309', 'tertiaryColor': '#78350f'}}}%%
+mindmap
+  root((Flow 20: Peer Auto-Rebalancing))
+    Cohort Benchmarks
+      Standard Household Peer Cohort
+      Interquartile Range IQR (P25 to P75)
+      Category Status: Frugal, Aligned, Elevated
+    Alignment Index
+      0-100% Peer Alignment Score
+      Top Peer Savings Opportunity Callout
+    Zero-Sum Rebalancing
+      Surplus Envelope Harvesting (Spent < Planned)
+      Deficit Envelope Replenishment (Spent > Planned)
+      Mathematical Invariant: sum(Delta B_i) = 0
+    Application & Commit
+      1-Click Interactive Rebalance Plan Modal
+      Instant Zero-Sum Transfer to Active Envelopes
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📊 USER BUDGET DASHBOARD: GET /api/v1/finance/budgets/health                                    │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🧮 STEP 1: COHORT IQR BENCHMARK COMPARISON (budgetHealthService.ts)                             │
+│    - Maps user category spending percentages against household peer quintiles                   │
+│    - Computes 0-100% Peer Alignment Index & highlights elevated discretionary spending          │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⚖️ STEP 2: ZERO-SUM REBALANCING PROPOSAL GENERATION                                             │
+│    - Identifies surplus envelopes: S_j = planned_j - spent_j (where spent_j < planned_j)        │
+│    - Identifies deficit envelopes: D_k = spent_k - planned_k (where spent_k > planned_k)        │
+│    - Mathematically guarantees: Sum(Delta B_i) = 0.00 and Proposed_i >= 0.00                    │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼ User clicks "Apply Zero-Sum Rebalance"
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 💾 STEP 3: ATOMIC LEDGER COMMIT (POST /api/v1/finance/budgets/rebalance)                        │
+│    - Verifies zero-sum invariant check before write                                             │
+│    - Updates envelope planned amounts atomically within MongoDB transaction                     │
+│    - Invalids ['budget-health', orgId] queries in TanStack client cache                         │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 21: Continuous Production AI Canary Invariant Validation Engine
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#dc2626', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#ef4444', 'lineColor': '#f87171', 'secondaryColor': '#991b1b', 'tertiaryColor': '#7f1d1d'}}}%%
+mindmap
+  root((Flow 21: AI Canary Engine))
+    Trigger Ingress
+      LangGraph Specialist Agent Output
+      External LLM Provider Response
+      Ad-Hoc Health Probe Probe Runner
+    Validation Layers
+      FastAPI Core: POST /canary/validate (:8001)
+      Local TypeScript Fallback Service (:3000)
+    Mathematical Invariants
+      1. Number Safety: Candidate in Reference
+      2. Zero-Sum: sum(Delta B) == 0
+      3. Balance Sheet: Assets - Liabilities == Net Worth
+      4. Cash Flow: Income - Expenses == Net Cash Flow
+      5. Debt: Principal + Interest == Payment
+    Circuit Actions
+      Pass: Serve to Client with Invariant Badge
+      Fail: Strip Narrative, Fallback to Closed-Form Math
+      Prometheus Gauge Metric: canary_pass_rate
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🧠 SYNTHESIS CANDIDATE GENERATION: LangGraph Aggregator or LLM Output                           │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ DUAL-LAYER CANARY AUDIT: aiCanaryService.ts                                                  │
+│    ├─► Step 1: Attempt call to FastAPI Core (http://localhost:8001/canary/validate)             │
+│    │          Checks all 5 mathematical identities using Python Pydantic V2 model               │
+│    └─► Step 2: (Fallback) If Python service times out, execute pure TypeScript decimal math     │
+└───────────────────────────────────────┬─────────────────────────────────┬───────────────────────┘
+                                        │                                 │
+                   ✅ All 5 Invariants PASS                              ❌ Invariant Violation Detected
+                                        ▼                                 ▼
+┌───────────────────────────────────────────────┐ ┌───────────────────────────────────────────────┐
+│ 🟢 CLEAN DELIVERY                             │ │ 🔴 CIRCUIT BREAKER ACTIVATION                 │
+│    - Deliver response to client SSE stream    │ │    - Strip hallucinated narrative text        │
+│    - Attach invariant verification metadata   │ │    - Substitute verified deterministic math   │
+│    - Increment Prometheus pass gauge          │ │    - Log violation to AiStatusDialog Cockpit  │
+└───────────────────────────────────────────────┘ └───────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 22: Offline-First Financial Journal Synchronization & 64-D Semantic Search
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4f46e5', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#6366f1', 'lineColor': '#818cf8', 'secondaryColor': '#3730a3', 'tertiaryColor': '#312e81'}}}%%
+mindmap
+  root((Flow 22: Offline Journal))
+    Client Capture
+      HTML5 Canvas Stylus Drawings
+      Markdown Notes & Reflections
+      Idempotent clientDraftId Generation
+    Offline Storage
+      localStorage Draft Queue
+      PWA Service Worker Offline Detection
+    Batch Sync Pipeline
+      POST /api/financial-journal/entries/batch-sync
+      Compound Unique Index { orgId, userId, clientKey }
+      Zero Duplicate Guarantee
+    Semantic Vector Indexing
+      64-D Journal Embedding Space
+      Cosine Similarity Concept Search
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📱 USER CLIENT (Offline / Airplane Mode): Writes notes & sketches in Notes.tsx                  │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 💾 LOCAL QUEUEING: Preserves entry in localStorage with uuid clientDraftId                      │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼ Network Connectivity Restored (window 'online')
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔄 BATCH SYNCHRONIZATION: POST /api/financial-journal/entries/batch-sync                        │
+│    - Dispatches payload: { entries: [ { clientKey, content, strokes, tags, createdAt } ] }      │
+│    - MongoDB executes atomic bulkWrite with upsert on compound index { orgId, userId, clientKey }│
+│    - Calculates 64-D semantic embedding vector for content and tags via journalEmbeddingService │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔍 SEMANTIC VECTOR SEARCH: User searches "#investment-notes" in journal drawer                  │
+│    - Generates 64-D query embedding vector                                                      │
+│    - Computes cosine similarity against all user notes: sim = dot(v_query, v_entry)             │
+│    - Returns ranked results with match confidence pills                                         │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 23: Global Multi-Currency FX Engine across 7 Currencies & Withholding Tax Relief
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0891b2', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#06b6d4', 'lineColor': '#22d3ee', 'secondaryColor': '#164e63', 'tertiaryColor': '#155e75'}}}%%
+mindmap
+  root((Flow 23: Multi-Currency FX))
+    Supported Currencies
+      USD Base
+      EUR, GBP, INR, CAD, AUD
+      JPY Zero-Decimal Formatting
+    Conversion Engine
+      Centralized Rate Dictionary
+      Bidirectional Rate Derivation
+      Safe Precision Rounding
+    Cross-Border Taxation
+      Gross Foreign Dividend Calculation
+      Dividend Withholding Tax (WHT)
+      DTAA Double Tax Treaty Relief
+      Net Post-Tax Yield Projection
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🌍 CROSS-BORDER ASSET INGESTION: Foreign Asset Purchase (e.g., Tokyo Stock Exchange 7203 JPY)  │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 💱 STANDARDIZED FX CONVERSION (currencyFx.ts)                                                   │
+│    - Base Currency: User Profile (e.g. USD)                                                     │
+│    - Lookup rate: FX_RATES['JPY'] = 152.40                                                      │
+│    - Converted: Amount_USD = Amount_JPY / 152.40                                                │
+│    - Zero-Decimal Rule: JPY values formatted with 0 decimal places; all others with 2 decimals   │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📜 DIVIDEND WITHHOLDING TAX (WHT) RELIEF MODELING                                                │
+│    - Gross Foreign Dividend = $1,000 USD equivalent                                             │
+│    - Statutory WHT Rate = 30%                                                                   │
+│    - Applicable DTAA Treaty Relief Rate = 15%                                                   │
+│    - Foreign Tax Credit (FTC) Offset = $150 USD                                                 │
+│    - True Net Post-Tax Yield = Gross - (Statutory - Treaty Relief)                              │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 24: Financial Calendar Live RFC 5545 iCal Feed & Reminder Engine
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#7c3aed', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#8b5cf6', 'lineColor': '#a78bfa', 'secondaryColor': '#5b21b6', 'tertiaryColor': '#4c1d95'}}}%%
+mindmap
+  root((Flow 24: RFC 5545 Calendar))
+    Cadence Detection
+      Recurring Bills (Monthly, Quarterly)
+      Debt Amortization Deadlines
+      Tax Filing Milestones
+    Stream Generation
+      GET /api/v1/calendar-reminders/export.ics
+      Token Authenticated Feed
+      Standardized VCALENDAR Format
+    External Sync
+      Apple Calendar Subscription
+      Google Calendar Sync
+      Microsoft Outlook Integration
+    Alarms
+      Interactive Pop-up & Audio VALARM
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📱 EXTERNAL CALENDAR SUBSCRIPTION: webcal://finwise.local/api/v1/calendar-reminders/export.ics  │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔷 API GATEWAY: calendarReminderController.ts                                                   │
+│    - Authenticates subscription token and resolves user organization                            │
+│    - Streams RFC 5545 VCALENDAR payload with Content-Type: text/calendar; charset=utf-8        │
+│    - Emits VEVENT entities with UID, DTSTAMP, DTSTART, SUMMARY, and VALARM reminder blocks      │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⏰ USER NOTIFICATION: Device fires alarm 24 hours prior to bill due date                        │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 25: AI System Diagnostics Cockpit & Multi-Key Health Inspection
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#10b981', 'lineColor': '#34d399', 'secondaryColor': '#064e3b', 'tertiaryColor': '#047857'}}}%%
+mindmap
+  root((Flow 25: AI Status Cockpit))
+    Diagnostic Tabs
+      Overview System Health & Latency
+      KeyPool Multi-Key Quotas & Cooldowns
+      Model Catalog Modalities & Limits
+      Canary Invariant Real-Time Audit
+    Observability
+      p50, p95, p99 Latency Percentiles
+      Error Rates over 10-Min Sliding Windows
+      Circuit Breaker States: CLOSED, OPEN, HALF-OPEN
+    Interactive Testing
+      Synthetic Invariant Probe Runner
+      Manual Cooldown Flush Action
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🖥️ USER CLICKS AI STATUS PILL: Opens AiStatusDialog.tsx modal                                    │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📡 SIMULTANEOUS DIAGNOSTIC QUERIES:                                                             │
+│    ├─► GET /api/v1/ai/status (Provider health, active model, latency)                           │
+│    ├─► GET /api/v1/ai/keypool (Active keys, cooldown timers, circuit breaker states)            │
+│    ├─► GET /api/v1/ai/models (Model catalog capabilities & context limits)                      │
+│    └─► GET /api/v1/ai/canary/status (Pass rates across 5 mathematical invariants)               │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📊 REACTIVE COCKPIT DISPLAY: Displays live metrics, health badges, and probe test runner        │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#d97706', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#f59e0b', 'lineColor': '#fbbf24', 'secondaryColor': '#b45309', 'tertiaryColor': '#78350f'}}}%%
+mindmap
+  root((Flow 20: Peer Auto-Rebalancing))
+    Cohort Benchmarks
+      Standard Household Peer Cohort
+      Interquartile Range IQR (P25 to P75)
+      Category Status: Frugal, Aligned, Elevated
+    Alignment Index
+      0-100% Peer Alignment Score
+      Top Peer Savings Opportunity Callout
+    Zero-Sum Rebalancing
+      Surplus Envelope Harvesting (Spent < Planned)
+      Deficit Envelope Replenishment (Spent > Planned)
+      Mathematical Invariant: sum(Delta B_i) = 0
+    Application & Commit
+      1-Click Interactive Rebalance Plan Modal
+      Instant Zero-Sum Transfer to Active Envelopes
+```
+
+
+---
+
+## Flow 26: Cross-Silo Unified Context Retrieval & Reciprocal Rank Fusion
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0284c7', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#38bdf8', 'lineColor': '#0ea5e9', 'secondaryColor': '#0369a1', 'tertiaryColor': '#0c4a6e'}}}%%
+mindmap
+  root((Flow 26: Unified Context Engine))
+    Data Silos
+      User Memory Preferences & Rules
+      Workspace Documents & PDFs
+      Ledger Transactions & Spending
+    Scoring & Ranking
+      64-D Dense Semantic Embeddings
+      BM25 Lexical Keyword Matching
+      Transaction Exponential Recency Decay
+    Fusion Layer
+      Reciprocal Rank Fusion (RRF k = 60)
+      Query Intent Biasing (w_s = 1.35)
+      Global Score Normalization (0-100)
+    Prompt Synthesis
+      Citation Tagging [mem:key], [doc:p.n], [txn:id]
+      LLM System Prompt Injection
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔍 USER QUERY INGRESS: "How much did I spend on dining relative to my dining budget rule?"      │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🧠 STEP 1: QUERY INTENT DETECTION & 64-D EMBEDDING GENERATION                                   │
+│    - Intent keywords: "budget rule" (boost memory w=1.35), "spend" (boost transactions w=1.35)  │
+│    - Generates 64-D dense L2-normalized vector embedding for query string                       │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🗄️ STEP 2: CONCURRENT CROSS-SILO SCORING (unifiedContextRetrievalService.ts)                   │
+│    ├─► Memory Silo: Scored by cosine similarity + exact key match                                │
+│    ├─► Document Silo: Scored by hybrid BM25 + cosine similarity                                  │
+│    └─► Transaction Silo: Scored by text match + amount bonus * exp(-lambda * delta_t)            │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⚖️ STEP 3: RECIPROCAL RANK FUSION (RRF k=60) & NORMALIZATION                                    │
+│    - Computes RRF score: RRF(d) = sum( w_s / (60 + rank_s(d)) )                                 │
+│    - Sorts all candidate items globally across silos by RRF score descending                    │
+│    - Assigns composite 0-100 scores and attaches verifiable citations                           │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📝 STEP 4: GROUNDED CONTEXT SYNTHESIS                                                           │
+│    - Formats verified facts into structured markdown context block                              │
+│    - Injects into LLM copilot prompt or LangGraph agent state graph                             │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+## Flow 27: Adaptive Follow-Through Recommendation & Preference Reinforcement Lifecycle
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#10b981', 'lineColor': '#34d399', 'secondaryColor': '#064e3b', 'tertiaryColor': '#047857'}}}%%
+mindmap
+  root((Flow 27: Follow-Through Engine))
+    Signal Harvester
+      Task Overdue Flags
+      Goal Pace Deficits
+      Budget Overspend Alerts
+      Calendar Bill Reminders
+    Ranking Algorithm
+      14-Day Half-Life Decay w(t)
+      Impact x Urgency x Affinity
+      Priority Tiers Critical to Low
+    Reinforcement Loop
+      Feedback POST /follow-through/feedback
+      Affinity Increments +0.15 on Complete
+      Affinity Penalties -0.10 on Dismiss
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📱 USER DASHBOARD: GET /api/v1/follow-through/recommendations                                   │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔍 STEP 1: MULTI-SOURCE ACTIVITY SIGNAL HARVESTING (followThroughService.ts)                   │
+│    - Gathers open tasks, lagging financial goals, overspent envelopes, and upcoming bills       │
+│    - Evaluates 14-day exponential half-life time decay: w(t) = exp(-ln(2) * dt / 14)            │
+│    - Modulates priority score by learned user domain affinities                                 │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼ User completes high-priority debt paydown task
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔄 STEP 2: REINFORCEMENT AFFINITY UPDATE (POST /api/v1/follow-through/feedback)                 │
+│    - Bumps debt domain affinity by +0.15                                                        │
+│    - Persists updated preference weights in FollowThroughPreference collection                  │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 28: Semantic Document Q&A & Physical Page Attribution Lifecycle
+
+### 1. Colourful Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#60a5fa', 'lineColor': '#93c5fd', 'secondaryColor': '#1e40af', 'tertiaryColor': '#1e3a8a'}}}%%
+mindmap
+  root((Flow 28: Document Q&A))
+    Ingress
+      User Chat Ingestion
+      Workspace File Context
+    Hybrid Retrieval
+      64-D Dense Cosine Sim
+      BM25 Lexical Keyword Scorer
+      Grounded Gate G >= 0.70
+    Physical Page Parity
+      PDF Form Feed Retained (\f)
+      Citation [file:page:chunk]
+    UI Presentation
+      ChatDocumentCard.tsx
+      One-Click PDF Download Link
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 💬 USER CHAT QUESTION: "What is my total taxable income on my uploaded 1040 form?"             │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔍 STEP 1: HYBRID MULTI-MODAL RETRIEVAL (documentQAService.ts)                                  │
+│    - Queries 64-D vectors + BM25 lexical scorer across workspace knowledge chunks               │
+│    - Enforces physical page attribution invariance from form-feed markers (\f)                  │
+│    - Verifies Grounding Score G >= 0.70                                                         │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📄 STEP 2: CLIENT EVIDENCE CARD RENDERING (ChatDocumentCard.tsx)                                │
+│    - Renders interactive card with title, page count badge, and exact page number citations     │
+│    - User click opens verified excerpt drawer and downloads PDFKit compiled statement          │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 26: Bharat Indic Voice Financial Pipeline (Gnani Prisma STT -> Evon 30B Reasoning -> Ledger Commit -> Timbre TTS)
+
+> **Context:** The Great Indian AI Internship Challenge 2026. Participant: J Ganesh Kumar Reddy.  
+> **Key Models:** Gnani AI Prisma v3.0 (STT), Gnani AI Evon v3.3 (30B Reasoning), Gnani AI Timbre (TTS).
+
+### 1. Mindmap Flow
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4338ca', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#6366f1', 'lineColor': '#818cf8', 'secondaryColor': '#312e81', 'tertiaryColor': '#1e1b4b'}}}%%
+mindmap
+  root((Indic Voice Flow))
+    Acoustic Ingestion
+      Web Audio API MediaRecorder
+      8kHz Telephonic Bandpass Filter
+      Live Volume Visualizer 0-100%
+    ASR Speech to Text
+      Gnani Prisma v3.0 STT
+      12+ Indic Languages & Dialects
+      Code-Mixed Hinglish Tokenizer
+    Semantic Reasoning
+      Gnani Evon v3.3 30B LLM
+      Transaction Extraction: Amount, Category, Merchant, Mode
+      Deterministic Number Safety Invariant Guard
+    Persistence & Voice Reply
+      MongoDB Transaction Record (orgId isolation)
+      Gnani Timbre Expressive TTS Confirmation
+      Live Audio Streaming to Browser
+```
+
+### 2. End-to-End Sequence ASCII Flow
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🎙️ USER SPEAKS IN REGIONAL VERNACULAR (e.g., Hindi / Telugu / Hinglish):                       │
+│    "Maine aaj Sharma ji ki kirana dukan pe 450 rupaye rashan ke liye UPI se diye"               │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Audio WebM / WAV Buffer (with optional 8kHz filter)
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⚡ STEP 1: GNANI PRISMA v3.0 SPEECH-TO-TEXT (POST /api/v1/voice/transcribe)                     │
+│    - Strips telephonic background noise & suppresses street audio                               │
+│    - Dispatches to Gnani Prisma API with target Indic language ('hi-IN', 'te-IN', 'ta-IN', etc.)│
+│    - Emits accurate Unicode transcript with confidence score C >= 0.94                          │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Transcript Text
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🧠 STEP 2: GNANI EVON 30B FINANCIAL REASONING DECOMPOSITION                                     │
+│    - Evaluates semantic entity tokens across Indian commerce vernacular                         │
+│    - Extracted: { amount: 450, category: 'Groceries', merchant: 'Sharma Ji Kirana', mode: 'UPI' }│
+│    - Validates Deterministic Invariant: Amount is real non-negative decimal, currency is INR    │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Validated Record
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 💾 STEP 3: MONGODB TRANSACTION PERSISTENCE & LEDGER MUTATION                                    │
+│    - Automatically attaches orgId tenant boundary and user session context                      │
+│    - Creates record with source: { origin: 'voice_note', actor: 'user', confidence: 0.96 }       │
+│    - Invalidates TanStack Query cache ['transactions', 'budgets']                               │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Confirmation Text
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🗣️ STEP 4: GNANI TIMBRE EXPRESSIVE VOICE SYNTHESIS (POST /api/v1/voice/synthesize)             │
+│    - Generates spoken confirmation: "Aapka 450 rupaye ka kharcha Groceries me log ho gaya hai"  │
+│    - Streams base64 WAV audio back to browser client for instant audible confirmation           │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 27: BFSI Mudra & MSME Voice Lead Qualification & Automated Underwriting
+
+> **Context:** The Great Indian AI Internship Challenge 2026. Participant: J Ganesh Kumar Reddy.  
+> **Key Models:** Gnani AI Prisma v3.0 (STT), Gnani AI Evon v3.3 (30B BFSI Underwriter), Gnani AI Timbre (TTS).
+
+### 1. Architectural Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#10b981', 'lineColor': '#34d399', 'secondaryColor': '#064e3b', 'tertiaryColor': '#022c22'}}}%%
+mindmap
+  root((MSME Voice Underwriting))
+    Spoken Query Ingestion
+      Regional Speech: Hindi, Telugu, Tamil, Hinglish
+      Tier 2 & 3 City Context: Kanpur, Warangal, Madurai, Indore
+      Telephonic 8kHz Noise Filter Mode
+    ASR Speech to Text
+      Gnani Prisma v3.0 Multilingual
+      Colloquial Terminology: Mudra, Dukan, Turnover, EMI
+    Financial Underwriting
+      Gnani Evon v3.3 30B Reasoning
+      Gross Monthly Turnover Extraction
+      Loan Amount Requested & Purpose
+      Debt Service Coverage Ratio (DSCR >= 1.5x)
+      Pradhan Mantri MUDRA Scheme Matching (Shishu, Kishor, Tarun)
+    Voice Decision & Certification
+      Gnani Timbre Regional Voice Pre-Approval
+      Instant Downloadable Pre-Qualification Certificate (.txt)
+```
+
+### 2. End-to-End Sequence Diagram
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🎙️ TIER-2/3 MSME MERCHANT SPEAKS (e.g., Kanpur Kirana Store Owner):                             │
+│    "Mera Kanpur me kirana store hai, monthly sale 1.5 lakh hai, dukan badhane ke liye           │
+│     2 lakh ka Mudra loan chahiye"                                                               │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Spoken Audio Blob / Base64 Payload
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⚡ STEP 1: GNANI PRISMA v3.0 STT (POST /api/v1/voice/lead-qualification)                        │
+│    - Isolates colloquial financial parameters with 98% phonetic fidelity                        │
+│    - Detects Tier-2 city context ("Kanpur") and business domain ("Kirana Store")                │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Transcribed Text
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🧠 STEP 2: GNANI EVON 30B REASONING & DETERMINISTIC MATHEMATICAL UNDERWRITING                   │
+│    - Extracted: { Monthly Revenue: ₹1,50,000, Loan Requested: ₹2,00,000, City: "Kanpur" }     │
+│    - Deterministic EMI Computation:                                                             │
+│         r = 9.5% / 12,  n = 36 months  ==>  EMI = ₹6,406 / month                                │
+│    - Deterministic DSCR Invariant:                                                              │
+│         Net Income = 25% * ₹1,50,000 = ₹37,500                                                  │
+│         DSCR = ₹37,500 / ₹6,406 = 5.85x  (Exceeds Prime Benchmark >= 1.5x)                     │
+│    - Credit Score: 85/100 (Tier-2 Regional Entrepreneur Policy Bonus Applied)                   │
+│    - Scheme Allocated: Pradhan Mantri MUDRA Yojana (Kishor Category: ₹50K to ₹5L)               │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Structured Decision Payload
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🗣️ STEP 3: GNANI TIMBRE REGIONAL VOICE SYNTHESIS                                               │
+│    - Synthesizes spoken approval in regional Hindi voice:                                       │
+│      "Badhaai ho! Aapke Kanpur kirana store ke liye ₹2 Lakh ka Mudra loan pre-qualified hai.     │
+│       Anumanit EMI ₹6,406 prati mah hai."                                                       │
+│    - Browser renders instant Pre-Qualification Dossier & Certificate download                   │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 28: BFSI Customer Care & UPI Dispute Redressal Engine (RBI Ombudsman T+1 TAT & NPCI UDMS)
+
+> **Context:** The Great Indian AI Internship Challenge 2026. Participant: J Ganesh Kumar Reddy.  
+> **Key Models:** Gnani AI Prisma v3.0 (STT), Gnani AI Evon v3.3 (30B Dispute Resolver), Gnani AI Timbre (TTS).
+
+### 1. Mindmap Architecture
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e11d48', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#f43f5e', 'lineColor': '#fb7185', 'secondaryColor': '#881337', 'tertiaryColor': '#4c0519'}}}%%
+mindmap
+  root((Flow 28: UPI Dispute Redressal))
+    Spoken Grievance Input
+      12+ Indic Dialects
+      UTR & Amount Extraction
+      Payment Failure Category
+    Regulatory Compliance
+      RBI Circular DPSS.CO.PD No.629/02.01.014/2019-20
+      Mandated T+1 Turnaround Time
+      Statutory Rs 100 per day Penalty Guarantee
+    NPCI UDMS Registration
+      Automated Grievance Ticket ID
+      Level 1 Nodal to Level 3 Ombudsman Pathway
+    Timbre Voice Reassurance
+      Regional Spoken Resolution Note
+      Downloadable Official Grievance Docket (.txt)
+```
+
+### 2. End-to-End Sequence Diagram
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🎙️ CONSUMER / MERCHANT SPEAKS PAYMENT DISPUTE (e.g., Hindi):                                     │
+│    "Mera ₹1,500 cut gaya par dukandar ko nahi mila, UTR number 429182349182, kab wapas aayega?" │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Spoken Audio Blob / Base64 Payload
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⚡ STEP 1: GNANI PRISMA v3.0 STT (POST /api/v1/voice/dispute)                                    │
+│    - Normalizes numeric entities: Amount = ₹1,500, UTR = "429182349182"                         │
+│    - Classifies Intent: "UPI_DEBIT_WITHOUT_CREDIT" (NPCI Code 102)                              │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Transcribed Payload
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🧠 STEP 2: GNANI EVON 30B REASONING & RBI REGULATORY INVARIANT ENGINE                           │
+│    - Framework: RBI Harmonisation Circular DPSS.CO.PD No.629/02.01.014/2019-20                  │
+│    - Mandated TAT: T + 1 Calendar Day (Auto-reversal within 24 hours)                           │
+│    - Compensation Rule: ₹100/day statutory penalty if delayed beyond T+1                        │
+│    - Ticket Generated: GRV-2026-UPI-349182 registered with NPCI UDMS                             │
+│    - Escalation Tier: Level 1 Bank Nodal -> Level 2 NPCI UDMS -> Level 3 RBI Ombudsman          │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Grievance Ticket & Reassurance Payload
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🗣️ STEP 3: GNANI TIMBRE REGIONAL VOICE REASSURANCE & DOCKET GENERATION                          │
+│    - Synthesizes spoken reassurance via Timbre TTS in native language:                          │
+│      "Aapki shikayat darj kar li gayi hai. UTR 429182349182 ke liye ₹1,500 ka refund             │
+│       RBI niyam T+1 ke anusaar 24 ghante me wapas aa jayega. Agar der hoti hai,                  │
+│       toh prati din ₹100 ka muavza milega."                                                     │
+│    - Instant 1-click Download: "rbi_grievance_grv-2026-upi-349182.txt"                          │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 29: Spoken Bharat Tax & GST Copilot (FY 2024-25 Slabs & MSME Composition)
+
+> **Context:** The Great Indian AI Internship Challenge 2026. Participant: J Ganesh Kumar Reddy.  
+> **Key Models:** Gnani AI Prisma v3.0 (STT), Gnani AI Evon v3.3 (30B Tax Reasoner), Gnani AI Timbre (TTS).
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0d9488', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#14b8a6', 'lineColor': '#2dd4bf', 'secondaryColor': '#134e4a', 'tertiaryColor': '#042f2e'}}}%%
+mindmap
+  root((Flow 29: Spoken Tax Copilot))
+    Spoken Tax Query
+      Annual Income & Salary Figures
+      Old vs New Regime Optimization
+      Kirana MSME GST Questions
+    Mathematical Calculation
+      Budget 2024 Standard Deduction (Rs 75,000)
+      Section 87A Rebate (Zero Tax up to Rs 7 Lakhs)
+      Old Regime 80C & 80D Deductions
+      1% Kirana GST Composition
+    Timbre Spoken Advisory
+      Localized Audio Explanation
+      Exact Rupee Savings Comparison
+      Downloadable Computation Docket
+```
+
+---
+
+## Flow 30: Autonomous Spoken Vyapar Billing & Instant UPI QR Invoicing
+
+> **Context:** The Great Indian AI Internship Challenge 2026. Participant: J Ganesh Kumar Reddy.  
+> **Key Models:** Gnani AI Prisma v3.0 (STT), Gnani AI Evon v3.3 (30B Invoicing Reasoner), Gnani AI Timbre (TTS).
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🎙️ KIRANA STORE MERCHANT SPEAKS MULTI-ITEM BASKET:                                              │
+│    "Raju ko 2 packet atta 110 rupaye, 1 kilo chini 45 rupaye, aur 1 litre tel 145 ka bill bana do"│
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Spoken Audio Blob / Base64 Payload
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⚡ STEP 1: GNANI PRISMA v3.0 STT & EVON 30B MULTI-ITEM ENTITY EXTRACTION                        │
+│    - Extracts Customer: "Raju"                                                                  │
+│    - Extracts Line Items:                                                                       │
+│         Item 1: Ashirvaad Atta  x 2 @ ₹55  = ₹110                                              │
+│         Item 2: Crystal Sugar   x 1 @ ₹45  = ₹45                                               │
+│         Item 3: Refined Oil     x 1 @ ₹145 = ₹145                                              │
+│    - Subtotal = ₹300 | CGST (9%) = ₹27 | SGST (9%) = ₹27 | Grand Total = ₹354                   │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Docket & Payment URI Payload
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🗣️ STEP 2: TIMBRE VOICE SUMMARY & DYNAMIC UPI QR GENERATION                                      │
+│    - Generates Spoken Bill: "Raju ji ka bill ban gaya hai. Grand total ₹354 hua hai."           │
+│    - Dynamic UPI URI: upi://pay?pa=bharatmerchant@upi&pn=Bharat+Vyapar&am=354&tn=INV-2026-XXXXX│
+│    - Thermal printer-ready tax invoice docket downloaded with one click                         │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 31: Jan Kalyan Government Schemes Voice Navigator (Flagship Welfare Eligibility)
+
+> **Context:** The Great Indian AI Internship Challenge 2026. Participant: J Ganesh Kumar Reddy.  
+> **Key Models:** Gnani AI Prisma v3.0 (STT), Gnani AI Evon v3.3 (30B DBT Welfare Reasoner), Gnani AI Timbre (TTS).
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#d97706', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#f59e0b', 'lineColor': '#fbbf24', 'secondaryColor': '#78350f', 'tertiaryColor': '#451a03'}}}%%
+mindmap
+  root((Flow 31: Jan Kalyan Schemes))
+    Spoken Need Ingestion
+      Street Vendors: Thela, Rehri, Patri, Hawkers
+      Farmers: Landholding, Cultivable Acres, Crop
+      Parents: Girl Child Education & Marriage
+      Senior Citizens & Workers: Health, Pension
+    Evon 30B Welfare Matching
+      PM SVANidhi: Rs 10,000 Micro-Credit (7% Subsidy)
+      PM-KISAN: Rs 6,000/yr DBT in 3 installments
+      Sukanya Samriddhi: 8.2% Guaranteed Tax-Free (EEE)
+      Ayushman Bharat: Rs 5 Lakhs Cashless Health Cover
+    Timbre Spoken Guidance
+      Mother Tongue Spoken Audio Walkthrough
+      Direct Official Portal Deep-Link
+      Printable Welfare Application Docket
+```
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🎙️ CITIZEN SPEAKS IN MOTHER TONGUE:                                                             │
+│    "Main ek street vendor thela lagata hoon sabzi bechta hoon, working capital loan chahiye"    │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Spoken Audio Blob / Base64 Payload
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⚡ STEP 1: GNANI PRISMA v3.0 STT & EVON 30B REASONING MATCHING                                    │
+│    - Identifies Occupation: Street Vendor / Urban Local Body Hawkers                            │
+│    - Evaluates Welfare Match: Pradhan Mantri SVANidhi (98% Match, Priority #1)                  │
+│    - Computes Direct Benefit: ₹10,000 working capital loan @ 7% interest subsidy                │
+│    - Prepares Document Checklist: Aadhaar, Bank Passbook, ULB Vending Certificate               │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Spoken Guidance Text
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🗣️ STEP 2: TIMBRE REGIONAL SPOKEN GUIDANCE & OFFICIAL PORTAL DEEP-LINK                          │
+│    - Timbre Voice: "Aapke liye PM SVANidhi sabse uttam hai. pmsvanidhi.mohua.gov.in par jayein"│
+│    - One-click Portal Link: https://pmsvanidhi.mohua.gov.in                                     │
+│    - Complete Application Dossier downloaded with zero middleman requirement                    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Flow 32: Zero-Trust Voice Biometrics Liveness Gate & Cryptographic HMAC Token Signing
+
+> **Context:** The Great Indian AI Internship Challenge 2026. Participant: J Ganesh Kumar Reddy.  
+> **Key Models:** Gnani AI Prisma v3.0 (STT), Gnani Voice Biometrics Liveness Shield, Gnani AI Timbre (TTS).
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🎙️ CITIZEN SPEAKS BIOMETRIC PASSPHRASE:                                                          │
+│    "Mera aawaz meri pehchan hai" / "Naa gonthu naa gurthimpu"                                   │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Live Microphone Audio Buffer
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STEP 1: ACOUSTIC SPECTRAL FORMANT ANALYSIS & ANTI-REPLAY LIVENESS GATE                       │
+│    - Formant F1 (520Hz) & F2 (1842Hz) Vocal Tract Resonance Verification                        │
+│    - Acoustic Match Score: 99.4% (Genuine Speaker Authenticated)                                │
+│    - Anti-Spoof Score: 98.8% (Replay and loudspeaker resonance playback rejected)               │
+│    - Status: GENUINE_LIVE_HUMAN                                                                 │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ Verified Clearance Payload
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔐 STEP 2: CRYPTOGRAPHIC AUTHORIZATION TOKEN & SPOKEN CLEARANCE                                 │
+│    - Issues Time-Bound HMAC Token: vbio_sec_xxxxxxxxxxxx_txxxxxxxxx (Valid 300s)                │
+│    - Authorizes high-value transaction (Khata settlement, loan sanction, GST invoice signing)   │
+│    - Timbre Voice Confirmation: "Aawaz ki pehchan safal rahi. Biometric verification approved." │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```

@@ -42,6 +42,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { getDashboardSummary } from "@/lib/apiClient";
 import { fetchSessions } from "@/services/chatApi";
 
+// Quick-launch navigation configuration for essential financial workflows.
+// Directs users quickly to chat assistant, transactions, files, and goals.
+// Displayed as interactive action cards with icons in the dashboard hero section.
 /** Quick-launch cards for common actions */
 const quickLaunches = [
   {
@@ -70,6 +73,9 @@ const quickLaunches = [
   },
 ];
 
+// Section header component providing uppercase eyebrow, title, and description.
+// Standardizes typography hierarchy and spacing across dashboard widget sections.
+// Accepts customizable eyebrow, title, and subtitle descriptive text strings.
 function DashboardSectionHeading({
   eyebrow,
   title,
@@ -90,6 +96,9 @@ function DashboardSectionHeading({
   );
 }
 
+// Main authenticated home dashboard aggregating financial vitals and AI insights.
+// Combines budget health, portfolio status, goal progress, and conversation panels.
+// Provides natural-language AI command bar and quick action navigation cards.
 export default function Dashboard() {
   const { user } = useAuth();
   const sessionsQuery = useQuery({
@@ -138,7 +147,7 @@ export default function Dashboard() {
                     {greeting}, {firstName}
                   </h1>
                   <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                    Track your money, check your goals, and ask the assistant for help.
+                    Know where your money went, review anything uncertain, and choose your next action.
                   </p>
                 </div>
               </div>

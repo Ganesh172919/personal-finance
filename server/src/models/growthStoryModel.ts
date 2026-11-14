@@ -1,5 +1,8 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+// Defines the document interface for financial growth and success stories.
+// Captures user journey narratives, quantitative financial milestones, and engagement stats.
+// Supports categorization, tag-based discovery, and publication workflow tracking.
 export interface IGrowthStory extends Document {
   title: string;
   slug: string;
@@ -35,6 +38,9 @@ export interface IGrowthStory extends Document {
   updatedAt: Date;
 }
 
+// Constructs the Mongoose schema definition for the GrowthStory model collection.
+// Enforces validation rules on markdown story fields, financial metrics, and publication flags.
+// Provides automatic timestamp tracking for creation and updates via Mongoose options.
 const growthStorySchema = new Schema<IGrowthStory>(
   {
     title: { type: String, required: true },
@@ -88,10 +94,16 @@ const growthStorySchema = new Schema<IGrowthStory>(
 );
 
 // Indexes
+// Configures query optimization and full-text search indexes on growth stories.
+// Accelerates category, difficulty, tag filtering, and publication timeline sorting.
+// Supports multi-field full-text search across titles, summaries, challenges, and tags.
 growthStorySchema.index({ category: 1 });
 growthStorySchema.index({ difficulty: 1 });
 growthStorySchema.index({ tags: 1 });
 growthStorySchema.index({ isPublished: 1, publishedAt: -1 });
 growthStorySchema.index({ title: 'text', summary: 'text', challenge: 'text', tags: 'text' });
 
+// Compiles and exports the GrowthStory Mongoose model instance.
+// Exposes query operations for retrieving and updating user case studies.
+// Enables community-driven inspirational content consumption across the platform.
 export const GrowthStory = mongoose.model<IGrowthStory>('GrowthStory', growthStorySchema);

@@ -48,6 +48,9 @@ _RISK_MAP = {
 }
 
 
+# Detects potential credentials, tokens, or high-entropy secrets in text.
+# Checks for password, token, or API key keywords and long alphanumeric hashes.
+# Prevents sensitive authentication secrets from being stored into memory state.
 def _looks_like_secret(text: str) -> bool:
     t = (text or "").strip()
     if not t:
@@ -60,6 +63,9 @@ def _looks_like_secret(text: str) -> bool:
     return False
 
 
+# Extracts user preferences, risk profiles, and goals using deterministic regex.
+# Classifies statements into key-value tuples tagged with confidence ratings.
+# Deduplicates extracted keys and returns sanitized memory facts for persistence.
 def extract_memories(user_input: str) -> List[Tuple[str, str, float, str]]:
     """
     Deterministic memory extraction from user text.

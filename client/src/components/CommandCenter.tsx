@@ -90,6 +90,9 @@ import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import { getCommandCenter } from "@/lib/api/transactions";
 import type { CommandCenterResponse, PriorityLevel } from "@/lib/api/transactions";
 
+// Framer Motion variant defining staggered entry transitions for children.
+// Orchestrates sequential animations across dashboard summary panels and gauges.
+// Delivers a smooth, coordinated cascading entrance effect on initial mount.
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
@@ -98,6 +101,9 @@ const containerVariants = {
   },
 };
 
+// Motion animation variant applied to individual command center cards.
+// Combines subtle scaling and vertical translation easing upon appearance.
+// Provides tactile, responsive visual feedback during data updates.
 const cardVariants = {
   hidden: { opacity: 0, y: 20, scale: 0.97 },
   visible: {
@@ -108,12 +114,18 @@ const cardVariants = {
   },
 };
 
+// Time-of-day greeting dictionary adapting to the user's current clock.
+// Maps morning, afternoon, and evening intervals to warm conversational greetings.
+// Powers personalized greeting banners at the top of the command center hero.
 const GREETINGS = {
   morning: "Good morning",
   afternoon: "Good afternoon",
   evening: "Good evening",
 } as const;
 
+// Visual style mapping dictionary classifying financial alerts by urgency level.
+// Configures border, background, text, and indicator dot color tokens.
+// Differentiates critical items, weekly reviews, and safe milestones.
 const priorityConfig: Record<
   PriorityLevel,
   { label: string; bg: string; text: string; border: string; dot: string }
@@ -142,6 +154,9 @@ const priorityConfig: Record<
 };
 
 /** Circular gauge component for scores/percentages */
+// Reusable circular SVG meter visualizing metrics against their maximum ceilings.
+// Calculates radial stroke offsets and animates completion arcs smoothly.
+// Renders centered numerical readouts alongside uppercase metric labels.
 const CircularGauge = ({
   value,
   max,
@@ -198,6 +213,9 @@ const CircularGauge = ({
   );
 };
 
+// Primary executive financial cockpit synthesizing cash runway, burn, and bills.
+// Delivers real-time proactive warnings, prioritized action chips, and liquidity gauges.
+// Refreshes periodic financial telemetry automatically in the background.
 export default function CommandCenter() {
   const { formatMoney } = useOrgFormatters();
 

@@ -20,6 +20,9 @@ import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import { globalSearch, SearchableType } from "../../services/searchService";
 
+// Executes a unified global search across transactions, budgets, goals, and workflows.
+// Resolves organization context, applies entity type filters, and handles cursor pagination.
+// Returns matched search results along with pagination metadata and request tracking IDs.
 export async function search(req: Request, res: Response) {
   const validated = req.query as unknown as {
     q: string;

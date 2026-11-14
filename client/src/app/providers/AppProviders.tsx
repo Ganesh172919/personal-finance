@@ -50,6 +50,9 @@ import { ScopedDataProvider } from "./ScopedDataProvider";
  * - useRealtimeEvents(): Subscribes to SSE events for real-time updates
  * - useKeyboardShortcuts(): Registers global keyboard shortcuts
  */
+// Component mounting global real-time event subscriptions and keyboard bindings.
+// Connects Server-Sent Event stream listeners for background workspace updates.
+// Hooks into keyboard navigation and command palette shortcuts across the tree.
 function RealtimeAppEffects({ children }: { children: ReactNode }) {
   useRealtimeEvents();
   useKeyboardShortcuts();
@@ -65,6 +68,9 @@ function RealtimeAppEffects({ children }: { children: ReactNode }) {
  *
  * @param children - The application content (typically AppRouter)
  */
+// Master composition component nesting all fundamental context providers.
+// Sets up theme layers, authentication guards, scoped query caches, and dialogs.
+// Mounts system accessibility landmarks and persistent floating modal elements.
 export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>

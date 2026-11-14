@@ -80,7 +80,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Mail, Send, Eye, Clock, Globe } from "lucide-react";
+import { Mail, Send, Eye, Clock, Globe, Laptop, Smartphone, X, RefreshCw, BarChart3 } from "lucide-react";
 
 import { useToast } from "@/hooks/useToast";
 import { Button } from "@/components/ui/Button";
@@ -102,6 +102,9 @@ import type {
 
 // ─── Timezone List ────────────────────────────────────────
 
+// Table of supported standard IANA timezones and regional offset descriptors.
+// Populates dropdown selections for newsletter dispatch scheduling controls.
+// Guarantees reliable scheduling translations across diverse global locales.
 const TIMEZONES = [
   { value: "Asia/Kolkata", label: "Asia/Kolkata (IST, UTC+5:30)" },
   { value: "UTC", label: "UTC" },
@@ -118,6 +121,9 @@ const TIMEZONES = [
 
 // ─── Section Toggle Definitions ───────────────────────────
 
+// Configuration list defining modular financial briefing newsletter sections.
+// Associates preference schema keys with user-facing titles and descriptions.
+// Enables granular subscription customization over budgets, bills, and tips.
 const SECTION_TOGGLES: Array<{
   key: keyof ContentPreferences;
   label: string;
@@ -162,6 +168,9 @@ const SECTION_TOGGLES: Array<{
 
 // ─── Main Component ───────────────────────────────────────
 
+// User preferences configuration pane for automated financial newsletter briefings.
+// Controls delivery scheduling, timezone offsets, content sections, and test dispatches.
+// Provides live HTML preview generation and instant test email delivery options.
 export default function NewsletterSettings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -180,6 +189,10 @@ export default function NewsletterSettings() {
   const [isSubscribed, setIsSubscribed] = useState(true);
   const [deliveryTime, setDeliveryTime] = useState("07:00");
   const [timezone, setTimezone] = useState("Asia/Kolkata");
+  const [previewData, setPreviewData] = useState<{ html: string; sections: Record<string, unknown> } | null>(null);
+  const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop");
+  const [previewTab, setPreviewTab] = useState<"html" | "data">("html");
+
   const [contentPrefs, setContentPrefs] = useState<ContentPreferences>({
     spending_summary: true,
     budget_alerts: true,
@@ -238,12 +251,19 @@ export default function NewsletterSettings() {
   const previewMutation = useMutation({
     mutationFn: previewNewsletter,
     onSuccess: (data) => {
-      // Open preview in a new tab
-      const blob = new Blob([data.html], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      // Clean up after a delay
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setPreviewData(data);
+      try {
+        const blob = new Blob([data.html], { type: "text/html" });
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } catch {
+        // Fallback if window.open blocked
+      }
+      toast({
+        title: "Preview loaded",
+        description: "Interactive newsletter preview rendered with dynamic charts.",
+      });
     },
     onError: (err: any) => {
       toast({
@@ -467,6 +487,123 @@ export default function NewsletterSettings() {
         </div>
       </Card>
 
+      {/* Interactive Email Newsletter Live Preview Card */}
+      {previewData && (
+        <Card className="p-6 space-y-4" data-testid="card-newsletter-interactive-preview">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-border">
+            <div>
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-primary" />
+                <h3 className="text-base font-semibold text-foreground">Interactive Email Newsletter Preview</h3>
+                <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/20">
+                  Dynamic Charts Active
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Email-safe HTML rendering featuring 7-day spending velocity chart, categorical distribution bars, and health pillar meters.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center border border-border rounded-md p-0.5 bg-muted/40">
+                <Button
+                  size="sm"
+                  variant={previewTab === "html" ? "secondary" : "ghost"}
+                  className="h-7 text-xs px-2.5"
+                  onClick={() => setPreviewTab("html")}
+                  data-testid="btn-preview-tab-html"
+                >
+                  Email View
+                </Button>
+                <Button
+                  size="sm"
+                  variant={previewTab === "data" ? "secondary" : "ghost"}
+                  className="h-7 text-xs px-2.5"
+                  onClick={() => setPreviewTab("data")}
+                  data-testid="btn-preview-tab-data"
+                >
+                  Section Data
+                </Button>
+              </div>
+
+              {previewTab === "html" && (
+                <div className="flex items-center border border-border rounded-md p-0.5 bg-muted/40">
+                  <Button
+                    size="sm"
+                    variant={previewMode === "desktop" ? "secondary" : "ghost"}
+                    className="h-7 w-7 p-0"
+                    onClick={() => setPreviewMode("desktop")}
+                    data-testid="btn-preview-mode-desktop"
+                    title="Desktop Preview (600px)"
+                  >
+                    <Laptop className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={previewMode === "mobile" ? "secondary" : "ghost"}
+                    className="h-7 w-7 p-0"
+                    onClick={() => setPreviewMode("mobile")}
+                    data-testid="btn-preview-mode-mobile"
+                    title="Mobile Preview (375px)"
+                  >
+                    <Smartphone className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              )}
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-xs"
+                onClick={() => previewMutation.mutate()}
+                disabled={previewMutation.isPending}
+                data-testid="btn-refresh-inapp-preview"
+                title="Refresh preview"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 mr-1 ${previewMutation.isPending ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                onClick={() => setPreviewData(null)}
+                data-testid="btn-close-inapp-preview"
+                title="Close preview"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+
+          {previewTab === "html" ? (
+            <div className="flex justify-center bg-muted/30 p-4 rounded-lg border border-border/80 overflow-x-auto min-h-[500px]">
+              <div
+                className={`transition-all duration-300 bg-background shadow-lg rounded-md overflow-hidden border border-border ${
+                  previewMode === "mobile" ? "w-[375px]" : "w-[620px]"
+                }`}
+              >
+                <div className="bg-muted px-3 py-1.5 border-b border-border text-[11px] text-muted-foreground flex items-center justify-between font-mono">
+                  <span>{previewMode === "mobile" ? "Mobile View (375px)" : "Desktop View (600px)"}</span>
+                  <span>HTML Email Engine</span>
+                </div>
+                <iframe
+                  srcDoc={previewData.html}
+                  title="Newsletter Email Preview"
+                  className="w-full h-[600px] border-none"
+                  data-testid="iframe-newsletter-preview"
+                  sandbox="allow-same-origin"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-md border border-border bg-muted/20 p-4 max-h-[500px] overflow-auto font-mono text-xs" data-testid="container-preview-data">
+              <pre>{JSON.stringify(previewData.sections, null, 2)}</pre>
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* Actions */}
       <Card className="p-6">
         <div className="flex flex-col sm:flex-row gap-3">
@@ -478,13 +615,20 @@ export default function NewsletterSettings() {
             {updateMutation.isPending ? "Saving..." : "Save Preferences"}
           </Button>
           <Button
-            variant="outline"
-            onClick={() => previewMutation.mutate()}
+            variant={previewData ? "secondary" : "outline"}
+            onClick={() => {
+              if (previewData) {
+                setPreviewData(null);
+              } else {
+                previewMutation.mutate();
+              }
+            }}
             disabled={previewMutation.isPending || !isSubscribed}
             className="flex items-center gap-2"
+            data-testid="btn-toggle-inapp-preview"
           >
             <Eye className="w-4 h-4" />
-            {previewMutation.isPending ? "Generating..." : "Preview"}
+            {previewMutation.isPending ? "Generating..." : previewData ? "Hide Live Preview" : "Live Email Preview"}
           </Button>
           <Button
             variant="secondary"

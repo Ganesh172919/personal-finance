@@ -54,6 +54,22 @@ mindmap
       Monotonic Context Revision Counters
       SSE Abort on Session Context Switch
       In-Process Promise Coalescing Buffer
+    Phase 8: ML Merchant Clustering
+      64-D Vector Space Dims 0-63
+      Agglomerative Centroid Cosine Linkage
+      1-Click Promotion to CategoryRule
+    Phase 9: Multi-Modal Grounded RAG
+      1800-Char Bounded Window Chunker
+      PDF Form-Feed Parity (\f)
+      BM25 + Dense Cosine (G >= 0.70)
+    Phase 10: AI Canary Invariant Engine
+      5 Core Mathematical Invariants
+      Dual-Layer FastAPI + TS Fallback
+      AiStatusDialog 4-Tab Cockpit
+    Phase 11: Visual Workflows & Offline Notes
+      BullMQ Delay Sweeper (1s to 30d)
+      Offline Canvas Stylus Notes
+      Idempotent Batch Sync
 ```
 
 ---
@@ -446,7 +462,127 @@ mindmap
 
 ---
 
-## 10. Complete Production Verification Matrix
+
+---
+
+## 10. Phase 8 Walkthrough: 64-D Machine Learning Merchant Clustering
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 💳 RAW BANK STATEMENT STRINGS: "AMZN MKTP US*2A41B", "Amazon Prime Video", "SBUX #1042"         │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📐 64-D VECTOR EMBEDDING GENERATION (merchantEmbeddingClustering.ts)                            │
+│    - Dims [0..11]:  Category & Sector Taxonomy Projections                                      │
+│    - Dims [12..27]: Canonical Brand Anchor Projections (Amazon, Starbucks, Uber, Apple...)      │
+│    - Dims [28..63]: FastText-style Subword Character N-Grams (FNV-1a Hash)                       │
+│    - L2 Unit Normalization: ||v|| = 1.0 (Ensures Euclidean dot product == Cosine Similarity)    │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔗 AGGLOMERATIVE CENTROID-BASED COSINE CLUSTERING                                               │
+│    - Pairwise Cosine Similarity: S_ij = dot(v_i, c_j)                                           │
+│    - Merging Threshold: If max(S_ij) >= 0.70 ──► Join cluster and update centroid              │
+│    - Resolution: Resolves messy strings into canonical entity and predicted category            │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🏷️ 1-CLICK BATCH APPLICATION (POST /api/transactions/merchant-clusters/apply)                   │
+│    - Updates all matching transactions with canonical merchant name and category                │
+│    - Persists permanent CategoryRule to automatically classify future transactions              │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 11. Phase 9 Walkthrough: Multi-Modal Grounded RAG Knowledge Indexing
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📄 DOCUMENT INGESTION (PDFs, Statements, Receipts, Spreadsheets)                                │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ✂️ BOUNDED WINDOW TABLE-AWARE CHUNKER (retrievalService.ts)                                     │
+│    - 1,800 characters target window / 260 characters sliding overlap                            │
+│    - Preserves Form-Feed page breaks (\f) to maintain physical page parity                      │
+│    - Re-injects Markdown table header rows across split boundaries                              │
+│    - Generates 64-D dense semantic embeddings persisted in workspaceKnowledgeChunks             │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼ User Query: "What was our total travel spend?"
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ⚖️ HYBRID DENSE + LEXICAL BM25 RETRIEVAL (retrievalService.ts)                                  │
+│    - Dense Semantic Score: CosineSim(query_vec, chunk_vec) * 16.0                               │
+│    - Lexical BM25 Score: Exact Phrase (+12) + Term Frequency (+2) + Digits (+2)                 │
+│    - Grounding Confidence Score: G = 0.55 * CosineSim + 0.45 * LexicalNorm                      │
+│    - Grounding Gate: If G >= 0.70 ──► Mark isGrounded = true, format [docId:chunkIndex]         │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🖥️ CLIENT EVIDENCE DRAWER: User clicks citation badge to inspect verified snippet on PDF page    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 12. Phase 10 Walkthrough: Continuous AI Canary Invariant Validation Engine
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🧠 AI SYNTHESIS CANDIDATE (LangGraph Specialist Agent or LLM Provider)                          │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ DUAL-LAYER CANARY AUDIT PIPELINE (aiCanaryService.ts)                                        │
+│    ├─► Primary: FastAPI Microservice (http://localhost:8001/canary/validate)                   │
+│    │          Validates all 5 mathematical invariants using Pydantic V2 model                   │
+│    └─► Fallback: Pure TypeScript Decimal Math (active if Python AI Core times out)              │
+│                                                                                                 │
+│    The 5 Mathematical Invariants:                                                               │
+│    1. Number Safety: Candidate Digits ⊆ Reference Ledger Digits ∪ Allowlist                     │
+│    2. Zero-Sum Budget Conservation: ∑ ΔB_i = 0 and ∀i: Proposed_i ≥ 0                           │
+│    3. Balance Sheet Identity: |Assets - Liabilities - Net Worth| ≤ 0.01                         │
+│    4. Cash Flow Identity: |Income - Expenses - Net Cash Flow| ≤ 0.01                            │
+│    5. Debt Amortization Identity: |Principal + Interest - Payment| ≤ 0.01                      │
+└───────────────────────────────────────┬─────────────────────────────────┬───────────────────────┘
+                                        │                                 │
+                   ✅ All 5 Invariants PASS                              ❌ Any Invariant FAILS
+                                        ▼                                 ▼
+┌───────────────────────────────────────────────┐ ┌───────────────────────────────────────────────┐
+│ 🟢 CLEAN DELIVERY                             │ │ 🔴 ZERO-HALLUCINATION CIRCUIT BREAKER         │
+│    - Deliver response to client SSE stream    │ │    - Strip narrative text instantly           │
+│    - Display verified badge in FinanceOS      │ │    - Fallback to closed-form calculations     │
+│    - Emit Prometheus canary pass metric       │ │    - Record violation in AiStatusDialog       │
+└───────────────────────────────────────────────┘ └───────────────────────────────────────────────┘
+```
+
+---
+
+## 13. Phase 11 Walkthrough: Visual Workflows & Offline-First Financial Journal
+
+### 13.1 Visual Workflows with BullMQ Delay Sweeper
+- **Visual Node Editor (`Workflows.tsx`)**: Drag-and-drop sequential action nodes with accessible Move Up/Down controls.
+- **Delay Timers ($1	ext{s}$ to $30	ext{d}$)**: Transitions workflow run state to `status: "DELAYED"` and schedules delayed resumption.
+- **Background Sweeper Cron (`sweepDelayedWorkflowRuns`)**: Sweeper job runs every 60 seconds to resume delayed runs even after process restarts.
+- **Conditional Branch Filtering**: Dynamic rule evaluation (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `contains`) with `{{field}}` runtime variable interpolation.
+
+### 13.2 Offline-First Financial Journal Synchronization
+- **Stylus & Markdown Capture (`Notes.tsx`)**: HTML5 canvas captures handwritten stylus strokes alongside markdown reflections.
+- **Offline Draft Queueing**: Persists entries to `localStorage` with client-generated UUID `clientDraftId`.
+- **Idempotent Batch Sync**: Flushes queue on network reconnect via `POST /api/financial-journal/entries/batch-sync` against compound unique index `{ orgId: 1, userId: 1, clientKey: 1 }`.
+- **64-D Semantic Vector Search**: Maps note content into semantic vectors for conceptual tag search (`journalEmbeddingService.ts`).
+
+---
+
+## 14. Complete Production Verification Matrix
 
 | Layer | Framework | Coverage / Suites | Verification Command |
 | :--- | :--- | :--- | :--- |

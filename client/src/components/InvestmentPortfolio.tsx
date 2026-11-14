@@ -27,6 +27,9 @@ import { InvestmentPortfolioSkeleton } from "@/components/ui/CardSkeleton";
 import { getPortfolioSummary, PortfolioSummaryResponse } from "@/lib/apiClient";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
+// Maps asset class category names to corresponding theme HSL color strings.
+// Differentiates equities, fixed-income debt, commodities, and alternative assets.
+// Powers visual allocation progress bars and diversified holding charts.
 const allocationColor = (name: string) => {
   const lower = name.toLowerCase();
   if (lower.includes("equity")) return "hsl(158 64% 52%)";
@@ -35,6 +38,9 @@ const allocationColor = (name: string) => {
   return "hsl(0 84% 60%)";
 };
 
+// Dashboard portfolio widget summarizing total invested capital and asset mix.
+// Renders percentage breakdowns across asset classes alongside top holding weights.
+// Displays month-over-month return deltas and estimated monthly SIP commitments.
 export function InvestmentPortfolio() {
   const { formatMoney } = useOrgFormatters();
   const { data, isLoading } = useQuery<PortfolioSummaryResponse>({

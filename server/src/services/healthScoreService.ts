@@ -82,6 +82,9 @@
 import { HealthScore, IHealthScore } from "../models/HealthScore.js";
 import { logger } from "../config/logger.js";
 
+// Input contract for recording and calculating user financial health metrics.
+// Encapsulates overall health scores alongside four key financial dimensions.
+// Used by ingestion pipelines receiving evaluations from analytical agents.
 interface HealthScoreInput {
   userId: string;
   orgId: string;
@@ -94,6 +97,9 @@ interface HealthScoreInput {
   };
 }
 
+// Trend analysis representation comparing current and historical health scores.
+// Encapsulates comparative deltas, trajectory direction, and chronological logs.
+// Powers frontend dashboard indicators and predictive financial insights.
 interface HealthScoreTrend {
   current: IHealthScore | null;
   previous: IHealthScore | null;
@@ -106,6 +112,9 @@ interface HealthScoreTrend {
  * Record a new health score for the current period.
  * If a score already exists for this period, it is updated.
  */
+// Records or updates the monthly financial health score snapshot for a user.
+// Performs upsert operations keyed by tenancy identifiers and current period.
+// Emits structured diagnostic logs and returns the saved score document.
 export async function recordHealthScore(input: HealthScoreInput): Promise<IHealthScore> {
   const period = getCurrentPeriod();
 
@@ -151,6 +160,9 @@ export async function recordHealthScore(input: HealthScoreInput): Promise<IHealt
  * Get the health score trend for a user.
  * Returns current score, previous score, trend direction, and history.
  */
+// Evaluates historical trajectory patterns across recent health score periods.
+// Computes point differentials between consecutive monthly evaluations.
+// Returns categorized trend vectors alongside chronological score histories.
 export async function getHealthScoreTrend(
   userId: string,
   orgId: string,
@@ -176,6 +188,9 @@ export async function getHealthScoreTrend(
  * Get health score history for chart rendering.
  * Returns data points formatted for Recharts.
  */
+// Formats historical health scores into data structures tailored for charts.
+// Pulls chronological score records filtered by user and organization context.
+// Maps score components into modular datasets suitable for visual graphing.
 export async function getHealthScoreChart(
   userId: string,
   orgId: string,
@@ -202,6 +217,9 @@ export async function getHealthScoreChart(
  * Check if the health score has changed significantly since last period.
  * Returns an alert if the change exceeds the threshold.
  */
+// Evaluates whether recent score fluctuations breach defined alert boundaries.
+// Compares point differentials against configurable sensitivity thresholds.
+// Generates contextual alert notifications when significant changes occur.
 export async function checkHealthScoreAlert(
   userId: string,
   orgId: string,
@@ -230,6 +248,9 @@ export async function checkHealthScoreAlert(
 /**
  * Get the current period string (YYYY-MM format).
  */
+// Generates the standard monthly calendar period string in YYYY-MM format.
+// Formats current UTC year and zero-padded month components cleanly.
+// Serves as the primary idempotency partition key for monthly health snapshots.
 function getCurrentPeriod(): string {
   const now = new Date();
   const year = now.getFullYear();

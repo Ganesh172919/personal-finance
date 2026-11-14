@@ -91,6 +91,7 @@ import type { WorkflowPhase } from "@/features/chat/TypingIndicator";
 import * as chatApi from "@/services/chatApi";        // Chat API client
 import { reportClientError } from "@/lib/runtimeLogger"; // Error reporting
 import { toast } from "@/hooks/useToast"; // Toast notifications
+import { newIdempotencyKey } from "@/lib/idempotency"; // Per-send idempotency key
 
 /**
  * Chat store state and actions interface.
@@ -107,8 +108,14 @@ import { toast } from "@/hooks/useToast"; // Toast notifications
  * - Message sending with optimistic updates
  * - Workflow phase management
  */
+// Tracks data revision increments across concurrent scope transitions.
+// Helps invalidate stale asynchronous responses when switching chat scopes.
+// Ensures outdated network payloads are safely ignored without UI conflicts.
 let dataRevision = 0;
 
+// Defines the contract and reactive schema for the Zustand chat store.
+// Tracks session metadata, active message threads, and workflow progress.
+// Exposes asynchronous action dispatchers for comprehensive conversation flow.
 interface ChatState {
   dataScope: string | null;
   bindDataScope: (scope: string | null) => void;
@@ -136,7 +143,7 @@ interface ChatState {
   selectSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
-  sendMessage: (content: string, options?: { narrative?: boolean; fileIds?: string[] }) => Promise<boolean>;
+  sendMessage: (content: string, options?: { narrative?: boolean; fileIds?: string[]; regenerateOf?: string; bypassCache?: boolean }) => Promise<boolean>;
   clearCurrentSession: () => void;
   setWorkflowPhase: (phase: WorkflowPhase | null, agent?: string) => void;
   clearWorkflowProgress: () => void;
@@ -153,6 +160,9 @@ interface ChatState {
  * Only persists currentSessionId (not messages or sessions) to avoid
  * stale data and keep localStorage small.
  */
+// Zustand store managing reactive conversational state and session storage.
+// Coordinates optimistic message rendering, phase transitions, and sync.
+// Persists active session IDs to local storage for seamless reload recovery.
 export const useChatStore = create<ChatState>()(
   persist(
     (set, get) => ({
@@ -308,7 +318,7 @@ export const useChatStore = create<ChatState>()(
        * @param options.narrative - Request narrative response style
        * @param options.fileIds - Attached file IDs
        */
-      sendMessage: async (content: string, options?: { narrative?: boolean; fileIds?: string[] }) => {
+      sendMessage: async (content: string, options?: { narrative?: boolean; fileIds?: string[]; regenerateOf?: string; bypassCache?: boolean }) => {
         const revision = dataRevision;
         if (get().isSending) return false;
         set({ isSending: true });
@@ -341,20 +351,24 @@ export const useChatStore = create<ChatState>()(
           createdAt: new Date().toISOString()
         };
 
-        set((state) => ({
-          messages: [...state.messages, tempUserMessage]
-        }));
+        if (!options?.regenerateOf) {
+          set((state) => ({ messages: [...state.messages, tempUserMessage] }));
+        }
 
         try {
-          // Send message to server
-          const response = await chatApi.sendMessage(sessionId, content, options);
+          // Send message to server. One key per user action: a network-level retry of
+          // this same send replays the stored reply instead of re-running (and re-billing) the AI call.
+          const response = await chatApi.sendMessage(sessionId, content, {
+            ...options,
+            idempotencyKey: newIdempotencyKey(),
+          });
           if (revision !== dataRevision) return false;
 
           // Replace temp message with real messages from server
           set((state) => ({
             messages: state.currentSessionId === sessionId ? [
               ...state.messages.filter(m => m.id !== tempUserMessage.id), // Remove temp
-              response.userMessage,        // Real user message
+              ...(!options?.regenerateOf ? [response.userMessage] : []), // Original question already exists
               response.assistantMessage    // AI response
             ] : state.messages,
             // Update session metadata in the sidebar
@@ -366,7 +380,7 @@ export const useChatStore = create<ChatState>()(
                     title: s.messageCount === 0 ? response.userMessage.content.substring(0, 50) +
                            (response.userMessage.content.length > 50 ? "..." : "") : s.title,
                     lastMessageAt: response.assistantMessage.createdAt,
-                    messageCount: s.messageCount + 2
+                    messageCount: s.messageCount + (options?.regenerateOf ? 1 : 2)
                   }
                 : s
             ),

@@ -29,9 +29,15 @@ import {
   type NotificationItem,
 } from "@/lib/api/v1/notifications";
 
+// Base cache query key tuple identifying in-app notification queries in TanStack Query.
+// Combined with status filters to uniquely partition cached notification collections.
+// Facilitates fine-grained invalidation upon optimistic status mutation cycles.
 /** Base query key for notifications — extended with status filter */
 const NOTIFICATIONS_KEY = ["notifications"] as const;
 
+// Custom React hook managing real-time notifications with polling and optimistic mutations.
+// Automatically polls notification endpoints every 30 seconds as an SSE fallback mechanism.
+// Exposes unread notification tallies, list collections, and optimistic read toggles.
 /**
  * Hook to fetch and manage notifications.
  *

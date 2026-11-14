@@ -6,6 +6,8 @@ import type { IUserDocument } from "../../models/userModel";
 import { HttpError } from "../../middleware/httpError";
 import { enforceFeatureLimit } from "../../services/entitlements";
 import { recordAuditEvent } from "../../services/auditLog";
+import { validateOutboundWebhookUrl } from "../../services/outboundWebhook";
+import { encryptWebhookCredential } from "../../services/webhookCredentials";
 import {
   computeNextRunDate,
   executeScheduledExport,
@@ -15,6 +17,9 @@ import type {
   UpdateScheduledExportBody,
 } from "../../schemas/v1/scheduledExportSchemas";
 
+// Validates that organization context is attached to the current request.
+// Throws a 401 unauthorized error if the organization context is omitted or invalid.
+// Returns the active organization ID parsed as a MongoDB ObjectId instance.
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -23,6 +28,9 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+// Parses and validates a raw string parameter as a valid MongoDB ObjectId.
+// Throws an HTTP 400 error if the supplied parameter is not a 24-character hex string.
+// Returns the parsed and strongly typed ObjectId instance for database queries.
 const parseObjectIdParam = (value: string) => {
   if (!mongoose.Types.ObjectId.isValid(value)) {
     throw new HttpError(400, "INVALID_ID", "Invalid identifier format");
@@ -30,6 +38,9 @@ const parseObjectIdParam = (value: string) => {
   return new mongoose.Types.ObjectId(value);
 };
 
+// Converts a scheduled export database document into an external client API representation.
+// Sanitizes webhook destinations, masks authentication secrets, and formats date strings.
+// Ensures consistent null-safety and predictable structure for all export responses.
 const toPublicScheduledExport = (doc: any) => ({
   id: String(doc._id),
   name: String(doc.name),
@@ -39,12 +50,7 @@ const toPublicScheduledExport = (doc: any) => ({
   destination_config: doc.destinationConfig
     ? {
         webhook_url: doc.destinationConfig.webhookUrl || doc.destinationConfig.webhook_url,
-        auth_header: doc.destinationConfig.authHeader || doc.destinationConfig.auth_header,
-        cloud_provider: doc.destinationConfig.cloudProvider || doc.destinationConfig.cloud_provider,
-        bucket_name: doc.destinationConfig.bucketName || doc.destinationConfig.bucket_name,
-        bucket_region: doc.destinationConfig.bucketRegion || doc.destinationConfig.bucket_region,
-        bucket_prefix: doc.destinationConfig.bucketPrefix || doc.destinationConfig.bucket_prefix,
-        custom_filename: doc.destinationConfig.customFilename || doc.destinationConfig.custom_filename,
+        has_auth_header: Boolean(doc.destinationConfig.authHeader || doc.destinationConfig.auth_header),
       }
     : {},
   delivery_email: doc.deliveryEmail ? String(doc.deliveryEmail) : undefined,
@@ -59,6 +65,9 @@ const toPublicScheduledExport = (doc: any) => ({
   updated_at: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : null,
 });
 
+// Lists all scheduled report exports configured by the authenticated user in the org.
+// Queries the database with user and organization scoping sorted by newest first.
+// Returns an array of sanitized public scheduled export objects.
 export const listScheduledExports = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);
@@ -73,6 +82,9 @@ export const listScheduledExports = async (req: Request, res: Response) => {
   });
 };
 
+// Creates a new recurring scheduled export job with email or webhook delivery targets.
+// Enforces export access plan entitlements and validates outbound webhook destinations.
+// Persists the scheduled export definition and emits an audit event for the creation.
 export const createScheduledExport = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);
@@ -91,14 +103,19 @@ export const createScheduledExport = async (req: Request, res: Response) => {
   const destinationConfig = body.destination_config
     ? {
         webhookUrl: (body.destination_config as any).webhook_url || (body.destination_config as any).webhookUrl,
-        authHeader: (body.destination_config as any).auth_header || (body.destination_config as any).authHeader,
-        cloudProvider: (body.destination_config as any).cloud_provider || (body.destination_config as any).cloudProvider,
-        bucketName: (body.destination_config as any).bucket_name || (body.destination_config as any).bucketName,
-        bucketRegion: (body.destination_config as any).bucket_region || (body.destination_config as any).bucketRegion,
-        bucketPrefix: (body.destination_config as any).bucket_prefix || (body.destination_config as any).bucketPrefix,
-        customFilename: (body.destination_config as any).custom_filename || (body.destination_config as any).customFilename,
+        authHeader: ((body.destination_config as any).auth_header || (body.destination_config as any).authHeader)
+          ? encryptWebhookCredential((body.destination_config as any).auth_header || (body.destination_config as any).authHeader)
+          : undefined,
       }
     : undefined;
+
+  if (destination === "webhook") {
+    const webhookUrl = destinationConfig?.webhookUrl;
+    if (!webhookUrl) {
+      throw new HttpError(400, "WEBHOOK_URL_MISSING", "Webhook destination URL is required");
+    }
+    await validateOutboundWebhookUrl(webhookUrl);
+  }
 
   const deliveryEmail = body.delivery_email ? body.delivery_email.toLowerCase() : undefined;
 
@@ -138,6 +155,9 @@ export const createScheduledExport = async (req: Request, res: Response) => {
   });
 };
 
+// Updates configuration parameters and schedules of an existing scheduled export.
+// Recomputes next run timestamps upon frequency changes and encrypts webhook credentials.
+// Saves updated schedule settings to the database and returns the modified object.
 export const updateScheduledExport = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);
@@ -159,17 +179,35 @@ export const updateScheduledExport = async (req: Request, res: Response) => {
     schedule.frequency = body.frequency;
     schedule.nextRunAt = computeNextRunDate(body.frequency);
   }
+  const requestedDestination = body.destination || schedule.destination;
   if (body.destination !== undefined) schedule.destination = body.destination;
   if (body.destination_config !== undefined) {
-    schedule.destinationConfig = {
-      webhookUrl: (body.destination_config as any).webhook_url || (body.destination_config as any).webhookUrl,
-      authHeader: (body.destination_config as any).auth_header || (body.destination_config as any).authHeader,
-      cloudProvider: (body.destination_config as any).cloud_provider || (body.destination_config as any).cloudProvider,
-      bucketName: (body.destination_config as any).bucket_name || (body.destination_config as any).bucketName,
-      bucketRegion: (body.destination_config as any).bucket_region || (body.destination_config as any).bucketRegion,
-      bucketPrefix: (body.destination_config as any).bucket_prefix || (body.destination_config as any).bucketPrefix,
-      customFilename: (body.destination_config as any).custom_filename || (body.destination_config as any).customFilename,
+    const incomingConfig = body.destination_config as {
+      webhook_url?: string;
+      webhookUrl?: string;
+      auth_header?: string;
+      authHeader?: string;
     };
+    const existingConfig = schedule.destinationConfig || {};
+    const providedAuthorization = incomingConfig.auth_header ?? incomingConfig.authHeader;
+    schedule.destinationConfig = {
+      webhookUrl: incomingConfig.webhook_url ?? incomingConfig.webhookUrl ?? existingConfig.webhookUrl,
+      // Omitted credentials remain unchanged. An explicit empty string removes
+      // the saved authorization header without ever returning its value.
+      authHeader:
+        providedAuthorization === undefined
+          ? existingConfig.authHeader
+          : providedAuthorization
+            ? encryptWebhookCredential(providedAuthorization)
+            : undefined,
+    };
+  }
+  if (requestedDestination === "webhook") {
+    const webhookUrl = schedule.destinationConfig?.webhookUrl;
+    if (!webhookUrl) {
+      throw new HttpError(400, "WEBHOOK_URL_MISSING", "Webhook destination URL is required");
+    }
+    await validateOutboundWebhookUrl(webhookUrl);
   }
   if (body.delivery_email !== undefined) {
     schedule.deliveryEmail = body.delivery_email ? body.delivery_email.toLowerCase() : undefined;
@@ -185,6 +223,9 @@ export const updateScheduledExport = async (req: Request, res: Response) => {
   });
 };
 
+// Deletes an existing scheduled export record owned by the authenticated user.
+// Enforces user and organization ownership boundaries before removing the entity.
+// Emits an audit log event recording schedule deletion and returns the deleted ID.
 export const deleteScheduledExport = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);
@@ -217,6 +258,9 @@ export const deleteScheduledExport = async (req: Request, res: Response) => {
   });
 };
 
+// Triggers immediate on-demand execution of an active scheduled export job.
+// Verifies user ownership within the organization and dispatches job processing.
+// Returns execution status, delivery results, and the associated request identifier.
 export const triggerScheduledExportNow = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);

@@ -25,6 +25,9 @@
 
 import { Schema, model, Document, Types } from "mongoose"; // MongoDB ODM
 
+// Defines the organization collaboration type classification.
+// Distinguishes between single-user personal accounts and collaborative team workspaces.
+// Dictates tenant member access rules and collaborative feature enablement.
 /**
  * Organization Type Enum
  *
@@ -33,6 +36,9 @@ import { Schema, model, Document, Types } from "mongoose"; // MongoDB ODM
  */
 export type OrganizationType = "personal" | "team";
 
+// Defines the authoritative domain interface for multi-tenant organizations.
+// Specifies regional currency, locale, timezone, webhook secret tokens, and ownership.
+// Serves as the primary root entity anchoring all scoped data within the application.
 /**
  * Organization Interface
  *
@@ -47,10 +53,14 @@ export interface IOrganization {
   locale: string; // BCP 47 locale string (e.g., "en-US") for formatting numbers and dates
   timezone: string; // IANA timezone identifier (e.g., "America/New_York") for date display
   taskWebhookToken?: string; // Secret token for inbound task creation/completion webhooks
+  aiLearningOptOut?: boolean; // When true, AI runs/feedback of this org are never used for self-improvement
   createdAt: Date; // When the organization was created (auto-managed by Mongoose timestamps)
   updatedAt: Date; // When the organization was last modified (auto-managed by Mongoose timestamps)
 }
 
+// Extends the organization interface with standard Mongoose Document properties.
+// Exposes database primary keys, lifecycle management methods, and timestamp fields.
+// Represents a persistent organization document returned by multi-tenant queries.
 /**
  * Organization Document Interface
  *
@@ -61,6 +71,9 @@ export interface IOrganizationDocument extends IOrganization, Document {
   _id: Types.ObjectId; // MongoDB ObjectId primary key
 }
 
+// Configures the Mongoose schema mapping for the organization collection.
+// Enforces validation rules on URL slugs, ISO 4217 currencies, and regional settings.
+// Automatically records document creation and modification timestamps on all writes.
 /**
  * Organization Schema Definition
  *
@@ -108,10 +121,16 @@ const organizationSchema = new Schema<IOrganizationDocument>(
 
     // Secret token for inbound task creation/completion webhooks
     taskWebhookToken: { type: String, trim: true, maxlength: 128 },
+
+    // Privacy: opt this org out of the AI learning loop (no feedback forwarding, no trace storage).
+    aiLearningOptOut: { type: Boolean, default: false },
   },
   { timestamps: true } // Automatically adds createdAt and updatedAt Date fields
 );
 
+// Configures specialized indexes for webhook ingestion and ownership resolution.
+// Establishes a sparse unique index on task webhook tokens for secure request routing.
+// Indexes organization creator IDs and creation timestamps for rapid account switching.
 organizationSchema.index({ taskWebhookToken: 1 }, { unique: true, sparse: true });
 
 /**
@@ -122,6 +141,9 @@ organizationSchema.index({ taskWebhookToken: 1 }, { unique: true, sparse: true }
  */
 organizationSchema.index({ createdByUserId: 1, createdAt: -1 });
 
+// Compiles and exports the Mongoose model for multi-tenant organizations.
+// Provides ODM query interfaces for tenant creation, metadata updates, and settings.
+// Acts as the foundational data boundary for all financial and analytical models.
 /**
  * Organization Model
  *

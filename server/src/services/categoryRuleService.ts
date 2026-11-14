@@ -6,6 +6,9 @@ import { fireAndForget } from "./deadLetterQueue";
  * Applies org/user category rules to a transaction description.
  * Returns the matched rule (or null) — caller decides whether to override.
  */
+// Evaluates active categorization rules sequentially against a transaction descriptor.
+// Supports pattern matching strategies including substring containment, prefixes, and regex.
+// Asynchronously increments rule match metrics via dead-letter queue background tasks.
 export async function matchCategoryRule(
   orgId: Types.ObjectId,
   userId: Types.ObjectId,
@@ -69,10 +72,16 @@ export async function matchCategoryRule(
 /**
  * CRUD operations for category rules.
  */
+// Fetches all category assignment rules configured for a specific organization user.
+// Orders rules in descending priority sequence to reflect execution precedence.
+// Delivers lightweight lean document arrays suitable for rule management user interfaces.
 export async function listCategoryRules(orgId: Types.ObjectId, userId: Types.ObjectId) {
   return CategoryRuleModel.find({ orgId, userId }).sort({ priority: -1 }).lean();
 }
 
+// Instantiates and persists a new automated transaction categorization rule.
+// Configures target category designations, match criteria, priority, and enabled state.
+// Initializes usage metrics counters to zero upon successful document creation.
 export async function createCategoryRule(
   orgId: Types.ObjectId,
   userId: Types.ObjectId,
@@ -88,6 +97,9 @@ export async function createCategoryRule(
   return CategoryRuleModel.create({ ...data, orgId, userId, enabled: true, appliedCount: 0 });
 }
 
+// Updates pattern parameters or target assignment properties of an existing rule.
+// Enforces strict ownership checks using rule, organization, and user identifiers.
+// Returns the updated lean category rule document or null if record was not found.
 export async function updateCategoryRule(
   ruleId: Types.ObjectId,
   orgId: Types.ObjectId,
@@ -101,6 +113,9 @@ export async function updateCategoryRule(
   ).lean();
 }
 
+// Permanently removes a designated category assignment rule from the database.
+// Applies tenant and user scope constraints to prevent unauthorized rule deletions.
+// Returns standard MongoDB deletion execution results indicating deleted count.
 export async function deleteCategoryRule(
   ruleId: Types.ObjectId,
   orgId: Types.ObjectId,

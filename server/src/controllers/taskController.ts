@@ -36,6 +36,7 @@ import { ActionOutcomeError, applyTaskEffects } from "../services/actionOutcomeS
 import { recordTaskEvent } from "../observability/metrics";
 import { HttpError } from "../middleware/httpError";
 import { logger } from "../config/logger";
+import { fetchOutboundWebhook, validateOutboundWebhookUrl } from "../services/outboundWebhook";
 
 const BUCKETS: Array<{ key: keyof AiPlan["actions"]; bucket: 7 | 30 | 365; defaultDueDays: number }> = [
   { key: "next_7_days", bucket: 7, defaultDueDays: 7 },
@@ -43,9 +44,15 @@ const BUCKETS: Array<{ key: keyof AiPlan["actions"]; bucket: 7 | 30 | 365; defau
   { key: "next_12_months", bucket: 365, defaultDueDays: 365 }
 ];
 
+// Normalizes task title strings by stripping whitespace and converting to lowercase.
+// Collapses consecutive internal space sequences into single whitespace characters.
+// Produces uniform title strings for deterministic hashing and deduplication checks.
 const normalizeTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase();
 
 // Deterministic ID ensures the same plan re-import does not create duplicate tasks
+// Computes a SHA-256 hash identifying a unique task from its scope, bucket, and title.
+// Prevents duplicate task generation when identical plans are re-imported or re-parsed.
+// Returns a truncated 32-character hexadecimal string serving as the task identifier.
 const buildDeterministicTaskId = (params: { orgId: string; userId: string; bucket: number; title: string }) => {
   const hash = crypto
     .createHash("sha256")
@@ -56,6 +63,9 @@ const buildDeterministicTaskId = (params: { orgId: string; userId: string; bucke
 
 const allowedKinds: TaskKind[] = ["cashflow", "budget", "debt", "invest", "goal", "education", "generic"];
 
+// Determines the functional category classification for a task based on content.
+// Inspects explicit kind attributes followed by lexical analysis of titles and reasons.
+// Maps tasks to categories such as cashflow, debt, budget, investment, or education.
 const inferKind = (item: any): TaskKind => {
   const explicit = typeof item?.kind === "string" ? item.kind.trim().toLowerCase() : "";
   if (allowedKinds.includes(explicit as TaskKind)) {
@@ -72,6 +82,9 @@ const inferKind = (item: any): TaskKind => {
   return "generic";
 };
 
+// Validates and maps an arbitrary priority indicator to a supported TaskPriority type.
+// Confirms whether the value matches standard low, medium, or high priority tiers.
+// Defaults safely to medium priority when unrecognized or missing values are provided.
 const normalizePriority = (value: unknown): TaskPriority => {
   if (value === "low" || value === "medium" || value === "high") {
     return value;
@@ -79,11 +92,17 @@ const normalizePriority = (value: unknown): TaskPriority => {
   return "medium";
 };
 
+// Calculates an absolute calendar deadline date offset by a specific day increment.
+// Clamps the day duration within safe operational bounds between 1 and 3650 days.
+// Returns a future Date instance reflecting the calculated task expiration timestamp.
 const dueDateFromDays = (days: number) => {
   const clamped = Math.max(1, Math.min(3650, Math.floor(days)));
   return new Date(Date.now() + clamped * 24 * 60 * 60 * 1000);
 };
 
+// Computes the successor due date for recurring tasks based on their active cadence.
+// Evaluates calendar intervals spanning daily, weekly, biweekly, monthly, or yearly.
+// Returns an updated Date instance corresponding to the scheduled recurrence interval.
 export const computeNextDueDate = (baseDate: Date, cadence: TaskRecurrenceCadence): Date => {
   const next = new Date(baseDate.getTime());
   switch (cadence) {
@@ -111,6 +130,9 @@ export const computeNextDueDate = (baseDate: Date, cadence: TaskRecurrenceCadenc
   return next;
 };
 
+// Spawns the subsequent iteration of a recurring financial task upon completion.
+// Generates a deterministic child identifier linked to the original parent task.
+// Persists the scheduled recurrence instance with open status in the database.
 export const scheduleNextRecurringTaskInstance = async (params: {
   currentTask: any;
   orgId: mongoose.Types.ObjectId;
@@ -162,8 +184,14 @@ export const scheduleNextRecurringTaskInstance = async (params: {
   return nextTask;
 };
 
+// Converts an optional string identifier into a native MongoDB ObjectId instance.
+// Validates that the input parameter contains a non-empty string before casting.
+// Returns the instantiated ObjectId reference or undefined when input is omitted.
 const toObjectId = (value?: string) => (value ? new mongoose.Types.ObjectId(value) : undefined);
 
+// Validates tenant organization presence on incoming task management operations.
+// Confirms that the organization identifier satisfies MongoDB ObjectId conventions.
+// Aborts request processing with an unauthorized HTTP error if organization is absent.
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -172,6 +200,9 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+// Resolves a single financial task document using its unique string identifier.
+// Enforces tenant organization and user ownership boundaries on the query.
+// Delivers the resolved task details or returns an HTTP 404 not found response.
 export const getTaskById = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
@@ -227,6 +258,9 @@ export const getTaskById = async (req: Request, res: Response) => {
   }
 };
 
+// Ingests time-bucketed action items from an AI plan and creates task records in bulk.
+// Generates deterministic task IDs and uses idempotent database insertions.
+// Emits task creation events and returns tallies of newly created action items.
 export const createTasksFromPlan = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
@@ -312,6 +346,9 @@ export const createTasksFromPlan = async (req: Request, res: Response) => {
   }
 };
 
+// Manually registers a new standalone financial task for the authenticated user.
+// Determines deterministic identifiers, validates priority levels, and sets deadlines.
+// Commits the task document to persistent storage and emits audit telemetry events.
 export const createTask = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
@@ -389,6 +426,9 @@ export const createTask = async (req: Request, res: Response) => {
   }
 };
 
+// Retrieves a collection of financial action tasks filtered by status and category.
+// Supports multi-criteria filtering across execution buckets and priority levels.
+// Delivers task lists sorted by temporal urgency and assigned priority rankings.
 export const listTasks = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
@@ -415,6 +455,9 @@ export const listTasks = async (req: Request, res: Response) => {
   }
 };
 
+// Mutates status, notes, or execution attributes on an existing financial action task.
+// Automatically schedules subsequent recurrence instances when recurring tasks close.
+// Emits task state change metrics and returns the updated task representation.
 export const updateTask = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
@@ -506,6 +549,9 @@ export const updateTask = async (req: Request, res: Response) => {
   }
 };
 
+// Executes concrete financial side-effects associated with an action task.
+// Delegates effect execution to the action outcome service under tenant isolation.
+// Records audit events, transitions task status to completed, and returns outcomes.
 export const applyTask = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
@@ -560,6 +606,9 @@ export const applyTask = async (req: Request, res: Response) => {
   }
 };
 
+// Generates or retrieves a secure webhook token for inbound third-party automations.
+// Creates authenticated webhook access credentials tied to the user organization.
+// Responds with webhook endpoints and bearer authentication tokens for integrations.
 export const getTaskWebhookToken = async (req: Request, res: Response) => {
   try {
     const orgId = requireOrgId(req);
@@ -587,6 +636,9 @@ export const getTaskWebhookToken = async (req: Request, res: Response) => {
   }
 };
 
+// Ingests external webhook events from automation providers to update task state.
+// Authenticates payloads via bearer tokens and verifies tenant organizational scope.
+// Applies incoming task state updates, status transitions, and notes asynchronously.
 export const handleInboundTaskWebhook = async (req: Request, res: Response) => {
   try {
     const token = String(req.params.token || "").trim();
@@ -699,16 +751,20 @@ export const handleInboundTaskWebhook = async (req: Request, res: Response) => {
   }
 };
 
+// Dispatches outbound webhook notifications regarding task updates to external URLs.
+// Validates target endpoint URLs against security constraints to prevent SSRF attacks.
+// Delivers task payloads to external endpoints and logs delivery outcome statuses.
 export const dispatchTasksWebhook = async (req: Request, res: Response) => {
   try {
     const user = req.user as IUserDocument;
     const orgId = requireOrgId(req);
-    const { target, webhook_url, task_ids, headers: customHeaders } = req.body as {
+    const { target, webhook_url, task_ids, authorization } = req.body as {
       target: "generic" | "linear" | "todoist" | "jira" | "slack";
       webhook_url: string;
       task_ids: string[];
-      headers?: Record<string, string>;
+      authorization?: string;
     };
+    await validateOutboundWebhookUrl(webhook_url);
 
     const tasks = await TaskModel.find({ _id: { $in: task_ids }, orgId }).lean();
     if (!tasks || tasks.length === 0) {
@@ -774,15 +830,14 @@ export const dispatchTasksWebhook = async (req: Request, res: Response) => {
     let responseSnippet = "";
 
     try {
-      const response = await fetch(webhook_url, {
+      const response = await fetchOutboundWebhook(webhook_url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "User-Agent": "FinWise-Task-Dispatcher/1.0",
-          ...(customHeaders || {}),
+          ...(authorization ? { Authorization: authorization } : {}),
         },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(8000),
       });
 
       httpCode = response.status;

@@ -41,9 +41,9 @@ mindmap
       useAIStream Token Consumer
     API Gateway - Port 3000
       Express 5 Routing
-      OrgScopePlugin Isolation
+      Explicit orgId Tenant Filters
       Zod Runtime Validation
-      BullMQ Queues & DLQ
+      Mongo-polling worker and DLQ
       RAG Phase 2 BM25 Chunker
     AI Core - Port 8001
       LangGraph StateGraph DAG
@@ -71,9 +71,9 @@ mindmap
 ┌────────────────────────────────────────────────────────────────────────┐
 │ 🔷 API GATEWAY: Express 5 + TypeScript (Node 24 LTS - Port 3000)       │
 │    ├─► Edge Security: Helmet (Strict CSP) • Double-Submit CSRF Guard   │
-│    ├─► Multi-Tenant Invariant: OrgScopePlugin auto-injects { orgId }   │
+│    ├─► Multi-Tenant Invariant: every query filters by explicit orgId    │
 │    ├─► RAG Phase 2: Bounded Window Chunker (1,800 ch) + BM25 Retrieval │
-│    └─► Async Queues: BullMQ + Redis for Newsletters, PDFs, and DLQ     │
+│    └─► Async jobs: Mongo-polling worker (newsletters, PDFs) + DLQ       │
 └───────────────────────┬─────────────────────────────────┬──────────────┘
                         │                                 │
         💾 Read / Write Database IO              ⚡ High-Speed IPC / HTTP
@@ -104,6 +104,13 @@ mindmap
 - **Topological Concurrency**: Subtasks execute level-by-level using Kahn's algorithm up to `max_concurrency = 4`.
 
 ---
+
+## 4.3 Operations & Deployment
+- **Admission control**: AI Core admits `AI_CORE_MAX_INFLIGHT` heavy requests per process and sheds the rest with `503` + `Retry-After`; `/health` is liveness, `/ready` drains on SIGTERM.
+- **Free-tier LLM budget**: the token bucket fails fast to the deterministic fallback; identical low-temperature prompts are cached and coalesced (tenant-scoped keys). Quotas are per process.
+- **Sub-agents** run on one shared bounded thread pool (`SUBAGENT_POOL_SIZE`), never a pool per request.
+- **Deploy**: `compose.yaml` for local/prod-like runs; `deploy/aws/` (CloudFormation + `deploy.sh`, AWS CLI only) for ECS Fargate. Env vars: `docs/ENV_VARIABLES.md`.
+- AI Core dev tooling lives in `server/AI_Core/requirements-dev.txt` (`pip install -r requirements-dev.txt` for pytest/ruff).
 
 ## 5. Testing & Quality Verification Matrix
 

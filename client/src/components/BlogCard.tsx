@@ -31,11 +31,17 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar";
 import { LazyImage } from "@/components/LazyImage";
 import { resolveAuthorAvatar, resolveBlogCoverImage } from "@/lib/media";
 
+// Property structure definition for the educational blog card component.
+// Supplies the blog article model alongside an optional featured display flag.
+// Governs whether a prominent hero card or a compact grid tile is rendered.
 interface BlogCardProps {
   post: IBlogPost;
   featured?: boolean;
 }
 
+// Mapping dictionary associating blog categories with theme chart color classes.
+// Assigns distinctive visual badge palettes to topics such as taxes and investing.
+// Ensures consistent topic categorization across article lists and featured heroes.
 const CATEGORY_COLORS: Record<string, string> = {
   'investing': 'bg-chart-1 text-chart-1-foreground',
   'budgeting': 'bg-chart-2 text-chart-2-foreground',
@@ -48,10 +54,16 @@ const CATEGORY_COLORS: Record<string, string> = {
   'personal-growth': 'bg-chart-4/80 text-chart-4-foreground',
 };
 
+// Formats hyphenated raw category slugs into capitalized human-readable titles.
+// Splits slug segments and capitalizes each individual token.
+// Produces clean display labels for category tags and header chips.
 const getCategoryLabel = (cat: string) => {
     return cat.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
+// Renders an individual blog article as a featured banner or standard grid card.
+// Displays cover imagery, author profile avatars, read time, and view counts.
+// Navigates seamlessly to the dedicated article page using client-side routing.
 export function BlogCard({ post, featured = false }: BlogCardProps) {
   const publishedDate = post.publishedAt ? formatDistanceToNow(new Date(post.publishedAt), { addSuffix: true }) : '';
   const coverImage = resolveBlogCoverImage(post.coverImage);

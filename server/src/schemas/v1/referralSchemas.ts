@@ -12,6 +12,9 @@
  */
 import { z } from "zod";
 
+// Validates user request payload submitted when redeeming an invite referral code.
+// Enforces uppercase alphanumeric string structure constrained between 6 and 16 characters.
+// Prevents invalid or malformed promo codes from triggering promotional credit logic.
 export const redeemReferralBodySchema = z
   .object({
     code: z

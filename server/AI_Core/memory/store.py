@@ -1,13 +1,15 @@
 """
-memory/store.py - SQLite-Backed Memory Store
-=============================================
+memory/store.py - User Memory Store (MongoDB or SQLite via StateStore)
+=========================================================================
 
 Provides ``MemoryStore``, a persistent key-value store for user-level
 memories (preferences, facts, inferred traits).  Memories are scoped by
-``org_id`` + ``user_id`` and support full-text search via SQLite FTS5.
+``org_id`` + ``user_id``.  Persistence is delegated to a ``StateStore``
+(``memory/state_store.py``): MongoDB with an ``{orgId, userId}``-prefixed text
+index in production, SQLite FTS5 for local dev and tests.
 
-Features
---------
+Features (SQLite backend details)
+---------------------------------
 - **Upsert** -- insert or update memories by ``(org_id, user_id, key)``
   with automatic deduplication.
 - **Full-text search** -- uses FTS5 ``bm25()`` ranking for relevance-
@@ -28,19 +30,33 @@ full-text search, kept in sync via INSERT/UPDATE/DELETE triggers.
 
 from __future__ import annotations
 
-import sqlite3
-import threading
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Optional
+
+from .state_store import (  # noqa: F401  (re-exported for backwards compatibility)
+    SqliteStateStore,
+    StateStore,
+    _escape_like,
+    build_fts_match_query,
+    get_state_store,
+)
+
+logger = logging.getLogger(__name__)
 
 
+# Generates current UTC timestamp formatted as ISO 8601 string.
+# Uses datetime timezone aware UTC now method for timestamping.
+# Returns string representation of timestamp for record tracking.
 def _utc_now_iso() -> str:
     """Return the current UTC time as an ISO 8601 string."""
     return datetime.now(timezone.utc).isoformat()
 
 
+# Encapsulates an individual user memory entry data model.
+# Stores key value pairs along with confidence metric and source.
+# Provides immutable dataclass representation for user context.
 @dataclass(frozen=True)
 class MemoryRecord:
     """A single memory entry with key, value, confidence, and source."""
@@ -51,102 +67,143 @@ class MemoryRecord:
     updated_at: str
 
 
-class MemoryStore:
-    def __init__(self, db_path: str):
-        self.db_path = str(db_path)
-        self._lock = threading.Lock()
-        self._has_fts = False
-        self._ensure_ready()
+# Represents scored and ranked memory entry retrieved from search.
+# Enriches base memory attributes with relevance and reciprocal rank scores.
+# Provides immutable structure for prioritizing retrieved user facts.
+@dataclass(frozen=True)
+class RankedMemoryRecord:
+    """A ranked memory entry with relevance score and rank."""
+    key: str
+    value: str
+    confidence: float
+    source: str
+    updated_at: str
+    score: float
+    rank: int = 1
+    rrf_score: float = 0.0
 
+
+# Fuses multiple ranked search result candidate lists using RRF algorithm.
+# Combines weighted candidate ranks across distinct retrieval channels.
+# Returns unified ranked results sorted by fused score descending.
+def reciprocal_rank_fusion(
+    ranked_lists: Iterable[Iterable[dict]],
+    k: int = 60,
+    weights: dict[str, float] | None = None,
+) -> List[dict]:
+    """Fuse multiple ranked lists of candidate dicts using Reciprocal Rank Fusion (RRF).
+
+    Each candidate dict must include an 'id' and optionally a 'source_type'.
+    RRF score formula: sum( weight / (k + rank_in_source) )
+    Returns fused items sorted by rrf_score descending with normalized score in [0, 100].
+    """
+    weights = weights or {}
+    fused: dict[str, dict] = {}
+    rrf_scores: dict[str, float] = {}
+
+    for source_list in ranked_lists:
+        for rank_idx, item in enumerate(source_list, start=1):
+            item_id = str(item.get("id") or item.get("key") or "")
+            if not item_id:
+                continue
+
+            source_type = str(item.get("source_type") or "default")
+            w = float(weights.get(source_type, 1.0))
+            score_delta = w / (float(k) + float(rank_idx))
+
+            rrf_scores[item_id] = rrf_scores.get(item_id, 0.0) + score_delta
+            if item_id not in fused:
+                fused[item_id] = dict(item)
+
+    if not fused:
+        return []
+
+    max_rrf = max(rrf_scores.values()) if rrf_scores else 1.0
+    if max_rrf <= 0:
+        max_rrf = 1.0
+
+    sorted_ids = sorted(fused.keys(), key=lambda i: rrf_scores.get(i, 0.0), reverse=True)
+    results: List[dict] = []
+
+    for global_rank, item_id in enumerate(sorted_ids, start=1):
+        item = fused[item_id]
+        raw_rrf = rrf_scores[item_id]
+        normalized_score = round(min(100.0, (raw_rrf / max_rrf) * 100.0), 1)
+
+        result_copy = dict(item)
+        result_copy["rrf_score"] = round(raw_rrf, 6)
+        result_copy["normalized_score"] = normalized_score
+        result_copy["unified_rank"] = global_rank
+        results.append(result_copy)
+
+    return results
+
+
+# Constructs a typed MemoryRecord instance from dictionary row representation.
+# Maps dictionary keys and casts primitive data types safely.
+# Returns immutable MemoryRecord object ready for consumer usage.
+def _record(row: dict) -> MemoryRecord:
+    return MemoryRecord(
+        key=str(row["key"]),
+        value=str(row["value"]),
+        confidence=float(row["confidence"]),
+        source=str(row["source"]),
+        updated_at=str(row["updated_at"]),
+    )
+
+
+# Manages user-level memory persistence facade over underlying StateStore.
+# Supports scoping memories per organization and user with deduplication.
+# Provides full-text search, ranked lexical retrieval, and batch upserts.
+class MemoryStore:
+    """Per-user memory facade over a ``StateStore``.
+
+    ``MemoryStore(db_path=...)`` pins a local SQLite file (dev/tests).  With no
+    arguments the backend is chosen by ``AI_CORE_STATE_BACKEND`` (see
+    ``memory.state_store.resolve_backend``).  Pass ``store=`` to inject one.
+    """
+
+    # Initializes memory store facade wrapping designated backend store.
+    # Resolves state store instance from explicit parameter or defaults.
+    # Sets database path attribute if available on backend instance.
+    def __init__(self, db_path: Optional[str] = None, *, store: Optional[StateStore] = None):
+        if store is None:
+            store = SqliteStateStore(str(db_path)) if db_path else get_state_store("memory")
+        self._store = store
+        self.db_path = getattr(store, "db_path", None)
+
+    # Exposes reference to underlying state store implementation instance.
+    # Provides access to lower-level persistence and indexing operations.
+    # Returns configured StateStore backend powering current memory store.
+    @property
+    def store(self) -> StateStore:
+        return self._store
+
+    # Identifies active persistence storage backend used by memory store.
+    # Delegates query to underlying state store backend attribute.
+    # Returns string identifier such as sqlite or mongo backend.
+    @property
+    def backend(self) -> str:
+        return self._store.backend
+
+    # Indicates whether text search capability is available on backend.
+    # Inspects text search support flags of underlying state store.
+    # Returns boolean flag confirming full-text search availability.
     @property
     def has_fts(self) -> bool:
-        return self._has_fts
+        return bool(self._store.has_text_search)
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        return conn
+    # Reports count of failed text search queries encountered by backend.
+    # Queries error counter tracking FTS5 or Mongo text index errors.
+    # Returns total count of text search exceptions as integer.
+    @property
+    def fts_error_count(self) -> int:
+        """Failed text-search queries (FTS5 on SQLite, ``$text`` on Mongo)."""
+        return int(self._store.text_search_errors)
 
-    def _ensure_ready(self) -> None:
-        path = Path(self.db_path)
-        if path.parent and not path.parent.exists():
-            path.parent.mkdir(parents=True, exist_ok=True)
-
-        with self._lock:
-            conn = self._connect()
-            try:
-                conn.execute("PRAGMA journal_mode=WAL;")
-            except Exception:
-                # Best-effort; WAL may be unsupported on some filesystems.
-                pass
-
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS memories (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  org_id TEXT NOT NULL,
-                  user_id TEXT NOT NULL,
-                  key TEXT NOT NULL,
-                  value TEXT NOT NULL,
-                  confidence REAL NOT NULL DEFAULT 0.5,
-                  source TEXT NOT NULL DEFAULT 'explicit',
-                  created_at TEXT NOT NULL,
-                  updated_at TEXT NOT NULL
-                );
-                """
-            )
-
-            conn.execute(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS memories_uniq
-                ON memories(org_id, user_id, key);
-                """
-            )
-
-            self._has_fts = self._ensure_fts(conn)
-            conn.close()
-
-    def _ensure_fts(self, conn: sqlite3.Connection) -> bool:
-        try:
-            conn.execute(
-                """
-                CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
-                USING fts5(key, value, content='memories', content_rowid='id');
-                """
-            )
-
-            conn.execute(
-                """
-                CREATE TRIGGER IF NOT EXISTS memories_ai
-                AFTER INSERT ON memories BEGIN
-                  INSERT INTO memories_fts(rowid, key, value) VALUES (new.id, new.key, new.value);
-                END;
-                """
-            )
-            conn.execute(
-                """
-                CREATE TRIGGER IF NOT EXISTS memories_ad
-                AFTER DELETE ON memories BEGIN
-                  INSERT INTO memories_fts(memories_fts, rowid, key, value)
-                  VALUES('delete', old.id, old.key, old.value);
-                END;
-                """
-            )
-            conn.execute(
-                """
-                CREATE TRIGGER IF NOT EXISTS memories_au
-                AFTER UPDATE ON memories BEGIN
-                  INSERT INTO memories_fts(memories_fts, rowid, key, value)
-                  VALUES('delete', old.id, old.key, old.value);
-                  INSERT INTO memories_fts(rowid, key, value) VALUES (new.id, new.key, new.value);
-                END;
-                """
-            )
-
-            return True
-        except Exception:
-            return False
-
+    # Performs batch upsert of memory key-value entries for user.
+    # Passes organization, user identifier, and record tuples to store.
+    # Returns number of memory records successfully inserted or updated.
     def upsert_many(
         self,
         *,
@@ -154,34 +211,11 @@ class MemoryStore:
         user_id: str,
         records: Iterable[tuple[str, str, float, str]],
     ) -> int:
-        now = _utc_now_iso()
-        rows = [
-            (org_id, user_id, key, value, float(confidence), source, now, now)
-            for (key, value, confidence, source) in records
-            if str(key).strip() and str(value).strip()
-        ]
-        if not rows:
-            return 0
+        return self._store.upsert_memories(org_id, user_id, records)
 
-        with self._lock:
-            conn = self._connect()
-            try:
-                conn.executemany(
-                    """
-                    INSERT INTO memories(org_id, user_id, key, value, confidence, source, created_at, updated_at)
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(org_id, user_id, key) DO UPDATE SET
-                      value=excluded.value,
-                      confidence=excluded.confidence,
-                      source=excluded.source,
-                      updated_at=excluded.updated_at;
-                    """,
-                    rows,
-                )
-                return len(rows)
-            finally:
-                conn.close()
-
+    # Executes text search query across user memories within scope.
+    # Sanitizes search terms and limits returned record collection size.
+    # Returns list of matched MemoryRecord instances matching query.
     def search(
         self,
         *,
@@ -193,52 +227,93 @@ class MemoryStore:
         q = str(query or "").strip()
         if not q:
             return []
+        limit = max(1, min(50, int(limit)))
+        return [_record(row) for row in self._store.search_memories(org_id, user_id, q, limit)]
+
+    # Retrieves all stored memories for specified organization and user.
+    # Restricts output length within bounded upper limit constraint.
+    # Returns list of MemoryRecord objects ordered chronologically.
+    def get_all(
+        self,
+        *,
+        org_id: str,
+        user_id: str,
+        limit: int = 100,
+    ) -> List[MemoryRecord]:
+        """Fetch all stored memories for a specific org and user."""
+        limit = max(1, min(500, int(limit)))
+        return [_record(row) for row in self._store.list_memories(org_id, user_id, limit)]
+
+    # Performs lexical scoring and confidence-weighted ranking over memories.
+    # Evaluates exact phrase matches and token overlaps against query terms.
+    # Returns ordered list of RankedMemoryRecord objects sorted by relevance.
+    def search_ranked(
+        self,
+        *,
+        org_id: str,
+        user_id: str,
+        query: str,
+        limit: int = 8,
+        min_confidence: float = 0.0,
+    ) -> List[RankedMemoryRecord]:
+        """Rank user memories against query with lexical scoring, exact phrase bonus, and confidence weighting."""
+        q = str(query or "").strip().lower()
+        if not q:
+            return []
 
         limit = max(1, min(50, int(limit)))
+        all_records = self.get_all(org_id=org_id, user_id=user_id, limit=200)
 
-        with self._lock:
-            conn = self._connect()
-            try:
-                if self._has_fts:
-                    # FTS5 bm25: lower is better.
-                    rows = conn.execute(
-                        """
-                        SELECT m.key, m.value, m.confidence, m.source, m.updated_at
-                        FROM memories_fts
-                        JOIN memories m ON m.id = memories_fts.rowid
-                        WHERE memories_fts MATCH ?
-                          AND m.org_id = ?
-                          AND m.user_id = ?
-                        ORDER BY bm25(memories_fts) ASC, m.updated_at DESC
-                        LIMIT ?;
-                        """,
-                        (q, org_id, user_id, limit),
-                    ).fetchall()
-                else:
-                    like = f"%{q}%"
-                    rows = conn.execute(
-                        """
-                        SELECT key, value, confidence, source, updated_at
-                        FROM memories
-                        WHERE org_id = ?
-                          AND user_id = ?
-                          AND (key LIKE ? OR value LIKE ?)
-                        ORDER BY updated_at DESC
-                        LIMIT ?;
-                        """,
-                        (org_id, user_id, like, like, limit),
-                    ).fetchall()
+        # Extract meaningful query terms
+        terms = [t for t in q.replace("-", " ").replace("_", " ").split() if len(t) >= 2]
+        scored_candidates: List[tuple[MemoryRecord, float]] = []
 
-                return [
-                    MemoryRecord(
-                        key=str(row["key"]),
-                        value=str(row["value"]),
-                        confidence=float(row["confidence"]),
-                        source=str(row["source"]),
-                        updated_at=str(row["updated_at"]),
-                    )
-                    for row in rows
-                ]
-            finally:
-                conn.close()
+        for rec in all_records:
+            if rec.confidence < min_confidence:
+                continue
+
+            k_lower = rec.key.lower()
+            v_lower = rec.value.lower()
+
+            score = 0.0
+            # Exact phrase match in key or value
+            if q in k_lower:
+                score += 20.0
+            elif q in v_lower:
+                score += 15.0
+
+            # Token overlap scoring
+            for term in terms:
+                if term in k_lower:
+                    score += 6.0
+                if term in v_lower:
+                    score += 4.0
+
+            # Confidence weighting factor (0.7 + 0.3 * confidence)
+            score *= (0.7 + 0.3 * max(0.0, min(1.0, rec.confidence)))
+
+            if score > 0.0:
+                scored_candidates.append((rec, round(score, 2)))
+
+        # Sort descending by score
+        scored_candidates.sort(key=lambda pair: pair[1], reverse=True)
+        top_candidates = scored_candidates[:limit]
+
+        ranked: List[RankedMemoryRecord] = []
+        for rank, (rec, score) in enumerate(top_candidates, start=1):
+            rrf = round(1.0 / (60.0 + rank), 6)
+            ranked.append(
+                RankedMemoryRecord(
+                    key=rec.key,
+                    value=rec.value,
+                    confidence=rec.confidence,
+                    source=rec.source,
+                    updated_at=rec.updated_at,
+                    score=score,
+                    rank=rank,
+                    rrf_score=rrf,
+                )
+            )
+
+        return ranked
 

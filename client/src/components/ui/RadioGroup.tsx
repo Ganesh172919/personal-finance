@@ -4,6 +4,9 @@ import { Circle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// Radio group container managing keyboard selection across mutually exclusive choices.
+// Built on Radix UI RadioGroupPrimitive Root with responsive grid layout styling.
+// Manages single active selection value and handles arrow key navigation natively.
 const RadioGroup = React.forwardRef<
   React.ElementRef<typeof RadioGroupPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Root>
@@ -18,6 +21,9 @@ const RadioGroup = React.forwardRef<
 });
 RadioGroup.displayName = RadioGroupPrimitive.Root.displayName;
 
+// Individual circular radio button option rendered within a RadioGroup.
+// Displays an inner filled circle indicator icon when selected.
+// Configures focus rings, border styling, and accessible disabled states.
 const RadioGroupItem = React.forwardRef<
   React.ElementRef<typeof RadioGroupPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Item>

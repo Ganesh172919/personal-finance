@@ -1,0 +1,267 @@
+# FinWise SLO recording rules and alerts. Load with `rule_files:` (prometheus.yml).
+# Validate syntax with `promtool check rules deploy/observability/prometheus-rules.yml`
+# (promtool was not available when this file was written; it was parsed as YAML only).
+#
+# SLOs (docs/CAPACITY_AND_SLOS.md):
+#   non-LLM API   availability 99.5% (error budget 0.5%), p95 < 300 ms
+#   AI success    98% (deterministic fallback counts as success; budget 2%)
+#   AI shed       < 0.5% of AI requests under nominal load
+#   AI latency    LLM path p95 < 20 s (deterministic p95 < 4 s is checked by k6 only:
+#                 the gateway histogram cannot tell the two paths apart)
+#
+# Burn-rate alerts use the multi-window multi-burn-rate pattern (Google SRE
+# workbook): page when both a long and a short window burn the budget fast, ticket
+# on a slow burn. A burn rate of N means the budget would be gone in 30d / N.
+#
+# Path classes (finwise_http_*; the `path` label is the normalised URL, ObjectIds -> :id):
+#   AI/streaming paths : /api[/v1]/(process-command|ai/...|scenarios/what-if|
+#                        autopilot...|chat/sessions/:id/messages)  and events/stream
+#   non-LLM API        : everything else except /api/metrics.
+# Status 429 is a client/limiter outcome, not a server error; only 5xx counts as an error.
+
+groups:
+  - name: finwise.sli.api
+    interval: 30s
+    rules:
+      - record: finwise:api_nonllm:requests:rate5m
+        expr: |
+          sum(rate(finwise_http_requests_total{path!~"/api(/v1)?/(process-command|ai/.*|scenarios/what-if|autopilot.*|chat/sessions/:id/messages|events/stream|metrics)"}[5m]))
+      - record: finwise:api_nonllm:errors:ratio_rate5m
+        expr: |
+          sum(rate(finwise_http_requests_total{status=~"5..",path!~"/api(/v1)?/(process-command|ai/.*|scenarios/what-if|autopilot.*|chat/sessions/:id/messages|events/stream|metrics)"}[5m]))
+          /
+          clamp_min(sum(rate(finwise_http_requests_total{path!~"/api(/v1)?/(process-command|ai/.*|scenarios/what-if|autopilot.*|chat/sessions/:id/messages|events/stream|metrics)"}[5m])), 1e-9)
+      - record: finwise:api_nonllm:errors:ratio_rate30m
+        expr: |
+          sum(rate(finwise_http_requests_total{status=~"5..",path!~"/api(/v1)?/(process-command|ai/.*|scenarios/what-if|autopilot.*|chat/sessions/:id/messages|events/stream|metrics)"}[30m]))
+          /
+          clamp_min(sum(rate(finwise_http_requests_total{path!~"/api(/v1)?/(process-command|ai/.*|scenarios/what-if|autopilot.*|chat/sessions/:id/messages|events/stream|metrics)"}[30m])), 1e-9)
+      - record: finwise:api_nonllm:errors:ratio_rate1h
+        expr: |
+          sum(rate(finwise_http_requests_total{status=~"5..",path!~"/api(/v1)?/(process-command|ai/.*|scenarios/what-if|autopilot.*|chat/sessions/:id/messages|events/stream|metrics)"}[1h]))
+          /
+          clamp_min(sum(rate(finwise_http_requests_total{path!~"/api(/v1)?/(process-command|ai/.*|scenarios/what-if|autopilot.*|chat/sessions/:id/messages|events/stream|metrics)"}[1h])), 1e-9)
+      - record: finwise:api_nonllm:errors:ratio_rate6h
+        expr: |
+          sum(rate(finwise_http_requests_total{status=~"5..",path!~"/api(/v1)?/(process-command|ai/.*|scenarios/what-if|autopilot.*|chat/sessions/:id/messages|events/stream|metrics)"}[6h]))
+          /
+          clamp_min(sum(rate(finwise_http_requests_total{path!~"/api(/v1)?/(process-command|ai/.*|scenarios/what-if|autopilot.*|chat/sessions/:id/messages|events/stream|metrics)"}[6h])), 1e-9)
+      - record: finwise:api_nonllm:errors:ratio_rate1d
+        expr: |
+          sum(rate(finwise_http_requests_total{status=~"5..",path!~"/api(/v1)?/(process-command|ai/.*|scenarios/what-if|autopilot.*|chat/sessions/:id/messages|events/stream|metrics)"}[1d]))
+          /
+          clamp_min(sum(rate(finwise_http_requests_total{path!~"/api(/v1)?/(process-command|ai/.*|scenarios/what-if|autopilot.*|chat/sessions/:id/messages|events/stream|metrics)"}[1d])), 1e-9)
+      - record: finwise:api_nonllm:latency_ms:p95_5m
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(finwise_http_request_duration_ms_bucket{path!~"/api(/v1)?/(process-command|ai/.*|scenarios/what-if|autopilot.*|chat/sessions/:id/messages|events/stream|metrics)"}[5m])))
+
+  - name: finwise.sli.ai
+    interval: 30s
+    rules:
+      # AI paths as seen at the gateway. A 503 shed counts as a failure here: the
+      # AI success SLO only forgives deterministic FALLBACKS (which return 200).
+      - record: finwise:ai:requests:rate5m
+        expr: |
+          sum(rate(finwise_http_requests_total{path=~"/api(/v1)?/(process-command|ai/process/stream|ai/stream|scenarios/what-if|chat/sessions/:id/messages)"}[5m]))
+      - record: finwise:ai:failures:ratio_rate5m
+        expr: |
+          sum(rate(finwise_http_requests_total{status=~"5..|429",path=~"/api(/v1)?/(process-command|ai/process/stream|ai/stream|scenarios/what-if|chat/sessions/:id/messages)"}[5m]))
+          /
+          clamp_min(sum(rate(finwise_http_requests_total{path=~"/api(/v1)?/(process-command|ai/process/stream|ai/stream|scenarios/what-if|chat/sessions/:id/messages)"}[5m])), 1e-9)
+      - record: finwise:ai:failures:ratio_rate30m
+        expr: |
+          sum(rate(finwise_http_requests_total{status=~"5..|429",path=~"/api(/v1)?/(process-command|ai/process/stream|ai/stream|scenarios/what-if|chat/sessions/:id/messages)"}[30m]))
+          /
+          clamp_min(sum(rate(finwise_http_requests_total{path=~"/api(/v1)?/(process-command|ai/process/stream|ai/stream|scenarios/what-if|chat/sessions/:id/messages)"}[30m])), 1e-9)
+      - record: finwise:ai:failures:ratio_rate1h
+        expr: |
+          sum(rate(finwise_http_requests_total{status=~"5..|429",path=~"/api(/v1)?/(process-command|ai/process/stream|ai/stream|scenarios/what-if|chat/sessions/:id/messages)"}[1h]))
+          /
+          clamp_min(sum(rate(finwise_http_requests_total{path=~"/api(/v1)?/(process-command|ai/process/stream|ai/stream|scenarios/what-if|chat/sessions/:id/messages)"}[1h])), 1e-9)
+      - record: finwise:ai:failures:ratio_rate6h
+        expr: |
+          sum(rate(finwise_http_requests_total{status=~"5..|429",path=~"/api(/v1)?/(process-command|ai/process/stream|ai/stream|scenarios/what-if|chat/sessions/:id/messages)"}[6h]))
+          /
+          clamp_min(sum(rate(finwise_http_requests_total{path=~"/api(/v1)?/(process-command|ai/process/stream|ai/stream|scenarios/what-if|chat/sessions/:id/messages)"}[6h])), 1e-9)
+      # Shed ratio: admission-controller sheds over AI requests. Shed responses are
+      # themselves counted in finwise_http_requests_total, so no double counting needed.
+      - record: finwise:ai:shed:ratio_rate5m
+        expr: |
+          sum(rate(finwise_ai_gateway_shed_total[5m]))
+          /
+          clamp_min(finwise:ai:requests:rate5m, 1e-9)
+      - record: finwise:ai:latency_ms:p95_5m
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(finwise_ai_core_request_duration_ms_bucket{job="finwise-server"}[5m])))
+
+  - name: finwise.alerts.slo
+    rules:
+      # ---- Non-LLM API availability: budget 0.5% -------------------------------
+      - alert: FinwiseApiAvailabilityFastBurn
+        expr: |
+          finwise:api_nonllm:errors:ratio_rate1h > (14.4 * 0.005)
+          and finwise:api_nonllm:errors:ratio_rate5m > (14.4 * 0.005)
+        for: 2m
+        labels: {severity: page, slo: api_availability}
+        annotations:
+          summary: "API availability SLO burning at >14x (budget gone in ~2 days)"
+          description: "5xx ratio is {{ $value | humanizePercentage }} (1h window). Runbook: docs/CAPACITY_AND_SLOS.md#runbook"
+      - alert: FinwiseApiAvailabilityMediumBurn
+        expr: |
+          finwise:api_nonllm:errors:ratio_rate6h > (6 * 0.005)
+          and finwise:api_nonllm:errors:ratio_rate30m > (6 * 0.005)
+        for: 15m
+        labels: {severity: page, slo: api_availability}
+        annotations:
+          summary: "API availability SLO burning at >6x (budget gone in ~5 days)"
+          description: "5xx ratio is {{ $value | humanizePercentage }} (6h window). Runbook: docs/CAPACITY_AND_SLOS.md#runbook"
+      - alert: FinwiseApiAvailabilitySlowBurn
+        expr: |
+          finwise:api_nonllm:errors:ratio_rate1d > (3 * 0.005)
+          and finwise:api_nonllm:errors:ratio_rate6h > (3 * 0.005)
+        for: 1h
+        labels: {severity: ticket, slo: api_availability}
+        annotations:
+          summary: "API availability SLO burning at >3x (budget gone in ~10 days)"
+          description: "5xx ratio is {{ $value | humanizePercentage }} (1d window)."
+
+      # ---- Non-LLM API latency: p95 < 300 ms ------------------------------------
+      # The histogram has 250 ms and 500 ms buckets, so the p95 between them is an
+      # interpolation; treat the value as indicative near the 300 ms line.
+      - alert: FinwiseApiLatencyP95High
+        expr: finwise:api_nonllm:latency_ms:p95_5m > 300
+        for: 15m
+        labels: {severity: page, slo: api_latency}
+        annotations:
+          summary: "Non-LLM API p95 above 300 ms for 15 minutes"
+          description: "p95 = {{ $value | humanize }} ms. Check Mongo pool wait, Redis, CPU throttling."
+
+      # ---- AI success: budget 2% ---------------------------------------------------
+      - alert: FinwiseAiSuccessFastBurn
+        expr: |
+          finwise:ai:failures:ratio_rate1h > (14.4 * 0.02)
+          and finwise:ai:failures:ratio_rate5m > (14.4 * 0.02)
+        for: 5m
+        labels: {severity: page, slo: ai_success}
+        annotations:
+          summary: "AI success SLO burning at >14x"
+          description: "AI failure ratio (5xx + 429) is {{ $value | humanizePercentage }} (1h)."
+      - alert: FinwiseAiSuccessMediumBurn
+        expr: |
+          finwise:ai:failures:ratio_rate6h > (6 * 0.02)
+          and finwise:ai:failures:ratio_rate30m > (6 * 0.02)
+        for: 15m
+        labels: {severity: page, slo: ai_success}
+        annotations:
+          summary: "AI success SLO burning at >6x"
+          description: "AI failure ratio (5xx + 429) is {{ $value | humanizePercentage }} (6h)."
+
+      # ---- AI latency and shed ---------------------------------------------------------
+      - alert: FinwiseAiLatencyP95High
+        expr: finwise:ai:latency_ms:p95_5m > 20000
+        for: 10m
+        labels: {severity: page, slo: ai_latency}
+        annotations:
+          summary: "AI Core p95 above the 20 s LLM-path budget"
+          description: "p95 = {{ $value | humanize }} ms measured at the gateway."
+      - alert: FinwiseAiShedRateHigh
+        expr: finwise:ai:shed:ratio_rate5m > 0.005
+        for: 15m
+        labels: {severity: ticket, slo: ai_shed}
+        annotations:
+          summary: "AI shed rate above 0.5% under (assumed) nominal load"
+          description: "Shed ratio {{ $value | humanizePercentage }}. A burst above 3x nominal is expected to shed; sustained shed means capacity (docs/CAPACITY_AND_SLOS.md)."
+
+  - name: finwise.alerts.platform
+    rules:
+      - alert: FinwiseTargetDown
+        expr: up{job=~"finwise-.*"} == 0
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "{{ $labels.job }} {{ $labels.instance }} is not scrapeable"
+          description: "Replica down, metrics disabled or token mismatch."
+      - alert: FinwiseAiCircuitOpen
+        expr: max(finwise_ai_circuit_state) == 2
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "Gateway circuit breaker to AI Core is OPEN"
+          description: "AI calls fail fast or take the deterministic fallback. Runbook: docs/CAPACITY_AND_SLOS.md#breaker-open"
+      - alert: FinwiseAiCircuitFlapping
+        expr: changes(finwise_ai_circuit_state[30m]) > 6
+        labels: {severity: ticket}
+        annotations:
+          summary: "Circuit breaker changed state more than 6 times in 30 minutes"
+          description: "AI Core is unstable (restarts, overload or provider errors)."
+      - alert: FinwiseAiCoreShedding
+        expr: sum(rate(finwise_ai_core_shed_total[5m])) > 0
+        for: 5m
+        labels: {severity: ticket}
+        annotations:
+          summary: "AI Core work gate is shedding requests (503 + Retry-After)"
+          description: "AI_CORE_MAX_INFLIGHT slots are full on at least one replica. Runbook: docs/CAPACITY_AND_SLOS.md#shed"
+      - alert: FinwiseLlmProviderQuota
+        expr: sum(rate(finwise_ai_core_llm_provider_429_total[5m])) > 0
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: "LLM provider is returning 429 (quota) for 10 minutes"
+          description: "Requests are served by the deterministic fallback. Runbook: docs/CAPACITY_AND_SLOS.md#llm-quota"
+      - alert: FinwiseLlmLocalRateLimited
+        expr: sum(rate(finwise_ai_core_llm_rate_limited_total[10m])) > 0.5
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: "AI Core token bucket refuses >0.5 LLM calls/s"
+          description: "Demand exceeds LLM_RPM x replicas; the fallback is absorbing the difference."
+      - alert: FinwiseRedisDown
+        expr: min(finwise_redis_up) == 0
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "A gateway replica cannot reach Redis"
+          description: "Rate limits, idempotency and caches degrade. Runbook: docs/CAPACITY_AND_SLOS.md#redis-down"
+      - alert: FinwiseMongoPoolPressure
+        expr: max(finwise_mongo_pool_wait_queue) > 0
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "Requests are queueing for a Mongo connection (pool exhausted)"
+          description: "Pool is 30 per replica. Check slow queries and replica count before raising it. Runbook: docs/CAPACITY_AND_SLOS.md#mongo-failover"
+      - alert: FinwiseMongoCheckoutFailures
+        expr: sum(increase(finwise_mongo_pool_checkout_failed_total[5m])) > 0
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "Mongo connection checkouts are failing"
+          description: "Primary election, network partition or exhausted pool."
+      - alert: FinwiseSseNearCapacity
+        expr: max by (instance) (finwise_sse_connections) > 200
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: "{{ $labels.instance }} holds more than 200 SSE streams"
+          description: "Plan: about 225 streams across all replicas (roughly 75 per replica at 3). One replica holding most of them means unbalanced load."
+      # --- Series below are defined but not wired yet (docs/OBSERVABILITY.md): these
+      # --- alerts stay silent until the producers call the recorders.
+      - alert: FinwiseDeadLetterQueueGrowing
+        expr: max(finwise_dlq_size) > 50
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Dead-letter queue {{ $labels.queue }} holds more than 50 items"
+          description: "Currently only the in-memory placeholder provider is registered."
+      - alert: FinwiseEventBusLag
+        expr: histogram_quantile(0.95, sum by (le) (rate(finwise_event_bus_lag_ms_bucket[10m]))) > 1000
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Event bus delivery lag p95 above 1 s"
+          description: "SSE events reach clients late. Not emitted until the Redis event bus calls observeEventBusLag()."
+      - alert: FinwiseCanaryRollback
+        expr: sum(increase(finwise_ai_canary_events_total{event="rollback"}[1h])) > 0
+        labels: {severity: info}
+        annotations:
+          summary: "A self-improvement canary was rolled back in the last hour"
+          description: "Not emitted until the rollout code calls recordCanaryEvent()."

@@ -19,6 +19,24 @@ def test_exact_document_lookup_does_not_run_unrelated_financial_specialists(monk
     assert [entry["agent"] for entry in result["workflow_trace"]] == ["document_lookup"]
     assert not result["tool_calls"]
 
+
+@pytest.mark.parametrize("metric", ["monthly expenses", "monthly income", "savings rate"])
+def test_explicit_document_metrics_do_not_fan_out_or_substitute_profile_facts(metric, monkeypatch):
+    workflow = FinancialWorkflow()
+    monkeypatch.setattr(workflow, "_get_session_manager", lambda: None)
+    monkeypatch.setattr(workflow.workflow, "invoke", lambda *_: pytest.fail("Unnecessary specialist fanout"))
+    context = {"retrieval": {"top_chunks": [{**CHUNK, "text": f"Recorded {metric}: USD 1234"}]}}
+    result = workflow.process_request(
+        f"Quote the {metric} from this PDF and cite the exact source.",
+        {"currency": "USD", "annual_income": 120000, "monthly_expenses": 3000},
+        finance_context=context,
+    )
+    assert result["current_analysis"]["type"] == "document_lookup"
+    assert [entry["agent"] for entry in result["workflow_trace"]] == ["document_lookup"]
+    assert f"Recorded {metric}: USD 1234" in result["final_output"]["response"]
+    assert "10,000" not in result["final_output"]["response"]
+    assert not result["tool_calls"]
+
 FILE_ID = "507f1f77bcf86cd799439011"
 QUESTION = "What is the prepayment fee in my attached PDF?"
 CHUNK = {"workspace_file_id": FILE_ID, "file_name": "loan.pdf", "page_number": 4,

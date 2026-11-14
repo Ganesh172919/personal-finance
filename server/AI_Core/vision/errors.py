@@ -14,6 +14,9 @@ crashing at import time.
 from __future__ import annotations
 
 
+# Custom exception raised when optional OCR dependencies are missing.
+# Enables graceful handling and error responses across vision endpoints.
+# Inherits from standard RuntimeError for runtime dependency checking.
 class VisionDependencyError(RuntimeError):
     """Raised when optional OCR dependencies (OpenCV, PaddleOCR) are unavailable.
 

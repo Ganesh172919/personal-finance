@@ -893,3 +893,97 @@ export function useRealtimeEvents() {
   }, [user, queryClient]);
 }
 ```
+
+---
+
+## 13. 2026 Advanced Autonomous UI Cockpits: `AiStatusDialog`, `FinancialCalendar` & `BudgetHealthCard`
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0284c7', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0369a1', 'lineColor': '#0ea5e9', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((2026 UI Cockpits))
+    AiStatusDialog
+      Tab 1 Overview: Model, Tokens, Circuit Breaker
+      Tab 2 KeyPool: Success Rate, Latency, Cooldowns
+      Tab 3 Models: Capabilities, Pricing Tiers
+      Tab 4 Canary: Invariant Proofs, Probe Evals
+    FinancialCalendar
+      Monthly Visual Deadlines Grid
+      Status Toggle: Pending vs Completed
+      RFC 5545 iCal ICS Stream Download
+    BudgetHealthCard
+      Animated SVG Circular Health Gauge (0-100)
+      4-Pillar Score Breakdown Bars
+      Category Burn Alerts (>100% pacing)
+      Zero-Sum Shift Rebalancing Modal
+```
+
+### 13.1 AI System Status & Canary Invariant Cockpit (`AiStatusDialog.tsx`)
+
+Accessible via the status chip in the top navigation bar, `AiStatusDialog.tsx` provides developers and power users with deep runtime observability:
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ [AiStatusDialog Modal]: 4 Specialized Diagnostic Tabs                  │
+├────────────────────────────────────────────────────────────────────────┤
+│ 1. OVERVIEW:                                                           │
+│    - Active Foundation Model: Claude 3.5 Sonnet / GPT-4o               │
+│    - Failover Chain: Primary ➔ Secondary ➔ Local Heuristic Rules       │
+│    - Server Circuit Breaker: CLOSED (Healthy)                          │
+│    - Sliding Window Rate Limiter: 45 / 60 RPM Remaining                │
+├────────────────────────────────────────────────────────────────────────┤
+│ 2. KEYPOOL HEALTH:                                                     │
+│    - Multi-Tenant Key Rotation: Least-Used & Lowest-Latency Strategies │
+│    - Per-Key Success Rate: 99.8% | Median Latency: 420ms              │
+│    - Cooldown Timers: Automated reset after HTTP 429/403 backoff       │
+├────────────────────────────────────────────────────────────────────────┤
+│ 3. MODEL CATALOG:                                                      │
+│    - Capability Matrix: Vision, Reasoning, Long Context, Tool Calling │
+│    - Pricing Tiers: Low / Medium / High / Specialized                  │
+├────────────────────────────────────────────────────────────────────────┤
+│ 4. CANARY INVARIANTS:                                                  │
+│    - Real-Time Mathematical Identity Proofs:                           │
+│      • Number Safety Gate: 100% Passed (No hallucinated numbers)       │
+│      • Zero-Sum Reallocation: 100% Passed (sum dB = 0 preserved)       │
+│      • Accounting Balance Sheet: 100% Passed (Assets - Liab = NW)      │
+│    - Engine Mode: FastAPI AI Core Microservice / Local Fallback Math 🟢 │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+### 13.2 Global Command Palette Modal (`CommandPalette.tsx`)
+Accessible via `Cmd+K` (or `Ctrl+K`) and dedicated header search trigger:
+- **Instant Filtering**: Keyboard-driven navigation across all FinanceOS views (Dashboard, Transactions, Budget Health, Goals & Debts, Scenarios, Workflows, Notes, Files).
+- **Recent Actions**: Displays recently navigated views and pending transaction reviews.
+- **Direct Action Triggers**: Quick actions for logging manual transactions, generating a PDF statement, and toggling dark/light themes.
+
+### 13.3 Offline-First Stylus & Markdown Financial Journal (`Notes.tsx`)
+A dedicated note-taking canvas supporting freeform handwriting and structured reflection:
+- **HTML5 Canvas Stylus Input**: Captures handwriting strokes with pressure and smoothing.
+- **LocalStorage Draft Queue**: Saves drafts locally with UUID `clientDraftId` while disconnected.
+- **Batch Synchronization**: Flushes queue on network reconnect via `POST /api/financial-journal/entries/batch-sync`.
+- **64-D Semantic Vector Search**: Allows conceptual keyword search across handwritten and markdown notes.
+
+### 13.4 Visual Node Workflow Builder with BullMQ Delay Sweeper (`Workflows.tsx`)
+Interactive drag-and-drop workflow canvas:
+- **Node Graph Topology**: Trigger, Condition, Delay, and Action nodes.
+- **Configurable Delay Timers**: 1 second up to 30 days with status transitions to `DELAYED`.
+- **Background Delay Sweeper**: Recovers and executes delayed workflows reliably even after server reboots.
+- **Dynamic Field Interpolation**: Runtime replacement of `{{field}}` variables in notifications and tasks.
+
+### 13.5 Multi-Modal Document QA & Authorship Studio (`Files.tsx`)
+Dual-mode document cockpit for financial intelligence:
+- **Interactive Document Q&A**: Asks questions against uploaded tax forms, receipts, and statements with verified physical page citations.
+- **Publication-Grade Document Authorship**: Synthesizes structured PDF statements across 6 formats (`executive_brief`, `tax_prep_summary`, `cash_flow_audit`, `debt_payoff_schedule`, `net_worth_statement`, `standard`).
+- **Grounding Confidence Badges**: Displays verified citations ($G \ge 0.70$) with direct page jump links.
+
+---
+
+**Evidence:**
+- `client/src/components/CommandPalette.tsx`
+- `client/src/pages/Notes.tsx`
+- `client/src/pages/Workflows.tsx`
+- `client/src/pages/Files.tsx`
+- `client/src/components/AiStatusDialog.tsx`

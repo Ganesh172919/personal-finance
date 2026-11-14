@@ -24,27 +24,16 @@ import { NextFunction, Request, RequestHandler, Response } from "express"; // Ex
 import { ZodError, ZodTypeAny } from "zod"; // Zod validation types
 import { HttpError } from "./httpError"; // Custom HTTP error class
 
-/**
- * Validation Schemas Type
- *
- * Defines the schemas for validating different parts of the request.
- */
+// Configuration type encapsulating optional Zod validation schemas for request segments.
+// Supports schema binding across HTTP request body payloads, URL parameters, and query parameters.
 type ValidationSchemas = {
   body?: ZodTypeAny; // Schema for request body
   params?: ZodTypeAny; // Schema for URL parameters
   query?: ZodTypeAny; // Schema for query parameters
 };
 
-/**
- * Parses and validates a value against a Zod schema.
- *
- * @template T - The expected output type
- * @param {ZodTypeAny | undefined} schema - Zod schema to validate against
- * @param {unknown} value - Value to validate
- * @param {"body" | "params" | "query"} part - Part of request being validated
- * @returns {T | undefined} Validated data or undefined if no schema
- * @throws {HttpError} If validation fails
- */
+// Validates an isolated request component against its corresponding Zod schema specification.
+// Throws an HttpError containing flattened validation diagnostics if validation assertions fail.
 const parseSchema = <T>(
   schema: ZodTypeAny | undefined,
   value: unknown,
@@ -65,22 +54,8 @@ const parseSchema = <T>(
   return result.data as T;
 };
 
-/**
- * Validation Middleware Factory
- *
- * Creates a middleware function that validates request parts against Zod schemas.
- *
- * @param {ValidationSchemas} schemas - Object containing validation schemas
- * @returns {RequestHandler} Express middleware function
- *
- * @example
- * // Validate request body
- * router.post('/users', validate({ body: userSchema }), createUser);
- *
- * @example
- * // Validate URL params and query
- * router.get('/users/:id', validate({ params: idSchema, query: filterSchema }), getUser);
- */
+// Express middleware factory validating request body, path parameter, and query payloads with Zod.
+// Replaces raw inputs with validated, sanitized, and type-coerced properties before invoking next().
 export const validate = (schemas: ValidationSchemas): RequestHandler => {
   return (req: Request, _res: Response, next: NextFunction) => {
     try {

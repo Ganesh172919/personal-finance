@@ -25,11 +25,17 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
+// Structural specification representing a key statistic card within the page header.
+// Encapsulates uppercase metric classification labels and formatted value displays.
+// Renders inside responsive dashboard banners to highlight top-level summary metrics.
 type IntroStat = {
   label: string;
   value: string;
 };
 
+// Props definition for the unified page introduction banner component.
+// Configures eyebrow labels, decorative icons, titles, and descriptive subtitles.
+// Accepts optional collections of quick-stat metric tiles and action button slots.
 type PageIntroProps = {
   icon: LucideIcon;
   eyebrow: string;
@@ -39,6 +45,9 @@ type PageIntroProps = {
   stats?: IntroStat[];
 };
 
+// Hero header component establishing consistent typography and visual branding.
+// Features glowing ambient background blur accents and responsive metric summary grids.
+// Embeds context-specific primary call-to-action buttons along the right header edge.
 export function PageIntro({
   icon: Icon,
   eyebrow,
@@ -48,13 +57,8 @@ export function PageIntro({
   stats = [],
 }: PageIntroProps) {
   return (
-    <section className="relative overflow-hidden rounded-[calc(var(--radius)+10px)] border border-border/70 bg-card/92 p-6 shadow-[0_22px_60px_-38px_rgba(15,23,42,0.65)] sm:p-8">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-12 top-6 h-36 w-36 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-chart-2/10 blur-3xl" />
-      </div>
-
-      <div className="relative flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+    <section className="rounded-[calc(var(--radius)+10px)] border border-border bg-card p-6 sm:p-8">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-3xl space-y-4">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-primary">
             <Icon className="h-3.5 w-3.5" />

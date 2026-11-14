@@ -285,4 +285,82 @@ describe("v1 workflows API", () => {
 
     expect(disabledRes.body.code).toBe("WORKFLOW_DISABLED");
   });
+
+  it("executes multi-step delay timer actions and records delays_executed in run result", async () => {
+    const created = await request(app)
+      .post("/api/workflows")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({
+        name: "Settlement Workflow with Delay Timers",
+        trigger: { type: "webhook" },
+        actions: [
+          // Step 1: Create initial confirmation task
+          {
+            type: "create_task",
+            bucket: 7,
+            title: "Process order {{order_id}}",
+            why: "Order received",
+            steps: ["Verify order"],
+            priority: "medium",
+            expected_impact: "Validates order",
+            kind: "generic",
+          },
+          // Step 2: Multi-step delay timer (e.g. 1800s / 30m settlement delay)
+          {
+            type: "delay",
+            duration_seconds: 1800,
+            description: "Wait for banking settlement for order {{order_id}}",
+          },
+          // Step 3: Conditional delay timer that is bypassed (amount >= 10000)
+          {
+            type: "delay",
+            duration_seconds: 7200,
+            description: "Extended fraud review hold",
+            condition: {
+              field: "amount",
+              operator: "gte",
+              value: 10000,
+            },
+          },
+          // Step 4: Final notification
+          {
+            type: "send_notification",
+            channel: "in_app",
+            subject: "Order {{order_id}} settled",
+            message: "Settlement complete after delay",
+          },
+        ],
+      })
+      .expect(201);
+
+    const token = created.body.workflow?.trigger?.webhook_token;
+
+    // Trigger webhook with context
+    const runRes = await request(app)
+      .post(`/api/workflows/webhook/${token}`)
+      .send({
+        order_id: "ORD-998877",
+        amount: 250,
+      })
+      .expect(200);
+
+    expect(runRes.body.success).toBe(true);
+    expect(runRes.body.run?.status).toBe("succeeded");
+
+    const result = runRes.body.run?.result;
+    expect(result?.tasks_created?.length).toBe(1);
+    expect(result?.notifications_sent?.length).toBe(1);
+
+    // Verify delay action was executed with interpolated description
+    expect(result?.delays_executed?.length).toBe(1);
+    expect(result?.delays_executed[0].index).toBe(1);
+    expect(result?.delays_executed[0].duration_seconds).toBe(1800);
+    expect(result?.delays_executed[0].description).toBe("Wait for banking settlement for order ORD-998877");
+
+    // Verify conditional delay was skipped
+    expect(result?.actions_skipped?.length).toBe(1);
+    expect(result?.actions_skipped[0].index).toBe(2);
+    expect(result?.actions_skipped[0].action_type).toBe("delay");
+  });
 });

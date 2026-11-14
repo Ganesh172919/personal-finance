@@ -15,14 +15,38 @@
  * @module services/newsletterTemplate
  */
 
+// Structural representation of a specific financial health score component.
+// Details pillar names, point scores, ceiling maximums, and status labels.
+// Used in visual breakdowns of user financial health in newsletter emails.
+export interface HealthPillarData {
+  name: string;
+  score: number;
+  maxScore: number;
+  status: "good" | "fair" | "poor";
+}
+
+// Daily spending datapoint for rolling velocity visual charts.
+// Tracks calendar date, weekday abbreviation, spend amount, and current day flag.
+// Fuels the 7-day HTML bar chart visualization in the daily briefing.
+export interface DailySpendTrendItem {
+  date: string;
+  day: string;
+  amount: number;
+  isToday?: boolean;
+}
+
+// Comprehensive schema encapsulating all renderable newsletter content sections.
+// Details spending metrics, budget warnings, bills, tips, health scores, and actions.
+// Allows modular rendering of sections according to user content preferences.
 export interface NewsletterSectionData {
   spendingSummary?: {
     totalSpent: number;
     totalIncome: number;
     netCashFlow: number;
-    topCategories: Array<{ category: string; amount: number }>;
+    topCategories: Array<{ category: string; amount: number; percentage?: number }>;
     transactionCount: number;
     currency?: string;
+    dailyTrend?: DailySpendTrendItem[];
   };
   budgetAlerts?: Array<{
     budgetName: string;
@@ -48,6 +72,7 @@ export interface NewsletterSectionData {
     label: string;
     changeFromLastWeek?: number;
     highlights?: string[];
+    pillars?: HealthPillarData[];
   };
   actionItems?: Array<{
     title: string;
@@ -57,6 +82,9 @@ export interface NewsletterSectionData {
   }>;
 }
 
+// Input contract for rendering full HTML newsletter email templates.
+// Supplies subscriber display names, formatted dates, section data, and URLs.
+// Binds unsubscribe endpoints and application dashboard links to templates.
 export interface NewsletterTemplateData {
   userName: string;
   date: string;
@@ -72,6 +100,9 @@ const SUCCESS = "#10b981";
 const WARNING = "#f59e0b";
 const DANGER = "#ef4444";
 
+// Formats numerical currency amounts for email rendering with fallback support.
+// Applies international number formatting with zero to two fractional digits.
+// Guarantees clean dollar amount formatting when localized formatting fails.
 const formatCurrency = (amount: number, currency = "USD"): string => {
   try {
     return new Intl.NumberFormat("en-US", {
@@ -85,6 +116,9 @@ const formatCurrency = (amount: number, currency = "USD"): string => {
   }
 };
 
+// Escapes HTML special characters to prevent injection attacks in emails.
+// Replaces ampersands, angle brackets, and quotation marks with HTML entities.
+// Sanitizes user-generated transaction names and titles for safe email display.
 const escapeHtml = (text: string): string =>
   text
     .replace(/&/g, "&amp;")
@@ -92,6 +126,9 @@ const escapeHtml = (text: string): string =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
+// Maps budget status codes to corresponding hex color codes for email styling.
+// Assigns success green, warning amber, danger red, and neutral gray tones.
+// Ensures consistent visual alert branding across email client environments.
 const statusColor = (status: string): string => {
   switch (status) {
     case "ok":
@@ -105,6 +142,144 @@ const statusColor = (status: string): string => {
   }
 };
 
+const CATEGORY_COLORS = [
+  "#6366f1", // Indigo
+  "#06b6d4", // Cyan
+  "#10b981", // Emerald
+  "#f59e0b", // Amber
+  "#ec4899", // Pink
+  "#8b5cf6", // Purple
+];
+
+// Generates HTML progress bars showing proportional spend across top categories.
+// Assigns rotating category palette colors, percentages, and formatted totals.
+// Produces cross-client compatible HTML table and div bar components.
+const renderSpendingCategoryBars = (
+  categories: Array<{ category: string; amount: number; percentage?: number }>,
+  currency = "USD",
+  totalSpent = 0
+): string => {
+  if (!categories || !categories.length) return "";
+
+  const total = totalSpent > 0 ? totalSpent : categories.reduce((sum, c) => sum + c.amount, 0);
+
+  const bars = categories.slice(0, 5).map((c, i) => {
+    const pct = c.percentage !== undefined ? c.percentage : (total > 0 ? Math.round((c.amount / total) * 100) : 0);
+    const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+    return `
+      <div style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:4px;">
+          <span style="font-weight:600;color:#1e293b;display:flex;align-items:center;gap:6px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};"></span>
+            ${escapeHtml(c.category)}
+          </span>
+          <span style="color:#64748b;font-weight:600;">
+            ${formatCurrency(c.amount, currency)} <span style="font-size:11px;color:#94a3b8;">(${pct}%)</span>
+          </span>
+        </div>
+        <div style="width:100%;background:#e2e8f0;border-radius:9999px;height:8px;overflow:hidden;">
+          <div style="width:${Math.max(3, pct)}%;background:${color};height:8px;border-radius:9999px;"></div>
+        </div>
+      </div>`;
+  }).join("");
+
+  return `
+    <div style="margin-top:16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#475569;">Spending Distribution by Category</span>
+        <span style="font-size:11px;color:#64748b;font-weight:600;">Top ${Math.min(5, categories.length)} Categories</span>
+      </div>
+      ${bars}
+    </div>`;
+};
+
+// Renders a lightweight HTML table-based bar chart displaying 7-day spend.
+// Scales bar heights proportionally against peak spend and highlights today.
+// Ensures email client compatibility without requiring external image assets.
+const renderDailySpendingChart = (
+  trend: DailySpendTrendItem[],
+  currency = "USD"
+): string => {
+  if (!trend || !trend.length) return "";
+
+  const maxAmount = Math.max(1, ...trend.map((t) => t.amount));
+
+  const columns = trend
+    .map((t) => {
+      const barHeight = Math.max(8, Math.round((t.amount / maxAmount) * 70));
+      const isToday = Boolean(t.isToday);
+      const barColor = isToday ? BRAND_PRIMARY : t.amount > 0 ? "#94a3b8" : "#cbd5e1";
+      const textColor = isToday ? BRAND_PRIMARY : "#64748b";
+      const formattedAmt = t.amount > 0 ? (t.amount >= 1000 ? `$${(t.amount / 1000).toFixed(1)}k` : `$${Math.round(t.amount)}`) : "$0";
+
+      return `
+        <td style="padding:0 4px;vertical-align:bottom;text-align:center;">
+          <div style="font-size:10px;font-weight:600;color:${textColor};margin-bottom:4px;white-space:nowrap;">${formattedAmt}</div>
+          <div style="height:74px;display:flex;align-items:flex-end;justify-content:center;">
+            <div style="width:100%;max-width:24px;height:${barHeight}px;background:${barColor};border-radius:4px 4px 0 0;margin:0 auto;" title="${t.date}: ${formatCurrency(t.amount, currency)}"></div>
+          </div>
+          <div style="font-size:11px;font-weight:${isToday ? "700" : "500"};color:${textColor};margin-top:6px;">${escapeHtml(t.day)}</div>
+          ${isToday ? `<div style="font-size:9px;font-weight:700;color:${BRAND_PRIMARY};text-transform:uppercase;">Today</div>` : `<div style="font-size:9px;color:transparent;">&nbsp;</div>`}
+        </td>`;
+    })
+    .join("");
+
+  return `
+    <div style="margin:16px 0 20px 0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#475569;">7-Day Spending Velocity</span>
+        <span style="font-size:11px;color:#64748b;font-weight:500;">Peak: ${formatCurrency(maxAmount, currency)}</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+        <tbody>
+          <tr>
+            ${columns}
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+};
+
+// Renders styled score bars representing the four financial health pillars.
+// Maps score percentages, status color badges, and category descriptions.
+// Provides visual breakdown of cash flow, budgeting, stability, and savings.
+const renderHealthPillars = (
+  pillars: HealthPillarData[]
+): string => {
+  if (!pillars || !pillars.length) return "";
+
+  const rows = pillars.map((p) => {
+    const pct = p.maxScore > 0 ? Math.round((p.score / p.maxScore) * 100) : 0;
+    const color = p.status === "good" ? SUCCESS : p.status === "fair" ? WARNING : DANGER;
+    const badgeLabel = p.status === "good" ? "Strong" : p.status === "fair" ? "Moderate" : "Watch";
+
+    return `
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:3px;">
+          <span style="font-weight:600;color:#1e293b;">${escapeHtml(p.name)}</span>
+          <span style="font-weight:700;color:#475569;">
+            ${p.score} / ${p.maxScore}
+            <span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;color:#fff;background:${color};">${badgeLabel}</span>
+          </span>
+        </div>
+        <div style="width:100%;background:#e2e8f0;border-radius:9999px;height:6px;overflow:hidden;">
+          <div style="width:${Math.max(4, pct)}%;background:${color};height:6px;border-radius:9999px;"></div>
+        </div>
+      </div>`;
+  }).join("");
+
+  return `
+    <div style="margin-top:16px;border-top:1px solid #e2e8f0;padding-top:14px;">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:#475569;margin-bottom:10px;">
+        Financial Health Pillar Breakdown
+      </div>
+      ${rows}
+    </div>`;
+};
+
+// Resolves color styling and text labels for action item priority levels.
+// Maps high, medium, and low priorities to distinct badge color pairs.
+// Ensures consistent visual emphasis on critical financial action items.
 const priorityBadge = (priority: string): { color: string; bg: string; label: string } => {
   switch (priority) {
     case "high":
@@ -118,18 +293,13 @@ const priorityBadge = (priority: string): { color: string; bg: string; label: st
   }
 };
 
+// Builds HTML markup for the daily spending summary briefing section.
+// Formats income, expenses, net cash flow, velocity charts, and category bars.
+// Delivers a high-level overview of daily transactions and cash movement.
 const renderSpendingSummary = (data: NonNullable<NewsletterSectionData["spendingSummary"]>): string => {
   const currency = data.currency || "USD";
-  const topCats = data.topCategories
-    .slice(0, 5)
-    .map(
-      (c) => `
-      <tr>
-        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:14px;color:#374151;">${escapeHtml(c.category)}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:14px;color:#374151;text-align:right;font-weight:600;">${formatCurrency(c.amount, currency)}</td>
-      </tr>`
-    )
-    .join("");
+  const dailyChart = data.dailyTrend && data.dailyTrend.length ? renderDailySpendingChart(data.dailyTrend, currency) : "";
+  const categoryBars = data.topCategories && data.topCategories.length ? renderSpendingCategoryBars(data.topCategories, currency, data.totalSpent) : "";
 
   return `
     <div style="margin-bottom:24px;">
@@ -150,19 +320,15 @@ const renderSpendingSummary = (data: NonNullable<NewsletterSectionData["spending
           <td style="padding:8px 0;font-size:14px;color:${data.netCashFlow >= 0 ? SUCCESS : DANGER};text-align:right;font-weight:700;border-top:2px solid #e5e7eb;">${data.netCashFlow >= 0 ? "+" : ""}${formatCurrency(data.netCashFlow, currency)}</td>
         </tr>
       </table>
-      ${
-        topCats
-          ? `
-        <p style="font-size:13px;color:#6b7280;margin:0 0 8px 0;font-weight:600;">Top Spending Categories</p>
-        <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
-          ${topCats}
-        </table>`
-          : ""
-      }
-      <p style="font-size:12px;color:#9ca3af;margin:8px 0 0 0;">${data.transactionCount} transactions in the last 24 hours</p>
+      ${dailyChart}
+      ${categoryBars}
+      <p style="font-size:12px;color:#9ca3af;margin:12px 0 0 0;">${data.transactionCount} transactions recorded in this briefing period</p>
     </div>`;
 };
 
+// Renders an HTML table of budget warning alerts for the newsletter email.
+// Shows budget names, percentage spent badges, and consumed amount limits.
+// Highlights categories exceeding or approaching established budget ceilings.
 const renderBudgetAlerts = (alerts: NonNullable<NewsletterSectionData["budgetAlerts"]>): string => {
   if (!alerts.length) return "";
 
@@ -197,6 +363,9 @@ const renderBudgetAlerts = (alerts: NonNullable<NewsletterSectionData["budgetAle
     </div>`;
 };
 
+// Constructs an HTML table displaying upcoming bill obligations due soon.
+// Flags urgent payments due today or tomorrow with prominent color highlights.
+// Reminds subscribers of pending outflows to prevent overdrafts and fees.
 const renderUpcomingBills = (bills: NonNullable<NewsletterSectionData["upcomingBills"]>): string => {
   if (!bills.length) return "";
 
@@ -231,6 +400,9 @@ const renderUpcomingBills = (bills: NonNullable<NewsletterSectionData["upcomingB
     </div>`;
 };
 
+// Renders an educational financial tip card with gradient accent styling.
+// Formats tip titles, body explanations, and thematic category badges.
+// Delivers personalized daily financial coaching directly in the email.
 const renderFinancialTip = (tip: NonNullable<NewsletterSectionData["financialTip"]>): string => `
   <div style="margin-bottom:24px;background:linear-gradient(135deg,#eef2ff,#e0e7ff);border-radius:12px;padding:20px;border-left:4px solid ${BRAND_PRIMARY};">
     <h2 style="font-size:18px;font-weight:700;color:#111827;margin:0 0 8px 0;">
@@ -240,6 +412,9 @@ const renderFinancialTip = (tip: NonNullable<NewsletterSectionData["financialTip
     <p style="font-size:14px;color:#374151;line-height:1.6;margin:0;">${escapeHtml(tip.body)}</p>
   </div>`;
 
+// Renders the overall financial health score badge, trend change, and pillars.
+// Displays color-coded circular badges and notable positive or negative highlights.
+// Summarizes comprehensive weekly financial performance at a glance.
 const renderHealthScore = (score: NonNullable<NewsletterSectionData["healthScore"]>): string => {
   const scoreColor = score.score >= 75 ? SUCCESS : score.score >= 50 ? WARNING : DANGER;
   const changeText =
@@ -250,6 +425,8 @@ const renderHealthScore = (score: NonNullable<NewsletterSectionData["healthScore
   const highlights = (score.highlights || [])
     .map((h) => `<li style="font-size:13px;color:#6b7280;margin-bottom:4px;">${escapeHtml(h)}</li>`)
     .join("");
+
+  const pillarsHtml = score.pillars && score.pillars.length ? renderHealthPillars(score.pillars) : "";
 
   return `
     <div style="margin-bottom:24px;">
@@ -265,9 +442,13 @@ const renderHealthScore = (score: NonNullable<NewsletterSectionData["healthScore
           ${highlights ? `<ul style="margin:8px 0 0 0;padding-left:16px;">${highlights}</ul>` : ""}
         </div>
       </div>
+      ${pillarsHtml}
     </div>`;
 };
 
+// Formats concrete financial action item recommendation cards for emails.
+// Tags each item with priority badges, category labels, and action steps.
+// Directs users toward high-impact adjustments to improve their financial stance.
 const renderActionItems = (items: NonNullable<NewsletterSectionData["actionItems"]>): string => {
   if (!items.length) return "";
 
@@ -301,6 +482,9 @@ const renderActionItems = (items: NonNullable<NewsletterSectionData["actionItems
  * The returned HTML uses inline CSS for maximum email client compatibility.
  * A dark-mode variant is applied via @media (prefers-color-scheme: dark).
  */
+// Compiles full responsive HTML email templates from modular section outputs.
+// Incorporates inline CSS styles and dark mode media queries for email clients.
+// Assembles header branding, greetings, sections, CTAs, and unsubscribe footers.
 export function renderNewsletterHtml(data: NewsletterTemplateData): string {
   const { userName, date, sections, unsubscribeUrl, appUrl } = data;
   const safeName = escapeHtml(userName);

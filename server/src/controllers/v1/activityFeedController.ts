@@ -27,6 +27,9 @@ import { HttpError } from "../../middleware/httpError";
 
 // ─── Helpers ────────────────────────────────────────────
 
+// Validates tenant and caller context for activity feed queries and operations.
+// Extracts strongly typed MongoDB ObjectIds for both organization and user scope.
+// Throws an unauthorized HTTP exception if either context element is missing.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -64,6 +67,9 @@ const EVENT_DESCRIPTIONS: Record<string, (payload: any) => string> = {
 
 // Looks up a human-readable description for the event type; falls back to
 // replacing dots/underscores with spaces (e.g., "transaction.created" -> "transaction created")
+// Formats domain event payloads into human-readable narrative activity strings.
+// Matches specific domain event names against predefined template formatters.
+// Falls back gracefully to cleaned, space-delimited event names for unknowns.
 function describeEvent(eventType: string, payload: Record<string, unknown>): string {
   const describer = EVENT_DESCRIPTIONS[eventType];
   if (describer) return describer(payload);
@@ -72,6 +78,9 @@ function describeEvent(eventType: string, payload: Record<string, unknown>): str
 }
 
 // Maps event type prefixes to icon names used by the frontend UI
+// Maps domain event type prefixes to visual icon identifiers for front-end feeds.
+// Recognizes transactions, budgets, goals, workflows, and account event types.
+// Returns a fallback generic activity icon descriptor for unmatched event types.
 function getEventIcon(eventType: string): string {
   if (eventType.startsWith("transaction")) return "receipt";
   if (eventType.startsWith("budget")) return "wallet";
@@ -86,6 +95,9 @@ function getEventIcon(eventType: string): string {
 
 // ─── Activity Feed Endpoint ─────────────────────────────
 
+// Retrieves a timeline of historical domain events formatted as activity feed items.
+// Employs cursor-based pagination using event timestamps to stream chronological events.
+// Populates actor identities and maps visual presentation metadata for UI rendering.
 export const getActivityFeed = async (req: Request, res: Response) => {
   const { orgId } = requireOrgContext(req);
 

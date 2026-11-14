@@ -75,6 +75,9 @@ from enum import Enum
 from typing import Dict, List
 
 
+# Enumerates standardized investment risk tolerance profile classifications.
+# Maps investor questionnaire responses to conservative, moderate, or aggressive.
+# Used by portfolio allocation agents to tailor investment recommendations.
 class RiskProfile(str, Enum):
     """Investor risk profile classification."""
 
@@ -82,12 +85,18 @@ class RiskProfile(str, Enum):
     MODERATE = "moderate"
     AGGRESSIVE = "aggressive"
 
+# Suite of static mathematical calculators for personal finance computations.
+# Supports compound interest, loan amortisation, debt snowball, and retirement.
+# Implements deterministic formulas without external API dependencies.
 class FinancialCalculators:
     """Financial calculation utilities.
 
     All methods are static -- no instance state is needed.
     """
     
+    # Computes compound interest accumulation over specified tenure.
+    # Supports annual, monthly, quarterly, and daily compounding frequencies.
+    # Returns final amount, interest earned, and principal contributions.
     @staticmethod
     def calculate_compound_interest(principal: float, rate: float, years: int, 
                                   compounding: str = "annual") -> Dict[str, float]:
@@ -117,6 +126,9 @@ class FinancialCalculators:
             "total_contributions": principal
         }
     
+    # Calculates monthly debt service payment using loan amortization formula.
+    # Handles zero-interest edge cases and evaluates total lifetime interest.
+    # Returns monthly payment amount, total interest, and total repayment.
     @staticmethod
     def calculate_loan_payment(principal: float, annual_rate: float, years: int) -> Dict[str, float]:
         """Calculate monthly loan payment using amortization formula"""
@@ -144,6 +156,9 @@ class FinancialCalculators:
             "total_payment": round(total_payment, 2)
         }
     
+    # Simulates debt payoff schedule using the debt snowball methodology.
+    # Prioritizes smallest balances first rolling payments into subsequent debts.
+    # Returns debts with projected payoff months and estimated payoff dates.
     @staticmethod
     def calculate_debt_snowball(debts: List[Dict]) -> List[Dict]:
         """Calculate debt snowball repayment plan"""
@@ -199,6 +214,9 @@ class FinancialCalculators:
         
         return sorted_debts
     
+    # Projects future retirement corpus combining current balance and SIP.
+    # Calculates future value of lump sum and monthly contribution annuity.
+    # Returns dictionary of projected savings, total deposits, and growth.
     @staticmethod
     def calculate_retirement_savings(current_age: int, retirement_age: int, current_savings: float,
                                    monthly_contribution: float, expected_return: float) -> Dict[str, float]:
@@ -231,6 +249,9 @@ class FinancialCalculators:
             "growth_earned": round(max(0.0, future_value - total_contributions), 2)
         }
     
+    # Evaluates investor risk tolerance using weighted multi-factor scoring.
+    # Assesses age, investment experience, investment horizon, and tolerance.
+    # Returns determined RiskProfile enum category based on composite score.
     @staticmethod
     def assess_risk_profile(age: int, investment_experience: str, time_horizon: int, 
                           risk_tolerance: str) -> RiskProfile:
@@ -268,6 +289,9 @@ class FinancialCalculators:
         else:
             return RiskProfile.CONSERVATIVE
     
+    # Calculates future calendar date string by adding month offset to now.
+    # Multiplies month count by 30-day interval to estimate target date.
+    # Returns formatted date string in YYYY-MM-DD representation.
     @staticmethod
     def _calculate_future_date(months_from_now: int) -> str:
         """Calculate future date given months from now"""

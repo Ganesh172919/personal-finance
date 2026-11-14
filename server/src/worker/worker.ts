@@ -3,7 +3,7 @@
  *
  * This is a separate Node.js process that handles asynchronous background jobs.
  * It runs independently from the main Express server and processes jobs from
- * MongoDB collections (not BullMQ — this is a custom job queue).
+ * MongoDB collections through a custom, MongoDB-backed job queue.
  *
  * ARCHITECTURE:
  * - Main server (server.ts): Handles HTTP requests, can also process jobs when ASYNC_JOBS_ENABLED=false
@@ -46,13 +46,21 @@ import { processIntegrationSyncRun } from "../services/integrations";
 import { processWorkflowRun } from "../services/workflows";
 import { startWorkflowScheduler } from "../services/workflowScheduler";
 import { recoverStaleJobs } from "../services/jobRecovery";
+import { claimableQueuedFilter, registerJobFailure } from "../services/jobRetry";
+import { startAiOptimizeScheduler } from "../services/aiOptimizeScheduler";
+import ScheduledExportModel from "../models/scheduledExportModel";
+import { computeNextRunDate, executeScheduledExport } from "../services/scheduledExportService";
 
 // Discriminated union type for all job kinds
 // Each job has a 'kind' discriminator and the job document's MongoDB _id
+// Discriminated union typing background jobs processed by the worker daemon.
+// Encapsulates job kind classification and MongoDB document ObjectId.
+// Discriminates between workflow runs, integration syncs, export jobs, and scheduled exports.
 type WorkerJob =
   | { kind: "workflow_run"; id: string }
   | { kind: "integration_sync_run"; id: string }
-  | { kind: "export_job"; id: string };
+  | { kind: "export_job"; id: string }
+  | { kind: "scheduled_export"; id: string };
 
 // Unique ID for this worker instance (for log correlation)
 const instanceId = randomUUID();
@@ -60,7 +68,7 @@ const instanceId = randomUUID();
 const workerLogger = logger.child({ service: "worker", instance_id: instanceId });
 
 // All supported job kinds (used for round-robin scheduling)
-const jobKinds: WorkerJob["kind"][] = ["workflow_run", "integration_sync_run", "export_job"];
+const jobKinds: WorkerJob["kind"][] = ["workflow_run", "integration_sync_run", "export_job", "scheduled_export"];
 // Cursor for round-robin job claiming (persists across ticks)
 let claimCursor = 0;
 
@@ -75,9 +83,12 @@ let claimCursor = 0;
  *
  * @returns Claimed job or null if no jobs available
  */
+// Atomically claims the oldest claimable workflow execution run from MongoDB.
+// Filters queued jobs respecting exponential backoff and transitions status to running.
+// Returns job descriptor object or null when no workflow jobs are ready.
 const claimWorkflowRun = async (): Promise<WorkerJob | null> => {
   const claimed = await WorkflowRunModel.findOneAndUpdate(
-    { status: "queued" },  // Only claim queued jobs
+    claimableQueuedFilter(),  // Only claim queued jobs whose backoff has elapsed
     { $set: { status: "running", startedAt: new Date() }, $unset: { finishedAt: "", error: "" } },
     { sort: { createdAt: 1 }, new: true }  // Oldest first, return updated doc
   )
@@ -92,9 +103,12 @@ const claimWorkflowRun = async (): Promise<WorkerJob | null> => {
  * Atomically claims an integration sync run job from the queue.
  * Same pattern as claimWorkflowRun but for integration sync jobs.
  */
+// Atomically transitions queued integration synchronization job to running status.
+// Uses findOneAndUpdate with sort by createdAt to guarantee FIFO execution.
+// Prevents duplicate processing across multiple distributed worker processes.
 const claimIntegrationSyncRun = async (): Promise<WorkerJob | null> => {
   const claimed = await IntegrationSyncRunModel.findOneAndUpdate(
-    { status: "queued" },
+    claimableQueuedFilter(),
     { $set: { status: "running", startedAt: new Date() }, $unset: { finishedAt: "", error: "" } },
     { sort: { createdAt: 1 }, new: true }
   )
@@ -109,9 +123,12 @@ const claimIntegrationSyncRun = async (): Promise<WorkerJob | null> => {
  * Atomically claims an export job from the queue.
  * Same pattern as claimWorkflowRun but for export jobs.
  */
+// Atomically claims an asynchronous export job for CSV or PDF generation.
+// Updates status to running, stamps execution start time, and clears previous errors.
+// Minimizes network payload by projecting only the document identifier.
 const claimExportJob = async (): Promise<WorkerJob | null> => {
   const claimed = await ExportJobModel.findOneAndUpdate(
-    { status: "queued" },
+    claimableQueuedFilter(),
     { $set: { status: "running", startedAt: new Date() }, $unset: { finishedAt: "", error: "" } },
     { sort: { createdAt: 1 }, new: true }
   )
@@ -122,15 +139,36 @@ const claimExportJob = async (): Promise<WorkerJob | null> => {
   return { kind: "export_job", id: String(claimed._id) };
 };
 
+/** Claim one due scheduled export so multiple workers cannot deliver it twice. */
+// Atomically claims a due scheduled export definition whose nextRunAt has arrived.
+// Sets schedule status to running to ensure only one worker delivers the scheduled report.
+// Orders candidate schedules by nextRunAt to deliver most overdue reports first.
+const claimScheduledExport = async (): Promise<WorkerJob | null> => {
+  const claimed = (await ScheduledExportModel.findOneAndUpdate(
+    { status: "active", nextRunAt: { $lte: new Date() } },
+    { $set: { status: "running" } },
+    { sort: { nextRunAt: 1 }, new: true },
+  )
+    .select({ _id: 1 })
+    .lean()) as { _id?: unknown } | null;
+
+  if (!claimed?._id) return null;
+  return { kind: "scheduled_export", id: String(claimed._id) };
+};
+
 /**
  * Routes job claiming to the appropriate model based on job kind.
  *
  * @param kind - The type of job to claim
  * @returns Claimed job or null
  */
+// Routes job claiming requests to the appropriate claiming function based on kind.
+// Dispatches to workflow run, integration sync, scheduled export, or export job models.
+// Provides unified polymorphic claiming interface for round-robin dispatchers.
 const claimJobForKind = async (kind: WorkerJob["kind"]): Promise<WorkerJob | null> => {
   if (kind === "workflow_run") return claimWorkflowRun();
   if (kind === "integration_sync_run") return claimIntegrationSyncRun();
+  if (kind === "scheduled_export") return claimScheduledExport();
   return claimExportJob();
 };
 
@@ -149,6 +187,9 @@ const claimJobForKind = async (kind: WorkerJob["kind"]): Promise<WorkerJob | nul
  *
  * @returns Claimed job or null if no jobs available
  */
+// Implements round-robin job claiming across all supported queue collections.
+// Advances cursor across job categories to prevent high-volume queues from starving others.
+// Returns the first successfully claimed job or null if all queues are idle.
 const claimNextJob = async (): Promise<WorkerJob | null> => {
   for (let offset = 0; offset < jobKinds.length; offset += 1) {
     const kind = jobKinds[(claimCursor + offset) % jobKinds.length]!;
@@ -170,11 +211,33 @@ const claimNextJob = async (): Promise<WorkerJob | null> => {
  *
  * @param job - The job to execute
  */
+// Executes the business logic for a claimed job according to its kind discriminator.
+// Dispatches to export processor, integration sync worker, or workflow engine.
+// Captures failures, records backoff retry schedules, and registers dead-letter jobs.
 const executeJob = async (job: WorkerJob) => {
   const startedAt = Date.now();
   try {
     // Route to the appropriate processor based on job kind
-    if (job.kind === "workflow_run") {
+    if (job.kind === "scheduled_export") {
+      try {
+        await executeScheduledExport(job.id);
+        await ScheduledExportModel.updateOne(
+          { _id: job.id, status: "running" },
+          { $set: { status: "active" } },
+        );
+      } catch (error) {
+        const schedule = await ScheduledExportModel.findOne({ _id: job.id, status: "running" });
+        if (schedule) {
+          schedule.lastRunAt = new Date();
+          schedule.lastDeliveryStatus = "failed";
+          schedule.lastError = error instanceof Error ? error.message : "Scheduled export delivery failed";
+          schedule.nextRunAt = computeNextRunDate(schedule.frequency, schedule.lastRunAt);
+          schedule.status = "active";
+          await schedule.save();
+        }
+        throw error;
+      }
+    } else if (job.kind === "workflow_run") {
       await processWorkflowRun(job.id);
     } else if (job.kind === "integration_sync_run") {
       await processIntegrationSyncRun(job.id);
@@ -186,6 +249,12 @@ const executeJob = async (job: WorkerJob) => {
   } catch (error) {
     // Log but don't re-throw — the worker should continue processing other jobs
     workerLogger.warn({ error, job, duration_ms: Date.now() - startedAt }, "Job failed");
+    // Count the attempt: requeue with exponential backoff, or dead-letter after max attempts.
+    if (job.kind !== "scheduled_export") {
+      await registerJobFailure(job.kind, job.id, error).catch((retryError) =>
+        workerLogger.error({ error: retryError, job }, "Failed to register job failure")
+      );
+    }
   }
 };
 
@@ -193,6 +262,21 @@ const executeJob = async (job: WorkerJob) => {
 let shuttingDown = false;                        // Guard flag for graceful shutdown
 let tickTimer: NodeJS.Timeout | null = null;     // Polling interval handle
 let workflowSchedulerStop: (() => void) | null = null; // Workflow scheduler stop function
+let aiOptimizeStop: (() => void) | null = null;        // Nightly AI optimizer stop function
+
+// Recovers orphaned scheduled exports locked in running status longer than 30 minutes.
+// Resets status back to active to allow healthy worker instances to retry execution.
+// Protects against permanent job hangs caused by abrupt process restarts or server crashes.
+const recoverStaleScheduledExports = async () => {
+  const staleBefore = new Date(Date.now() - 30 * 60 * 1000);
+  const result = await ScheduledExportModel.updateMany(
+    { status: "running", updatedAt: { $lt: staleBefore } },
+    { $set: { status: "active" } },
+  );
+  if (result.modifiedCount > 0) {
+    workerLogger.warn({ recovered: result.modifiedCount }, "Recovered stale scheduled export deliveries");
+  }
+};
 
 /**
  * Gracefully shuts down the worker process.
@@ -208,6 +292,9 @@ let workflowSchedulerStop: (() => void) | null = null; // Workflow scheduler sto
  * @param exitCode - Process exit code
  * @param queue - The PQueue instance to wait for
  */
+// Coordinates graceful termination sequence for the background worker daemon.
+// Cancels polling timers, waits for in-flight jobs to finish, and closes MongoDB connections.
+// Enforces a 15-second unref timeout safety net to guarantee process exit.
 const shutdown = async (reason: string, exitCode = 0, queue?: PQueue) => {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -224,6 +311,11 @@ const shutdown = async (reason: string, exitCode = 0, queue?: PQueue) => {
   if (workflowSchedulerStop) {
     workflowSchedulerStop();
     workflowSchedulerStop = null;
+  }
+
+  if (aiOptimizeStop) {
+    aiOptimizeStop();
+    aiOptimizeStop = null;
   }
 
   // Safety net: force exit after 15 seconds
@@ -259,6 +351,9 @@ const shutdown = async (reason: string, exitCode = 0, queue?: PQueue) => {
  * 5. Begin the polling loop
  * 6. Register signal handlers for graceful shutdown
  */
+// Main initialization lifecycle for the asynchronous background job worker process.
+// Connects to MongoDB, triggers stale job recovery sweeps, and starts workflow schedulers.
+// Initiates the polling loop with concurrency limits governed by PQueue.
 async function start() {
   const env = getEnv();
 
@@ -279,6 +374,9 @@ async function start() {
   await recoverStaleJobs().catch((err) =>
     workerLogger.warn({ err }, "Initial stale job recovery sweep encountered an error")
   );
+  await recoverStaleScheduledExports().catch((err) =>
+    workerLogger.warn({ err }, "Initial scheduled export recovery sweep encountered an error")
+  );
 
   // Create a concurrency-limited promise queue
   // This limits how many jobs can run in parallel
@@ -287,6 +385,7 @@ async function start() {
   // Start the workflow scheduler (cron-like scheduled workflows)
   if (env.NODE_ENV !== "test") {
     workflowSchedulerStop = startWorkflowScheduler({ label: "worker" }).stop;
+    aiOptimizeStop = startAiOptimizeScheduler().stop;
   }
 
   workerLogger.info(
@@ -315,6 +414,9 @@ async function start() {
       lastRecoveryAt = Date.now();
       void recoverStaleJobs().catch((err) =>
         workerLogger.warn({ err }, "Periodic stale job recovery sweep failed")
+      );
+      void recoverStaleScheduledExports().catch((err) =>
+        workerLogger.warn({ err }, "Periodic scheduled export recovery sweep failed")
       );
     }
 
@@ -374,6 +476,9 @@ async function start() {
 }
 
 // ── Entry Point ───────────────────────────────────────────────────────
+// Worker daemon process entrypoint with top-level error capture.
+// Invokes the asynchronous start sequence and traps unhandled fatal startup failures.
+// Terminates process with non-zero exit code if worker bootstrapping fails.
 start().catch(error => {
   workerLogger.error({ error }, "Failed to start worker");
   process.exit(1);

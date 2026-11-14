@@ -20,21 +20,8 @@
  * @module middleware/httpError
  */
 
-/**
- * Custom HTTP Error Class
- *
- * Extends Error with HTTP-specific properties for standardized error handling.
- *
- * @extends Error
- *
- * @example
- * // Throw a 400 Bad Request error
- * throw new HttpError(400, "VALIDATION_ERROR", "Invalid input", { field: "email" });
- *
- * @example
- * // Throw a 401 Unauthorized error
- * throw new HttpError(401, "UNAUTHORIZED", "Invalid credentials");
- */
+// Custom application error class augmenting standard errors with HTTP status codes and error keys.
+// Provides standardized exception data structures consumed by global Express error-handling middleware.
 export class HttpError extends Error {
   /** HTTP status code (e.g., 400, 401, 404, 500) */
   statusCode: number;
@@ -45,14 +32,8 @@ export class HttpError extends Error {
   /** Optional additional details (e.g., validation errors, context) */
   details?: unknown;
 
-  /**
-   * Creates a new HttpError instance.
-   *
-   * @param {number} statusCode - HTTP status code
-   * @param {string} code - Error code for client-side handling
-   * @param {string} message - Human-readable error message
-   * @param {unknown} [details] - Optional additional details
-   */
+  // Initializes an HttpError instance with status codes, machine-readable keys, and diagnostic details.
+  // Calls the super Error constructor with the human-readable error description message.
   constructor(statusCode: number, code: string, message: string, details?: unknown) {
     super(message);
     this.statusCode = statusCode;

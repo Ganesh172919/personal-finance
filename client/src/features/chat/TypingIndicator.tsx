@@ -22,6 +22,9 @@
 import { motion, AnimatePresence } from "framer-motion";
 
 /** All possible workflow phases during AI processing */
+// Union representing the granular lifecycle stages of an AI pipeline run.
+// Identifies phases from initial socket connection through research and synthesis.
+// Used across stream events, stores, and animated UI indicators.
 export type WorkflowPhase =
   | "connecting"
   | "routing"
@@ -33,6 +36,9 @@ export type WorkflowPhase =
   | "complete"
   | "error";
 
+// Props definition for the enhanced AI workflow progress visualizer.
+// Accepts the active processing phase string and specialist agent name.
+// Includes flags for toggling supplementary agent details and badges.
 interface WorkflowProgressIndicatorProps {
   phase?: WorkflowPhase;
   agentName?: string;
@@ -40,6 +46,9 @@ interface WorkflowProgressIndicatorProps {
 }
 
 /** Phase metadata: display label, icon, and color for each phase */
+// Configuration table assigning presentation metadata to each workflow phase.
+// Maps phase names to human-readable labels, status icons, and theme color classes.
+// Provides visual distinction across routing, planning, and execution stages.
 const PHASE_INFO: Record<WorkflowPhase, { label: string; icon: string; color: string }> = {
   connecting: { label: "Connecting...", icon: "", color: "text-muted-foreground" },
   routing: { label: "Analyzing request", icon: "", color: "text-blue-400" },
@@ -52,6 +61,9 @@ const PHASE_INFO: Record<WorkflowPhase, { label: string; icon: string; color: st
   error: { label: "Error", icon: "", color: "text-red-400" },
 };
 
+// Renders an animated progress badge detailing active multi-agent AI execution.
+// Shows rotating spinners, status labels, and pulsing dots tailored to the phase.
+// Informs users of current tasks such as data retrieval or plan formulation.
 export function WorkflowProgressIndicator({
   phase = "connecting",
   agentName,
@@ -110,11 +122,17 @@ export function WorkflowProgressIndicator({
   );
 }
 
+// Properties configuring the contextual typing and phase indicator bubble.
+// Supports passing an active workflow phase and specialist agent identifier.
+// Dictates whether an advanced workflow stage or a standard bouncing dot renders.
 interface TypingIndicatorProps {
   phase?: WorkflowPhase;
   agentName?: string;
 }
 
+// Contextual processing indicator rendered while awaiting AI assistant replies.
+// Dynamically switches between detailed workflow progress and classic bounce dots.
+// Seamlessly handles mounting and unmounting animations via Framer Motion.
 export function TypingIndicator({ phase, agentName }: TypingIndicatorProps) {
   // If we have phase information, show the enhanced indicator
   if (phase) {
@@ -161,10 +179,16 @@ export function TypingIndicator({ phase, agentName }: TypingIndicatorProps) {
 }
 
 // Phase timeline for showing completed phases
+// Prop type contract for the sequential workflow history timeline ribbon.
+// Accepts an ordered array of historical execution phases with completion timestamps.
+// Supplies telemetry metadata for step-by-step audit visualization.
 interface PhaseTimelineProps {
   phases: Array<{ phase: WorkflowPhase; agent?: string; completedAt?: string }>;
 }
 
+// Renders a chronological horizontal breadcrumb ribbon of completed AI stages.
+// Animates phase transitions with subtle scale and fade effects.
+// Displays color-coded stage icons and labels tracking processing history.
 export function PhaseTimeline({ phases }: PhaseTimelineProps) {
   if (phases.length === 0) return null;
 

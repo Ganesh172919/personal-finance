@@ -74,8 +74,12 @@
  */
 
 import { Schema, model, Document, Types } from "mongoose"; // MongoDB ODM
+import { authCacheInvalidation } from "../utils/authCacheInvalidation";
 import bcrypt from "bcryptjs"; // Password hashing library
 
+// Defines the core domain interface for user identity records.
+// Encapsulates credential attributes, multi-factor auth secrets, and referral tracking.
+// Represents the authenticated human or administrative entity operating within the system.
 /**
  * User Interface
  *
@@ -99,8 +103,15 @@ export interface IUser {
   twoFactorSecret?: string; // TOTP secret key
   twoFactorPendingSecret?: string; // Pending 2FA secret (during setup)
   twoFactorBackupCodes?: string[]; // Backup codes for account recovery
+  twoFactorLastCounter?: number; // Last consumed TOTP time step (prevents replay)
+  twoFactorChallengeHash?: string; // One-time OAuth challenge nonce hash
+  twoFactorChallengeExpires?: Date;
+  sessionVersion?: string; // Rotated when MFA is enabled/disabled; revokes old JWTs
 }
 
+// Extends user identity attributes with standard Mongoose Document methods.
+// Exposes database primary keys, document lifecycle methods, and timestamp fields.
+// Represents a persistent user document returned by authentication queries.
 /**
  * User Document Interface
  *
@@ -110,6 +121,9 @@ export interface IUserDocument extends IUser, Document {
   _id: Types.ObjectId; // MongoDB ObjectId
 }
 
+// Configures the Mongoose schema mapping for the primary user authentication collection.
+// Enforces validation rules on unique emails, OAuth IDs, and hidden password projections.
+// Automatically manages creation and modification timestamps on all user writes.
 /**
  * User Schema Definition
  *
@@ -157,10 +171,17 @@ const userSchema = new Schema<IUserDocument>(
     twoFactorSecret: { type: String, select: false }, // TOTP secret (excluded from queries)
     twoFactorPendingSecret: { type: String, select: false }, // Pending 2FA secret (excluded from queries)
     twoFactorBackupCodes: { type: [String], select: false, default: undefined }, // Backup codes (excluded from queries)
+    twoFactorLastCounter: { type: Number, select: false },
+    twoFactorChallengeHash: { type: String, select: false },
+    twoFactorChallengeExpires: { type: Date, select: false },
+    sessionVersion: { type: String }, // Safe to cache/read, but never trust a cached copy for authorization
   },
   { timestamps: true } // Automatically add createdAt and updatedAt fields
 );
 
+// Intercepts user document save operations to perform secure password hashing.
+// Generates salt and hashes modified passwords using bcrypt with 10 salt rounds.
+// Skips execution seamlessly if the password field remains unmutated.
 /**
  * Pre-save Middleware
  *
@@ -183,12 +204,20 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
+// Attaches authentication cache invalidation hooks to user lifecycle events.
+// Invalidates cached user sessions and token authorizations in Redis upon updates.
+// Ensures profile modifications and credential revocations propagate immediately.
 /**
  * User Model
  *
  * Mongoose model for user documents.
  * Used for CRUD operations on user data.
  */
+userSchema.plugin(authCacheInvalidation, { source: "user" });
+
+// Compiles and exports the Mongoose model for system user documents.
+// Exposes data access methods to query, authenticate, register, and update user accounts.
+// Acts as the central identity foundation for all application authorization workflows.
 const UserModel = model<IUserDocument>("User", userSchema);
 export default UserModel;
 

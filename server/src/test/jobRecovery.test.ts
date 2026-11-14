@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import DeadLetterJobModel from "../models/deadLetterJobModel";
 import ExportJobModel from "../models/exportJobModel";
 import IntegrationConnectionModel from "../models/integrationConnectionModel";
 import IntegrationSyncRunModel from "../models/integrationSyncRunModel";
@@ -44,6 +45,7 @@ describe("Job Recovery Service", () => {
       workflowId: workflow._id,
       triggeredByUserId: userId,
       status: "running",
+      attempts: 2, // last allowed attempt (default max 3) -> dead-lettered instead of requeued
       startedAt: twentyMinsAgo,
     });
 
@@ -67,6 +69,7 @@ describe("Job Recovery Service", () => {
       orgId,
       connectorKey: "bank_stub",
       status: "running",
+      attempts: 2,
       startedAt: twentyMinsAgo,
     });
 
@@ -76,6 +79,7 @@ describe("Job Recovery Service", () => {
       createdByUserId: userId,
       type: "transactions_csv",
       status: "running",
+      attempts: 2,
       startedAt: twentyMinsAgo,
     });
 
@@ -116,5 +120,29 @@ describe("Job Recovery Service", () => {
 
     const updatedFreshExport = await ExportJobModel.findById(freshExportJob._id);
     expect(updatedFreshExport?.status).toBe("running");
+
+    expect(result.deadLettered).toBe(3);
+    expect(await DeadLetterJobModel.countDocuments({})).toBe(3);
+  });
+
+  it("requeues a stale job with backoff while attempts remain (visibility timeout)", async () => {
+    const stale = await ExportJobModel.create({
+      orgId,
+      createdByUserId: userId,
+      type: "transactions_csv",
+      status: "running",
+      startedAt: new Date(Date.now() - 20 * 60 * 1000),
+    });
+
+    const result = await recoverStaleJobs({ maxRunningDurationMs: 15 * 60 * 1000 });
+    expect(result.requeued).toBe(1);
+    expect(result.deadLettered).toBe(0);
+
+    const after: any = await ExportJobModel.findById(stale._id).lean();
+    expect(after.status).toBe("queued");
+    expect(after.attempts).toBe(1);
+    expect(new Date(after.nextAttemptAt).getTime()).toBeGreaterThan(Date.now());
+    expect(after.startedAt).toBeUndefined();
+    expect(await DeadLetterJobModel.countDocuments({})).toBe(0);
   });
 });

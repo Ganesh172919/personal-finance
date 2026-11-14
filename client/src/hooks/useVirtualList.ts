@@ -50,6 +50,9 @@ import { useRef, useEffect, useCallback, useState } from "react";
  * for transaction lists, activity feeds, and notification lists.
  */
 
+// Defines configuration options for calculating virtualized window bounds.
+// Encapsulates dataset items, uniform pixel row heights, overscan buffers, and height overrides.
+// Controls the virtual viewport calculation parameters for performant list rendering.
 interface UseVirtualListOptions<T> {
   items: T[];
   /** Fixed height per item in pixels */
@@ -60,12 +63,18 @@ interface UseVirtualListOptions<T> {
   containerHeight?: number;
 }
 
+// Represents an individual item positioned inside the virtualized viewport window.
+// Packages the source data item, original array index, and vertical offset coordinates.
+// Dictates absolute positioning styles within the virtual scrolling spacer container.
 interface VirtualItem<T> {
   item: T;
   index: number;
   offsetTop: number;
 }
 
+// Encapsulates the virtual list calculation results and container ref bindings.
+// Delivers the sliced visible items array, total spacer height, and refresh callbacks.
+// Supplies all necessary rendering properties to mount virtual scrollable lists.
 interface UseVirtualListResult<T> {
   /** Items currently visible + overscan buffer */
   visibleItems: VirtualItem<T>[];
@@ -77,6 +86,9 @@ interface UseVirtualListResult<T> {
   refresh: () => void;
 }
 
+// Custom React hook calculating visible item slices for large scrollable datasets.
+// Observes scroll offsets and container height changes with passive event listeners.
+// Reduces DOM element counts by rendering only visible items plus an overscan buffer.
 export function useVirtualList<T>({
   items,
   itemHeight,

@@ -12,17 +12,26 @@ import WorkflowModel, {
   type WorkflowTrigger,
 } from "../models/workflowModel";
 import WorkflowRunModel, { type IWorkflowRunSkippedAction } from "../models/workflowRunModel";
-import { enforceFeatureLimit, recordFeatureUsage } from "./entitlements";
+import { enforceFeatureLimit, recordFeatureUsage, reserveFeatureUsage } from "./entitlements";
 import { processExportJob } from "./exports";
 import { sendEmail } from "../utils/sendEmail";
 import { getEnv } from "../config/env";
 import { HttpError } from "../middleware/httpError";
 import { computeNextCronRunAt } from "./workflowCron";
 
+// Normalizes task titles by collapsing internal spaces and downcasing text.
+// Strips leading and trailing whitespace to ensure uniform task comparison.
+// Standardizes title strings for deterministic workflow task ID hashing.
 const normalizeTitle = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase();
 
+// Generates a SHA-256 hexadecimal hash string from an arbitrary input value.
+// Used for producing deterministic workflow task keys and idempotency tokens.
+// Guarantees collision-resistant hashing across automation pipelines.
 const sha256Hex = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
 
+// Derives a deterministic task identifier from workflow and task attributes.
+// Hashes organization, user, workflow, time bucket, and normalized title.
+// Prevents duplicate task generation when workflows re-run within the same bucket.
 const buildWorkflowTaskId = (params: {
   orgId: string;
   userId: string;
@@ -36,11 +45,17 @@ const buildWorkflowTaskId = (params: {
   return `wf_${hash.slice(0, 32)}`;
 };
 
+// Calculates a future due date by adding a given number of days to the current timestamp.
+// Clamps the day offset to a safe range between 1 day and 10 years.
+// Produces a concrete Date instance for scheduled workflow task deadlines.
 const dueDateFromDays = (days: number) => {
   const clamped = Math.max(1, Math.min(3650, Math.floor(days)));
   return new Date(Date.now() + clamped * 24 * 60 * 60 * 1000);
 };
 
+// Evaluates conditional branching expressions against dynamic workflow run contexts.
+// Resolves nested dot-separated properties and checks relational comparison operators.
+// Returns evaluation match status alongside descriptive mismatch failure reasons.
 export const evaluateActionCondition = (
   condition: WorkflowActionCondition | undefined,
   context: Record<string, unknown>
@@ -98,6 +113,9 @@ export const evaluateActionCondition = (
   };
 };
 
+// Replaces double-curly variable placeholders in text templates with context values.
+// Supports nested object paths by splitting dot-separated identifier keys.
+// Leaves non-templated text unaltered when placeholders are absent.
 export const interpolateTemplate = (str: string, context: Record<string, unknown>): string => {
   if (!str || !str.includes("{{")) return str;
   return str.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, field) => {
@@ -111,6 +129,9 @@ export const interpolateTemplate = (str: string, context: Record<string, unknown
   });
 };
 
+// Registers a new automation workflow definition for a tenant organization.
+// Configures triggers, calculates initial cron schedules, and stores action steps.
+// Validates cron syntax and auto-generates secure tokens for webhook triggers.
 export const createWorkflow = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -168,10 +189,16 @@ export const createWorkflow = async (params: {
   return created;
 };
 
+// Queries all automation workflows registered under a tenant organization.
+// Enforces strict multi-tenant data boundaries by filtering on organization ID.
+// Returns workflow definitions ordered chronologically by newest creation date.
 export const listWorkflows = async (params: { orgId: mongoose.Types.ObjectId }) => {
   return WorkflowModel.find({ orgId: params.orgId }).sort({ createdAt: -1 }).lean();
 };
 
+// Enqueues an execution run for an automation workflow with idempotency support.
+// Reserves and commits feature usage quotas for metered workflow executions.
+// Dispatches immediate synchronous execution or queues runs based on worker config.
 export const enqueueWorkflowRun = async (params: {
   orgId: mongoose.Types.ObjectId;
   workflowId: mongoose.Types.ObjectId;
@@ -187,15 +214,16 @@ export const enqueueWorkflowRun = async (params: {
     ? await WorkflowRunModel.findOne({ workflowId: params.workflowId, idempotencyKey }).lean()
     : null;
 
-  if (!existing) {
-    await enforceFeatureLimit({
-      orgId: params.orgId,
-      userId: params.triggeredByUserId,
-      feature: "workflow_runs",
-      units: 1,
-      requestId: params.requestId,
-    });
-  }
+  // Atomic reservation: committed below once the run row exists, released otherwise.
+  const reservation = !existing
+    ? await reserveFeatureUsage({
+        orgId: params.orgId,
+        userId: params.triggeredByUserId,
+        feature: "workflow_runs",
+        units: 1,
+        requestId: params.requestId,
+      })
+    : undefined;
 
   let createdRun = false;
   const run = existing
@@ -215,6 +243,7 @@ export const enqueueWorkflowRun = async (params: {
         })
         .catch(async (error: any) => {
           if (error?.code !== 11000 || !idempotencyKey) {
+            await reservation?.release();
             throw error;
           }
 
@@ -224,6 +253,7 @@ export const enqueueWorkflowRun = async (params: {
           }).lean();
 
           if (!duplicate) {
+            await reservation?.release();
             throw error;
           }
 
@@ -237,11 +267,14 @@ export const enqueueWorkflowRun = async (params: {
       feature: "workflow_runs",
       units: 1,
       requestId: params.requestId,
+      reservation,
       context: {
         workflow_id: params.workflowId.toString(),
       },
     }).catch(() => null);
   }
+  // Deduplicated (existing run) or failed record: give the unit back. No-op once committed.
+  await reservation?.release();
 
   const runId = String((run as any)._id);
 
@@ -255,6 +288,9 @@ export const enqueueWorkflowRun = async (params: {
   return { run: processed, queued: false };
 };
 
+// Executes the sequence of configured action steps for an active workflow run.
+// Evaluates branching conditions, generates tasks, delivers notifications, and exports reports.
+// Records action execution telemetry and marks run status as succeeded or failed.
 export const processWorkflowRun = async (workflowRunId: string) => {
   const env = getEnv();
   if (!mongoose.Types.ObjectId.isValid(workflowRunId)) {
@@ -287,6 +323,7 @@ export const processWorkflowRun = async (workflowRunId: string) => {
     const createdExportIds: string[] = [];
     const sentNotifications: Array<{ channel: string; to: string; mode: string }> = [];
     const actionsSkipped: IWorkflowRunSkippedAction[] = [];
+    const delaysExecuted: Array<{ index: number; duration_seconds: number; description?: string }> = [];
 
     for (let index = 0; index < actions.length; index += 1) {
       const action = actions[index] as any;
@@ -441,6 +478,18 @@ export const processWorkflowRun = async (workflowRunId: string) => {
         if (!env.ASYNC_JOBS_ENABLED) {
           await processExportJob(exportJobId);
         }
+        continue;
+      }
+
+      if (action.type === "delay") {
+        const duration = Math.max(1, Number(action.duration_seconds) || 1);
+        const desc = action.description ? interpolateTemplate(String(action.description), context) : undefined;
+        delaysExecuted.push({
+          index,
+          duration_seconds: duration,
+          description: desc,
+        });
+        continue;
       }
     }
 
@@ -451,6 +500,7 @@ export const processWorkflowRun = async (workflowRunId: string) => {
       exports_created: createdExportIds,
       notifications_sent: sentNotifications,
       actions_skipped: actionsSkipped,
+      delays_executed: delaysExecuted,
     };
     await run.save();
 
@@ -464,6 +514,9 @@ export const processWorkflowRun = async (workflowRunId: string) => {
   }
 };
 
+// Ingests an external webhook event and dispatches its matched automation workflow.
+// Validates incoming webhook secret tokens against active workflow trigger configs.
+// Enqueues a new workflow execution run passing the incoming JSON payload as context.
 export const triggerWebhookWorkflow = async (params: {
   token: string;
   payload: Record<string, unknown>;

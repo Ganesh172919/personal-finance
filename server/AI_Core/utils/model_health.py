@@ -86,6 +86,9 @@ from enum import Enum
 from typing import Any, Dict, Optional
 
 
+# Enumeration of operational health states for registered LLM models.
+# Defines states representing healthy, degraded, cooldown, and circuit-open conditions.
+# Dictates model eligibility and ranking penalties in routing decisions.
 class ModelHealthStatus(str, Enum):
     HEALTHY = "healthy"
     DEGRADED = "degraded"
@@ -93,6 +96,9 @@ class ModelHealthStatus(str, Enum):
     CIRCUIT_OPEN = "circuit_open"
 
 
+# Dataclass capturing cumulative health and performance metrics for a model.
+# Tracks request counts, granular HTTP errors, latencies, and circuit breaker state.
+# Computes dynamic success rates and average response latencies.
 @dataclass
 class ModelHealth:
     total_requests: int = 0
@@ -110,12 +116,18 @@ class ModelHealth:
     last_success_at: Optional[float] = None
     last_failure_at: Optional[float] = None
 
+    # Computes percentage of successful requests out of total requests handled.
+    # Defaults to 100 percent when no requests have been recorded yet.
+    # Returns floating-point success percentage between 0.0 and 100.0.
     @property
     def success_rate(self) -> float:
         if self.total_requests == 0:
             return 100.0
         return (self.successful_requests / self.total_requests) * 100.0
 
+    # Calculates mean response latency in milliseconds across successful calls.
+    # Returns zero if no successful requests have been logged yet.
+    # Yields floating-point average latency value in milliseconds.
     @property
     def avg_latency_ms(self) -> float:
         if self.successful_requests == 0:
@@ -123,6 +135,9 @@ class ModelHealth:
         return self.total_latency_ms / self.successful_requests
 
 
+# Configuration parameters governing health assessment thresholds and cooldowns.
+# Defines error thresholds, circuit breaker recovery intervals, and cooldown durations.
+# Calibrates failure detection sensitivity across all monitored models.
 @dataclass
 class ModelHealthConfig:
     degraded_threshold_percent: float = 70.0
@@ -135,17 +150,29 @@ class ModelHealthConfig:
     cooldown_5xx_seconds: float = 45.0
 
 
+# Thread-safe tracker evaluating runtime operational health across models.
+# Maintains per-model performance telemetry, dynamic cooldowns, and circuit state.
+# Scores model reliability to inform optimal failover and routing decisions.
 class ModelHealthTracker:
+    # Initializes ModelHealthTracker with optional configuration and locks.
+    # Sets up internal thread synchronization lock and health metrics dictionary.
+    # Prepares tracking store for recording per-model operational events.
     def __init__(self, config: Optional[ModelHealthConfig] = None):
         self.config = config or ModelHealthConfig()
         self._health: Dict[str, ModelHealth] = {}
         self._lock = threading.RLock()
 
+    # Retrieves or creates ModelHealth tracking container for a given model.
+    # Ensures health record exists in dictionary before mutation or lookup.
+    # Returns ModelHealth instance associated with the specified model ID.
     def _get(self, model_id: str) -> ModelHealth:
         if model_id not in self._health:
             self._health[model_id] = ModelHealth()
         return self._health[model_id]
 
+    # Evaluates current health classification status for a specified model.
+    # Checks active cooldown timers, open circuit breakers, and degraded thresholds.
+    # Returns ModelHealthStatus enum reflecting instantaneous model condition.
     def get_status(self, model_id: str) -> ModelHealthStatus:
         with self._lock:
             health = self._get(model_id)
@@ -164,6 +191,9 @@ class ModelHealthTracker:
 
             return ModelHealthStatus.HEALTHY
 
+    # Computes composite numerical suitability score for candidate model ranking.
+    # Combines success rate and latency while heavily penalizing failed states.
+    # Returns floating-point score used for sorting model fallback chains.
     def get_score(self, model_id: str) -> float:
         with self._lock:
             health = self._get(model_id)
@@ -180,6 +210,9 @@ class ModelHealthTracker:
 
             return (success_score * 0.65) + (latency_score * 0.35) - penalty
 
+    # Records successful request completion and updates model latency metrics.
+    # Resets consecutive failure counter and clears active circuit breaker state.
+    # Thread-safely logs timestamp of last successful invocation.
     def record_success(self, model_id: str, latency_ms: float = 0.0) -> None:
         with self._lock:
             health = self._get(model_id)
@@ -191,6 +224,9 @@ class ModelHealthTracker:
             health.cooldown_until = None
             health.last_success_at = time.time()
 
+    # Records request failure and updates categorized error counts and cooldowns.
+    # Maps HTTP status codes to specialized cooldown durations and trips circuits.
+    # Increments consecutive failure counter under re-entrant lock.
     def record_failure(self, model_id: str, status_code: Optional[int] = None) -> None:
         with self._lock:
             health = self._get(model_id)
@@ -218,6 +254,9 @@ class ModelHealthTracker:
             if health.consecutive_failures >= self.config.circuit_failure_threshold:
                 health.circuit_opened_at = now
 
+    # Exports comprehensive operational metrics dictionary across all models.
+    # Reports health states, error breakdowns, latencies, and composite scores.
+    # Returns nested dictionary suitable for status reporting and observability.
     def get_stats(self) -> Dict[str, Any]:
         with self._lock:
             result: Dict[str, Any] = {}
@@ -242,6 +281,26 @@ class ModelHealthTracker:
                 }
             return result
 
+    # Reorders candidate model entries using multi-armed bandit algorithm.
+    # Optimizes model selection per task class when bandit feature is enabled.
+    # Returns reordered entry list or original entries on failure or disablement.
+    def bandit_order(self, entries: Any, task_class: str) -> Any:
+        """Reorder catalog ``entries`` with the per-task-class bandit.
+
+        Only models already present in ``entries`` (i.e. allowed by the model
+        catalog / task config) are reordered.  Returns ``entries`` unchanged when
+        ``LLM_BANDIT_ENABLED`` is off or anything goes wrong.
+        """
+        try:
+            from learning.bandit import reorder_entries
+
+            return reorder_entries(entries, task_class, self)
+        except Exception:
+            return entries
+
+    # Clears all recorded model health metrics and circuit breaker states.
+    # Acquires re-entrant synchronization lock to purge health dictionary.
+    # Restores tracker to clean initial state for testing isolation.
     def reset(self) -> None:
         with self._lock:
             self._health.clear()
@@ -250,9 +309,15 @@ class ModelHealthTracker:
 _tracker = ModelHealthTracker()
 
 
+# Retrieves the global singleton ModelHealthTracker instance.
+# Provides centralized access to model health tracking across agents.
+# Returns shared ModelHealthTracker instance for application runtime.
 def get_model_health_tracker() -> ModelHealthTracker:
     return _tracker
 
 
+# Resets the global ModelHealthTracker singleton metrics and circuit state.
+# Purges tracked performance metrics across all models during test teardown.
+# Restores pristine initial state for subsequent test execution.
 def reset_model_health_tracker() -> None:
     _tracker.reset()

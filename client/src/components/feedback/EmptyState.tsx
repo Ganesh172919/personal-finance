@@ -24,6 +24,9 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
+// Defines the parameter contract for rendering empty state placeholder views.
+// Accepts customizable titles, explanatory body text, and optional decorative icons.
+// Accommodates supplemental call-to-action buttons and container style overrides.
 type EmptyStateProps = {
   title: string;
   description: string;
@@ -32,6 +35,9 @@ type EmptyStateProps = {
   className?: string;
 };
 
+// Presentational placeholder component rendered when data collections are vacant.
+// Displays a dashed boundary card with centered typography and contextual actions.
+// Used universally across dashboard widgets and tables to encourage user engagement.
 export function EmptyState({
   title,
   description,

@@ -26,7 +26,13 @@ import type { Request, Response } from "express";
 import { blogService } from "../services/blogService";
 import { HttpError } from "../middleware/httpError";
 
+// Exposes HTTP controller methods for public articles and publication interactions.
+// Provides request handling, parameter extraction, and authorization delegation.
+// Interacts with underlying blog service routines to deliver content payloads.
 export class BlogController {
+  // Retrieves a paginated list of published blog posts based on filtering criteria.
+  // Parses optional search terms, categorization filters, and pagination parameters.
+  // Returns formatted article listings along with pagination metadata for the client.
   async getPosts(req: Request, res: Response) {
     const { page, limit, category, tag, sort, isFeatured, search } = req.query as Record<string, string | undefined>;
 
@@ -43,6 +49,9 @@ export class BlogController {
     res.json(result);
   }
 
+  // Fetches curated and prominent articles designated for display on highlight feeds.
+  // Limits query execution to a requested count of recent top-tier blog publications.
+  // Responds with high-visibility post summaries to drive user engagement.
   async getFeaturedPosts(req: Request, res: Response) {
     const { limit } = req.query as Record<string, string | undefined>;
     const result = await blogService.getPosts({
@@ -53,6 +62,9 @@ export class BlogController {
     res.json({ posts: result.posts });
   }
 
+  // Resolves an individual blog post using its unique human-readable slug identifier.
+  // Throws a not found exception if no article matches the provided path segment.
+  // Returns the complete post contents alongside tracking request identifiers.
   async getPostBySlug(req: Request, res: Response) {
     const { slug } = req.params;
     const post = await blogService.getPostBySlug(String(slug));
@@ -64,11 +76,17 @@ export class BlogController {
     res.json({ post, request_id: req.requestId });
   }
 
+  // Lists all available taxonomy classifications associated with published articles.
+  // Collects distinct category values from storage to facilitate front-end filtering.
+  // Dispatches the compiled set of category descriptors in the JSON response body.
   async getCategories(_req: Request, res: Response) {
     const categories = await blogService.getCategories();
     res.json({ categories });
   }
 
+  // Toggles reader appreciation reactions for the article referenced by identifier.
+  // Handles increment or decrement transitions through delegated service logic.
+  // Returns the updated reaction tally accompanied by request tracking metadata.
   async toggleLike(req: Request, res: Response) {
     const { id } = req.params;
     try {
@@ -82,6 +100,9 @@ export class BlogController {
     }
   }
 
+  // Validates author credentials and creates a new published blog article entry.
+  // Automatically calculates expected reading durations based on text word counts.
+  // Saves the article document to persistent storage and returns created details.
   async createPost(req: Request, res: Response) {
     const userId = (req as any).user?._id;
 
@@ -106,4 +127,7 @@ export class BlogController {
   }
 }
 
+// Singleton instance of the blog controller managing publication endpoints.
+// Exported for registration into application route tables and middleware chains.
+// Handles requests for public reading and authenticated authoring workflows.
 export const blogController = new BlogController();

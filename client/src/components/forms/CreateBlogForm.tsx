@@ -35,11 +35,17 @@ import { createBlog } from "@/lib/apiClient";
 import { BlogPostCategory, IBlogPost } from "@/types/apiTypes";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 
+// Property definition contract for the blog post authoring modal form.
+// Manages dialog visibility state alongside change notification dispatchers.
+// Governs modal presentation when users trigger new article creation workflows.
 interface CreateBlogFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+// Modal authoring dialog enabling publication of educational financial blog articles.
+// Collects post titles, Markdown content, categories, cover images, and tags.
+// Integrates react-hook-form validation with TanStack Query cache invalidations.
 export function CreateBlogForm({ open, onOpenChange }: CreateBlogFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();

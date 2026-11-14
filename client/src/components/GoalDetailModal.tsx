@@ -31,12 +31,18 @@ import { IFinancialGoal } from "@/types";
 import { Clock, PiggyBank } from "lucide-react";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
+// Property structure definition for the individual goal detail inspection modal.
+// Accepts an optional financial goal record alongside a dialog dismissal handler.
+// Dictates modal visibility and populates target progress data when non-null.
 interface GoalDetailModalProps {
   goal: IFinancialGoal | null;
   onClose: () => void;
 }
 
 // Helper to calculate time remaining
+// Calculates remaining duration intervals until a financial goal's deadline date.
+// Returns humanized countdown strings and color-coded status styling classes.
+// Identifies overdue targets, near-term milestones, and standard remaining months.
 const getTimeToDeadline = (deadline: string) => {
   const deadlineDate = new Date(deadline);
   const now = new Date();
@@ -48,6 +54,9 @@ const getTimeToDeadline = (deadline: string) => {
   return { text: `${diffMonths} months remaining`, color: "text-muted-foreground" };
 };
 
+// Modal dialog rendering granular progress details for an active savings goal.
+// Displays visual completion progress bars, remaining amounts, and target deadlines.
+// Employs accessible Dialog primitives with focus management and backdrop dismissals.
 export function GoalDetailModal({ goal, onClose }: GoalDetailModalProps) {
   const { formatMoney } = useOrgFormatters();
   if (!goal) return null;

@@ -70,21 +70,30 @@
  * @module features/chat/ChatContainer
  */
 
-import { useEffect, useState } from "react";
-import { useLocation } from "wouter";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useSearchParams } from "wouter";
 import { motion } from "framer-motion";
 import { useChatStore } from "@/stores/chatStore";
 import { ChatMessageList } from "./ChatMessageList";
 import { ChatInput } from "./ChatInput";
 import { ChatSuggestions } from "./ChatSuggestions";
+import { LiveVoiceChat } from "./LiveVoiceChat";
 import { Button } from "@/components/ui/Button";
 import { useQueryClient } from "@tanstack/react-query";
 import type { IChatAttachment } from "@/types/chat.types";
+import { getWorkspaceFile } from "@/lib/api/files";
+import { isWorkspaceFileId } from "@/lib/fileReferences";
 
+// Component property contract for the primary chat interface orchestrator.
+// Supports passing an optional active session ID to load conversation history.
+// Determines whether an existing chat thread or a blank workspace is mounted.
 interface ChatContainerProps {
   sessionId?: string;
 }
 
+// Primary chat experience orchestrator integrating Zustand stores and layout panes.
+// Coordinates session hydration, message drafting, file attachments, and prompt suggestions.
+// Renders active agent indicators, conversation threads, and responsive error banners.
 export function ChatContainer({ sessionId }: ChatContainerProps) {
   const {
     sessions,
@@ -96,14 +105,48 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
     currentPhase,
     currentAgent,
     selectSession,
-    sendMessage,
-    clearCurrentSession
+    sendMessage
   } = useChatStore();
   const [, navigate] = useLocation();
+  const [handoffParams] = useSearchParams();
+  const attachmentId = handoffParams.get("attachment");
+  const initialMessage = (handoffParams.get("message") || "").slice(0, 8000);
   const queryClient = useQueryClient();
   const [isComposerBusy, setIsComposerBusy] = useState(false);
+  const [isLoadingAttachment, setIsLoadingAttachment] = useState(Boolean(attachmentId));
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [attachmentRetry, setAttachmentRetry] = useState(0);
+  const consumedAttachment = useRef<string | null>(null);
   const [savedFileDraft, setSavedFileDraft] = useState<{ sessionId: string | null; files: IChatAttachment[] }>({ sessionId: null, files: [] });
   const workspaceAttachments = savedFileDraft.sessionId === currentSessionId ? savedFileDraft.files : [];
+  useEffect(() => {
+    let active = true;
+    setAttachmentError(null);
+    if (!attachmentId) { consumedAttachment.current = null; setIsLoadingAttachment(false); return; }
+    if (consumedAttachment.current === attachmentId) { setIsLoadingAttachment(false); return; }
+    if (!isWorkspaceFileId(attachmentId)) {
+      setIsLoadingAttachment(false);
+      setAttachmentError("This document link is invalid. Open Files and select a saved document.");
+      return;
+    }
+    setIsLoadingAttachment(true);
+    void getWorkspaceFile(attachmentId).then(({ file }) => {
+      if (!active) return;
+      if (file.id !== attachmentId) throw new Error("The requested document was not returned.");
+      consumedAttachment.current = attachmentId;
+      const attachment: IChatAttachment = {
+        workspaceFileId: file.id, fileId: file.fileId, originalName: file.originalName,
+        mimeType: file.mimeType, sizeBytes: file.sizeBytes,
+      };
+      setSavedFileDraft(previous => {
+        const files = previous.sessionId === currentSessionId ? previous.files : [];
+        return { sessionId: currentSessionId, files: [...files.filter(item => item.workspaceFileId !== file.id), attachment].slice(0, 10) };
+      });
+    }).catch(() => {
+      if (active) setAttachmentError("The document could not be attached. It may be unavailable in this workspace. Try again or choose a file in Files.");
+    }).finally(() => { if (active) setIsLoadingAttachment(false); });
+    return () => { active = false; };
+  }, [attachmentId, currentSessionId, attachmentRetry]);
   const handleUseDocument = (file: IChatAttachment) => {
     if (isSending || isComposerBusy || !currentSessionId) return;
     setSavedFileDraft(previous => {
@@ -121,10 +164,10 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
     }
   }, [sessionId, selectSession]);
 
-  const handleSendMessage = async (content: string, options?: { narrative?: boolean; fileIds?: string[] }) => {
+  const handleSendMessage = async (content: string, options?: { narrative?: boolean; fileIds?: string[] }, clearFileDraft = true) => {
     const sendingSessionId = useChatStore.getState().currentSessionId;
     const sent = await sendMessage(content, options);
-    if (sent) setSavedFileDraft(previous => previous.sessionId === sendingSessionId ? { ...previous, files: [] } : previous);
+    if (sent && clearFileDraft) setSavedFileDraft(previous => previous.sessionId === sendingSessionId ? { ...previous, files: [] } : previous);
     if (sent && useChatStore.getState().messages.at(-1)?.metadata?.generatedDocuments?.length) {
       void queryClient.invalidateQueries({ queryKey: ["/api/files"] });
     }
@@ -134,8 +177,9 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
   };
 
   const handleSuggestionSelect = (suggestion: string) => {
-    clearCurrentSession();
-    handleSendMessage(suggestion);
+    // Suggestions only render for an empty thread, so reuse the open session
+    // (e.g. one just created with "New session") instead of orphaning it.
+    void handleSendMessage(suggestion);
   };
 
   const hasMessages = messages.length > 0;
@@ -206,7 +250,24 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
       </div>
 
       {/* Chat Input */}
-      <ChatInput onSend={handleSendMessage} isSending={isSending} onBusyChange={setIsComposerBusy} workspaceAttachments={workspaceAttachments} onRemoveWorkspaceAttachment={id => setSavedFileDraft(previous => ({ ...previous, files: previous.files.filter(file => file.workspaceFileId !== id) }))} />
+      {isLoadingAttachment ? <p role="status" className="px-4 py-2 text-sm text-muted-foreground">Attaching saved document...</p> : null}
+      {attachmentError ? <div role="alert" className="space-y-2 px-4 py-2 text-sm">
+        <p>{attachmentError}</p>
+        {isWorkspaceFileId(attachmentId) ? <Button size="sm" variant="outline" onClick={() => setAttachmentRetry(value => value + 1)}>Try attaching again</Button> : null}
+      </div> : null}
+      <LiveVoiceChat initiallyOpen={handoffParams.get("voice") === "live"} sessionId={currentSessionId} disabled={isSending || isComposerBusy || isLoadingAttachment || isLoadingMessages} onSend={async (text) => {
+        const before = useChatStore.getState();
+        const sent = await handleSendMessage(text, undefined, false);
+        const after = useChatStore.getState();
+        const reply = after.messages.at(-1);
+        if (sent && (!before.currentSessionId || before.currentSessionId === after.currentSessionId) &&
+          reply?.role === "assistant" && reply.id !== before.messages.at(-1)?.id) {
+          return reply.metadata?.fallbackUsed && reply.metadata.llmCallCount === 0
+            ? "The finance assistant is temporarily unavailable. Please try your question again."
+            : reply.content;
+        }
+      }} />
+      <ChatInput sessionId={currentSessionId} initialMessage={initialMessage} onSend={handleSendMessage} isSending={isSending || isLoadingAttachment} onBusyChange={setIsComposerBusy} workspaceAttachments={workspaceAttachments} onRemoveWorkspaceAttachment={id => setSavedFileDraft(previous => ({ ...previous, files: previous.files.filter(file => file.workspaceFileId !== id) }))} />
     </motion.div>
   );
 }

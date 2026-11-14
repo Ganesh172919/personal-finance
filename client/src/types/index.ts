@@ -18,6 +18,9 @@
  * @module types
  */
 
+// Models targeted monetary savings goals established by a user.
+// Stores financial targets, current accumulated balances, deadlines, and urgency.
+// Supplies the data contract for goal progress tracking widgets and forecasts.
 /** A financial goal (e.g., "Save for vacation", "Emergency fund") */
 export interface IFinancialGoal {
   id?: string;
@@ -28,6 +31,9 @@ export interface IFinancialGoal {
   priority: number;
 }
 
+// Defines outstanding liabilities, loans, and credit balances owed by a user.
+// Captures interest rates, current balances, required minimums, and debt types.
+// Feeds payoff calculation models like the avalanche and snowball strategies.
 export interface IDebt {
   id?: string;
   name: string;
@@ -37,6 +43,9 @@ export interface IDebt {
   type: string;
 }
 
+// Traces the origin and attribution context of transaction modifications.
+// Records source mechanisms like manual entry, CSV parsing, OCR, or AI actions.
+// Maintains audit logs linking records to specific actors, tasks, and requests.
 export interface IMutationSource {
   origin: "manual" | "csv_import" | "receipt_ocr" | "journal" | "task_completion" | "ai_plan";
   request_id?: string;
@@ -50,10 +59,17 @@ export interface IMutationSource {
   note?: string;
 }
 
+// Represents individual financial revenue, expense, and investment transactions.
+// Supports multi-currency conversion, category splits, review flags, and reconciliations.
+// Acts as the foundational data entity powering charts, budgets, and cashflow analytics.
 export interface ITransaction {
   id?: string;
   _id?: string;
   amount: number;
+  raw_amount?: number;
+  currency?: string;
+  fx_rate?: number;
+  currency_symbol?: string;
   category: string;
   description: string;
   date: Date | string; 
@@ -61,6 +77,7 @@ export interface ITransaction {
   splits?: Array<{
     category: string;
     amount: number;
+    raw_amount?: number;
   }>;
   source?: IMutationSource;
   review?: {
@@ -86,6 +103,9 @@ export interface ITransaction {
   running_balance?: number;
 }
 
+// Encapsulates the comprehensive financial snapshot and preferences of a user.
+// Aggregates demographic data, income, expenses, linked goals, debts, and risk appetite.
+// Serves as the central profile payload consumed by planning and advisory agents.
 export interface IFinancialProfile {
   _id?: string; 
   userId: string;
@@ -103,6 +123,9 @@ export interface IFinancialProfile {
   onboardingCompletedAt?: string;
   onboardingVersion?: string;
   lastMutation?: IMutationSource & { at?: string };
+  currency?: string;
+  fx_rate?: number;
+  currency_symbol?: string;
   completeness?: {
     has_income: boolean;
     has_expenses: boolean;
@@ -112,6 +135,9 @@ export interface IFinancialProfile {
   };
 }
 
+// Records execution telemetry for an individual agent within a workflow sequence.
+// Tracks execution timestamps, latency, phase names, token metrics, and cache status.
+// Supplies observable diagnostic trails for inspecting multi-agent coordination.
 export interface IWorkflowTraceEntry {
   agent: string;
   startedAt: string;
@@ -128,6 +154,9 @@ export interface IWorkflowTraceEntry {
   cacheHit?: boolean;
 }
 
+// Captures synthesized recommendations and analytical findings produced by AI agents.
+// Bundles structured response text, action items, involved agent lists, and traces.
+// Serves as the primary persistence contract for agent insights and advisory cards.
 export interface IAgentOutput {
   id: string; 
   agentType: string;

@@ -148,6 +148,30 @@ describe("org invites + audit API", () => {
     expect(accepted.body.member?.org_id).toBe(orgId);
     expect(accepted.body.member?.user_id).toBe(invitee._id.toString());
 
+    // Re-submitting the same token as the same user is idempotent (page remount / retry).
+    const again = await request(app)
+      .post("/api/org-invites/accept")
+      .set("Cookie", [inviteeCookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ token: inviteToken })
+      .expect(200);
+    expect(again.body.member?.org_id).toBe(orgId);
+
+    // ...but a different user still cannot reuse the consumed token.
+    const other = await UserModel.create({
+      email: "other@example.com",
+      name: "Other User",
+      authProvider: "email",
+      isEmailVerified: true,
+    });
+    const otherCookie = `jwt=${jwt.sign({ id: other._id.toString() }, secret, { expiresIn: "1d" })}`;
+    await request(app)
+      .post("/api/org-invites/accept")
+      .set("Cookie", [otherCookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ token: inviteToken })
+      .expect(409);
+
     const myOrgs = await request(app)
       .get("/api/orgs/me")
       .set("Cookie", [inviteeCookie, csrfCookie])

@@ -20,7 +20,7 @@
  * Accessible from the sidebar under "Portfolio" for authenticated users.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -55,8 +55,16 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Coins,
+  Globe,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import {
+  CURRENCY_LABELS,
+  CURRENCY_SYMBOLS,
+  FX_RATES_TO_USD,
+  SUPPORTED_CURRENCIES,
+  type SupportedCurrency,
+} from "@/lib/currencyFx";
 import {
   LineChart,
   Line,
@@ -88,6 +96,9 @@ import { IAgentOutput, IFinancialProfile } from "@/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+// Model representing an asset allocation strategy model portfolio.
+// Defines model ID, descriptive name, rationale, and percentage weights by asset class.
+// Used for portfolio rebalancing analysis and target drift calculations.
 export type TargetAllocationModel = {
   id: string;
   name: string;
@@ -95,6 +106,9 @@ export type TargetAllocationModel = {
   targets: Record<string, number>;
 };
 
+// Preset asset allocation models including 60/40, aggressive, conservative, and all-weather.
+// Pre-populates target percentages across equities, fixed income, commodities, and cash.
+// Guides users toward balanced multi-asset portfolio construction.
 export const TARGET_ALLOCATION_PRESETS: TargetAllocationModel[] = [
   {
     id: "moderate",
@@ -122,6 +136,9 @@ export const TARGET_ALLOCATION_PRESETS: TargetAllocationModel[] = [
   },
 ];
 
+// Normalizes freeform asset class or investment type strings into canonical buckets.
+// Classifies terms into Debt, Commodity, Crypto, Cash, or Equity categories.
+// Standardizes diverse user inputs for accurate portfolio breakdown charts.
 export const normalizeAssetClassName = (raw: string): string => {
   const lower = String(raw || "").toLowerCase();
   if (lower.includes("debt") || lower.includes("bond") || lower.includes("treasury")) return "Debt";
@@ -131,6 +148,9 @@ export const normalizeAssetClassName = (raw: string): string => {
   return "Equity";
 };
 
+// Common benchmark securities and assets for rapid position entry.
+// Suggests popular index funds, treasury bonds, gold ETFs, and crypto tokens.
+// Speeds up manual holdings entry with pre-selected asset types.
 const COMMON_INVESTMENT_PRESETS = [
   { name: "S&P 500 Index Fund", type: "Equity" },
   { name: "Total Stock Market", type: "Equity" },
@@ -139,15 +159,31 @@ const COMMON_INVESTMENT_PRESETS = [
   { name: "Bitcoin", type: "Crypto" },
 ];
 
+// Quick-add numeric amount increments for investment purchase simulations.
+// Offers one-tap buttons to increase trial investment allocations.
+// Facilitates incremental scenario planning without typing exact amounts.
 const AMOUNT_BOOSTERS = [100, 500, 1000, 5000];
 
+// Investment portfolio analytics, rebalancing advisor, and dividend tracker.
+// Evaluates asset allocation drift, dividend withholding tax drag, and risk exposure.
+// Generates rebalancing orders and AI-powered portfolio health recommendations.
 export default function Portfolio() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const userId = user?.id || localStorage.getItem("userId");
   const { toast } = useToast();
-  const { formatMoney, currency } = useOrgFormatters();
-  const formatCurrency = (value: number) => formatMoney(value);
+  const { formatMoney, currency: orgCurrency } = useOrgFormatters();
+  const [selectedReportingCurrency, setSelectedReportingCurrency] = useState<SupportedCurrency>("USD");
+  const currency = selectedReportingCurrency;
+  const [selectedWhtRate, setSelectedWhtRate] = useState<number>(15);
+  const [selectedTreatyCountry, setSelectedTreatyCountry] = useState<string>("DTAA Standard");
+
+  useEffect(() => {
+    if (orgCurrency && orgCurrency in FX_RATES_TO_USD) {
+      setSelectedReportingCurrency(orgCurrency as SupportedCurrency);
+    }
+  }, [orgCurrency]);
+
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [selectedModelId, setSelectedModelId] = useState<string>(() => {
@@ -181,9 +217,27 @@ export default function Portfolio() {
   });
 
   const { data: portfolioSummaryData } = useQuery<PortfolioSummaryResponse>({
-    queryKey: ["/api/portfolio/summary", 12],
-    queryFn: () => getPortfolioSummary({ months: 12 }),
+    queryKey: ["/api/portfolio/summary", 12, selectedReportingCurrency, selectedWhtRate, selectedTreatyCountry],
+    queryFn: () =>
+      getPortfolioSummary({
+        months: 12,
+        currency: selectedReportingCurrency !== "USD" ? selectedReportingCurrency : undefined,
+        wht_rate: selectedWhtRate,
+        treaty_country: selectedTreatyCountry,
+      }),
   });
+
+  const activeCurrency = portfolioSummaryData?.currency || selectedReportingCurrency;
+  const activeSymbol = portfolioSummaryData?.currency_symbol || CURRENCY_SYMBOLS[selectedReportingCurrency] || "$";
+  const formatCurrency = (value: number) => {
+    if (selectedReportingCurrency === "USD" && !portfolioSummaryData?.currency) {
+      return formatMoney(value);
+    }
+    const rounded = activeCurrency === "JPY"
+      ? Math.round(value).toLocaleString()
+      : Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `${activeSymbol}${rounded}`;
+  };
 
   // Query 2: Get AI insights for the 'Analysis' tab
   const { data: insights, isLoading: isLoadingInsights } = useQuery<IAgentOutput[]>({
@@ -635,13 +689,27 @@ export default function Portfolio() {
   const dividendAnalytics = useMemo(() => {
     const divData = portfolioSummaryData?.dividends;
     const totalReceived = Number(divData?.total_received || 0);
+    const grossReceived = Number(divData?.gross_received ?? totalReceived);
+    const whtRatePct = Number(divData?.wht_rate_pct ?? selectedWhtRate);
+    const treatyCountry = divData?.treaty_country || selectedTreatyCountry;
+    const whtDeducted = Number(divData?.wht_deducted ?? (grossReceived * (whtRatePct / 100)));
+    const netReceived = Number(divData?.net_received ?? (grossReceived - whtDeducted));
+    const ftcReliefEstimate = Number(divData?.ftc_relief_estimate ?? whtDeducted);
+
     const ttmReceived = Number(divData?.ttm_received || 0);
+    const grossTtmReceived = Number(divData?.gross_ttm_received ?? ttmReceived);
+    const netTtmReceived = Number(divData?.net_ttm_received ?? (grossTtmReceived * (1 - whtRatePct / 100)));
+
     const totalInvested = summaryTotalValue || 0;
     const portfolioYieldPct =
       totalInvested > 0
         ? (ttmReceived / totalInvested) * 100
         : Number(divData?.portfolio_yield_pct || 0);
+    const netPortfolioYieldPct = Number(divData?.net_portfolio_yield_pct ?? (portfolioYieldPct * (1 - whtRatePct / 100)));
+
     const monthlyAverage = Number(divData?.monthly_average ?? (ttmReceived / 12));
+    const netMonthlyAverage = Number(divData?.net_monthly_average ?? (netTtmReceived / 12));
+
     const payoutsByHolding = divData?.payouts_by_holding || [];
     const monthlyProgression = divData?.monthly_progression || [];
     const recentPayouts = divData?.recent_payouts || [];
@@ -669,9 +737,19 @@ export default function Portfolio() {
 
     return {
       totalReceived,
+      grossReceived,
+      netReceived,
+      whtDeducted,
+      ftcReliefEstimate,
+      whtRatePct,
+      treatyCountry,
       ttmReceived,
+      grossTtmReceived,
+      netTtmReceived,
       portfolioYieldPct,
+      netPortfolioYieldPct,
       monthlyAverage,
+      netMonthlyAverage,
       payoutsByHolding,
       monthlyProgression,
       recentPayouts,
@@ -686,7 +764,7 @@ export default function Portfolio() {
         dripAdvantagePct,
       },
     };
-  }, [portfolioSummaryData?.dividends, summaryTotalValue, dripHorizonYears]);
+  }, [portfolioSummaryData?.dividends, summaryTotalValue, dripHorizonYears, selectedWhtRate, selectedTreatyCountry]);
 
   const handleScheduleDividendPlan = () => {
     createTaskMutation.mutate({
@@ -947,6 +1025,96 @@ export default function Portfolio() {
             </DialogContent>
           </Dialog>
         </div>
+
+        {/* Global Multi-Currency FX & Dividend Tax Localization Cockpit */}
+        <Card className="p-4 mb-6 border-border/70 bg-card/60 backdrop-blur-sm" data-testid="card-portfolio-currency-localization">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Globe className="w-4 h-4 text-primary" />
+                <h3 className="text-sm font-semibold text-foreground">Global Currency & Dividend Tax Localization</h3>
+                <Badge variant="outline" className="text-xs font-semibold" data-testid="badge-portfolio-reporting-currency">
+                  Reporting: {selectedReportingCurrency} ({CURRENCY_SYMBOLS[selectedReportingCurrency]})
+                </Badge>
+                {selectedReportingCurrency !== "USD" && (
+                  <Badge variant="secondary" className="text-xs font-mono" data-testid="badge-portfolio-fx-rate">
+                    1 USD = {FX_RATES_TO_USD[selectedReportingCurrency]} {selectedReportingCurrency}
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Normalize holdings, returns, and cross-border dividend withholding tax across 7 global currencies & Double Tax Treaties (DTAA).
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Quick Currency Pills */}
+              <div className="flex flex-wrap items-center gap-1">
+                {SUPPORTED_CURRENCIES.map((curr) => {
+                  const isActive = selectedReportingCurrency === curr;
+                  return (
+                    <button
+                      key={curr}
+                      type="button"
+                      onClick={() => setSelectedReportingCurrency(curr)}
+                      data-testid={`btn-portfolio-currency-${curr}`}
+                      className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                        isActive
+                          ? "bg-primary text-primary-foreground shadow-sm font-semibold"
+                          : "bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40"
+                      }`}
+                    >
+                      {curr}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Currency Select Dropdown */}
+              <select
+                aria-label="Portfolio Reporting Currency"
+                data-testid="select-portfolio-currency"
+                value={selectedReportingCurrency}
+                onChange={(e) => setSelectedReportingCurrency(e.target.value as SupportedCurrency)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground"
+              >
+                {SUPPORTED_CURRENCIES.map((curr) => (
+                  <option key={curr} value={curr}>
+                    {CURRENCY_LABELS[curr]}
+                  </option>
+                ))}
+              </select>
+
+              {/* Dividend Withholding Tax (WHT) Selector */}
+              <div className="flex items-center gap-1.5 border-l border-border/60 pl-3">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">Tax Treaty / WHT:</span>
+                <select
+                  aria-label="Dividend Withholding Tax Rate"
+                  data-testid="select-wht-rate"
+                  value={selectedWhtRate}
+                  onChange={(e) => {
+                    const rate = Number(e.target.value);
+                    setSelectedWhtRate(rate);
+                    if (rate === 15) setSelectedTreatyCountry("DTAA Standard");
+                    else if (rate === 30) setSelectedTreatyCountry("Statutory NRA");
+                    else if (rate === 0) setSelectedTreatyCountry("Tax Exempt / Domestic");
+                    else setSelectedTreatyCountry(`Treaty Rate (${rate}%)`);
+                  }}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground"
+                >
+                  <option value={15}>15% - Standard DTAA (US-India/US-CA/UK)</option>
+                  <option value={30}>30% - Non-Treaty Statutory (No W-8BEN)</option>
+                  <option value={0}>0% - Tax-Exempt / Domestic Payouts</option>
+                  <option value={20}>20% - Standard Withholding</option>
+                  <option value={25}>25% - Standard Treaty</option>
+                </select>
+                <Badge variant="outline" className="text-[11px] text-muted-foreground hidden sm:inline-flex" data-testid="badge-treaty-country">
+                  {selectedTreatyCountry}
+                </Badge>
+              </div>
+            </div>
+          </div>
+        </Card>
 
         {/* Portfolio Summary  */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -1519,7 +1687,7 @@ export default function Portfolio() {
                   {formatCurrency(dividendAnalytics.totalReceived)}
                 </div>
                 <div className="text-[11px] text-muted-foreground mt-1">
-                  Cumulative dividend cash flows
+                  Cumulative gross dividend cash flows
                 </div>
               </Card>
 
@@ -1529,7 +1697,7 @@ export default function Portfolio() {
                   {formatCurrency(dividendAnalytics.ttmReceived)}
                 </div>
                 <div className="text-[11px] text-muted-foreground mt-1">
-                  Trailing 12-month income
+                  Trailing 12-month gross income
                 </div>
               </Card>
 
@@ -1539,7 +1707,7 @@ export default function Portfolio() {
                   {dividendAnalytics.portfolioYieldPct.toFixed(2)}%
                 </div>
                 <div className="text-[11px] text-muted-foreground mt-1">
-                  Yield on invested capital
+                  Gross yield on invested capital
                 </div>
               </Card>
 
@@ -1550,6 +1718,69 @@ export default function Portfolio() {
                 </div>
                 <div className="text-[11px] text-muted-foreground mt-1">
                   Avg. monthly cash flow
+                </div>
+              </Card>
+            </div>
+
+            {/* Net vs Gross Cross-Border Dividend Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="p-4 border-emerald-500/30 bg-emerald-500/5" data-testid="metric-net-dividends">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Net Dividends Received</div>
+                  <Badge variant="outline" className="text-[10px] text-emerald-600 dark:text-emerald-400 border-emerald-500/40">
+                    Post-Tax
+                  </Badge>
+                </div>
+                <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(dividendAnalytics.netReceived)}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  Gross: {formatCurrency(dividendAnalytics.grossReceived)}
+                </div>
+              </Card>
+
+              <Card className="p-4 border-amber-500/30 bg-amber-500/5" data-testid="metric-wht-deducted">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs font-semibold text-amber-700 dark:text-amber-300">Withholding Tax (WHT)</div>
+                  <Badge variant="outline" className="text-[10px] text-amber-600 dark:text-amber-400 border-amber-500/40" data-testid="badge-wht-rate">
+                    {dividendAnalytics.whtRatePct}% Rate
+                  </Badge>
+                </div>
+                <div className="text-xl font-bold text-amber-600 dark:text-amber-400">
+                  {formatCurrency(dividendAnalytics.whtDeducted)}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  Withheld at source ({dividendAnalytics.treatyCountry})
+                </div>
+              </Card>
+
+              <Card className="p-4 border-blue-500/30 bg-blue-500/5" data-testid="metric-ftc-relief">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs font-semibold text-blue-700 dark:text-blue-300">FTC Relief Estimate</div>
+                  <Badge variant="outline" className="text-[10px] text-blue-600 dark:text-blue-400 border-blue-500/40">
+                    Tax Credit
+                  </Badge>
+                </div>
+                <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                  {formatCurrency(dividendAnalytics.ftcReliefEstimate)}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  Double taxation relief under DTAA
+                </div>
+              </Card>
+
+              <Card className="p-4" data-testid="metric-net-portfolio-yield">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs font-semibold text-foreground">Net Dividend Yield</div>
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                    Effective
+                  </Badge>
+                </div>
+                <div className="text-xl font-bold text-foreground">
+                  {dividendAnalytics.netPortfolioYieldPct.toFixed(2)}%
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  Gross Yield: {dividendAnalytics.portfolioYieldPct.toFixed(2)}%
                 </div>
               </Card>
             </div>
@@ -1613,13 +1844,16 @@ export default function Portfolio() {
                       <div key={h.holding_name} className="p-2.5 rounded-lg border border-border/60 bg-muted/20 space-y-1.5 text-xs">
                         <div className="flex items-center justify-between font-medium">
                           <span className="text-foreground truncate max-w-[200px]">{h.holding_name}</span>
-                          <span className="text-foreground font-semibold">{formatCurrency(h.total_amount)}</span>
+                          <div className="text-right">
+                            <span className="text-foreground font-semibold">{formatCurrency(h.net_amount ?? (h.total_amount * (1 - dividendAnalytics.whtRatePct / 100)))}</span>
+                            <span className="text-[10px] text-muted-foreground ml-1.5">(Gross: {formatCurrency(h.gross_amount ?? h.total_amount)})</span>
+                          </div>
                         </div>
                         <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                          <span>{h.payout_count} payout{h.payout_count !== 1 ? "s" : ""}</span>
+                          <span>{h.payout_count} payout{h.payout_count !== 1 ? "s" : ""} · WHT: {formatCurrency(h.wht_deducted ?? (h.total_amount * (dividendAnalytics.whtRatePct / 100)))}</span>
                           {h.invested_amount > 0 ? (
                             <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                              {h.yield_on_cost_pct.toFixed(2)}% Yield on Cost
+                              {(h.net_yield_on_cost_pct ?? (h.yield_on_cost_pct * (1 - dividendAnalytics.whtRatePct / 100))).toFixed(2)}% Net Yield · {h.yield_on_cost_pct.toFixed(2)}% Yield on Cost
                             </span>
                           ) : (
                             <span>Yield: —</span>
@@ -1725,11 +1959,14 @@ export default function Portfolio() {
                       </div>
                       <div className="text-right">
                         <div className="font-semibold text-emerald-600 dark:text-emerald-400">
-                          +{formatCurrency(tx.amount)}
+                          +{formatCurrency(tx.net_amount ?? tx.amount)}
                         </div>
-                        <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                          {tx.category}
-                        </Badge>
+                        <div className="text-[10px] text-muted-foreground flex items-center justify-end gap-1">
+                          {tx.wht_deducted ? <span>WHT: -{formatCurrency(tx.wht_deducted)}</span> : null}
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 text-muted-foreground">
+                            {tx.category}
+                          </Badge>
+                        </div>
                       </div>
                     </div>
                   ))}

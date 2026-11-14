@@ -31,6 +31,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -38,6 +39,7 @@ import {
 } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
+import { Switch } from "@/components/ui/Switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/Table";
@@ -65,6 +67,9 @@ import {
 } from "@/lib/apiClient";
 import { getActiveOrgId, setActiveOrgId } from "@/lib/orgContext";
 
+// Exhaustive array of API key scopes available for organization integrations.
+// Governs granular permissions for reading/writing workflows, usage, and transactions.
+// Used in API key creation dialogs to configure token access rights.
 const ALL_SCOPES: ApiKeyScope[] = [
   "usage:read",
   "workflows:read",
@@ -73,9 +78,15 @@ const ALL_SCOPES: ApiKeyScope[] = [
   "transactions:write",
 ];
 
+// Formats numeric monetary amounts as standard US Dollar currency strings.
+// Employs Intl.NumberFormat to render localized currency signs and commas.
+// Used for displaying team tier costs, credit balances, and platform usage.
 const formatUsd = (amount: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
 
+// Immutable empty fallback array for organizations listing query state.
+// Prevents unneeded empty array allocations during loading or initial render.
+// Guarantees memoization stability for active organization lookups.
 const EMPTY_ORGS: Array<{
   id: string;
   name: string;
@@ -88,6 +99,9 @@ const EMPTY_ORGS: Array<{
   is_default: boolean;
 }> = [];
 
+// Organization and tenant workspace management administration panel.
+// Facilitates tenant switching, team member invitations, role RBAC, and API keys.
+// Manages organization localization settings, currencies, and plan entitlements.
 export default function Organization() {
   const queryClient = useQueryClient();
   const configQuery = useAppConfig();
@@ -249,7 +263,7 @@ export default function Organization() {
   });
 
   const updateSettingsMutation = useMutation({
-    mutationFn: (input: { orgId: string; body: { currency?: string; locale?: string; timezone?: string } }) =>
+    mutationFn: (input: { orgId: string; body: { currency?: string; locale?: string; timezone?: string; aiLearningOptOut?: boolean } }) =>
       updateOrgSettings(input.orgId, input.body),
     onSuccess: async () => {
       setNotice("Organization settings updated.");
@@ -446,6 +460,7 @@ export default function Organization() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create organization</DialogTitle>
+                <DialogDescription>Set up a separate workspace for your financial records.</DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
                 <div>
@@ -518,6 +533,7 @@ export default function Organization() {
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Add member</DialogTitle>
+                    <DialogDescription>Choose who can access this workspace and their role.</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-3">
                     <div>
@@ -603,6 +619,30 @@ export default function Organization() {
                   />
                   <div className="mt-1 text-xs text-muted-foreground">Example: UTC, America/New_York</div>
                 </div>
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded-md border border-border p-3">
+                <div className="space-y-1">
+                  <Label htmlFor="ai-learning-opt-out">Opt out of AI learning</Label>
+                  <div className="text-xs text-muted-foreground">
+                    When on, feedback from this workspace is not shared with the AI learning loop and AI runs are not
+                    stored as learning traces. Feedback is still saved for your own history.
+                  </div>
+                </div>
+                <Switch
+                  id="ai-learning-opt-out"
+                  data-testid="settings-ai-learning-opt-out"
+                  checked={Boolean((activeOrg as any)?.ai_learning_opt_out)}
+                  disabled={!canAdmin || !activeOrgIdFromServer || updateSettingsMutation.isPending}
+                  onCheckedChange={(checked) =>
+                    activeOrgIdFromServer
+                      ? updateSettingsMutation.mutate({
+                          orgId: activeOrgIdFromServer,
+                          body: { aiLearningOptOut: Boolean(checked) },
+                        })
+                      : null
+                  }
+                />
               </div>
 
               <div className="flex justify-end">
@@ -716,6 +756,7 @@ export default function Organization() {
                 <DialogContent className="max-w-3xl">
                   <DialogHeader>
                     <DialogTitle>Integration history</DialogTitle>
+                    <DialogDescription>Review this workspace's integration activity and delivery results.</DialogDescription>
                   </DialogHeader>
                   {integrationHistoryQuery.isLoading ? (
                     <div className="text-sm text-muted-foreground">Loading history…</div>
@@ -904,6 +945,7 @@ export default function Organization() {
                 <DialogContent className="max-w-xl">
                   <DialogHeader>
                     <DialogTitle>Create API key</DialogTitle>
+                    <DialogDescription>Choose a name and limit this key to the permissions its integration needs.</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-3">
                     <div>

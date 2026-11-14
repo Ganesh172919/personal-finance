@@ -31,6 +31,9 @@ import { Schema, model, Document, Types } from "mongoose"; // MongoDB ODM
  *
  * Defines the structure of a chat session document in MongoDB.
  */
+// Defines TypeScript interface for AI conversation thread sessions.
+// Encapsulates conversation titles, message counters, summaries, and activity dates.
+// Tracks backend AI service session synchronization status and request IDs.
 export interface IChatSession {
   orgId: Types.ObjectId; // Organization that owns this chat session (multi-tenancy)
   userId: Types.ObjectId; // User who owns this conversation thread
@@ -55,6 +58,9 @@ export interface IChatSession {
  * Extends IChatSession with Mongoose Document methods and _id field.
  * This is the actual document type returned from MongoDB queries.
  */
+// Extends IChatSession with Mongoose Document properties and ObjectId identifier.
+// Enables runtime database querying, persistence, and typed document manipulation.
+// Represents individual chat session documents in MongoDB storage collection.
 export interface IChatSessionDocument extends IChatSession, Document {
   _id: Types.ObjectId; // MongoDB ObjectId primary key
 }
@@ -64,6 +70,9 @@ export interface IChatSessionDocument extends IChatSession, Document {
  *
  * Defines the structure, validation rules, and defaults for chat session documents.
  */
+// Defines Mongoose schema definition governing conversation thread sessions.
+// Enforces title length boundaries, default counters, and organizational scoping.
+// Automatically manages createdAt and updatedAt timestamps for session tracking.
 const chatSessionSchema = new Schema<IChatSessionDocument>(
   {
     // ---------------------------------------------------------------
@@ -188,6 +197,9 @@ const chatSessionSchema = new Schema<IChatSessionDocument>(
  * Scopes to the organization (multi-tenancy), filters by user, and sorts
  * by the most recently active session first.
  */
+// Compound index optimizing user chat session history listing queries.
+// Filters by organization and user while sorting sessions by latest activity.
+// Ensures fast session drawer and conversation switcher rendering in the UI.
 chatSessionSchema.index({ orgId: 1, userId: 1, lastMessageAt: -1 });
 
 /**
@@ -197,7 +209,13 @@ chatSessionSchema.index({ orgId: 1, userId: 1, lastMessageAt: -1 });
  * Used for CRUD operations on chat session data and as the parent container
  * for ChatMessage documents in the AI conversation system.
  */
+// Instantiates Mongoose model bound to MongoDB "ChatSession" collection.
+// Provides strongly typed querying, thread management, and archival operations.
+// Consumed by chat controllers, session managers, and context retrieval services.
 const ChatSessionModel = model<IChatSessionDocument>("ChatSession", chatSessionSchema);
+// Exports compiled ChatSessionModel instance as default module export.
+// Imported by chat routes, AI agent orchestrators, and session cleanup jobs.
+// Serves as primary data access gateway for managing conversation threads.
 export default ChatSessionModel;
 
 /**

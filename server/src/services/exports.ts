@@ -9,6 +9,9 @@ import UserModel from "../models/userModel";
 import { HttpError } from "../middleware/httpError";
 import { deleteGridFsFile, openGridFsUploadStream } from "./gridfs";
 
+// Represents the persisted binary file output of a completed export job.
+// Captures GridFS file identifier, target filename, MIME content type, and byte size.
+// Returned by artifact generation helpers to update export job records.
 type ExportArtifact = {
   fileId: mongoose.Types.ObjectId;
   filename: string;
@@ -16,8 +19,14 @@ type ExportArtifact = {
   bytes: number;
 };
 
+// Coerces an arbitrary unknown value safely into a standard string representation.
+// Translates null and undefined values cleanly into empty string literals.
+// Avoids runtime TypeError exceptions when handling unvalidated input fields.
 const safeString = (value: unknown) => (typeof value === "string" ? value : value == null ? "" : String(value));
 
+// Formats an arbitrary string or value into a compliant CSV cell string.
+// Encapsulates cells containing commas, quotes, or line breaks in double quotes.
+// Escapes nested quotation marks by doubling them per RFC 4180 standards.
 const toCsvCell = (value: unknown) => {
   const raw = safeString(value);
   if (raw === "") return "";
@@ -27,8 +36,14 @@ const toCsvCell = (value: unknown) => {
   return raw;
 };
 
+// Extracts the YYYY-MM-DD calendar date string from a Date instance.
+// Formats timestamps consistently for inclusion in export artifact file names.
+// Facilitates clean date sorting and standardized filename generation.
 const toDayKey = (value: Date) => value.toISOString().slice(0, 10);
 
+// Safely parses an unknown string representation into a valid JavaScript Date.
+// Validates time value finiteness to ensure parsed dates are completely valid.
+// Returns undefined when input is missing, empty, or non-parseable.
 const parseDateOrUndefined = (value: unknown) => {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -38,6 +53,9 @@ const parseDateOrUndefined = (value: unknown) => {
   return date;
 };
 
+// Parses a YYYY-MM period key string into UTC start and end Date boundaries.
+// Validates numeric month ranges and throws HTTP 400 errors on invalid formats.
+// Delivers exact date range boundaries for monthly aggregation queries.
 const parsePeriodKey = (value: string) => {
   const match = /^(\d{4})-(\d{2})$/.exec(value);
   if (!match) {
@@ -53,6 +71,9 @@ const parsePeriodKey = (value: string) => {
   return { start, end };
 };
 
+// Writes a buffer or string chunk to a stream while honoring backpressure.
+// Awaits drain events when internal stream buffers are saturated before continuing.
+// Guards against memory spikes when generating large streamed export files.
 const writeToStream = async (stream: NodeJS.WritableStream, chunk: string | Buffer) => {
   if (stream.write(chunk)) {
     return;
@@ -69,6 +90,9 @@ const writeToStream = async (stream: NodeJS.WritableStream, chunk: string | Buff
   ]);
 };
 
+// Normalizes and validates an unknown value against allowed transaction types.
+// Validates income, expense, and investment transaction classifications.
+// Returns undefined when the input value does not match known transaction types.
 const coerceTransactionType = (value: unknown): TransactionType | undefined => {
   const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
   if (raw === "income" || raw === "expense" || raw === "investment") {
@@ -77,6 +101,9 @@ const coerceTransactionType = (value: unknown): TransactionType | undefined => {
   return undefined;
 };
 
+// Validates and extracts the export job type enum from user parameters.
+// Ensures requested format matches supported CSV or PDF export varieties.
+// Throws an HTTP 400 error when encountering unrecognized export formats.
 const resolveExportType = (value: unknown): ExportJobType => {
   const raw = typeof value === "string" ? value.trim() : "";
   if (raw === "transactions_csv" || raw === "monthly_summary_pdf") {
@@ -85,6 +112,9 @@ const resolveExportType = (value: unknown): ExportJobType => {
   throw new HttpError(400, "INVALID_EXPORT_TYPE", "Invalid export type");
 };
 
+// Streams transaction history into a formatted CSV file stored in MongoDB GridFS.
+// Applies date range, category, and transaction type query filters.
+// Supports custom column projection selections while tracking total written bytes.
 const buildTransactionsCsv = async (params: {
   exportJobId: mongoose.Types.ObjectId;
   orgId: mongoose.Types.ObjectId;
@@ -205,6 +235,9 @@ const buildTransactionsCsv = async (params: {
   return { fileId, filename, contentType, bytes };
 };
 
+// Generates a comprehensive monthly financial summary report formatted as a PDF.
+// Aggregates net income, category expense rankings, and transaction volume.
+// Pipes rendered PDF binary streams directly into GridFS storage buckets.
 const buildMonthlySummaryPdf = async (params: {
   exportJobId: mongoose.Types.ObjectId;
   orgId: mongoose.Types.ObjectId;
@@ -359,6 +392,9 @@ const buildMonthlySummaryPdf = async (params: {
   return { fileId, filename, contentType, bytes };
 };
 
+// Executes an asynchronous export job to generate requested CSV or PDF artifacts.
+// Updates execution progress statuses, timestamps, and error messages in the database.
+// Links successfully generated GridFS file artifacts to the completed export job record.
 export const processExportJob = async (exportJobId: string) => {
   if (!mongoose.Types.ObjectId.isValid(exportJobId)) {
     throw new HttpError(400, "INVALID_EXPORT_JOB_ID", "Invalid export job id");

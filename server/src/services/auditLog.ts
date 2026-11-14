@@ -2,6 +2,9 @@ import mongoose from "mongoose";
 
 import AuditEventModel, { type AuditActorType } from "../models/auditEventModel";
 
+// Records an immutable audit event for security and compliance tracking.
+// Persists the actor identity, action type, affected resource, and metadata.
+// Returns the saved audit record object or null if persistence encounters an error.
 export const recordAuditEvent = async (params: {
   orgId: mongoose.Types.ObjectId;
   actorType: AuditActorType;

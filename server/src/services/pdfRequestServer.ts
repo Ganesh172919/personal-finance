@@ -72,8 +72,14 @@ import PDFDocument from "pdfkit";
 
 import { deleteGridFsFile, openGridFsUploadStream } from "./gridfs";
 
+// Sanitizes incoming text by normalizing CRLF newline breaks and stripping null bytes.
+// Ensures consistent newline formatting across multi-platform client inputs.
+// Trims leading and trailing whitespace characters from input strings.
 const normalizeWhitespace = (value: string) => value.replace(/\r\n/g, "\n").replace(/\u0000/g, "").trim();
 
+// Converts raw document titles into file-system friendly snake_case slugs.
+// Replaces non-alphanumeric characters with underscores and bounds character length.
+// Produces standardized filenames for generated PDF documents.
 const slugify = (value: string) =>
   value
     .toLowerCase()
@@ -81,8 +87,14 @@ const slugify = (value: string) =>
     .replace(/^_+|_+$/g, "")
     .slice(0, 60);
 
+// Generates a sanitized base filename stem for exported PDF files.
+// Slugs input titles or defaults to a standardized document identifier.
+// Prevents filesystem path traversal and illegal character collisions.
 const sanitizeFilenameStem = (value: string) => slugify(value) || "requested_document";
 
+// Parses raw narrative prompt text into structured titled sections.
+// Groups paragraphs separated by double newlines and detects markdown headings.
+// Prepares hierarchical section arrays for downstream PDF canvas rendering.
 const sectionize = (promptText: string) => {
   const normalized = normalizeWhitespace(promptText);
   if (!normalized) return [];
@@ -105,6 +117,9 @@ const sectionize = (promptText: string) => {
     });
 };
 
+// Generates a styled A4 PDF document and streams binary chunks directly to GridFS.
+// Applies FinWise branding, section headings, bulleted lists, and metadata footers.
+// Cleans up partial GridFS artifacts if an error occurs during PDF generation.
 const writePdfArtifact = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -223,6 +238,9 @@ const writePdfArtifact = async (params: {
   };
 };
 
+// Renders and stores an exportable PDF document from a user-supplied text request.
+// Delegates document generation and GridFS upload to the underlying writer helper.
+// Returns file identifiers, filenames, MIME types, and total byte lengths.
 export const renderPdfFromTextRequest = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -234,4 +252,7 @@ export const renderPdfFromTextRequest = async (params: {
   includeRequestMetadata?: boolean;
 }) => writePdfArtifact(params);
 
+// Previews structured section breakdowns parsed from raw text prompts.
+// Breaks content into headings and paragraphs without generating binary PDFs.
+// Enables frontend clients to inspect document structures prior to PDF compilation.
 export const previewPdfRequestSections = (promptText: string) => sectionize(promptText);

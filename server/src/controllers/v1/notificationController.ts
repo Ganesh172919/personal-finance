@@ -24,6 +24,9 @@ import NotificationModel from "../../models/notificationModel";
 import type { IUserDocument } from "../../models/userModel";
 import { HttpError } from "../../middleware/httpError";
 
+// Validates that organization context exists on the incoming request payload.
+// Throws a 401 unauthorized error if the organization context is omitted.
+// Returns the active organization ID parsed as a MongoDB ObjectId instance.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -31,6 +34,9 @@ const requireOrgContext = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Transforms a raw notification database document into a sanitized API response.
+// Extracts notification status, subject title, body message, and read timestamp.
+// Guarantees consistent null-fallback attributes across client-facing responses.
 const mapNotification = (row: any) => ({
   id: String(row._id),
   status: String(row.status || "unread"),
@@ -41,6 +47,9 @@ const mapNotification = (row: any) => ({
   metadata: row.metadata || {},
 });
 
+// Retrieves a chronological list of user notifications within the organization.
+// Filters notifications optionally by read status and respects maximum item limits.
+// Returns an array of formatted notification records sorted from newest to oldest.
 export const listNotifications = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const user = req.user as IUserDocument | undefined;
@@ -67,6 +76,9 @@ export const listNotifications = async (req: Request, res: Response) => {
   });
 };
 
+// Marks a specific organization notification as read by the authenticated recipient.
+// Validates notification identifier format and verifies user ownership of the item.
+// Updates status to read with current timestamp and returns the modified notification.
 export const markNotificationRead = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const user = req.user as IUserDocument | undefined;

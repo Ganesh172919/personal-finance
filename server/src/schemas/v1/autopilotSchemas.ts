@@ -20,6 +20,9 @@ import { z } from "zod";
 
 const objectIdRegex = /^[a-f\d]{24}$/i;
 
+// Validates request payloads initiating an autonomous AI financial planning run.
+// Accepts natural language user goals bounded between 1 and 4000 characters.
+// Supports optional narrative flags controlling formatting verbosity in responses.
 export const autopilotPlanBodySchema = z
   .object({
     goal: z.string().trim().min(1).max(4000),
@@ -32,12 +35,18 @@ export const autopilotPlanBodySchema = z
   })
   .strict();
 
+// Validates request payloads referencing an active autopilot execution run.
+// Enforces standard 24-character hexadecimal MongoDB ObjectId string syntax.
+// Ensures consistent run identifier validation across execution and simulation steps.
 export const autopilotRunIdBodySchema = z
   .object({
     run_id: z.string().regex(objectIdRegex, "Invalid run_id"),
   })
   .strict();
 
+// Validates user approval payloads authorizing proposed autopilot tool calls.
+// Requires either an explicit approve_all flag or a non-empty array of tool call IDs.
+// Enforces cross-field constraints using superRefine to prevent ambiguous approvals.
 export const autopilotApproveBodySchema = z
   .object({
     run_id: z.string().regex(objectIdRegex, "Invalid run_id"),
