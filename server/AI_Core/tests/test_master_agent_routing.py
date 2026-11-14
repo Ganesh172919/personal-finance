@@ -114,3 +114,17 @@ def test_savings_concept_comparison_routes_to_education_without_generic_example_
     assert agent.determine_analysis_type(question, {"age": 30}) == AnalysisType.FINANCIAL_EDUCATION
     assert education_follow_up("Give me a simple example.", [{"role": "user", "content": question}]) == [question]
 
+
+def test_definition_follow_up_classifies_a_mixed_expense():
+    example = "What is the difference between a fixed expense and a variable expense?"
+    question = ("Using those definitions, how should I classify an electricity bill "
+                "with a fixed service charge and metered usage? Answer in one sentence.")
+    history = [{"role": "user", "content": example}]
+    assert education_follow_up(question, history) == [example]
+    assert not education_follow_up(
+        "Using those definitions, how should I classify the following items from my ledger?", history,
+    )
+    assert MasterFinancialStrategistAgent().determine_analysis_type(
+        question, {"age": 30}, conversation_history=history,
+    ) == AnalysisType.FINANCIAL_EDUCATION
+

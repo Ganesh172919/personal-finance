@@ -108,6 +108,11 @@ _PERSONAL_DEBT_ACTION = re.compile(
     re.I,
 )
 _PERSONAL = re.compile(r"\b(?:my|mine|our|ledger|saved transactions?|attached|should i|create|delete|transfer)\b", re.I)
+_CLASSIFY_EXAMPLE = re.compile(
+    r"^using (?:those|these|the) definitions,?\s+(?:how should i classify|how would you classify)\s+"
+    r"(?:an?|the following)\s+",
+    re.I,
+)
 _EDUCATION_FOLLOW_UP = re.compile(
     r"^(?:(?:and )?(?:what|how) (?:about|if)\b|and (?:after|if|over|for|at)\b|"
     r"(?:can you )?(?:explain (?:that|it)|give (?:me )?(?:(?:a|one) (?:generic |simple |worked |hypothetical )?|an )example\b|"
@@ -126,7 +131,10 @@ def is_illustrative_education(question: str) -> bool:
 
 def education_follow_up(question: str, history: Optional[list[dict[str, str]]]) -> list[str]:
     """Keep a short chain of user examples when answering an educational follow-up."""
-    if not _EDUCATION_FOLLOW_UP.search((question or "").strip()) or _PERSONAL.search(question):
+    question = (question or "").strip()
+    example_prefix = _CLASSIFY_EXAMPLE.match(question)
+    subject = question[example_prefix.end():] if example_prefix else question
+    if (not example_prefix and not _EDUCATION_FOLLOW_UP.search(question)) or _PERSONAL.search(subject):
         return []
     turns = [turn.get("content", "") for turn in (history or []) if turn.get("role") == "user"]
     context = []
