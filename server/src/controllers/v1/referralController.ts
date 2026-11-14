@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Referral Controller (v1)
+ *
+ * Referral program: get your referral code/share URL, and redeem a referral code
+ * to receive rewards (free months, feature units).
+ *
+ * Routes served:
+ *   GET  /api/v1/referrals/my     - getMyReferral
+ *   POST /api/v1/referrals/redeem - redeemReferral
+ *
+ * Key patterns:
+ *   - Referral codes are per-org (generated lazily on first access)
+ *   - Share URL includes the referral code as a query parameter
+ *   - Redemption is idempotent (re-redeeming returns existing result)
+ *   - Rewards defined as constants: REFERRAL_REWARD_MONTHS and REFERRAL_REWARD_UNITS
+ *   - Both referrer and referred org receive rewards on successful redemption
+ *
+ * @module controllers/v1/referralController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -12,6 +32,9 @@ import {
   redeemReferralCodeForOrg,
 } from "../../services/referrals";
 
+// Validates and extracts the active organization identifier from request context.
+// Ensures presence of organization metadata and confirms valid ObjectId formatting.
+// Returns the resolved organization ID as a typed MongoDB ObjectId instance.
 const requireOrg = (req: Request) => {
   if (!req.org?.orgId) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -24,6 +47,9 @@ const requireOrg = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Retrieves referral program information, invite links, and statistics for the organization.
+// Generates or fetches unique referral codes and formats user registration share links.
+// Returns referral stats including redemption counts, referrer history, and reward terms.
 export const getMyReferral = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -55,6 +81,9 @@ export const getMyReferral = async (req: Request, res: Response) => {
   });
 };
 
+// Redeems a referral code to apply promotional rewards to the claimant organization.
+// Validates referral code applicability and idempotently credits bonus months or units.
+// Returns status indicating whether the redemption was applied along with reward details.
 export const redeemReferral = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {

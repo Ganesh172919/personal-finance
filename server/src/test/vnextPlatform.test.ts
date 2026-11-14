@@ -38,7 +38,7 @@ describe("vNext platform surface", () => {
 
   it("exposes enterprise tier and expanded usage limits", async () => {
     const plans = await request(app)
-      .get("/api/v1/plans")
+      .get("/api/plans")
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);
@@ -46,7 +46,7 @@ describe("vNext platform surface", () => {
     expect(plans.body.plans.some((plan: any) => plan.id === "enterprise")).toBe(true);
 
     const entitlements = await request(app)
-      .get("/api/v1/entitlements/me")
+      .get("/api/entitlements/me")
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);
@@ -63,7 +63,7 @@ describe("vNext platform surface", () => {
 
   it("manages feature flags, plugins, integrations, automation events, and analytics", async () => {
     await request(app)
-      .put("/api/v1/feature-flags/automation.engine.v2")
+      .put("/api/feature-flags/automation.engine.v2")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -71,7 +71,7 @@ describe("vNext platform surface", () => {
       .expect(201);
 
     const flags = await request(app)
-      .get("/api/v1/feature-flags")
+      .get("/api/feature-flags")
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);
@@ -80,7 +80,7 @@ describe("vNext platform surface", () => {
     expect(flags.body.flags[0].enabled).toBe(true);
 
     const catalog = await request(app)
-      .get("/api/v1/marketplace/catalog")
+      .get("/api/marketplace/catalog")
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);
@@ -88,7 +88,7 @@ describe("vNext platform surface", () => {
     expect(catalog.body.plugins.length).toBeGreaterThan(0);
 
     await request(app)
-      .post("/api/v1/marketplace/install")
+      .post("/api/marketplace/install")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -96,7 +96,7 @@ describe("vNext platform surface", () => {
       .expect(201);
 
     const plugins = await request(app)
-      .get("/api/v1/plugins")
+      .get("/api/plugins")
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);
@@ -104,7 +104,7 @@ describe("vNext platform surface", () => {
     expect(plugins.body.plugins[0].plugin_key).toBe("finwise.connector.bank_stub");
 
     await request(app)
-      .post("/api/v1/plugins/finwise.connector.bank_stub/update")
+      .post("/api/plugins/finwise.connector.bank_stub/update")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -112,7 +112,15 @@ describe("vNext platform surface", () => {
       .expect(200);
 
     await request(app)
-      .post("/api/v1/integrations/bank_stub/sync")
+      .post("/api/integrations/bank_stub/connect")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .set("X-Org-Id", orgId)
+      .send({})
+      .expect(200);
+
+    await request(app)
+      .post("/api/integrations/bank_stub/sync")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -120,7 +128,7 @@ describe("vNext platform surface", () => {
       .expect(202);
 
     const integrationHistory = await request(app)
-      .get("/api/v1/integrations/bank_stub/history")
+      .get("/api/integrations/bank_stub/history")
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);
@@ -128,14 +136,14 @@ describe("vNext platform surface", () => {
     expect(integrationHistory.body.history[0].records_synced).toBe(12);
 
     const automationEvents = await request(app)
-      .get("/api/v1/automation/events")
+      .get("/api/automation/events")
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);
     expect(automationEvents.body.events.some((event: any) => event.event_type === "TransactionCreated")).toBe(true);
 
     await request(app)
-      .post("/api/v1/automation/events/emit")
+      .post("/api/automation/events/emit")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -148,7 +156,7 @@ describe("vNext platform surface", () => {
       .expect(202);
 
     const analytics = await request(app)
-      .get("/api/v1/analytics/overview")
+      .get("/api/analytics/overview")
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);
@@ -158,14 +166,14 @@ describe("vNext platform surface", () => {
     expect(analytics.body.usage.connector_sync_records.units).toBe(12);
 
     await request(app)
-      .post("/api/v1/plugins/finwise.connector.bank_stub/uninstall")
+      .post("/api/plugins/finwise.connector.bank_stub/uninstall")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
       .expect(200);
 
     await request(app)
-      .delete("/api/v1/feature-flags/automation.engine.v2")
+      .delete("/api/feature-flags/automation.engine.v2")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -174,7 +182,7 @@ describe("vNext platform surface", () => {
 
   it("meters api key requests and workflow runs in usage", async () => {
     const createKey = await request(app)
-      .post("/api/v1/api-keys")
+      .post("/api/api-keys")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -185,13 +193,13 @@ describe("vNext platform surface", () => {
     expect(apiKey.length).toBeGreaterThan(20);
 
     await request(app)
-      .get("/api/v1/usage/ledger")
+      .get("/api/usage/ledger")
       .set("X-Org-Id", orgId)
       .set("X-API-Key", apiKey)
       .expect(200);
 
     const workflow = await request(app)
-      .post("/api/v1/workflows")
+      .post("/api/workflows")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -214,7 +222,7 @@ describe("vNext platform surface", () => {
     expect(workflowId.length).toBeGreaterThan(10);
 
     await request(app)
-      .post(`/api/v1/workflows/${workflowId}/run`)
+      .post(`/api/workflows/${workflowId}/run`)
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -222,7 +230,7 @@ describe("vNext platform surface", () => {
       .expect(200);
 
     const entitlements = await request(app)
-      .get("/api/v1/entitlements/me")
+      .get("/api/entitlements/me")
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);

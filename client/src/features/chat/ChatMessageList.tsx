@@ -1,26 +1,66 @@
+/**
+ * @fileoverview Chat Message List Component
+ *
+ * Renders the scrollable list of chat messages with auto-scroll behavior.
+ * Shows a typing indicator when the AI is processing.
+ *
+ * AUTO-SCROLL:
+ * Keeps a newly completed answer's beginning visible. Pending sends follow
+ * the typing indicator without pulling the reader down on every phase update.
+ *
+ * LOADING STATES:
+ * - isLoading: Initial message load (shows skeleton)
+ * - isSending: Message being processed (shows TypingIndicator)
+ *
+ * @module features/chat/ChatMessageList
+ */
+
 import { useEffect, useRef } from "react";
 import { AnimatePresence } from "framer-motion";
 import { ChatMessage } from "./ChatMessage";
-import { TypingIndicator } from "./TypingIndicator";
-import type { IChatMessage } from "@/types/chat.types";
-import { ScrollArea } from "@/components/ui/ScrollArea";
+import { TypingIndicator, type WorkflowPhase } from "./TypingIndicator";
+import type { IChatAttachment, IChatMessage } from "@/types/chat.types";
 
+// Property structure defining parameters for the chat message scroll list.
+// Supplies the conversation message array, loading flags, and workflow phase states.
+// Configures document action handlers and disabling switches for active composer turns.
 interface ChatMessageListProps {
   messages: IChatMessage[];
   isLoading: boolean;
   isSending: boolean;
+  currentPhase?: WorkflowPhase | null;
+  currentAgent?: string | null;
+  onUseDocument?: (file: IChatAttachment) => void;
+  documentActionsDisabled?: boolean;
 }
 
-export function ChatMessageList({ messages, isLoading, isSending }: ChatMessageListProps) {
+// Scrollable conversation history container handling message layout and auto-scrolling.
+// Positions viewports automatically to maintain newly delivered message readability.
+// Renders animated typing indicators, loading placeholders, and discrete message bubbles.
+export function ChatMessageList({
+  messages,
+  isLoading,
+  isSending,
+  currentPhase,
+  currentAgent,
+  onUseDocument,
+  documentActionsDisabled,
+}: ChatMessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const latestMessageRef = useRef<HTMLDivElement>(null);
+  const latestMessage = messages[messages.length - 1];
 
-  // Auto-scroll to bottom when new messages arrive
+  // Long answers have sources and action cards below them; scrolling to their
+  // bottom hides the actual answer. Reveal its beginning on completion/reload.
   useEffect(() => {
-    if (bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: "smooth" });
+    if (isLoading) return;
+    if (!isSending && latestMessage?.role === "assistant") {
+      latestMessageRef.current?.scrollIntoView({ behavior: "instant", block: "start" });
+    } else {
+      bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
     }
-  }, [messages, isSending]);
+  }, [latestMessage?.id, latestMessage?.role, isSending, isLoading]);
 
   if (isLoading) {
     return (
@@ -42,21 +82,25 @@ export function ChatMessageList({ messages, isLoading, isSending }: ChatMessageL
   }
 
   return (
-    <ScrollArea className="flex-1" ref={scrollRef}>
-      <div className="py-4">
-        {messages.map((message) => (
-          <ChatMessage
-            key={message.id}
-            message={message}
-          />
+    <div role="region" aria-label="Conversation messages" tabIndex={0} className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary" ref={scrollRef}>
+      <div className="py-3">
+        {messages.map((message, index) => (
+          <div key={message.id} ref={index === messages.length - 1 ? latestMessageRef : undefined}>
+            <ChatMessage message={message} onUseDocument={onUseDocument} isSending={isSending || documentActionsDisabled} />
+          </div>
         ))}
         
         <AnimatePresence>
-          {isSending && <TypingIndicator />}
+          {isSending && (
+            <TypingIndicator 
+              phase={currentPhase || undefined} 
+              agentName={currentAgent || undefined} 
+            />
+          )}
         </AnimatePresence>
         
         <div ref={bottomRef} />
       </div>
-    </ScrollArea>
+    </div>
   );
 }

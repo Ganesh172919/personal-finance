@@ -47,7 +47,7 @@ describe("autopilot API", () => {
 
   it("creates a plan, simulates, approves, and executes tool calls", async () => {
     const planRes = await request(app)
-      .post("/api/v1/autopilot/plan")
+      .post("/api/autopilot/plan")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -95,7 +95,7 @@ describe("autopilot API", () => {
     );
 
     const simRes = await request(app)
-      .post("/api/v1/autopilot/simulate")
+      .post("/api/autopilot/simulate")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -107,7 +107,7 @@ describe("autopilot API", () => {
     expect(simRes.body.run?.simulations?.[0]?.ok).toBe(true);
 
     const approveRes = await request(app)
-      .post("/api/v1/autopilot/approve")
+      .post("/api/autopilot/approve")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -118,7 +118,7 @@ describe("autopilot API", () => {
     expect(approveRes.body.run?.status).toBe("approved");
 
     const execRes = await request(app)
-      .post("/api/v1/autopilot/execute")
+      .post("/api/autopilot/execute")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgId)
@@ -131,7 +131,7 @@ describe("autopilot API", () => {
     expect(execRes.body.run?.executions?.[0]?.tool).toBe("workflows.create");
 
     const workflowList = await request(app)
-      .get("/api/v1/workflows")
+      .get("/api/workflows")
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);
@@ -140,7 +140,7 @@ describe("autopilot API", () => {
     expect(workflowList.body.workflows.some((wf: any) => wf.name === "Autopilot weekly review")).toBe(true);
 
     const getRes = await request(app)
-      .get(`/api/v1/autopilot/runs/${runId}`)
+      .get(`/api/autopilot/runs/${runId}`)
       .set("Cookie", [cookie])
       .set("X-Org-Id", orgId)
       .expect(200);

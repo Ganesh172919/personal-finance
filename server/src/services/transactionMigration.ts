@@ -5,6 +5,9 @@ import FinancialProfileModel, {
 } from "../models/financialProfileModel";
 import TransactionModel, { TransactionType } from "../models/transactionModel";
 
+// Encapsulates the quantitative outcome of a profile transaction migration.
+// Tracks embedded legacy counts, newly attempted insertions, and final totals.
+// Indicates whether an active data migration execution was performed.
 type MigrationResult = {
   migrated: boolean;
   embeddedCount: number;
@@ -12,6 +15,9 @@ type MigrationResult = {
   totalTransactions: number;
 };
 
+// Normalizes legacy transaction string values into typed transaction categories.
+// Validates whether the input matches income, expense, or investment types.
+// Defaults unrecognized legacy category values to standard expense items.
 const toTransactionType = (value: unknown): TransactionType => {
   if (value === "income" || value === "expense" || value === "investment") {
     return value;
@@ -19,6 +25,9 @@ const toTransactionType = (value: unknown): TransactionType => {
   return "expense";
 };
 
+// Transforms embedded legacy profile transaction subdocuments into collection models.
+// Associates tenant organization and user identifiers with each migrated record.
+// Retains historical legacy identifiers to ensure migration idempotency.
 const mapLegacyTransaction = (params: { orgId: Types.ObjectId; userId: Types.ObjectId }, tx: ITransaction) => ({
   orgId: params.orgId,
   userId: params.userId,
@@ -30,6 +39,9 @@ const mapLegacyTransaction = (params: { orgId: Types.ObjectId; userId: Types.Obj
   legacyId: tx._id
 });
 
+// Inspects an error to determine if it represents a MongoDB duplicate key collision.
+// Evaluates both top-level error codes and writeErrors collection structures.
+// Allows unordered bulk inserts to continue gracefully when records already exist.
 const isDuplicateKeyError = (error: unknown) => {
   const err = error as any;
   return err?.code === 11000 || (Array.isArray(err?.writeErrors) && err.writeErrors.some((e: any) => e?.code === 11000));
@@ -39,6 +51,9 @@ const isDuplicateKeyError = (error: unknown) => {
  * Migrates embedded FinancialProfile.transactions into the Transaction collection for a single profile.
  * Safe to call repeatedly (legacyId unique sparse index + ordered:false insertMany).
  */
+// Migrates embedded profile transactions into the standalone transaction collection.
+// Performs unordered bulk inserts ignoring duplicate legacy transaction keys.
+// Empties legacy embedded arrays and marks migration timestamps upon success.
 export const ensureProfileTransactionsMigrated = async (
   profile: IFinancialProfileDocument
 ): Promise<MigrationResult> => {
@@ -91,6 +106,9 @@ export const ensureProfileTransactionsMigrated = async (
   };
 };
 
+// Resolves a user financial profile and coordinates legacy transaction migration.
+// Queries the database by tenant organization and user identifier scope.
+// Returns migration statistics or null if no financial profile exists.
 export const ensureUserTransactionsMigrated = async (params: {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;

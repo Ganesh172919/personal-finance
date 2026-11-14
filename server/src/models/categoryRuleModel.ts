@@ -1,5 +1,8 @@
 import { Schema, model, Document, Types } from "mongoose";
 
+// Defines TypeScript contract for automated transaction categorization rules.
+// Matches description or raw merchant strings and applies target category classifications.
+// Supports pattern evaluation heuristics including exact, prefix, contains, and regex.
 export interface ICategoryRule {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;
@@ -22,10 +25,16 @@ export interface ICategoryRule {
   updatedAt: Date;
 }
 
+// Extends ICategoryRule with Mongoose Document properties and ObjectId primary key.
+// Enables runtime database querying, persistence methods, and schema validation.
+// Represents individual categorization rule documents within MongoDB storage.
 export interface ICategoryRuleDocument extends ICategoryRule, Document {
   _id: Types.ObjectId;
 }
 
+// Mongoose schema definition governing transaction categorization rule persistence.
+// Enforces pattern string limits, match type enumerations, and priority ordering.
+// Automatically manages record creation and modification timestamps for auditability.
 const categoryRuleSchema = new Schema<ICategoryRuleDocument>(
   {
     orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
@@ -56,8 +65,17 @@ const categoryRuleSchema = new Schema<ICategoryRuleDocument>(
   { timestamps: true },
 );
 
+// Compound indexes optimizing rule evaluation sequences and active rule lookups.
+// Sorts rules by descending priority to evaluate high-precedence heuristics first.
+// Accelerates retrieval of enabled rules scoped to user and tenant organization.
 categoryRuleSchema.index({ orgId: 1, userId: 1, priority: -1 });
 categoryRuleSchema.index({ orgId: 1, userId: 1, enabled: 1 });
 
+// Instantiates Mongoose model bound to MongoDB "CategoryRule" collection.
+// Provides strongly typed querying, rule matching, and usage counter increments.
+// Consumed by bank import pipelines and automatic transaction categorization logic.
 const CategoryRuleModel = model<ICategoryRuleDocument>("CategoryRule", categoryRuleSchema);
+// Exports compiled CategoryRuleModel instance as default module export.
+// Imported by transaction ingestion controllers, rule editors, and ledger workers.
+// Serves as central database access gateway for automated categorization rules.
 export default CategoryRuleModel;

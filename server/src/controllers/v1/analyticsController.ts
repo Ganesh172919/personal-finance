@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Analytics Controller (v1)
+ *
+ * Organization-level analytics overview. Aggregates metrics across workflows,
+ * exports, integrations, plugins, feature flags, and usage for the admin dashboard.
+ *
+ * Routes served:
+ *   GET /api/v1/analytics/overview - getAnalyticsOverview (admin)
+ *
+ * Key patterns:
+ *   - Requires admin role for the organization
+ *   - Aggregates 30-day counts for workflows, exports, integrations, plugins
+ *   - Usage data grouped by feature from the usage ledger for the current period
+ *   - Returns resolved entitlements (plan, limits, remaining) alongside metrics
+ *
+ * @module controllers/v1/analyticsController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -18,6 +36,9 @@ const roleRank: Record<"member" | "admin" | "owner", number> = {
   owner: 3,
 };
 
+// Validates that the requesting caller possesses administrative permissions for the tenant.
+// Inspects organization membership hierarchy to ensure admin or owner authorization.
+// Throws an unauthorized or forbidden HTTP error if credentials fail verification.
 const requireOrgAdmin = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -28,6 +49,9 @@ const requireOrgAdmin = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Compiles organization-wide analytics spanning workflows, integrations, and metered usage.
+// Gathers 30-day activity statistics alongside current billing period ledger metrics.
+// Returns an administrative telemetry snapshot comparing usage against active limits.
 export const getAnalyticsOverview = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;

@@ -1,7 +1,13 @@
 import { GrowthStory, IGrowthStory } from '../models/growthStoryModel';
 import { FilterQuery } from 'mongoose';
 
+// Service managing user growth and financial milestone story publications.
+// Handles searching, filtering, aggregating categories, and engagement metrics.
+// Provides repository operations for public and featured community narratives.
 export class GrowthStoryService {
+  // Fetches paginated lists of published financial growth stories.
+  // Applies dynamic category filters, search terms, and popularity sorts.
+  // Excludes long-form narrative bodies to optimize response payload weight.
   async getStories(params: {
     page?: number;
     limit?: number;
@@ -68,6 +74,9 @@ export class GrowthStoryService {
     };
   }
 
+  // Retrieves a single growth story using its unique URL-friendly slug.
+  // Optionally increments total views counter asynchronously upon retrieval.
+  // Returns the full story document including detailed markdown journey notes.
   async getStoryBySlug(slug: string, incrementView: boolean = true) {
     const story = await GrowthStory.findOne({ slug, isPublished: true }).lean();
 
@@ -80,6 +89,9 @@ export class GrowthStoryService {
     return story;
   }
 
+  // Aggregates story counts categorized by financial growth topic.
+  // Computes distribution metrics across active published stories.
+  // Returns sorted category summaries for catalog navigation interfaces.
   async getCategories() {
     return GrowthStory.aggregate([
       { $match: { isPublished: true } },
@@ -89,6 +101,9 @@ export class GrowthStoryService {
     ]);
   }
 
+  // Increments the positive engagement like count for a growth story.
+  // Validates story existence and persists updated counts to the database.
+  // Returns the updated total number of likes received by the story.
   async toggleLike(storyId: string) {
     const story = await GrowthStory.findById(storyId);
     if (!story) throw new Error('Story not found');
@@ -98,6 +113,9 @@ export class GrowthStoryService {
     return story.likes;
   }
   
+  // Creates and persists a new growth story document in the database.
+  // Generates unique URL slugs from story titles with collision avoidance.
+  // Saves validated data attributes and returns the newly created model.
   async createStory(storyData: Partial<IGrowthStory>) {
       if (!storyData.slug && storyData.title) {
           storyData.slug = storyData.title
@@ -117,4 +135,7 @@ export class GrowthStoryService {
   }
 }
 
+// Singleton instance of the growth story management service.
+// Shared across HTTP controllers for content query and moderation workflows.
+// Encapsulates database operations for the growth stories platform feature.
 export const growthStoryService = new GrowthStoryService();

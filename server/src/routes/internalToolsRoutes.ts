@@ -1,3 +1,19 @@
+/**
+ * @fileoverview Internal tool execution routes used by the AI Core service to simulate
+ * and execute tool calls on behalf of users. These endpoints are NOT part of the public
+ * API and are protected by a shared bearer token (AI_CORE_TOOLS_TOKEN).
+ *
+ * Endpoints:
+ *   GET    /catalog     - List all available tool definitions in the catalog
+ *   POST   /simulate    - Simulate a tool call without side effects (dry-run)
+ *   POST   /execute     - Execute a tool call with real side effects
+ *
+ * Middleware:
+ *   - Custom bearer-token authentication (internalToolsAuth) using AI_CORE_TOOLS_TOKEN
+ *   - Zod validation (toolSchemas) on request body
+ *
+ * Controllers: Inlined handlers that delegate to toolExecutor and orgService
+ */
 import { Router, type RequestHandler } from "express";
 import mongoose from "mongoose";
 
@@ -9,6 +25,9 @@ import { resolveOrgForRequest } from "../services/orgService";
 import { executeToolCall, simulateToolCall } from "../services/toolExecutor";
 import { listToolCatalog } from "../services/tools/registry";
 
+// Enforces pre-shared bearer token authorization for private AI Core service-to-service endpoints.
+// Verifies incoming Bearer authorization headers against the configured AI_CORE_TOOLS_TOKEN secret.
+// Rejects unauthorized access with 403 Forbidden or 404 if internal tooling is unconfigured.
 const internalToolsAuth: RequestHandler = (req, res, next) => {
   const env = getEnv();
   if (!env.AI_CORE_TOOLS_TOKEN) {
@@ -27,8 +46,14 @@ const internalToolsAuth: RequestHandler = (req, res, next) => {
   next();
 };
 
+// Initializes an Express router dedicated to internal machine-to-machine AI tool invocation.
+// Segregates automated tool dry-runs and privileged mutation execution from public HTTP routes.
+// Exposes service interfaces consumed by external Python AI Core subagents.
 const router = Router();
 
+// Returns the registered catalog of executable tools available to AI Core reasoning agents.
+// Gated by internalToolsAuth middleware to restrict catalog schema discovery to authenticated services.
+// Serializes tool definitions, input schemas, and permission requirements into a JSON response.
 router.get(
   "/catalog",
   internalToolsAuth,
@@ -40,6 +65,9 @@ router.get(
   })
 );
 
+// Simulates an automated tool execution dry-run without producing persistent database side effects.
+// Resolves tenant membership permissions for the target user before evaluating execution safety.
+// Returns predicted mutation effects, policy approvals, and validation outcomes to the caller.
 router.post(
   "/simulate",
   internalToolsAuth,
@@ -66,6 +94,9 @@ router.post(
   })
 );
 
+// Executes a live tool call with persistent database mutations and audit ledger logging.
+// Validates tenant membership roles, confirmation status, and optional idempotency keys.
+// Invokes executeToolCall to perform business actions and returns the structured result payload.
 router.post(
   "/execute",
   internalToolsAuth,

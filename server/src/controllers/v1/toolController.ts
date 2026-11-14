@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Tool Controller (v1)
+ *
+ * Direct tool execution and simulation endpoints. Tools are atomic financial
+ * actions (create transaction, update goal, etc.) that can be called by the
+ * AI autopilot system or directly by users.
+ *
+ * Routes served:
+ *   POST /api/v1/tools/simulate - simulateTool (preview without committing)
+ *   POST /api/v1/tools/execute  - executeTool (commit the action)
+ *
+ * Key patterns:
+ *   - simulateTool previews side-effects without persisting changes
+ *   - executeTool commits the action with idempotency support
+ *   - Tool calls validated against Zod schemas (ToolCallInput)
+ *   - Actor role passed through for policy evaluation (risk assessment)
+ *   - confirmed flag controls whether high-risk tools proceed
+ *
+ * @module controllers/v1/toolController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -6,6 +27,9 @@ import { HttpError } from "../../middleware/httpError";
 import type { ToolCallInput } from "../../schemas/v1/toolSchemas";
 import { executeToolCall, simulateToolCall } from "../../services/toolExecutor";
 
+// Validates that organization context is attached to the current request.
+// Throws a 401 unauthorized error if the organization context is missing or invalid.
+// Returns the resolved organization ID parsed as a MongoDB ObjectId instance.
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -14,6 +38,9 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+// Extracts and normalizes the caller's organization membership role from request context.
+// Validates whether the role matches recognized tiers: member, admin, or owner.
+// Defaults safely to member level when unassigned or unrecognizable values are encountered.
 const requireOrgRole = (req: Request) => {
   const role = String((req as any).org?.role || "member") as "member" | "admin" | "owner";
   if (role !== "member" && role !== "admin" && role !== "owner") {
@@ -22,6 +49,9 @@ const requireOrgRole = (req: Request) => {
   return role;
 };
 
+// Simulates execution of an atomic tool call without persisting changes to the database.
+// Evaluates policy permissions, calculates potential side effects, and returns preview state.
+// Enables dry-run safety checks for AI autopilot and user confirmation flows.
 export const simulateTool = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);
@@ -39,6 +69,9 @@ export const simulateTool = async (req: Request, res: Response) => {
   return res.json(result);
 };
 
+// Commits the execution of an atomic financial tool call within the organization.
+// Evaluates actor role permissions, checks confirmation flags, and guarantees idempotency.
+// Persists mutation side-effects and returns tool outcome details and result payloads.
 export const executeTool = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);

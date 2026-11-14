@@ -1,18 +1,132 @@
-import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+/**
+ * @fileoverview Finance OS -- the internal "operating system" for money management.
+ *
+ * A tabbed admin panel exposing five subsystems:
+ * 1. Accounts -- create/link bank accounts (checking, savings, credit, etc.)
+ * 2. Merchants -- normalize merchant names with aliases and default categories
+ * 3. Budgets -- envelope-style allocations per month (YYYY-MM)
+ * 4. Insights -- budget envelopes (planned vs spent), recurring charge
+ *    candidates detected from transaction history, and cashflow forecast
+ * 5. Recurring -- cron-based recurring rules that drive automations
+ *
+ * Key data flows:
+ * - Each tab has its own React Query hooks calling the /v1/finance/* API.
+ * - Admin-only mutations are gated by canAdmin (org role check).
+ * - Currency defaults come from useAppConfig().org.currency.
+ *
+ * Central to the Finance OS feature set; all data is org-scoped.
+ *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * FinanceOS Page (Workspace Control Center)
+ * ├── 1. Role & Config Setup
+ * │   ├── useAuth() -> org role verification (canAdmin flag)
+ * │   └── useAppConfig() -> org currency and localization
+ * ├── 2. Tab Navigation
+ * │   ├── Tab 1: Accounts (Checking, Savings, Credit, Investment balances)
+ * │   ├── Tab 2: Merchants (Merchant aliases, canonical logos, auto-category)
+ * │   ├── Tab 3: Budgets (Monthly envelope limits by category)
+ * │   ├── Tab 4: Insights (Budget burn envelopes, cashflow forecasting)
+ * │   └── Tab 5: Recurring (Subscription rules, automated cron schedules)
+ * ├── 3. React Query Mutation Pipeline
+ * │   ├── Account upsert / balance adjustment
+ * │   ├── Envelope limit update with instant cache invalidation
+ * │   └── Merchant alias rule creation
+ * └── 4. UI Layer
+ *     ├── Data tables with sorting and badges
+ *     ├── Monthly Period selector (YYYY-MM)
+ *     └── Modal dialogs for new entities
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +---------------------------------------------------------------+
+ *   |                     FinanceOS Page Loaded                     |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |          Verify Org Role (canAdmin) & Load Config             |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |                     Select Operational Tab                    |
+ *   |   [Accounts]   [Merchants]   [Budgets]   [Insights]   [Recurring]
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *            +----------------------+----------------------+
+ *            |                      |                      |
+ *            v                      v                      v
+ *     [Fetch Accounts]       [Fetch Envelopes]      [Fetch Recurring]
+ *     GET /v1/finance/..     GET /v1/finance/..     GET /v1/finance/..
+ *            |                      |                      |
+ *            v                      v                      v
+ *     Render Account Cards   Render Envelope Bars   Render Schedule List
+ *            |                      |                      |
+ *            +----------------------+----------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   | User Mutates Entity -> Optimistic Update -> Refetch On Success|
+ *   +---------------------------------------------------------------+
+ * ```
+ *
+ * @module pages/FinanceOS
+ */
 
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "wouter";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Globe,
+  ShieldAlert,
+  Sparkles,
+  Square,
+  Trash2,
+  TrendingDown,
+  WalletCards,
+} from "lucide-react";
+
+import { BharatVoiceAssistant } from "@/components/voice/BharatVoiceAssistant";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
+import { Progress } from "@/components/ui/Progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/Table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/Dialog";
 import { useToast } from "@/hooks/useToast";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import {
+  CURRENCY_LABELS,
+  CURRENCY_SYMBOLS,
+  FX_RATES_TO_USD,
+  SUPPORTED_CURRENCIES,
+  type SupportedCurrency,
+} from "@/lib/currencyFx";
+import {
   createAccount,
+  deleteBudgetAllocation,
   createRecurringRule,
   getBudgetEnvelopes,
   getForecast,
@@ -30,6 +144,9 @@ import {
   type RecurringRuleStatus,
 } from "@/lib/apiClient";
 
+// Generates the default financial period key using current UTC year and month.
+// Returns a standard ISO formatted year-month string like YYYY-MM.
+// Ensures consistent initial period selection across budgeting and reporting.
 const defaultPeriodKey = () => {
   const now = new Date();
   const y = now.getUTCFullYear();
@@ -37,6 +154,39 @@ const defaultPeriodKey = () => {
   return `${y}-${m}`;
 };
 
+// Shifts an existing YYYY-MM period key forward or backward by month delta.
+// Performs calendar math in UTC to avoid timezone shift inconsistencies.
+// Returns the original period string if input parsing fails or is malformed.
+const shiftPeriodKey = (period: string, delta: number) => {
+  const parts = period.trim().split("-");
+  const y = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (!y || !m || Number.isNaN(y) || Number.isNaN(m)) return period;
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+};
+
+// Provides default suggested budget category names for rapid budget configuration.
+// Covers essential living expenses, discretionary spending, and savings channels.
+// Used in dropdown presets when creating or updating spending budgets.
+const BUDGET_CATEGORY_PRESETS = [
+  "Housing",
+  "Groceries",
+  "Food & Dining",
+  "Transportation",
+  "Utilities",
+  "Healthcare",
+  "Entertainment",
+  "Shopping",
+  "Personal Care",
+  "Education",
+  "Travel",
+  "Investments",
+];
+
+// Converts a datetime-local input string into an ISO 8601 UTC timestamp.
+// Trims whitespace and validates that the date object yields a valid time.
+// Returns undefined if the string is empty or cannot be parsed into a date.
 const toIsoFromDatetimeLocal = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
@@ -45,7 +195,68 @@ const toIsoFromDatetimeLocal = (value: string) => {
   return asDate.toISOString();
 };
 
+// Defines status, severity, and priority literal unions for finance management.
+// Classifies cashflow stability, proactive alert urgency, and suggested action order.
+// Used across health metrics, dashboard notifications, and financial triage views.
+type CashflowStatus = "healthy" | "watch" | "at_risk";
+type AlertSeverity = "info" | "warning" | "critical";
+type ActionPriority = "high" | "medium" | "low";
+
+// Formats numerical money amounts with two decimal digits and a currency label.
+// Handles null, undefined, or invalid numeric values gracefully with fallback text.
+// Standardizes currency presentation across accounts, merchants, and budgets.
+const formatMoney = (value: number | null | undefined, currency: string) => {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "Unavailable";
+  return `${Number(value).toFixed(2)} ${currency}`;
+};
+
+// Maps cashflow health statuses to semantic Tailwind border and background classes.
+// Applies emerald styling for healthy states, amber for watch, and red for risk.
+// Enables consistent status badge and container coloring across the interface.
+const statusTone: Record<CashflowStatus, string> = {
+  healthy: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  watch: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  at_risk: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+};
+
+// Maps system alert severities to corresponding background and border styling.
+// Distinguishes between informational, warning, and critical notification cards.
+// Enhances visual hierarchy for financial risks and actionable system alerts.
+const severityTone: Record<AlertSeverity, string> = {
+  info: "border-blue-500/25 bg-blue-500/10",
+  warning: "border-amber-500/25 bg-amber-500/10",
+  critical: "border-red-500/25 bg-red-500/10",
+};
+
+// Maps recommended action priority tiers to badge component variant types.
+// Assigns destructive badge styling to high-priority items and outline to low.
+// Directs user focus to urgent financial remediations and debt optimizations.
+const priorityTone: Record<ActionPriority, "destructive" | "secondary" | "outline"> = {
+  high: "destructive",
+  medium: "secondary",
+  low: "outline",
+};
+
+// Central operating system page for accounts, merchants, budgets, and recurring expenses.
+// Coordinates multi-currency accounts, recurring rules detection, and cashflow health.
+// Provides tab-based navigation for financial configuration, budgets, and intelligence.
 export default function FinanceOS() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const validTabs = ["accounts", "merchants", "budgets", "insights", "recurring", "voice"];
+  const currentTab = validTabs.includes(requestedTab || "") ? requestedTab! : "accounts";
+
+  const handleTabChange = (nextTab: string) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (nextTab === "accounts") {
+        next.delete("tab");
+      } else {
+        next.set("tab", nextTab);
+      }
+      return next;
+    });
+  };
   const { toast } = useToast();
   const configQuery = useAppConfig();
   const canAdmin = Boolean(configQuery.data?.org?.role && ["owner", "admin"].includes(configQuery.data.org.role));
@@ -134,14 +345,22 @@ export default function FinanceOS() {
   const [budgetCategory, setBudgetCategory] = useState("");
   const [budgetAmount, setBudgetAmount] = useState("");
   const [budgetCurrency, setBudgetCurrency] = useState(orgCurrency);
+  const [selectedReportingCurrency, setSelectedReportingCurrency] = useState<SupportedCurrency>("USD");
 
   useEffect(() => {
     setBudgetCurrency(orgCurrency);
+    if (orgCurrency && (orgCurrency in FX_RATES_TO_USD)) {
+      setSelectedReportingCurrency(orgCurrency as SupportedCurrency);
+    }
   }, [orgCurrency]);
 
   const allocationsQuery = useQuery({
-    queryKey: ["v1/finance/budgets", budgetPeriodKey],
-    queryFn: () => listBudgetAllocations(budgetPeriodKey, { limit: 300 }),
+    queryKey: ["v1/finance/budgets", budgetPeriodKey, selectedReportingCurrency],
+    queryFn: () =>
+      selectedReportingCurrency !== "USD"
+        ? listBudgetAllocations(budgetPeriodKey, { limit: 300, currency: selectedReportingCurrency })
+        : listBudgetAllocations(budgetPeriodKey, { limit: 300 }),
+    enabled: /^\d{4}-(0[1-9]|1[0-2])$/.test(budgetPeriodKey.trim()),
   });
 
   const totalBudgeted = useMemo(() => {
@@ -155,12 +374,32 @@ export default function FinanceOS() {
       toast({ title: "Budget updated" });
       setBudgetCategory("");
       setBudgetAmount("");
-      await allocationsQuery.refetch();
+      // Envelopes carry planned/remaining; without a refetch they keep planned=0 and
+      // the table shows the whole spend as "over" until a full reload.
+      await Promise.allSettled([allocationsQuery.refetch(), envelopesQuery.refetch()]);
     },
     onError: (error: any) => {
       toast({
         title: "Update failed",
         description: error?.message || "Couldn't update budget allocation.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteAllocationMutation = useMutation({
+    mutationFn: ({ id }: { id: string }) => deleteBudgetAllocation(budgetPeriodKey, id),
+    onSuccess: async () => {
+      toast({ title: "Allocation deleted" });
+      await allocationsQuery.refetch();
+      if (envelopesQuery?.refetch) {
+        await envelopesQuery.refetch();
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Delete failed",
+        description: error?.message || "Couldn't delete budget allocation.",
         variant: "destructive",
       });
     },
@@ -216,11 +455,14 @@ export default function FinanceOS() {
   });
 
   const periodKeyNormalized = budgetPeriodKey.trim();
-  const periodKeyValid = useMemo(() => /^\d{4}-\d{2}$/.test(periodKeyNormalized), [periodKeyNormalized]);
+  const periodKeyValid = useMemo(() => /^\d{4}-(0[1-9]|1[0-2])$/.test(periodKeyNormalized), [periodKeyNormalized]);
 
   const envelopesQuery = useQuery({
-    queryKey: ["v1/finance/budgets/envelopes", periodKeyNormalized],
-    queryFn: () => getBudgetEnvelopes(periodKeyNormalized),
+    queryKey: ["v1/finance/budgets/envelopes", periodKeyNormalized, selectedReportingCurrency],
+    queryFn: () =>
+      selectedReportingCurrency !== "USD"
+        ? getBudgetEnvelopes(periodKeyNormalized, selectedReportingCurrency)
+        : getBudgetEnvelopes(periodKeyNormalized),
     enabled: periodKeyValid,
   });
 
@@ -240,12 +482,13 @@ export default function FinanceOS() {
   const [forecastMonths, setForecastMonths] = useState("3");
 
   const forecastQuery = useQuery({
-    queryKey: ["v1/finance/forecast", periodKeyNormalized, forecastMonths],
+    queryKey: ["v1/finance/forecast", periodKeyNormalized, forecastMonths, selectedReportingCurrency],
     queryFn: () =>
       getForecast({
         period_key: periodKeyNormalized,
         months: Number(forecastMonths) || undefined,
         top_categories: 8,
+        currency: selectedReportingCurrency !== "USD" ? selectedReportingCurrency : undefined,
       }),
     enabled: periodKeyValid,
   });
@@ -264,6 +507,119 @@ export default function FinanceOS() {
       });
     },
   });
+
+  // Multi-Period Roll-Forward and Smart Auto-Budget State
+  const [isRollForwardOpen, setIsRollForwardOpen] = useState(false);
+  const [rollForwardMultiplier, setRollForwardMultiplier] = useState("1.0");
+  const [selectedRollForwardCats, setSelectedRollForwardCats] = useState<string[]>([]);
+
+  const [isSmartSuggestionsOpen, setIsSmartSuggestionsOpen] = useState(false);
+  const [smartSuggestionBuffer, setSmartSuggestionBuffer] = useState<number>(10);
+  const [selectedSmartCats, setSelectedSmartCats] = useState<string[] | null>(null);
+  const [isApplyingSmartSuggestions, setIsApplyingSmartSuggestions] = useState(false);
+  // Recommendations must use the API's native currency, independently of the
+  // display-only FX selector and the manual allocation form's currency.
+  const recommendationHistoryQuery = useQuery({
+    queryKey: ["v1/finance/forecast", budgetPeriodKey, forecastMonths, "native-budget-history"],
+    queryFn: () => getForecast({ period_key: budgetPeriodKey, months: Number(forecastMonths) || undefined, top_categories: 8 }),
+    enabled: isSmartSuggestionsOpen && periodKeyValid,
+  });
+
+  const prevPeriodKey = useMemo(() => shiftPeriodKey(budgetPeriodKey, -1), [budgetPeriodKey]);
+  const prevAllocationsQuery = useQuery({
+    queryKey: ["v1/finance/budgets", prevPeriodKey],
+    queryFn: () => listBudgetAllocations(prevPeriodKey, { limit: 300 }),
+    enabled: isRollForwardOpen && Boolean(prevPeriodKey),
+  });
+
+  useEffect(() => {
+    if (prevAllocationsQuery.data?.allocations?.length) {
+      setSelectedRollForwardCats(prevAllocationsQuery.data.allocations.map((a) => a.category));
+    }
+  }, [prevAllocationsQuery.data?.allocations]);
+
+  const smartRecommendations = useMemo(() => {
+    const list: Array<{ category: string; historicalMonthlyAvg: number; suggestedCap: number; isUnbudgeted: boolean }> = [];
+    const existing = new Set((allocationsQuery.data?.allocations || []).map((a) => a.category.toLowerCase()));
+
+    if (recommendationHistoryQuery.data?.currency && recommendationHistoryQuery.data?.baseline?.transaction_count > 0) {
+      for (const cat of recommendationHistoryQuery.data.top_categories || []) {
+        const avg = Number(cat.expense_monthly_avg);
+        if (Number.isFinite(avg) && avg > 0) {
+          list.push({
+            category: cat.category,
+            historicalMonthlyAvg: avg,
+            suggestedCap: Math.round(avg * (1 + smartSuggestionBuffer / 100) * 100) / 100,
+            isUnbudgeted: !existing.has(cat.category.toLowerCase()),
+          });
+        }
+      }
+    }
+
+    return list;
+  }, [recommendationHistoryQuery.data, allocationsQuery.data, smartSuggestionBuffer]);
+
+  const smartCategoriesSelected = selectedSmartCats ?? smartRecommendations.map((r) => r.category);
+  const smartHistoryUnavailable = recommendationHistoryQuery.isError || recommendationHistoryQuery.isFetching || !periodKeyValid;
+
+  const handleExecuteRollForward = async () => {
+    const allocationsToCopy = (prevAllocationsQuery.data?.allocations || []).filter((a) =>
+      selectedRollForwardCats.includes(a.category)
+    );
+    if (allocationsToCopy.length === 0) return;
+
+    const mult = Number(rollForwardMultiplier) || 1.0;
+    try {
+      await Promise.all(
+        allocationsToCopy.map((alloc) =>
+          upsertBudgetAllocation(budgetPeriodKey, {
+            category: alloc.category,
+            // Keep cents: rounding to whole units silently changed e.g. 350.75 -> 351.
+            amount: Math.round(Number(alloc.amount) * mult * 100) / 100,
+            currency: alloc.currency || budgetCurrency || orgCurrency,
+          })
+        )
+      );
+      toast({
+        title: "Budgets Rolled Forward",
+        description: `Successfully copied ${allocationsToCopy.length} category budgets from ${prevPeriodKey} to ${budgetPeriodKey}.`,
+      });
+      setIsRollForwardOpen(false);
+      await Promise.allSettled([allocationsQuery.refetch(), envelopesQuery.refetch()]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to roll forward budgets.";
+      toast({ title: "Roll Forward Failed", description: msg, variant: "destructive" });
+    }
+  };
+
+  const handleApplySmartSuggestions = async () => {
+    const recsToApply = smartRecommendations.filter((r) => smartCategoriesSelected.includes(r.category));
+    if (recsToApply.length === 0 || smartHistoryUnavailable || isApplyingSmartSuggestions) return;
+
+    setIsApplyingSmartSuggestions(true);
+    try {
+      await Promise.all(
+        recsToApply.map((r) =>
+          upsertBudgetAllocation(budgetPeriodKey, {
+            category: r.category,
+            amount: r.suggestedCap,
+            currency: recommendationHistoryQuery.data!.currency,
+          })
+        )
+      );
+      toast({
+        title: "Recommended Caps Applied",
+        description: `Set spending caps for ${recsToApply.length} ${recsToApply.length === 1 ? "category" : "categories"} in ${budgetPeriodKey}.`,
+      });
+      setIsSmartSuggestionsOpen(false);
+      await Promise.allSettled([allocationsQuery.refetch(), envelopesQuery.refetch()]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to apply recommended budget caps.";
+      toast({ title: "Apply Failed", description: msg, variant: "destructive" });
+    } finally {
+      setIsApplyingSmartSuggestions(false);
+    }
+  };
 
   const handleCreateAccount = () => {
     if (!newAccountName.trim()) return;
@@ -294,7 +650,8 @@ export default function FinanceOS() {
     const category = budgetCategory.trim();
     const amount = Number(budgetAmount);
     if (!category) return;
-    if (!Number.isFinite(amount) || amount < 0) {
+    // Number("") is 0, so an empty amount would silently save a zero budget.
+    if (!budgetAmount.trim() || !Number.isFinite(amount) || amount < 0) {
       toast({ title: "Invalid amount", description: "Amount must be a non-negative number.", variant: "destructive" });
       return;
     }
@@ -319,6 +676,10 @@ export default function FinanceOS() {
       toast({ title: "Invalid max amount", variant: "destructive" });
       return;
     }
+    if (amountMin !== undefined && amountMax !== undefined && amountMin > amountMax) {
+      toast({ title: "Invalid amount range", description: "Amount min must not exceed amount max.", variant: "destructive" });
+      return;
+    }
 
     createRuleMutation.mutate({
       name: ruleName.trim(),
@@ -335,17 +696,18 @@ export default function FinanceOS() {
   return (
     <div className="p-6 space-y-4">
       <div className="space-y-1">
-        <div className="text-xl font-semibold text-foreground">Finance OS</div>
-        <div className="text-sm text-muted-foreground">Accounts, merchants, budgets, and recurring rules (org-scoped).</div>
+        <h1 className="text-2xl font-semibold text-foreground">Finance</h1>
+        <p className="text-sm text-muted-foreground">Manage your accounts, budgets, and recurring payments.</p>
       </div>
 
-      <Tabs defaultValue="accounts">
+      <Tabs value={currentTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="merchants">Merchants</TabsTrigger>
           <TabsTrigger value="budgets">Budgets</TabsTrigger>
           <TabsTrigger value="insights">Insights</TabsTrigger>
           <TabsTrigger value="recurring">Recurring</TabsTrigger>
+          <TabsTrigger value="voice" className="text-indigo-400 font-semibold">🎙️ Bharat Voice AI</TabsTrigger>
         </TabsList>
 
         <TabsContent value="accounts" className="mt-4">
@@ -363,8 +725,8 @@ export default function FinanceOS() {
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
                 <div className="sm:col-span-2">
-                  <Label>Name</Label>
-                  <Input value={newAccountName} onChange={(e) => setNewAccountName(e.target.value)} placeholder="Main checking" disabled={!canAdmin} />
+                  <Label htmlFor="field-newAccountName">Name</Label>
+                  <Input id="field-newAccountName" value={newAccountName} onChange={(e) => setNewAccountName(e.target.value)} placeholder="Main checking" disabled={!canAdmin} />
                 </div>
                 <div>
                   <Label>Type</Label>
@@ -382,16 +744,16 @@ export default function FinanceOS() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Currency</Label>
-                  <Input value={newAccountCurrency} onChange={(e) => setNewAccountCurrency(e.target.value)} placeholder="USD" disabled={!canAdmin} />
+                  <Label htmlFor="field-newAccountCurrency">Currency</Label>
+                  <Input id="field-newAccountCurrency" value={newAccountCurrency} onChange={(e) => setNewAccountCurrency(e.target.value)} placeholder="USD" disabled={!canAdmin} />
                 </div>
                 <div>
-                  <Label>Mask (optional)</Label>
-                  <Input value={newAccountMask} onChange={(e) => setNewAccountMask(e.target.value)} placeholder="1234" disabled={!canAdmin} />
+                  <Label htmlFor="field-newAccountMask">Mask (optional)</Label>
+                  <Input id="field-newAccountMask" value={newAccountMask} onChange={(e) => setNewAccountMask(e.target.value)} placeholder="1234" disabled={!canAdmin} />
                 </div>
                 <div className="sm:col-span-3">
-                  <Label>Institution (optional)</Label>
-                  <Input value={newAccountInstitution} onChange={(e) => setNewAccountInstitution(e.target.value)} placeholder="Bank name" disabled={!canAdmin} />
+                  <Label htmlFor="field-newAccountInstitution">Institution (optional)</Label>
+                  <Input id="field-newAccountInstitution" value={newAccountInstitution} onChange={(e) => setNewAccountInstitution(e.target.value)} placeholder="Bank name" disabled={!canAdmin} />
                 </div>
                 <div className="sm:col-span-2 flex items-end justify-end">
                   <Button onClick={handleCreateAccount} disabled={!canAdmin || createAccountMutation.isPending || newAccountName.trim().length < 2}>
@@ -545,33 +907,242 @@ export default function FinanceOS() {
                 </div>
               ) : null}
 
+              {/* Quick Actions Toolbar */}
+              <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg border border-border/70 bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="font-medium text-xs">
+                    {allocationsQuery.data?.allocations?.length || 0} Categories
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    Target: <strong className="text-foreground">{budgetPeriodKey}</strong>
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs gap-1.5"
+                    onClick={() => { if (prevAllocationsQuery.data?.allocations?.length) { setSelectedRollForwardCats(prevAllocationsQuery.data.allocations.map((a) => a.category)); } setIsRollForwardOpen(true); }}
+                    data-testid="roll-forward-budget-btn"
+                    disabled={!canAdmin}
+                  >
+                    <Copy className="w-3.5 h-3.5 text-primary" />
+                    Roll Forward from {prevPeriodKey}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-8 text-xs gap-1.5"
+                    onClick={() => { setSelectedSmartCats(null); setIsSmartSuggestionsOpen(true); }}
+                    data-testid="auto-budget-suggest-btn"
+                    disabled={!canAdmin}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    Smart Recommendations
+                  </Button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
                 <div className="sm:col-span-2">
-                  <Label>Period key</Label>
-                  <Input value={budgetPeriodKey} onChange={(e) => setBudgetPeriodKey(e.target.value)} placeholder="2026-02" />
+                  <Label htmlFor="finance-budgetPeriodKey">Period key</Label>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-2 shrink-0"
+                      onClick={() => setBudgetPeriodKey(shiftPeriodKey(budgetPeriodKey, -1))}
+                      data-testid="btn-prev-budget-period"
+                      title="Previous month"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <Input
+                      id="finance-budgetPeriodKey"
+                      value={budgetPeriodKey}
+                      onChange={(e) => setBudgetPeriodKey(e.target.value)}
+                      placeholder="2026-02"
+                      className="text-center font-medium"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-2 shrink-0"
+                      onClick={() => setBudgetPeriodKey(shiftPeriodKey(budgetPeriodKey, 1))}
+                      data-testid="btn-next-budget-period"
+                      title="Next month"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
                   <div className="mt-1 text-xs text-muted-foreground">Format: YYYY-MM</div>
                 </div>
+
                 <div className="sm:col-span-2">
-                  <Label>Category</Label>
-                  <Input value={budgetCategory} onChange={(e) => setBudgetCategory(e.target.value)} placeholder="Rent" disabled={!canAdmin} />
+                  <Label htmlFor="finance-budgetCategory">Category</Label>
+                  <Input
+                    id="finance-budgetCategory"
+                    value={budgetCategory}
+                    onChange={(e) => setBudgetCategory(e.target.value)}
+                    placeholder="Rent"
+                    disabled={!canAdmin}
+                  />
+                  <div className="mt-2 flex flex-wrap gap-1.5" data-testid="budget-category-presets">
+                    <span className="text-[11px] text-muted-foreground mr-1 self-center">Presets:</span>
+                    {BUDGET_CATEGORY_PRESETS.map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setBudgetCategory(preset)}
+                        disabled={!canAdmin}
+                        className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                          budgetCategory.toLowerCase() === preset.toLowerCase()
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border-border/60"
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
                 <div>
-                  <Label>Amount</Label>
-                  <Input value={budgetAmount} onChange={(e) => setBudgetAmount(e.target.value)} placeholder="1200" disabled={!canAdmin} />
+                  <Label htmlFor="finance-budgetAmount">Amount</Label>
+                  <Input
+                    id="finance-budgetAmount"
+                    value={budgetAmount}
+                    onChange={(e) => setBudgetAmount(e.target.value)}
+                    placeholder="1200"
+                    disabled={!canAdmin}
+                  />
                 </div>
+
                 <div>
-                  <Label>Currency</Label>
-                  <Input value={budgetCurrency} onChange={(e) => setBudgetCurrency(e.target.value)} placeholder={orgCurrency} disabled={!canAdmin} />
+                  <Label htmlFor="finance-budgetCurrency">Currency</Label>
+                  <Input
+                    id="finance-budgetCurrency"
+                    value={budgetCurrency}
+                    onChange={(e) => setBudgetCurrency(e.target.value)}
+                    placeholder={orgCurrency}
+                    disabled={!canAdmin}
+                  />
                 </div>
-                <div className="sm:col-span-6 flex justify-end">
+
+                <div className="sm:col-span-6 flex justify-end gap-2">
+                  {(budgetCategory || budgetAmount) && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setBudgetCategory("");
+                        setBudgetAmount("");
+                      }}
+                      disabled={!canAdmin}
+                    >
+                      Clear
+                    </Button>
+                  )}
                   <Button onClick={handleUpsertBudget} disabled={!canAdmin || upsertBudgetMutation.isPending || budgetCategory.trim().length < 1}>
                     {upsertBudgetMutation.isPending ? "Saving..." : "Upsert allocation"}
                   </Button>
                 </div>
               </div>
 
-              <div className="text-sm text-muted-foreground">
-                Total budgeted: {totalBudgeted.toFixed(2)} {budgetCurrency || orgCurrency}
+              {/* Multi-Currency FX Normalization Toolbar */}
+              <div
+                className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border border-primary/20 bg-primary/5 shadow-xs"
+                data-testid="card-envelope-currency-normalization"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-primary" />
+                    Currency Normalization:
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {SUPPORTED_CURRENCIES.map((curr) => {
+                      const isActive = selectedReportingCurrency === curr;
+                      return (
+                        <button
+                          key={curr}
+                          type="button"
+                          onClick={() => setSelectedReportingCurrency(curr)}
+                          data-testid={`btn-budget-currency-${curr}`}
+                          className={`text-xs px-2.5 py-1 rounded-md font-medium transition-all ${
+                            isActive
+                              ? "bg-primary text-primary-foreground shadow-xs"
+                              : "bg-background/80 hover:bg-background text-muted-foreground hover:text-foreground border border-border/60"
+                          }`}
+                        >
+                          {curr}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <select
+                    aria-label="Budget Reporting Currency"
+                    data-testid="select-budget-currency"
+                    value={selectedReportingCurrency}
+                    onChange={(e) => setSelectedReportingCurrency(e.target.value as SupportedCurrency)}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground ml-1"
+                  >
+                    {SUPPORTED_CURRENCIES.map((curr) => (
+                      <option key={curr} value={curr}>
+                        {CURRENCY_LABELS[curr]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className="text-xs font-semibold bg-background/90"
+                    data-testid="badge-budget-reporting-currency"
+                  >
+                    Reporting: {selectedReportingCurrency} ({CURRENCY_SYMBOLS[selectedReportingCurrency]})
+                  </Badge>
+                  {selectedReportingCurrency !== "USD" && (
+                    <Badge
+                      variant="secondary"
+                      className="text-xs font-mono"
+                      data-testid="badge-envelope-fx-rate"
+                    >
+                      1 USD = {FX_RATES_TO_USD[selectedReportingCurrency]} {selectedReportingCurrency}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              {/* Budget Totals and Spend Adherence */}
+              <div className="flex flex-wrap items-center justify-between gap-4 p-3 rounded-lg border border-border/60 bg-muted/10">
+                <div className="text-sm text-muted-foreground">
+                  Total budgeted: {totalBudgeted.toFixed(2)} {selectedReportingCurrency || budgetCurrency || orgCurrency}
+                </div>
+                {envelopesQuery.data?.totals && (
+                  <div className="flex items-center gap-4 text-xs">
+                    <div>
+                      <span className="text-muted-foreground">Spent to date:</span>{" "}
+                      <strong className="text-foreground" data-testid="text-budget-spent">
+                        {Number(envelopesQuery.data.totals.spent || 0).toFixed(2)} {selectedReportingCurrency || budgetCurrency || orgCurrency}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Remaining:</span>{" "}
+                      <strong
+                        data-testid="text-budget-remaining"
+                        className={Number(envelopesQuery.data.totals.remaining || 0) < 0 ? "text-destructive font-bold" : "text-emerald-600 dark:text-emerald-400 font-medium"}
+                      >
+                        {Number(envelopesQuery.data.totals.remaining || 0).toFixed(2)} {selectedReportingCurrency || budgetCurrency || orgCurrency}
+                      </strong>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {allocationsQuery.isLoading ? (
@@ -583,29 +1154,78 @@ export default function FinanceOS() {
                       <TableRow>
                         <TableHead>Category</TableHead>
                         <TableHead className="text-right">Amount</TableHead>
+                        <TableHead className="text-right">Spent to Date</TableHead>
+                        <TableHead className="text-right">Remaining</TableHead>
+                        <TableHead className="w-36">Burn %</TableHead>
                         <TableHead>Currency</TableHead>
                         <TableHead>Updated</TableHead>
+                        <TableHead className="w-16 text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {allocationsQuery.data.allocations.map((row) => (
-                        <TableRow
-                          key={row.id}
-                          className="cursor-pointer hover:bg-muted/20"
-                          onClick={() => {
-                            setBudgetCategory(row.category);
-                            setBudgetAmount(String(row.amount));
-                            setBudgetCurrency(row.currency);
-                          }}
-                        >
-                          <TableCell className="font-medium">{row.category}</TableCell>
-                          <TableCell className="text-right">{Number(row.amount || 0).toFixed(2)}</TableCell>
-                          <TableCell>{row.currency}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {row.updated_at ? new Date(row.updated_at).toLocaleString() : "—"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {allocationsQuery.data.allocations.map((row) => {
+                        const env = envelopesQuery.data?.envelopes?.find(
+                          (e) => e.category.toLowerCase() === row.category.toLowerCase()
+                        );
+                        const planned = Number(row.amount || 0);
+                        const spent = env ? Number(env.spent || 0) : 0;
+                        const remaining = env ? Number(env.remaining || 0) : planned;
+                        const burnPct = planned > 0 ? Math.round((spent / planned) * 100) : 0;
+
+                        return (
+                          <TableRow
+                            key={row.id}
+                            className="cursor-pointer hover:bg-muted/20"
+                            onClick={() => {
+                              setBudgetCategory(row.category);
+                              setBudgetAmount(String(row.amount));
+                              setBudgetCurrency(row.currency);
+                            }}
+                          >
+                            <TableCell className="font-medium">{row.category}</TableCell>
+                            <TableCell className="text-right">{planned.toFixed(2)}</TableCell>
+                            <TableCell className="text-right text-muted-foreground">{spent.toFixed(2)}</TableCell>
+                            <TableCell className={`text-right font-medium ${remaining < 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
+                              {remaining < 0 ? `-${Math.abs(remaining).toFixed(2)} over` : `${remaining.toFixed(2)} left`}
+                            </TableCell>
+                            <TableCell className="w-36" onClick={(e) => e.stopPropagation()}>
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className={burnPct > 100 ? "text-destructive font-bold" : "text-muted-foreground"}>
+                                    {burnPct}%
+                                  </span>
+                                  {burnPct > 100 ? (
+                                    <Badge variant="destructive" className="text-[9px] px-1 py-0 h-4 leading-none">OVER</Badge>
+                                  ) : burnPct >= 80 ? (
+                                    <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4 leading-none bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30">WATCH</Badge>
+                                  ) : null}
+                                </div>
+                                <Progress
+                                  value={Math.min(burnPct, 100)}
+                                  className="h-1.5"
+                                />
+                              </div>
+                            </TableCell>
+                            <TableCell>{row.currency}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {row.updated_at ? new Date(row.updated_at).toLocaleString() : "—"}
+                            </TableCell>
+                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                                disabled={!canAdmin || deleteAllocationMutation.isPending}
+                                onClick={() => deleteAllocationMutation.mutate({ id: row.id })}
+                                title={`Delete ${row.category} allocation`}
+                                aria-label={`Delete ${row.category} allocation`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -618,6 +1238,181 @@ export default function FinanceOS() {
 
         <TabsContent value="insights" className="mt-4">
           <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Cashflow health</CardTitle>
+                <CardDescription>Runway, budget pressure, and recommended next moves for the selected period.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {!periodKeyValid ? (
+                  <div className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                    Enter a valid period key (YYYY-MM) to view cashflow health.
+                  </div>
+                ) : forecastQuery.isLoading ? (
+                  <div className="text-sm text-muted-foreground">Loading...</div>
+                ) : forecastQuery.data?.cashflow_health ? (
+                  <>
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+                      <div className={`rounded-md border p-4 ${statusTone[forecastQuery.data.cashflow_health.status]}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-medium uppercase tracking-wide opacity-80">Health score</div>
+                            <div className="mt-2 flex items-baseline gap-2">
+                              <span className="text-4xl font-semibold leading-none">{forecastQuery.data.cashflow_health.score}</span>
+                              <span className="text-sm font-medium capitalize">
+                                {forecastQuery.data.cashflow_health.status.replace("_", " ")}
+                              </span>
+                            </div>
+                          </div>
+                          {forecastQuery.data.cashflow_health.status === "healthy" ? (
+                            <CheckCircle2 className="h-6 w-6" />
+                          ) : forecastQuery.data.cashflow_health.status === "watch" ? (
+                            <AlertTriangle className="h-6 w-6" />
+                          ) : (
+                            <ShieldAlert className="h-6 w-6" />
+                          )}
+                        </div>
+                        <Progress value={forecastQuery.data.cashflow_health.score} className="mt-4 h-2 bg-background/70" />
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Badge variant="outline" className="bg-background/70">
+                            {forecastQuery.data.cashflow_health.confidence} confidence
+                          </Badge>
+                          <Badge variant="outline" className="bg-background/70">
+                            {forecastQuery.data.baseline.transaction_count} transactions
+                          </Badge>
+                          <Badge variant="outline" className="bg-background/70">
+                            {Math.round(forecastQuery.data.budget_pressure.days_elapsed_ratio * 100)}% period elapsed
+                          </Badge>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <div className="rounded-md border border-border bg-background/60 p-3">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <WalletCards className="h-4 w-4" />
+                            Liquidity
+                          </div>
+                          <div className="mt-2 text-sm font-semibold">
+                            {formatMoney(forecastQuery.data.cashflow_health.liquidity_balance, forecastQuery.data.currency)}
+                          </div>
+                        </div>
+                        <div className="rounded-md border border-border bg-background/60 p-3">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <TrendingDown className="h-4 w-4" />
+                            Runway
+                          </div>
+                          <div className="mt-2 text-sm font-semibold">
+                            {forecastQuery.data.cashflow_health.runway_months === null
+                              ? "Not burning cash"
+                              : `${forecastQuery.data.cashflow_health.runway_months.toFixed(1)} months`}
+                          </div>
+                        </div>
+                        <div className="rounded-md border border-border bg-background/60 p-3">
+                          <div className="text-xs text-muted-foreground">Savings rate</div>
+                          <div className="mt-2 text-sm font-semibold">
+                            {forecastQuery.data.cashflow_health.savings_rate_pct.toFixed(1)}%
+                          </div>
+                        </div>
+                        <div className="rounded-md border border-border bg-background/60 p-3">
+                          <div className="text-xs text-muted-foreground">Projected ending cash</div>
+                          <div className="mt-2 text-sm font-semibold">
+                            {formatMoney(forecastQuery.data.cashflow_health.projected_end_balance, forecastQuery.data.currency)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium text-foreground">Risk alerts</div>
+                        {forecastQuery.data.risk_alerts.map((alert) => (
+                          <div key={alert.id} className={`rounded-md border p-3 ${severityTone[alert.severity]}`}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-sm font-semibold">{alert.title}</div>
+                              <Badge variant={alert.severity === "critical" ? "destructive" : alert.severity === "warning" ? "secondary" : "outline"}>
+                                {alert.severity}
+                              </Badge>
+                            </div>
+                            <div className="mt-1 text-xs leading-5 text-muted-foreground">{alert.detail}</div>
+                            <div className="mt-2 text-xs font-medium text-foreground">{alert.recommended_action}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium text-foreground">Action plan</div>
+                        {forecastQuery.data.recommended_actions.length ? (
+                          forecastQuery.data.recommended_actions.map((action) => (
+                            <div key={action.id} className="rounded-md border border-border bg-background/60 p-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-sm font-semibold">{action.title}</div>
+                                <Badge variant={priorityTone[action.priority]}>{action.priority}</Badge>
+                              </div>
+                              <div className="mt-1 text-xs leading-5 text-muted-foreground">{action.detail}</div>
+                              {action.impact_estimate !== null ? (
+                                <div className="mt-2 text-xs font-medium text-foreground">
+                                  Impact: {formatMoney(action.impact_estimate, forecastQuery.data.currency)}
+                                </div>
+                              ) : null}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+                            No actions generated for this period.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {forecastQuery.data.budget_pressure.categories.length ? (
+                      <div className="overflow-x-auto rounded-md border border-border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Budget pressure</TableHead>
+                              <TableHead className="text-right">Projected</TableHead>
+                              <TableHead className="text-right">Over by</TableHead>
+                              <TableHead className="text-right">Burn</TableHead>
+                              <TableHead>Severity</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {forecastQuery.data.budget_pressure.categories.map((row) => (
+                              <TableRow key={`${row.category}:${row.severity}`}>
+                                <TableCell className="font-medium">
+                                  <div className="flex items-center gap-2">
+                                    <span>{row.category}</span>
+                                    {row.unbudgeted ? <Badge variant="secondary">Unbudgeted</Badge> : null}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">{row.projected_spend.toFixed(2)}</TableCell>
+                                <TableCell className="text-right">{row.projected_over_by.toFixed(2)}</TableCell>
+                                <TableCell className="text-right">{row.burn_rate_pct}%</TableCell>
+                                <TableCell className="capitalize">{row.severity.replace("_", " ")}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : null}
+
+                    {forecastQuery.data.cashflow_health.data_quality.length ? (
+                      <div className="rounded-md border border-border bg-muted/30 p-3">
+                        <div className="text-xs font-medium text-muted-foreground">Data notes</div>
+                        <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+                          {forecastQuery.data.cashflow_health.data_quality.map((note) => (
+                            <div key={note}>{note}</div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="text-sm text-muted-foreground">No forecast data yet.</div>
+                )}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Budget envelopes</CardTitle>
@@ -818,7 +1613,7 @@ export default function FinanceOS() {
 
                 {!periodKeyValid ? null : forecastQuery.isLoading ? (
                   <div className="text-sm text-muted-foreground">Loading...</div>
-                ) : forecastQuery.data ? (
+                ) : forecastQuery.data?.cashflow_health ? (
                   <>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
                       <div className="rounded-md border border-border bg-background/60 p-3">
@@ -855,6 +1650,8 @@ export default function FinanceOS() {
                             <TableHead className="text-right">Income</TableHead>
                             <TableHead className="text-right">Expense</TableHead>
                             <TableHead className="text-right">Net</TableHead>
+                            <TableHead className="text-right">Cumulative net</TableHead>
+                            <TableHead className="text-right">Cash balance</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -864,6 +1661,10 @@ export default function FinanceOS() {
                               <TableCell className="text-right">{row.income.toFixed(2)}</TableCell>
                               <TableCell className="text-right">{row.expense.toFixed(2)}</TableCell>
                               <TableCell className="text-right">{row.net.toFixed(2)}</TableCell>
+                              <TableCell className="text-right">{row.cumulative_net.toFixed(2)}</TableCell>
+                              <TableCell className="text-right">
+                                {formatMoney(row.projected_cash_balance, forecastQuery.data.currency)}
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -997,7 +1798,263 @@ export default function FinanceOS() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="voice" className="mt-4">
+          <BharatVoiceAssistant />
+        </TabsContent>
       </Tabs>
+      {/* Roll Forward Dialog */}
+      <Dialog open={isRollForwardOpen} onOpenChange={setIsRollForwardOpen}>
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-roll-forward-budgets">
+          <DialogHeader>
+            <DialogTitle>Roll Forward Budgets</DialogTitle>
+            <DialogDescription>
+              Copy budget allocations from previous period ({prevPeriodKey}) into {budgetPeriodKey}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Adjustment Multiplier</Label>
+              <div className="flex gap-2">
+                {[
+                  { label: "100% (Exact Copy)", val: "1.0" },
+                  { label: "+5% (Inflation Buffer)", val: "1.05" },
+                  { label: "-5% (Frugal / Lean)", val: "0.95" },
+                ].map((preset) => (
+                  <Button
+                    key={preset.val}
+                    type="button"
+                    size="sm"
+                    variant={rollForwardMultiplier === preset.val ? "default" : "outline"}
+                    className="text-xs flex-1 h-8"
+                    onClick={() => setRollForwardMultiplier(preset.val)}
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {prevAllocationsQuery.isLoading ? (
+              <div className="text-xs text-muted-foreground py-4 text-center">Loading previous allocations…</div>
+            ) : prevAllocationsQuery.data?.allocations?.length ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Select categories to copy:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedRollForwardCats.length === prevAllocationsQuery.data!.allocations.length) {
+                        setSelectedRollForwardCats([]);
+                      } else {
+                        setSelectedRollForwardCats(prevAllocationsQuery.data!.allocations.map((a) => a.category));
+                      }
+                    }}
+                    className="text-primary hover:underline"
+                  >
+                    {selectedRollForwardCats.length === prevAllocationsQuery.data!.allocations.length
+                      ? "Deselect All"
+                      : "Select All"}
+                  </button>
+                </div>
+
+                <div className="max-h-56 overflow-y-auto space-y-1.5 border rounded-md p-2">
+                  {prevAllocationsQuery.data.allocations.map((alloc) => {
+                    const isChecked = selectedRollForwardCats.includes(alloc.category);
+                    const mult = Number(rollForwardMultiplier) || 1.0;
+                    const adjusted = Math.round(Number(alloc.amount) * mult * 100) / 100;
+
+                    return (
+                      <div
+                        key={alloc.id}
+                        className="flex items-center justify-between p-1.5 rounded hover:bg-muted/30 cursor-pointer text-xs"
+                        onClick={() => {
+                          if (isChecked) {
+                            setSelectedRollForwardCats(selectedRollForwardCats.filter((c) => c !== alloc.category));
+                          } else {
+                            setSelectedRollForwardCats([...selectedRollForwardCats, alloc.category]);
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          {isChecked ? (
+                            <CheckSquare className="w-4 h-4 text-primary" />
+                          ) : (
+                            <Square className="w-4 h-4 text-muted-foreground" />
+                          )}
+                          <span className="font-medium text-foreground">{alloc.category}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <span>{alloc.amount.toFixed(2)}</span>
+                          <ArrowRight className="w-3 h-3" />
+                          <strong className="text-foreground">{adjusted.toFixed(2)} {alloc.currency}</strong>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground p-3 border rounded-md bg-muted/20 text-center">
+                No allocations found in previous period ({prevPeriodKey}).
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setIsRollForwardOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleExecuteRollForward}
+              disabled={selectedRollForwardCats.length === 0}
+              data-testid="confirm-roll-forward-btn"
+            >
+              Copy {selectedRollForwardCats.length} Allocations
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Smart Recommendations Dialog */}
+      <Dialog open={isSmartSuggestionsOpen} onOpenChange={(open) => {
+        setIsSmartSuggestionsOpen(open);
+        if (!open) setSelectedSmartCats(null);
+      }}>
+        <DialogContent className="sm:max-w-lg" data-testid="dialog-smart-budget-suggestions">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              Smart Budget Recommendations
+            </DialogTitle>
+            <DialogDescription>
+              Review limits based on your recorded spending, with a buffer you choose. These are estimates, not AI-generated financial advice.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Spending buffer</Label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: "+5% Buffer", val: 5 },
+                  { label: "+10% Buffer", val: 10 },
+                  { label: "+15% Buffer", val: 15 },
+                ].map((buf) => (
+                  <Button
+                    key={buf.val}
+                    type="button"
+                    size="sm"
+                    variant={smartSuggestionBuffer === buf.val ? "default" : "outline"}
+                    className="text-xs flex-1 h-8"
+                    onClick={() => setSmartSuggestionBuffer(buf.val)}
+                    aria-pressed={smartSuggestionBuffer === buf.val}
+                    disabled={isApplyingSmartSuggestions}
+                  >
+                    {buf.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {recommendationHistoryQuery.isFetching ? (
+              <p role="status" className="text-sm text-muted-foreground">Loading your spending history…</p>
+            ) : recommendationHistoryQuery.isError ? (
+              <div role="alert" className="space-y-2 text-sm">
+                <p>Could not load your spending history. No recommendations can be applied.</p>
+                <Button variant="outline" size="sm" onClick={() => recommendationHistoryQuery.refetch()}>Retry spending history</Button>
+              </div>
+            ) : smartRecommendations.length === 0 ? (
+              <div className="space-y-2 text-sm" data-testid="smart-budget-no-history">
+                <p>No recorded spending is available for recommendations.</p>
+                <p className="text-muted-foreground">Add or import transactions, or set a budget manually using your own amounts.</p>
+                <Button variant="outline" size="sm" onClick={() => setIsSmartSuggestionsOpen(false)}>Set a budget manually</Button>
+              </div>
+            ) : <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Recorded monthly averages over {recommendationHistoryQuery.data?.baseline.days_covered} days in {recommendationHistoryQuery.data?.currency}. Limited history may understate your needs. Applying a cap replaces that category’s existing allocation.
+              </p>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Suggested spending limits for {budgetPeriodKey}:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (smartCategoriesSelected.length === smartRecommendations.length) {
+                      setSelectedSmartCats([]);
+                    } else {
+                      setSelectedSmartCats(smartRecommendations.map((r) => r.category));
+                    }
+                  }}
+                  className="text-primary hover:underline"
+                  disabled={isApplyingSmartSuggestions}
+                >
+                  {smartCategoriesSelected.length === smartRecommendations.length ? "Deselect All" : "Select All"}
+                </button>
+              </div>
+
+              <div className="max-h-56 overflow-y-auto space-y-1.5 border rounded-md p-2">
+                {smartRecommendations.map((rec) => {
+                  const isChecked = smartCategoriesSelected.includes(rec.category);
+
+                  return (
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={isChecked}
+                      aria-label={`Apply ${rec.category} cap`}
+                      disabled={isApplyingSmartSuggestions}
+                      key={rec.category}
+                      className="flex w-full flex-wrap gap-2 items-center justify-between p-2 rounded hover:bg-muted/30 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => {
+                        if (isChecked) {
+                          setSelectedSmartCats(smartCategoriesSelected.filter((c) => c !== rec.category));
+                        } else {
+                          setSelectedSmartCats([...smartCategoriesSelected, rec.category]);
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        {isChecked ? (
+                          <CheckSquare className="w-4 h-4 text-primary" />
+                        ) : (
+                          <Square className="w-4 h-4 text-muted-foreground" />
+                        )}
+                        <span className="font-medium text-foreground">{rec.category}</span>
+                        {rec.isUnbudgeted && (
+                          <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-amber-500/30 text-amber-600 dark:text-amber-400">
+                            New
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <span>Avg: {rec.historicalMonthlyAvg.toFixed(2)}</span>
+                        <ArrowRight className="w-3 h-3" />
+                        <strong className="text-foreground">{rec.suggestedCap.toFixed(2)} {recommendationHistoryQuery.data?.currency}</strong>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" disabled={isApplyingSmartSuggestions} onClick={() => setIsSmartSuggestionsOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleApplySmartSuggestions}
+              disabled={smartCategoriesSelected.length === 0 || smartHistoryUnavailable || isApplyingSmartSuggestions}
+              data-testid="confirm-apply-smart-suggestions-btn"
+            >
+              {isApplyingSmartSuggestions ? "Applying…" : `Apply ${smartCategoriesSelected.length} Recommended Caps`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

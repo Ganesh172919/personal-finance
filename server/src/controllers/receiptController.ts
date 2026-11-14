@@ -1,7 +1,33 @@
+/**
+ * @fileoverview Receipt Controller
+ *
+ * Handles receipt image upload, OCR parsing, and confirmation workflow.
+ * Users upload a receipt image, the OCR service extracts structured data,
+ * and the user confirms/corrects the extracted fields before a transaction is created.
+ *
+ * Routes served:
+ *   POST   /api/receipts/parse          - parseReceipt (upload + OCR)
+ *   POST   /api/receipts/:id/confirm    - confirmReceipt (create transaction)
+ *   GET    /api/receipts                - listReceipts
+ *   GET    /api/receipts/:id            - getReceiptById
+ *   DELETE /api/receipts/:id            - deleteReceipt
+ *
+ * Key patterns:
+ *   - Feature-gated: endpoints return 404 when RECEIPTS_OCR_ENABLED is false
+ *   - OCR quota enforced via entitlement system before processing
+ *   - Images stored in GridFS; receipt metadata in ReceiptModel
+ *   - confirmReceipt creates an expense transaction and publishes domain events
+ *   - Cannot delete a receipt that has already been confirmed (409 conflict)
+ *   - Currency hint resolved from org settings if not provided by user
+ *
+ * @module controllers/receiptController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import { getEnv } from "../config/env";
 import { HttpError } from "../middleware/httpError";
+import { validateImageBuffer } from "../middleware/uploads";
 import ReceiptModel, { type ReceiptExtracted } from "../models/receiptModel";
 import OrganizationModel from "../models/organizationModel";
 import TransactionModel from "../models/transactionModel";
@@ -15,9 +41,13 @@ import {
 } from "../services/profileService";
 import { publishDomainEvent } from "../services/domainEvents";
 import { recordOcrParse } from "../observability/metrics";
-import { enforceFeatureLimit, recordFeatureUsage } from "../services/entitlements";
+import { recordFeatureUsage, releaseReservationOnResponseEnd, reserveFeatureUsage } from "../services/entitlements";
+import { recordDeadLetter } from "../services/deadLetterQueue";
 import { logger } from "../config/logger";
 
+// Serializes internal transaction models into client-facing transaction descriptors.
+// Extracts identification keys, normalized amounts, categories, and mutation sources.
+// Formats timestamps and classifications into uniform response properties.
 const mapTransactionRecord = (transaction: {
   _id: unknown;
   amount: number;
@@ -36,6 +66,9 @@ const mapTransactionRecord = (transaction: {
   source: transaction.source || undefined,
 });
 
+// Validates tenant organization presence on incoming receipt processing requests.
+// Asserts that the organization identifier is a syntactically valid MongoDB ObjectId.
+// Aborts execution with an unauthorized HTTP error if organization scope is missing.
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -44,6 +77,9 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+// Resolves the baseline ISO currency code configured for the target organization.
+// Inspects organization settings to guide optical character recognition parsing.
+// Returns the resolved uppercase three-letter code or defaults safely to USD.
 const resolveOrgCurrency = async (orgId: mongoose.Types.ObjectId) => {
   const org = await OrganizationModel.findById(orgId).select({ currency: 1 }).lean();
   const code = String((org as any)?.currency || "").trim().toUpperCase();
@@ -53,6 +89,9 @@ const resolveOrgCurrency = async (orgId: mongoose.Types.ObjectId) => {
   return "USD";
 };
 
+// Uploads receipt images to GridFS and performs automated optical character recognition.
+// Enforces tenant OCR quotas, validates images, and extracts vendor and item details.
+// Saves parsed receipt records and returns structured OCR predictions to the client.
 export const parseReceipt = async (req: Request, res: Response) => {
   const env = getEnv();
   if (!env.RECEIPTS_OCR_ENABLED) {
@@ -61,18 +100,21 @@ export const parseReceipt = async (req: Request, res: Response) => {
 
   const user = req.user as IUserDocument;
   const orgId = requireOrgId(req);
-  await enforceFeatureLimit({
+  const file = (req as any).file as Express.Multer.File | undefined;
+  if (!file?.buffer || !file.originalname) {
+    throw new HttpError(400, "MISSING_FILE", "Missing receipt image file");
+  }
+  // Reject empty or spoofed images before storing them or spending OCR quota.
+  await validateImageBuffer(file.buffer);
+
+  const reservation = await reserveFeatureUsage({
     orgId,
     userId: user._id,
     feature: "ocr_quota",
     units: 1,
     requestId: req.requestId,
   });
-
-  const file = (req as any).file as Express.Multer.File | undefined;
-  if (!file?.buffer || !file.originalname) {
-    throw new HttpError(400, "MISSING_FILE", "Missing receipt image file");
-  }
+  releaseReservationOnResponseEnd(res, reservation);
 
   const lang = typeof req.body?.lang === "string" ? req.body.lang.trim() : "en";
   const currencyHint =
@@ -82,6 +124,7 @@ export const parseReceipt = async (req: Request, res: Response) => {
 
   const fileId = await uploadBufferToGridFs({
     userId: user._id.toString(),
+    orgId: orgId.toString(),
     purpose: "receipt",
     buffer: file.buffer,
     filename: file.originalname,
@@ -100,7 +143,13 @@ export const parseReceipt = async (req: Request, res: Response) => {
   );
   recordOcrParse({ success: Boolean(ocr.success) });
 
-  const extracted: ReceiptExtracted = ocr.extracted || {};
+  const extracted: ReceiptExtracted = { ...(ocr.extracted || {}) };
+  if (extracted.total !== undefined && (!Number.isFinite(extracted.total) || extracted.total <= 0)) {
+    extracted.total = undefined;
+  }
+  if (extracted.date && isNaN(new Date(extracted.date).getTime())) {
+    extracted.date = undefined;
+  }
 
   const receipt = await ReceiptModel.create({
     orgId,
@@ -114,6 +163,7 @@ export const parseReceipt = async (req: Request, res: Response) => {
   });
 
   await recordFeatureUsage({
+    reservation,
     orgId,
     userId: user._id,
     feature: "ocr_quota",
@@ -137,6 +187,9 @@ export const parseReceipt = async (req: Request, res: Response) => {
   });
 };
 
+// Validates user-reviewed receipt corrections and generates an expense transaction.
+// Commits expense records, updates user transaction counts, and marks receipts confirmed.
+// Emits domain events notifying financial intelligence services of the new expense.
 export const confirmReceipt = async (req: Request, res: Response) => {
   const env = getEnv();
   if (!env.RECEIPTS_OCR_ENABLED) {
@@ -152,7 +205,24 @@ export const confirmReceipt = async (req: Request, res: Response) => {
     throw new HttpError(404, "NOT_FOUND", "Receipt not found");
   }
 
+  if (receipt.status === "confirmed") {
+    throw new HttpError(409, "ALREADY_CONFIRMED", "Receipt has already been confirmed");
+  }
+
   const { vendor, date, total, tax, currency, category, description, items } = req.body as any;
+
+  const numTotal = Number(total);
+  if (!Number.isFinite(numTotal) || numTotal <= 0) {
+    throw new HttpError(400, "INVALID_AMOUNT", "Total amount must be a positive number");
+  }
+
+  const dateStr = typeof date === "string" ? date.trim() : "";
+  const parsedDate = dateStr ? new Date(dateStr) : new Date();
+  const txDate = isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+
+  const categoryStr = (typeof category === "string" && category.trim()) || receipt.categorySuggestion || "Other";
+  const vendorStr = String(vendor || receipt.extracted?.vendor || "").trim();
+  const descriptionStr = String(description || vendorStr || "Receipt expense").trim().slice(0, 250);
 
   const profile = await ensureProfileWithMigration({ orgId, userId: user._id });
   const source = {
@@ -166,11 +236,11 @@ export const confirmReceipt = async (req: Request, res: Response) => {
   const created = await TransactionModel.create({
     orgId,
     userId: user._id,
-    amount: -Math.abs(Number(total)),
-    category: String(category),
-    description: String(description || vendor || "Receipt expense").slice(0, 250),
+    amount: -Math.abs(numTotal),
+    category: categoryStr,
+    description: descriptionStr,
     type: "expense",
-    date: new Date(String(date)),
+    date: txDate,
     source,
   });
 
@@ -178,12 +248,13 @@ export const confirmReceipt = async (req: Request, res: Response) => {
   setProfileMutationSource(profile, source);
   await profile.save();
 
+  const numTax = Number(tax);
   const corrections: ReceiptExtracted = {
-    vendor: String(vendor),
-    date: String(date),
-    total: Number(total),
-    tax: tax === undefined ? undefined : Number(tax),
-    currency: currency ? String(currency) : undefined,
+    vendor: vendorStr,
+    date: txDate.toISOString().slice(0, 10),
+    total: numTotal,
+    tax: tax === undefined || !Number.isFinite(numTax) ? undefined : numTax,
+    currency: currency ? String(currency).trim().toUpperCase() : undefined,
     items: Array.isArray(items) ? items : undefined,
   };
 
@@ -206,7 +277,14 @@ export const confirmReceipt = async (req: Request, res: Response) => {
       amount: created.amount,
       receipt_id: receiptId,
     },
-  }).catch(() => null);
+  }).catch((err) => {
+    recordDeadLetter({
+      context: "ReceiptTransactionCreatedEvent",
+      operation: "publishDomainEvent",
+      error: err,
+      payload: { receiptId, transactionId: created._id.toString(), orgId: orgId.toString() },
+    });
+  });
 
   await publishDomainEvent({
     orgId,
@@ -220,7 +298,14 @@ export const confirmReceipt = async (req: Request, res: Response) => {
       transaction_id: created._id.toString(),
       source,
     },
-  }).catch(() => null);
+  }).catch((err) => {
+    recordDeadLetter({
+      context: "ReceiptConfirmedEvent",
+      operation: "publishDomainEvent",
+      error: err,
+      payload: { receiptId, transactionId: created._id.toString(), orgId: orgId.toString() },
+    });
+  });
 
   res.json({
     source,
@@ -241,6 +326,9 @@ export const confirmReceipt = async (req: Request, res: Response) => {
   });
 };
 
+// Fetches a paginated collection of parsed and confirmed receipts for the user.
+// Applies tenant and user ownership filters while sorting by descending creation date.
+// Returns serialized receipt descriptors accompanied by overall pagination metadata.
 export const listReceipts = async (req: Request, res: Response) => {
   const env = getEnv();
   if (!env.RECEIPTS_OCR_ENABLED) {
@@ -282,6 +370,9 @@ export const listReceipts = async (req: Request, res: Response) => {
   });
 };
 
+// Retrieves a specific receipt record including confidence scores and extracted items.
+// Verifies tenant organization ownership constraints before returning stored data.
+// Throws a not found exception if the requested receipt identifier does not exist.
 export const getReceiptById = async (req: Request, res: Response) => {
   const env = getEnv();
   if (!env.RECEIPTS_OCR_ENABLED) {
@@ -314,6 +405,9 @@ export const getReceiptById = async (req: Request, res: Response) => {
   });
 };
 
+// Purges an unconfirmed receipt record and its backing image binary from GridFS.
+// Prevents deletion of receipts that have already spawned confirmed transactions.
+// Removes database documents and purges binary data to reclaim storage capacity.
 export const deleteReceipt = async (req: Request, res: Response) => {
   const env = getEnv();
   if (!env.RECEIPTS_OCR_ENABLED) {

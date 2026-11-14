@@ -1,5 +1,28 @@
+/**
+ * @fileoverview ReadingProgressBar — thin fixed bar at the top of the viewport that
+ * fills left-to-right as the user scrolls down the page.
+ *
+ * WHAT IT DOES
+ *  - Attaches a passive scroll listener to `window` and calculates the percentage
+ *    of the document that has been scrolled.
+ *  - Renders a 1.5-unit-high bar (`bg-primary`) whose width is driven by `progress%`.
+ *  - Cleans up the listener on unmount.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — entirely self-contained.
+ *  - Internal state: `progress` (0-100).
+ *
+ * ARCHITECTURE NOTES
+ *  - Used on long-form content pages (blogs, growth stories) to give readers a sense
+ *    of how far they've progressed through the article.
+ *  - Uses `position: fixed; top: 0; z-index: 50` so it overlays all page content.
+ *  - Passive scroll listener ensures no scroll-performance penalty.
+ */
 import { useEffect, useState } from 'react';
 
+// Fixed top reading progress bar tracking scroll progress across long-form documents.
+// Listens to passive window scroll events to calculate fractional page completion.
+// Smoothly animates width fills across educational articles and narrative stories.
 export function ReadingProgressBar() {
   const [progress, setProgress] = useState(0);
 

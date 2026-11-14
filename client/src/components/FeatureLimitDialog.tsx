@@ -1,14 +1,42 @@
+/**
+ * @fileoverview FeatureLimitDialog — modal shown when a user hits a plan usage cap
+ * or attempts to use a feature not included in their current subscription tier.
+ *
+ * WHAT IT DOES
+ *  - Reads limit details from `useAppDialogStore` (global Zustand store) and renders
+ *    either a "FEATURE_LIMIT_REACHED" view with used/remaining counts, or a
+ *    "FEATURE_NOT_AVAILABLE" view explaining the plan gap.
+ *  - Provides a quick-link button to open the full PlanAndUsageDialog for more detail.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No explicit props — all data comes from the `featureLimit` slice of `appDialogStore`.
+ *  - Uses `useAppConfig` to resolve locale-aware number formatting.
+ *  - `closeFeatureLimit()` and `openPlanAndUsage()` are Zustand actions wired to footer buttons.
+ *
+ * ARCHITECTURE NOTES
+ *  - Companion to `PlanAndUsageDialog`; this one is a lightweight nudge, the other is the
+ *    full entitlements table.
+ *  - Controlled entirely through the global dialog store — any service layer code (API
+ *    error handlers, middleware) can trigger it by calling `openFeatureLimit()` on the store.
+ */
 import { Button } from "@/components/ui/Button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 import { useMemo } from "react";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { useAppDialogStore } from "@/stores/appDialogStore";
 
+// Formats internal feature flag identifiers into clean user-facing titles.
+// Normalizes snake_case string tokens by substituting spaces for underscores.
+// Returns a fallback phrase when the feature parameter is undefined or missing.
 const formatFeature = (feature: unknown) => {
   if (!feature) return "This feature";
+  if (feature === "monthly_ai_calls") return "Monthly AI requests";
   return String(feature).replace(/_/g, " ");
 };
 
+// Modal alert dialog presented when reaching subscription tier usage ceilings.
+// Displays detailed unit consumption limits, current usage totals, and plan gaps.
+// Directs users toward plan upgrade options and the comprehensive usage view.
 export function FeatureLimitDialog() {
   const featureLimit = useAppDialogStore((s) => s.featureLimit);
   const closeFeatureLimit = useAppDialogStore((s) => s.closeFeatureLimit);
@@ -34,6 +62,9 @@ export function FeatureLimitDialog() {
     typeof limit === "number" && typeof used === "number" ? Math.max(0, Number(limit) - Number(used)) : null;
 
   const plan = details.plan;
+  const limitDescription = featureLimit?.code === "FEATURE_LIMIT_REACHED" && feature === "monthly_ai_calls"
+    ? "You’ve reached your monthly AI request limit."
+    : featureLimit?.message || "This action isn't available right now.";
 
   return (
     <Dialog
@@ -45,7 +76,7 @@ export function FeatureLimitDialog() {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Plan & usage limit</DialogTitle>
-          <DialogDescription>{featureLimit?.message || "This action isn't available right now."}</DialogDescription>
+          <DialogDescription>{limitDescription}</DialogDescription>
         </DialogHeader>
 
         {featureLimit?.code === "FEATURE_LIMIT_REACHED" ? (

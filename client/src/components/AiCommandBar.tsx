@@ -1,3 +1,30 @@
+/**
+ * @fileoverview AiCommandBar — the primary natural-language input for the AI financial
+ * assistant. Accepts free-text queries, submits them to multi-agent AI pipelines, and
+ * renders rich markdown responses with workflow traces, tool calls, plan metrics, and
+ * interactive action buttons.
+ *
+ * WHAT IT DOES
+ *  - Renders a gradient-bordered input bar with suggestions dropdown and a "Narrative" toggle.
+ *  - On submit, fires `processAICommand` mutation; shows animated loading dots while pending.
+ *  - Response card includes: agent attribution, request ID, AI Status dialog trigger, copy/clear
+ *    buttons, plan key metrics (cash flow, savings rate, debt-to-income, emergency fund, total debt),
+ *    data warnings, autopilot tool calls (preview/apply), markdown-rendered analysis,
+ *    workflow trace visualizer, thumbs-up/down feedback, and "Add to tasks" button.
+ *  - Tool calls can be previewed (`simulateToolCall`) or executed (`executeToolCall`) inline.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `onCommand` ((command: string) => void) — optional callback after successful command.
+ *  - Mutations: `processAICommand`, `createTasksFromPlan`, `simulateToolCall`,
+ *    `executeToolCall`, `submitAgentOutputFeedback`.
+ *  - Uses `useOrgFormatters` for currency-aware suggestion amounts.
+ *
+ * ARCHITECTURE NOTES
+ *  - The largest and most complex component in the AI feature surface.
+ *  - Embeds `AgentWorkflowVisualizer` and `AiStatusDialog` as child components.
+ *  - Feature-gated: "Add to tasks" is disabled when `tasks_enabled` is false.
+ *  - Custom `markdownComponents` map ensures consistent typography across the app's AI surfaces.
+ */
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Wand2, Send, X, Copy, CheckCircle, ListTodo, ThumbsDown, ThumbsUp } from "lucide-react";
@@ -16,10 +43,16 @@ import { IWorkflowTraceEntry } from "@/types";
 import type { Plan, ToolCall } from "@/types/ai.types";
 import { AiStatusDialog } from "@/components/AiStatusDialog";
 
+// Property structure definition for the quick AI command input bar.
+// Supplies an optional callback invoked following successful query dispatch.
+// Facilitates integration across application dashboards and workspace views.
 interface AICommandBarProps {
   onCommand?: (command: string) => void;
 }
 
+// Structural specification representing a completed AI analysis response payload.
+// Encapsulates Markdown text, action plans, tool calls, and execution metadata.
+// Houses telemetry traces, feedback ratings, and request identifiers for audits.
 interface AIResponse {
   response: string;
   plan?: Plan;
@@ -35,6 +68,9 @@ interface AIResponse {
   timestamp: Date;
 }
 
+// Interactive natural language financial assistant bar with dynamic suggestions.
+// Submits analytical commands to multi-agent AI pipelines and renders rich markdown.
+// Embeds interactive tool approvals, plan metric cards, and agent workflow traces.
 export function AICommandBar({ onCommand }: AICommandBarProps) {
   const [command, setCommand] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -348,9 +384,9 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
             onSubmit={handleSubmit}
             className="flex items-center bg-background rounded-md p-3"
           >
-            <div className="flex items-center space-x-3 flex-1">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
               <motion.div
-                className="w-8 h-8 bg-primary rounded-full flex items-center justify-center"
+                className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary sm:flex"
                 animate={processCommandMutation.isPending ? {
                   opacity: [1, 0.5, 1],
                 } : {}}
@@ -360,23 +396,25 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
                 <Wand2 className="w-4 h-4 text-primary-foreground" />
               </motion.div>
               <Input
+                aria-label="Ask the finance assistant"
                 type="text"
                 placeholder={`Ask me anything about your finances... (e.g., "What if I buy a new phone for ${phone}?")`}
                 value={command}
                 onChange={(e) => setCommand(e.target.value)}
                 onFocus={() => setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                className="flex-1 bg-transparent border-none outline-none focus-visible:ring-0"
+                className="order-1 min-w-0 flex-1 basis-full border-none bg-transparent outline-none focus-visible:ring-0 sm:order-none sm:basis-0"
                 data-testid="input-ai-command"
               />
-              <label className="flex items-center gap-2 pr-1" title="Enable slower, more narrative responses">
+              <label className="order-2 flex items-center gap-2 pr-1 sm:order-none" title="Enable more detailed responses">
                 <span className="text-xs text-muted-foreground whitespace-nowrap">Narrative</span>
-                <ToggleSwitch checked={narrative} onCheckedChange={setNarrative} />
+                <ToggleSwitch aria-label="Detailed answer" checked={narrative} onCheckedChange={setNarrative} />
               </label>
               <Button
                 type="submit"
-                className="bg-primary text-primary-foreground hover:opacity-90"
-                disabled={processCommandMutation.isPending}
+                aria-label="Send question to the finance assistant"
+                className="order-3 ml-auto shrink-0 bg-primary text-primary-foreground hover:opacity-90 sm:order-none"
+                disabled={!command.trim() || processCommandMutation.isPending}
                 data-testid="button-submit-command"
               >
                 <Send className="w-4 h-4" />

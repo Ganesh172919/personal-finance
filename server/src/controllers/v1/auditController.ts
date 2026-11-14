@@ -1,9 +1,31 @@
+/**
+ * @fileoverview Audit Controller (v1)
+ *
+ * Read-only endpoint for listing audit events within an organization.
+ * Audit events track all significant actions (logins, data changes, etc.).
+ *
+ * Routes served:
+ *   GET /api/v1/audit/events - listAuditEvents (admin)
+ *
+ * Key patterns:
+ *   - Requires admin or owner role
+ *   - Supports optional action filter and limit (max 200)
+ *   - Events are immutable — this endpoint only reads, never writes
+ *   - Each event includes actor type, target type, and request correlation ID
+ *
+ * @module controllers/v1/auditController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
 import AuditEventModel from "../../models/auditEventModel";
 import { HttpError } from "../../middleware/httpError";
+import { getUserAuditLog, getOrgAuditLog } from "../../services/auditService";
 
+// Validates caller membership and administrative privileges within the organization.
+// Confirms that the organization identifier conforms to valid ObjectId syntax.
+// Rejects unauthorized or non-admin requests with appropriate HTTP error codes.
 const requireOrgContext = (req: Request) => {
   const org = (req as any).org;
   const orgIdRaw = String(org?.orgId || "");
@@ -19,6 +41,9 @@ const requireOrgContext = (req: Request) => {
   return { orgId: new mongoose.Types.ObjectId(orgIdRaw), role };
 };
 
+// Lists historical audit events recorded for administrative and security actions.
+// Supports filtering by specific action strings and limits output to prevent load.
+// Responds with serialized audit event records containing actor and correlation IDs.
 export const listAuditEvents = async (req: Request, res: Response) => {
   const { orgId } = requireOrgContext(req);
 
@@ -53,5 +78,58 @@ export const listAuditEvents = async (req: Request, res: Response) => {
     })),
     request_id: req.requestId,
   });
+};
+
+/**
+ * GET /api/v1/security/audit-log
+ * Returns the authenticated user's security audit log.
+ */
+// Retrieves personal security audit events associated with the authenticated user.
+// Filters security log events such as logins, password updates, and token issues.
+// Returns formatted audit trails providing personal account security transparency.
+export const getUserSecurityAuditLog = async (req: Request, res: Response) => {
+  const userId = (req as any).user?._id;
+  if (!userId) {
+    return res.status(401).json({
+      message: "Unauthorized",
+      code: "UNAUTHORIZED",
+      request_id: req.requestId,
+    });
+  }
+
+  const limit = Math.min(parseInt((req.query as any)?.limit || "50", 10) || 50, 200);
+  const actions = (req.query as any)?.actions
+    ? String((req.query as any).actions).split(",")
+    : undefined;
+  const logs = await getUserAuditLog(userId, {
+    limit,
+    actions: actions as any,
+  });
+
+  return res.json({ audit_log: logs, request_id: req.requestId });
+};
+
+/**
+ * GET /api/v1/orgs/audit-log
+ * Returns the organization's audit log (admin only).
+ */
+// Queries organization-wide security audit records filtered by event severity levels.
+// Restricts access to organization administrators to protect security event privacy.
+// Returns an extensive log of administrative events and security status transitions.
+export const getOrgSecurityAuditLog = async (req: Request, res: Response) => {
+  const orgId = (req as any).org?.orgId;
+  if (!orgId) {
+    return res.status(400).json({
+      message: "Organization context required",
+      code: "MISSING_ORG_CONTEXT",
+      request_id: req.requestId,
+    });
+  }
+
+  const limit = Math.min(parseInt((req.query as any)?.limit || "100", 10) || 100, 500);
+  const severity = (req.query as any)?.severity;
+  const logs = await getOrgAuditLog(orgId, { limit, severity });
+
+  return res.json({ audit_log: logs, request_id: req.requestId });
 };
 

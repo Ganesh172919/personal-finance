@@ -6,11 +6,15 @@ import * as XLSX from "xlsx";
 
 import { processAiCoreGenericOcr } from "./aiCoreClient";
 
+// Encapsulates the textual payload and metadata extracted from a workspace file.
+// Contains full body text, bounded preview snippet, diagnostic warnings, and parser method.
+// Optionally preserves physical page counts for PDF and paginated document formats.
 export type ExtractedWorkspaceContent = {
   text: string;
   preview: string;
   warnings: string[];
   extractionMethod: string;
+  pageCount?: number;
 };
 
 const MAX_TEXT_LENGTH = 24_000;
@@ -27,7 +31,6 @@ const CODE_EXTENSIONS = new Set([
   ".js",
   ".json",
   ".jsx",
-  ".md",
   ".mjs",
   ".py",
   ".rb",
@@ -36,7 +39,6 @@ const CODE_EXTENSIONS = new Set([
   ".sql",
   ".ts",
   ".tsx",
-  ".txt",
   ".xml",
   ".yaml",
   ".yml",
@@ -56,31 +58,54 @@ const DOCUMENT_EXTENSIONS = new Set([
   ".txt",
 ]);
 
+// Standardizes text formatting by normalizing line endings and removing null characters.
+// Converts Windows carriage return sequences into single Unix line feed characters.
+// Trims leading and trailing whitespace to clean up raw text extraction outputs.
 const normalizeWhitespace = (value: string) => value.replace(/\r\n/g, "\n").replace(/\u0000/g, "").trim();
 
+// Restricts a string to a designated maximum character length constraint.
+// Appends trailing ellipsis characters when the source string exceeds the limit.
+// Leaves strings within the length ceiling unmodified to prevent truncation distortion.
 const truncateText = (value: string, limit: number) => {
   if (value.length <= limit) return value;
   return `${value.slice(0, Math.max(0, limit - 3))}...`;
 };
 
+// Assembles the final ExtractedWorkspaceContent object with bounds checking.
+// Preserves intra-page form feed separators for accurate physical page preservation.
+// Generates truncated text previews and records informative length warning notes.
 const buildResult = (
   text: string,
   warnings: string[],
-  extractionMethod: string
+  extractionMethod: string,
+  pageCount?: number
 ): ExtractedWorkspaceContent => {
-  const normalized = normalizeWhitespace(text);
+  // Trimming the whole PDF would remove form feeds for leading/trailing blank pages.
+  const normalized = pageCount === undefined
+    ? normalizeWhitespace(text)
+    : text.split("\f").map(normalizeWhitespace).join("\f");
   const trimmed = truncateText(normalized, MAX_TEXT_LENGTH);
+  if (normalized.length > MAX_TEXT_LENGTH) {
+    warnings.push("Extracted text was limited to the first 24,000 characters. Later content may be missing; open the original file to review it.");
+  }
 
   return {
     text: trimmed,
-    preview: truncateText(trimmed, MAX_PREVIEW_LENGTH),
+    preview: truncateText(trimmed.replace(/\f/g, "\n\n").trim(), MAX_PREVIEW_LENGTH),
     warnings,
     extractionMethod,
+    ...(pageCount === undefined ? {} : { pageCount }),
   };
 };
 
+// Extracts the lowercase file extension suffix from an arbitrary file name string.
+// Handles undefined or empty file names gracefully by returning an empty string.
+// Used for deterministic file classification and parser routing decisions.
 const extensionOf = (fileName: string) => path.extname(fileName || "").toLowerCase();
 
+// Determines the functional category classification for an uploaded workspace file.
+// Inspects MIME types and file extensions to categorize documents, code, images, or data.
+// Enables downstream consumers to apply appropriate processing and retrieval rules.
 export const detectWorkspaceFileKind = (mimeType: string, fileName: string) => {
   const extension = extensionOf(fileName);
   const safeMimeType = String(mimeType || "").toLowerCase();
@@ -102,6 +127,9 @@ export const detectWorkspaceFileKind = (mimeType: string, fileName: string) => {
   return "other" as const;
 };
 
+// Parses workbook data from binary spreadsheet files using the SheetJS library.
+// Converts worksheets into comma-separated text blocks labelled by sheet names.
+// Joins multi-sheet data representations into a unified plain text output string.
 const extractSpreadsheetText = (buffer: Buffer) => {
   const workbook = XLSX.read(buffer, { type: "buffer" });
   const sections: string[] = [];
@@ -116,8 +144,14 @@ const extractSpreadsheetText = (buffer: Buffer) => {
   return sections.join("\n\n");
 };
 
+// Decodes a raw binary buffer into a UTF-8 encoded text string representation.
+// Used for rapid extraction from plain text documents, markdown, and code files.
+// Avoids parsing overhead when dealing with native text formats.
 const extractPlainText = (buffer: Buffer) => buffer.toString("utf8");
 
+// Formats raw JSON document buffers into standardized multi-line indented strings.
+// Validates syntax through JSON parse and stringify cycles for clean presentation.
+// Falls back to raw UTF-8 string decoding if syntax parsing fails.
 const extractJsonText = (buffer: Buffer) => {
   const raw = buffer.toString("utf8");
   try {
@@ -127,6 +161,9 @@ const extractJsonText = (buffer: Buffer) => {
   }
 };
 
+// Dispatches multi-format text extraction across documents, spreadsheets, and images.
+// Invokes vision OCR models for image files and specialized parsers for PDFs and Word docs.
+// Enforces text length limits, aggregates parser warnings, and returns extracted content.
 export const extractWorkspaceFileText = async (params: {
   buffer: Buffer;
   mimeType: string;
@@ -181,8 +218,15 @@ export const extractWorkspaceFileText = async (params: {
     const parser = new PDFParse({ data: buffer });
     try {
       const parsed = await parser.getText();
-      warnings.push(`Parsed ${parsed.total || parsed.pages.length || 0} page(s) from PDF.`);
-      return buildResult(parsed.text || "", warnings, "pdf");
+      const pageCount = parsed.total || parsed.pages.length;
+      // Use actual page text instead of the parser's flattened text/page markers.
+      const pages = new Map(parsed.pages.map((page) => [page.num, page.text.replace(/\f/g, "\n")]));
+      const text = Array.from({ length: pageCount }, (_, index) => pages.get(index + 1) || "").join("\f");
+      warnings.push(`Parsed ${pageCount} page(s) from PDF.`);
+      if (parsed.pages.some((page) => !page.text.trim())) {
+        warnings.push("Some PDF pages have no selectable text. They may be blank or scanned; image-only pages need OCR before the AI can read them.");
+      }
+      return buildResult(text, warnings, "pdf", pageCount);
     } finally {
       await parser.destroy().catch(() => undefined);
     }

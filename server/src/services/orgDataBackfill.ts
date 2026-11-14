@@ -14,12 +14,18 @@ import TransactionModel from "../models/transactionModel";
 const lastBackfilledAtByUser = new Map<string, number>();
 const BACKFILL_TTL_MS = 60 * 60 * 1000;
 
+// Checks whether backfill routines should run for a given user identifier.
+// Compares last backfilled execution timestamps against hourly TTL windows.
+// Prevents redundant scanning and database updates on repeated user requests.
 const shouldBackfill = (userId: string) => {
   const last = lastBackfilledAtByUser.get(userId);
   if (!last) return true;
   return Date.now() - last >= BACKFILL_TTL_MS;
 };
 
+// Backfills missing organization tenant IDs across all legacy user records.
+// Scans profiles, transactions, tasks, chat logs, receipts, and domain events.
+// Assigns the default personal organization identifier to orphan documents.
 export const backfillLegacyOrgIdForUser = async (params: {
   userId: mongoose.Types.ObjectId;
   defaultOrgId: mongoose.Types.ObjectId;

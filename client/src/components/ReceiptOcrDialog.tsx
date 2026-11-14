@@ -1,8 +1,34 @@
+/**
+ * @fileoverview ReceiptOcrDialog — two-step receipt scanning flow: upload an image to
+ * extract vendor/date/total/tax via OCR, then review and confirm to create a transaction.
+ *
+ * WHAT IT DOES
+ *  - Step 1 (Parse): user uploads a receipt image; `parseReceipt` mutation sends it to
+ *    the server which returns extracted fields, confidence scores, line items, and warnings.
+ *  - Step 2 (Confirm): user reviews/edits extracted fields (vendor, date, total, tax,
+ *    category, currency, description) and optionally toggles a line-items table.
+ *    On confirm, `confirmReceipt` mutation creates a transaction on the server.
+ *  - Feature-gated: disabled button when `receipts_ocr_enabled` is false in app config.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `onConfirmed` (() => void) — optional callback after successful transaction creation.
+ *  - `currencyHint` (string) — fallback currency from org config.
+ *  - Mutations: `parseReceipt`, `confirmReceipt`.
+ *
+ * ARCHITECTURE NOTES
+ *  - Triggered by a "Scan Receipt" button rendered inline in the transactions page.
+ *  - Uses file input with `capture="environment"` for mobile camera support.
+ *  - Confidence labels with color-coded badges are displayed next to each extracted field
+ *    so users know which values may need manual correction.
+ */
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Input } from "@/components/ui/Input";
+import { Label } from "@/components/ui/Label";
+import { Badge } from "@/components/ui/Badge";
 import {
   Dialog,
   DialogContent,
@@ -21,23 +47,52 @@ import {
   type ReceiptParseResponse,
 } from "@/lib/apiClient";
 
+// Formats API mutation failures into informative, human-readable error messages.
+// Extracts unique server request tracking IDs for diagnostic audit traceability.
+// Supplies default fallback text when incoming errors lack descriptive messages.
 const formatError = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
+// Safely casts an unknown value into a finite floating-point number.
+// Guards against NaN, null, and undefined values during form input parsing.
+// Returns a provided fallback number when conversion yields an invalid result.
 const toNumberOr = (value: any, fallback: number) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
 };
 
-const confidenceLabel = (value: unknown) => {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return "";
-  return `${Math.round(Math.max(0, Math.min(1, num)) * 100)}%`;
+/** Color-coded confidence score badge */
+// Visual badge chip reflecting OCR optical recognition confidence percentages.
+// Colors scores into emerald, amber, or red tiers based on certainty thresholds.
+// Signals fields that may require manual operator verification or correction.
+const ConfidenceBadge = ({ score, field }: { score?: unknown; field: string }) => {
+  const num = Number(score);
+  if (!Number.isFinite(num)) return null;
+  const pct = Math.round(Math.max(0, Math.min(1, num)) * 100);
+  const color =
+    num >= 0.7
+      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+      : num >= 0.4
+        ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+        : "bg-red-500/15 text-red-400 border-red-500/30";
+
+  return (
+    <Badge
+      variant="outline"
+      data-testid={`badge-confidence-${field}`}
+      className={`${color} border text-[10px] font-mono`}
+    >
+      {pct}%
+    </Badge>
+  );
 };
 
+// Two-step receipt ingestion dialog automating transaction creation via OCR.
+// Uploads physical receipt images to extract vendor, totals, taxes, and line items.
+// Permits manual review and field editing before committing records to the ledger.
 export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint?: string }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -83,7 +138,7 @@ export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint
       const items = Array.isArray(extracted.items) ? extracted.items : undefined;
       setForm({
         vendor: String(extracted.vendor || "").trim(),
-        date: String(extracted.date || "").trim(),
+        date: String(extracted.date || "").trim() || new Date().toISOString().slice(0, 10),
         total: toNumberOr(extracted.total, 0),
         tax: extracted.tax === null || extracted.tax === undefined ? undefined : toNumberOr(extracted.tax, 0),
         currency: String(extracted.currency || currencyHint).trim() || currencyHint,
@@ -161,11 +216,12 @@ export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint
           variant="outline"
           disabled={receiptsEnabled === false}
           title={receiptsEnabled === false ? "Receipt OCR is disabled on this server." : undefined}
+          data-testid="btn-scan-receipt"
         >
           Scan Receipt
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl" data-testid="dialog-receipt-ocr">
         <DialogHeader>
           <DialogTitle>Receipt OCR</DialogTitle>
           <DialogDescription>Upload a receipt image, review extracted fields, then confirm.</DialogDescription>
@@ -174,6 +230,9 @@ export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint
         <div className="space-y-4">
           <input
             type="file"
+            aria-label="Receipt image"
+            data-testid="input-receipt-file"
+            className="block w-full min-w-0 max-w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 cursor-pointer"
             accept="image/*"
             capture="environment"
             onChange={(e) => {
@@ -184,12 +243,14 @@ export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint
           />
 
           {parseMutation.isPending ? (
-            <Card className="p-4 text-sm text-muted-foreground">Extracting receipt details…</Card>
+            <Card className="p-4 text-sm text-muted-foreground animate-pulse" data-testid="ocr-loading-card">
+              Extracting receipt details…
+            </Card>
           ) : null}
 
           {result?.warnings?.length ? (
-            <Card className="p-4">
-              <div className="text-sm font-medium mb-2">Warnings</div>
+            <Card className="p-4 border-amber-500/30 bg-amber-500/5" data-testid="ocr-warnings-card">
+              <div className="text-sm font-medium text-amber-400 mb-2">Warnings</div>
               <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
                 {result.warnings.map((w, idx) => (
                   <li key={idx}>{w}</li>
@@ -199,63 +260,68 @@ export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint
           ) : null}
 
           {result ? (
-            <Card className="p-4 space-y-4">
+            <Card className="p-4 space-y-4" data-testid="ocr-review-form">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-sm font-medium">
-                    Vendor{" "}
-                    <span className="text-xs text-muted-foreground">
-                      {confidenceLabel((result.confidence as any)?.vendor)}
-                    </span>
-                  </label>
-                  <input
+                  <div className="flex items-center justify-between mb-1">
+                    <Label htmlFor="ocr-vendor" className="text-sm font-medium">
+                      Vendor
+                    </Label>
+                    <ConfidenceBadge score={(result.confidence as any)?.vendor} field="vendor" />
+                  </div>
+                  <Input
+                    id="ocr-vendor"
+                    data-testid="input-ocr-vendor"
                     value={form.vendor}
                     onChange={(e) => setForm((prev) => ({ ...prev, vendor: e.target.value }))}
-                    className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
                     placeholder="Vendor"
                   />
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium">
-                    Date{" "}
-                    <span className="text-xs text-muted-foreground">
-                      {confidenceLabel((result.confidence as any)?.date)}
-                    </span>
-                  </label>
-                  <input
+                  <div className="flex items-center justify-between mb-1">
+                    <Label htmlFor="ocr-date" className="text-sm font-medium">
+                      Date
+                    </Label>
+                    <ConfidenceBadge score={(result.confidence as any)?.date} field="date" />
+                  </div>
+                  <Input
+                    id="ocr-date"
+                    data-testid="input-ocr-date"
                     type="date"
                     value={form.date}
                     onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
-                    className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
                   />
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium">
-                    Total{" "}
-                    <span className="text-xs text-muted-foreground">
-                      {confidenceLabel((result.confidence as any)?.total)}
-                    </span>
-                  </label>
-                  <input
+                  <div className="flex items-center justify-between mb-1">
+                    <Label htmlFor="ocr-total" className="text-sm font-medium">
+                      Total
+                    </Label>
+                    <ConfidenceBadge score={(result.confidence as any)?.total} field="total" />
+                  </div>
+                  <Input
+                    id="ocr-total"
+                    data-testid="input-ocr-total"
                     type="number"
                     value={form.total}
                     onChange={(e) => setForm((prev) => ({ ...prev, total: toNumberOr(e.target.value, 0) }))}
-                    className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
                     min={0}
                     step="0.01"
                   />
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium">
-                    Tax{" "}
-                    <span className="text-xs text-muted-foreground">
-                      {confidenceLabel((result.confidence as any)?.tax)}
-                    </span>
-                  </label>
-                  <input
+                  <div className="flex items-center justify-between mb-1">
+                    <Label htmlFor="ocr-tax" className="text-sm font-medium">
+                      Tax
+                    </Label>
+                    <ConfidenceBadge score={(result.confidence as any)?.tax} field="tax" />
+                  </div>
+                  <Input
+                    id="ocr-tax"
+                    data-testid="input-ocr-tax"
                     type="number"
                     value={form.tax ?? ""}
                     onChange={(e) =>
@@ -264,50 +330,66 @@ export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint
                         tax: e.target.value === "" ? undefined : toNumberOr(e.target.value, 0),
                       }))
                     }
-                    className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
                     min={0}
                     step="0.01"
                   />
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium">Category</label>
-                  <input
+                  <Label htmlFor="ocr-category" className="text-sm font-medium mb-1 block">
+                    Category
+                  </Label>
+                  <Input
+                    id="ocr-category"
+                    data-testid="input-ocr-category"
                     value={form.category}
                     onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}
-                    className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
                     placeholder="Food, Rent..."
                   />
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium">Currency</label>
-                  <input
+                  <div className="flex items-center justify-between mb-1">
+                    <Label htmlFor="ocr-currency" className="text-sm font-medium">
+                      Currency
+                    </Label>
+                    <ConfidenceBadge score={(result.confidence as any)?.currency} field="currency" />
+                  </div>
+                  <Input
+                    id="ocr-currency"
+                    data-testid="input-ocr-currency"
                     value={form.currency || ""}
                     onChange={(e) => setForm((prev) => ({ ...prev, currency: e.target.value }))}
-                    className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
                     placeholder={currencyHint}
                   />
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="text-sm font-medium">Description</label>
-                  <input
+                  <Label htmlFor="ocr-description" className="text-sm font-medium mb-1 block">
+                    Description
+                  </Label>
+                  <Input
+                    id="ocr-description"
+                    data-testid="input-ocr-description"
                     value={form.description || ""}
                     onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-                    className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
-                    placeholder="Optional"
+                    placeholder="Optional notes or details"
                   />
                 </div>
               </div>
 
               {extractedItems.length ? (
                 <div>
-                  <Button variant="ghost" size="sm" onClick={() => setItemsOpen((v) => !v)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    data-testid="btn-toggle-ocr-items"
+                    onClick={() => setItemsOpen((v) => !v)}
+                  >
                     {itemsOpen ? "Hide" : "Show"} items ({extractedItems.length})
                   </Button>
                   {itemsOpen ? (
-                    <div className="mt-2 overflow-x-auto rounded-md border border-border">
+                    <div className="mt-2 overflow-x-auto rounded-md border border-border" data-testid="ocr-items-table">
                       <table className="min-w-full text-sm">
                         <thead className="bg-muted">
                           <tr>
@@ -318,10 +400,12 @@ export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint
                         </thead>
                         <tbody>
                           {extractedItems.slice(0, 20).map((item: any, idx: number) => (
-                            <tr key={idx} className="border-t border-border">
+                            <tr key={idx} className="border-t border-border" data-testid={`ocr-item-row-${idx}`}>
                               <td className="px-3 py-2">{String(item.description || "")}</td>
                               <td className="px-3 py-2">{item.total ?? ""}</td>
-                              <td className="px-3 py-2">{confidenceLabel(item.confidence)}</td>
+                              <td className="px-3 py-2">
+                                <ConfidenceBadge score={item.confidence} field={`item-${idx}`} />
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -332,10 +416,11 @@ export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint
               ) : null}
 
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setOpen(false)}>
+                <Button variant="outline" data-testid="btn-cancel-ocr" onClick={() => setOpen(false)}>
                   Cancel
                 </Button>
                 <Button
+                  data-testid="btn-confirm-ocr"
                   onClick={handleConfirm}
                   disabled={
                     confirmMutation.isPending ||
@@ -344,7 +429,7 @@ export function ReceiptOcrDialog(props: { onConfirmed?: () => void; currencyHint
                     !(Number(form.total) > 0)
                   }
                 >
-                  Confirm & Create
+                  {confirmMutation.isPending ? "Confirming..." : "Confirm & Create"}
                 </Button>
               </div>
             </Card>

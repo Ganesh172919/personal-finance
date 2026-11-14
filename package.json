@@ -1,0 +1,16 @@
+{
+  "name": "finwise-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify:submission": "node scripts/verify-submission.mjs",
+    "verify:gnani": "npm run verify:gnani --prefix server",
+    "package:submission": "node scripts/package-submission.mjs",
+    "check:server": "npm run check --prefix server",
+    "check:client": "npx tsc --noEmit --project client/tsconfig.json",
+    "check": "npm run check:server && npm run check:client",
+    "test:voice": "npm run test:ci --prefix server -- src/test/services/gnaniVoiceService.test.ts",
+    "build:client": "npm run build --prefix client"
+  }
+}

@@ -124,14 +124,14 @@ describe("org isolation across key endpoints", () => {
     expect(Number(dashboardB.body.spending.current_month_total)).toBe(300);
 
     const exportA = await request(app)
-      .post("/api/v1/exports")
+      .post("/api/exports")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({ type: "transactions_csv", params: {} })
       .expect(201);
 
     const exportB = await request(app)
-      .post("/api/v1/exports")
+      .post("/api/exports")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgBId)
@@ -139,11 +139,11 @@ describe("org isolation across key endpoints", () => {
       .expect(201);
 
     const exportsA = await request(app)
-      .get("/api/v1/exports")
+      .get("/api/exports")
       .set("Cookie", [cookie, csrfCookie])
       .expect(200);
     const exportsB = await request(app)
-      .get("/api/v1/exports")
+      .get("/api/exports")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-Org-Id", orgBId)
       .expect(200);
@@ -295,7 +295,7 @@ describe("org isolation across key endpoints", () => {
       .post("/api/receipts/parse")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
-      .attach("file", Buffer.from("test"), { filename: "receipt-a.jpg", contentType: "image/jpeg" })
+      .attach("file", Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]), { filename: "receipt-a.jpg", contentType: "image/jpeg" })
       .expect(200);
 
     const receiptBParse = await request(app)
@@ -303,7 +303,7 @@ describe("org isolation across key endpoints", () => {
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", orgBId)
-      .attach("file", Buffer.from("test"), { filename: "receipt-b.jpg", contentType: "image/jpeg" })
+      .attach("file", Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]), { filename: "receipt-b.jpg", contentType: "image/jpeg" })
       .expect(200);
 
     const receiptsA = await request(app)

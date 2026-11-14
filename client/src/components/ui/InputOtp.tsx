@@ -1,6 +1,9 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+// Property specifications for the one-time password (OTP) input component.
+// Requires total character length, current string value, and change callback.
+// Supports optional custom className overrides for layout and container spacing.
 interface SimpleOTPInputProps {
   maxLength: number;
   value: string;
@@ -8,6 +11,9 @@ interface SimpleOTPInputProps {
   className?: string;
 }
 
+// Multi-box PIN/OTP input component handling sequential numeric digit inputs.
+// Automatically advances cursor focus to adjacent cells upon typing or pasting.
+// Handles keyboard navigation, backspace rewinding, and clipboard paste events.
 const SimpleOTPInput = React.forwardRef<HTMLInputElement, SimpleOTPInputProps>(
   ({ maxLength, value, onChange, className, ...props }, ref) => {
     const [otp, setOtp] = React.useState<string[]>(new Array(maxLength).fill(""));

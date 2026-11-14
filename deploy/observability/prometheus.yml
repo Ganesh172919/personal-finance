@@ -1,0 +1,57 @@
+# Example Prometheus configuration for FinWise (copy and adapt; not used by compose.yaml).
+#
+# Scrape the replicas DIRECTLY. The edge (client/nginx.conf) returns 404 for
+# /api/metrics on purpose, and each gateway/AI Core replica is its own target.
+#
+# Requirements on the FinWise side:
+#   gateway : METRICS_ENABLED=true and METRICS_TOKEN=<token>      (GET /api/metrics, port 3000)
+#   AI Core : AI_CORE_METRICS_TOKEN=<token>                       (GET /metrics,     port 8001)
+# Put the tokens in files readable by Prometheus (never inline them in this file).
+# compose's overlay (deploy/observability/compose.observability.yaml) shows the wiring.
+#
+# Service discovery: in docker compose the service name `server` / `ai-core`
+# resolves to one A record per replica, so dns_sd_configs sees every replica and
+# picks up scale-outs. On Kubernetes use kubernetes_sd_configs (see deploy/k8s/)
+# and on ECS use the ECS service-discovery / CloudWatch agent equivalent.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    system: finwise
+
+rule_files:
+  - /etc/prometheus/finwise.rules.yml
+
+scrape_configs:
+  - job_name: finwise-server
+    metrics_path: /api/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/server_metrics_token
+    dns_sd_configs:
+      - names: [server]
+        type: A
+        port: 3000
+        refresh_interval: 15s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  - job_name: finwise-ai-core
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/ai_core_metrics_token
+    dns_sd_configs:
+      - names: [ai-core]
+        type: A
+        port: 8001
+        refresh_interval: 15s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # The dedicated worker exposes no HTTP port, so it has no scrape target; its
+  # queue health is visible via finwise_dlq_size from the gateway once a DLQ
+  # provider is registered (see docs/OBSERVABILITY.md, "Defined but unwired").

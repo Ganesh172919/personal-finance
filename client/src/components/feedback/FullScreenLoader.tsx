@@ -1,8 +1,33 @@
+/**
+ * @fileoverview FullScreenLoader — full-viewport loading screen shown during initial app
+ * bootstrap, authentication checks, or route-level code-splitting suspense.
+ *
+ * WHAT IT DOES
+ *  - Renders a centred spinner (animated ring with a pulsing dot) alongside a configurable
+ *    label and description text.
+ *  - Uses `min-h-screen` to fill the viewport and `bg-background` to match the current theme.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `label` (string, default "Loading Personal Finance...") — primary loading message.
+ *  - `description` (string, default "Preparing your workspace.") — secondary helper text.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used as a Suspense fallback in route definitions and as a bootstrap loading state.
+ *  - Self-contained — no hooks, no context, no API calls. Pure presentational.
+ *  - The spinner uses CSS `animate-spin` on a transparent-top border circle for a smooth
+ *    rotation effect without external animation libraries.
+ */
+// Property specifications for the full-viewport loading screen indicator.
+// Provides configurable text labels and secondary status descriptions.
+// Supplies fallback values when custom status messages are not supplied.
 type FullScreenLoaderProps = {
   label?: string;
   description?: string;
 };
 
+// Full-screen loading overlay presented during workspace boots and route suspense.
+// Centers an animated radial spinner and theme-aware textual status indicators.
+// Prevents UI flashing and layout shifts while code chunks and user data resolve.
 export function FullScreenLoader({
   label = "Loading Personal Finance...",
   description = "Preparing your workspace.",

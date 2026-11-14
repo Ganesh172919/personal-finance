@@ -1,20 +1,114 @@
+/**
+ * @fileoverview AgentWorkflowVisualizer — displays the multi-agent AI workflow trace
+ * that produced a given financial analysis response.
+ *
+ * ============================================================================
+ * MINDMAP FLOW: AGENT WORKFLOW VISUALIZER & TRACE RENDERING
+ * ============================================================================
+ * - Agent Workflow Visualizer Component
+ *     ├── 1. Trace Data Ingestion & Fallback Resolution
+ *     │   ├── workflowTrace: Array of IWorkflowTraceEntry (agent, startedAt, endedAt, status, error)
+ *     │   └── Fallback Synthesizer: Maps string array `agentsInvolved` to synthetic traces if empty
+ *     ├── 2. Specialist Visuals Registry (AGENT_VISUALS)
+ *     │   ├── master_agent -> Master Strategist (Crown, Emerald)
+ *     │   ├── comprehensive_analysis -> Orchestrator (BrainCircuit, Sky)
+ *     │   ├── income_expense_analyzer -> Analyzer (Calculator, Indigo)
+ *     │   ├── budget_planner -> Budget Planner (Calculator, Blue)
+ *     │   ├── investment_advisor -> Advisor (TrendingUp, Amber)
+ *     │   ├── debt_optimizer -> Debt Optimizer (PiggyBank, Red)
+ *     │   └── financial_educator -> Educator (GraduationCap, Green)
+ *     ├── 3. Animation & Timing Mechanics
+ *     │   ├── Framer Motion Stagger: 0.04s sequential reveal per row
+ *     │   └── Duration Calculation: EndedAt - StartedAt formatted in milliseconds
+ *     └── 4. Header Badges & System Transparency
+ *         ├── Total LLM API calls counter
+ *         └── Fallback Path Activated badge (circuit breaker / offline indicator)
+ *
+ * ============================================================================
+ * ASCII FLOW: TRACE PROP NORMALIZATION & STEP RENDERING PIPELINE
+ * ============================================================================
+ *        [ Backend AI Response with workflowTrace / agentsInvolved ]
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Is workflowTrace populated (> 0 items)?|
+ *                 +--------------------+-------------------+
+ *                                /          \
+ *                         Yes   /            \ No
+ *                              v              v
+ *                    [ Use Real Trace ]   +---------------------------+
+ *                             |           | buildFallbackTrace()      |
+ *                             |           | from agentsInvolved array |
+ *                             |           +-------------+-------------+
+ *                             |                         |
+ *                             +------------<------------+
+ *                                          |
+ *                                          v
+ *                         +---------------------------------+
+ *                         | Normalize Agent Keys to Lowercase|
+ *                         | Lookup AGENT_VISUALS metadata   |
+ *                         | (Icon, Hex Color, Display Label)|
+ *                         +----------------+----------------+
+ *                                          |
+ *                                          v
+ *                         +---------------------------------+
+ *                         | Render Framer Motion Container  |
+ *                         | Header: Call Count & Fallback   |
+ *                         +----------------+----------------+
+ *                                          |
+ *                                          v
+ *      +-------------------------------------------------------------------+
+ *      |  Staggered Rows (0.04s delay per agent step):                     |
+ *      |  [Icon] Master Strategist  ...... [Status: Completed] [ 142ms ]   |
+ *      |  [Icon] Budget Planner     ...... [Status: Completed] [ 380ms ]   |
+ *      |  [Icon] Debt Optimizer     ...... [Status: Completed] [ 210ms ]   |
+ *      +-------------------------------------------------------------------+
+ *
+ * WHAT IT DOES
+ *  - Receives a `workflowTrace` array (or a fallback built from `agentsInvolved`)
+ *    and renders each agent step as an animated row with status, duration, and error info.
+ *  - Maps agent keys (e.g. "budget_planner") to human-friendly labels, icons, and
+ *    colors via the `AGENT_VISUALS` lookup table.
+ *  - Shows summary metadata: total LLM call count and whether a fallback path was used.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `workflowTrace` (IWorkflowTraceEntry[]) — the primary data source from the AI backend.
+ *  - `agentsInvolved` (string[]) — used as a fallback when no detailed trace is provided.
+ *  - `fallbackUsed` / `llmCallCount` — read-only badges shown in the component header.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used inside `AiCommandBar` (and `InsightDetailModal`) to give users transparency
+ *    into which AI agents participated in generating their financial advice.
+ *  - Pure presentational — no side-effects, API calls, or state mutations.
+ *  - Framer Motion stagger animation (0.04 s delay per row) provides a sequential reveal.
+ */
 import { motion } from "framer-motion";
 import { Crown, Calculator, TrendingUp, PiggyBank, GraduationCap, BrainCircuit } from "lucide-react";
 import { IWorkflowTraceEntry } from "@/types";
 
+// Component parameter specifications for the agent execution trace visualizer.
+// Supplies detailed trace step objects alongside fallback agent string lists.
+// Conveys telemetry summary metrics covering total LLM invocations and fallbacks.
 interface AgentWorkflowVisualizerProps {
   workflowTrace?: IWorkflowTraceEntry[];
   agentsInvolved?: string[];
   fallbackUsed?: boolean;
+  recoveredProvider?: boolean;
   llmCallCount?: number;
 }
 
+// Visual styling configuration associated with an AI specialist agent identity.
+// Specifies display title labels, Lucide icon components, and themed badge colors.
+// Governs consistent branding across pipeline execution steps in trace widgets.
 type AgentVisualConfig = {
   label: string;
   icon: typeof Crown;
   color: string;
 };
 
+// Registry mapping specialist agent identifiers to visual presentation tokens.
+// Encapsulates distinct iconography and theme colors for analyzers, planners, and advisors.
+// Provides visual differentiation when rendering multi-agent collaboration histories.
 const AGENT_VISUALS: Record<string, AgentVisualConfig> = {
   master_agent: { label: "Master Strategist", icon: Crown, color: "hsl(158 64% 52%)" },
   master_synthesis: { label: "Master Synthesis", icon: Crown, color: "hsl(158 64% 44%)" },
@@ -24,14 +118,21 @@ const AGENT_VISUALS: Record<string, AgentVisualConfig> = {
   investment_advisor: { label: "Investment Advisor", icon: TrendingUp, color: "hsl(46 95% 53%)" },
   debt_optimizer: { label: "Debt Optimizer", icon: PiggyBank, color: "hsl(0 84% 60%)" },
   financial_educator: { label: "Financial Educator", icon: GraduationCap, color: "hsl(134 61% 41%)" },
+  compound_interest_calculator: { label: "Compound interest calculator", icon: GraduationCap, color: "hsl(134 61% 41%)" },
   ai_core_client: { label: "AI Core Client", icon: BrainCircuit, color: "hsl(271 81% 56%)" },
 };
 
+// Sanitizes raw agent string identifiers for reliable dictionary key lookups.
+// Trims surrounding whitespace and converts casing to lowercase format.
+// Ensures consistent lookup resolution across divergent backend response payloads.
 const normalizeAgentKey = (agent: string) => {
   const key = agent.toLowerCase().trim();
   return key;
 };
 
+// Computes and formats the elapsed execution time for an individual agent step.
+// Calculates millisecond differences between execution start and end timestamps.
+// Returns a hyphen placeholder when timestamps are missing, invalid, or inverted.
 const formatDuration = (entry: IWorkflowTraceEntry) => {
   const started = new Date(entry.startedAt).getTime();
   const ended = new Date(entry.endedAt).getTime();
@@ -44,6 +145,9 @@ const formatDuration = (entry: IWorkflowTraceEntry) => {
   return `${duration}ms`;
 };
 
+// Generates a synthetic workflow trace list when detailed telemetry is absent.
+// Maps basic agent name strings into structured IWorkflowTraceEntry objects.
+// Preserves visualization consistency when communicating with legacy backend models.
 const buildFallbackTrace = (agentsInvolved: string[] = []): IWorkflowTraceEntry[] => {
   const timestamp = new Date().toISOString();
   return agentsInvolved.map(agent => ({
@@ -54,10 +158,14 @@ const buildFallbackTrace = (agentsInvolved: string[] = []): IWorkflowTraceEntry[
   }));
 };
 
+// Renders an animated step-by-step trace of multi-agent AI execution pipelines.
+// Visualizes specialist agent roles, elapsed computation times, and error notices.
+// Promotes transparency by detailing execution stages and fallback routing flags.
 export function AgentWorkflowVisualizer({
   workflowTrace = [],
   agentsInvolved = [],
   fallbackUsed = false,
+  recoveredProvider = false,
   llmCallCount = 0,
 }: AgentWorkflowVisualizerProps) {
   const trace = workflowTrace.length > 0 ? workflowTrace : buildFallbackTrace(agentsInvolved);
@@ -71,12 +179,12 @@ export function AgentWorkflowVisualizer({
   }
 
   return (
-    <div className="rounded-md border border-border bg-card/60 p-3" data-testid="workflow-visualizer">
-      <div className="mb-3 flex items-center justify-between">
+    <div className="min-w-0 max-w-full rounded-md border border-border bg-card/60 p-3" data-testid="workflow-visualizer">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Agent Workflow Trace</h3>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span>LLM calls: {llmCallCount}</span>
-          <span>{fallbackUsed ? "Fallback used" : "Primary path"}</span>
+          <span>{fallbackUsed ? "Fallback used" : recoveredProvider ? "Provider recovered" : llmCallCount === 0 ? "No model call" : "Primary path"}</span>
         </div>
       </div>
 
@@ -98,23 +206,23 @@ export function AgentWorkflowVisualizer({
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, delay: index * 0.04 }}
-              className="flex items-center justify-between rounded-md bg-accent/35 px-3 py-2"
+              className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md bg-accent/35 px-3 py-2"
               data-testid={`trace-${agentKey}-${index}`}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
                 <div
-                  className="flex h-6 w-6 items-center justify-center rounded-full"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
                   style={{ backgroundColor: config.color }}
                 >
                   <Icon className="h-3.5 w-3.5 text-white" />
                 </div>
-                <div>
-                  <p className="text-xs font-medium text-foreground">{config.label}</p>
+                <div className="min-w-0">
+                  <p className="break-words text-xs font-medium text-foreground">{config.label}</p>
                   <p className="text-[11px] text-muted-foreground">status: {status}</p>
                 </div>
               </div>
 
-              <div className="text-right text-[11px] text-muted-foreground">
+              <div className="min-w-0 max-w-full text-right text-[11px] text-muted-foreground">
                 <p>{formatDuration(entry)}</p>
                 {entry.error ? <p className="max-w-[220px] truncate text-destructive">{entry.error}</p> : null}
               </div>

@@ -1,3 +1,25 @@
+/**
+ * @fileoverview BlogCard — renders a blog post as either a large featured hero card
+ * or a standard grid card, with cover image, category badge, author avatar, and engagement stats.
+ *
+ * WHAT IT DOES
+ *  - When `featured=true`: renders a full-width hero with gradient overlay, large title,
+ *    excerpt, author info, read time, views, and likes.
+ *  - When `featured=false`: renders a compact card with cover image, category badge,
+ *    title, excerpt, and footer with author + engagement stats.
+ *  - Uses `LazyImage` for performant cover image loading and `formatDistanceToNow` for
+ *    relative publish dates.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `post` (IBlogPost) — the blog post data object.
+ *  - `featured` (boolean) — toggles hero vs. grid layout.
+ *  - `resolveBlogCoverImage` / `resolveAuthorAvatar` — media URL resolution helpers.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used on the /blogs listing page; featured variant appears at the top of the page.
+ *  - Links to `/blogs/:slug` via wouter's `<Link>` for client-side navigation.
+ *  - `CATEGORY_COLORS` maps nine blog categories to theme-aware background/text classes.
+ */
 import { motion } from "framer-motion";
 import { Clock, Eye, Heart, TrendingUp } from "lucide-react";
 import { Link } from "wouter";
@@ -9,11 +31,17 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/Avatar";
 import { LazyImage } from "@/components/LazyImage";
 import { resolveAuthorAvatar, resolveBlogCoverImage } from "@/lib/media";
 
+// Property structure definition for the educational blog card component.
+// Supplies the blog article model alongside an optional featured display flag.
+// Governs whether a prominent hero card or a compact grid tile is rendered.
 interface BlogCardProps {
   post: IBlogPost;
   featured?: boolean;
 }
 
+// Mapping dictionary associating blog categories with theme chart color classes.
+// Assigns distinctive visual badge palettes to topics such as taxes and investing.
+// Ensures consistent topic categorization across article lists and featured heroes.
 const CATEGORY_COLORS: Record<string, string> = {
   'investing': 'bg-chart-1 text-chart-1-foreground',
   'budgeting': 'bg-chart-2 text-chart-2-foreground',
@@ -26,10 +54,16 @@ const CATEGORY_COLORS: Record<string, string> = {
   'personal-growth': 'bg-chart-4/80 text-chart-4-foreground',
 };
 
+// Formats hyphenated raw category slugs into capitalized human-readable titles.
+// Splits slug segments and capitalizes each individual token.
+// Produces clean display labels for category tags and header chips.
 const getCategoryLabel = (cat: string) => {
     return cat.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
+// Renders an individual blog article as a featured banner or standard grid card.
+// Displays cover imagery, author profile avatars, read time, and view counts.
+// Navigates seamlessly to the dedicated article page using client-side routing.
 export function BlogCard({ post, featured = false }: BlogCardProps) {
   const publishedDate = post.publishedAt ? formatDistanceToNow(new Date(post.publishedAt), { addSuffix: true }) : '';
   const coverImage = resolveBlogCoverImage(post.coverImage);

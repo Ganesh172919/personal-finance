@@ -1,52 +1,197 @@
-import type { Types } from "mongoose";
-import TransactionModel from "../models/transactionModel";
-import { ensureUserTransactionsMigrated } from "./transactionMigration";
+/**
+ * @fileoverview Transaction Service -- AI Data Retrieval
+ *
+ * PURPOSE:
+ * This service fetches and normalizes transaction data specifically for AI
+ * processing. It is a focused data-access layer that sits between the
+ * TransactionModel (MongoDB) and the AI request builder.
+ *
+ * ============================================================================
+ * MINDMAP FLOW: TRANSACTION RETRIEVAL & AI CONTEXT WINDOWING
+ * ============================================================================
+ * - Transaction AI Retrieval Service
+ *     ├── 1. Pre-Flight Migration Check
+ *     │   └── ensureUserTransactionsMigrated(orgId, userId)
+ *     ├── 2. Scoping & Temporal Filtering
+ *     │   ├── Multi-tenant Filter: { orgId, userId }
+ *     │   └── Date Cutoff: maxAgeDays (default: 365 days ago)
+ *     ├── 3. Concurrent Database Querying (Promise.all)
+ *     │   ├── countDocuments(filter) -> Total matching transaction volume
+ *     │   └── find(filter).sort({ date: -1 }).limit(maxItems).lean() -> Top 300 recent
+ *     ├── 4. Chronological Re-ordering
+ *     │   └── .reverse() -> Flips descending fetch to ascending time for LLM reasoning
+ *     ├── 5. Type Normalization (AiTransaction)
+ *     │   ├── Amount: Positive for income, negative for expenses
+ *     │   ├── Category: Non-empty fallback string
+ *     │   ├── Description: Guaranteed string, trimmed
+ *     │   └── Type: 'income' | 'expense' | 'investment'
+ *     └── 6. Telemetry & Quota Stats
+ *         └── totalTransactions, sentTransactions, droppedTransactions
+ *
+ * ============================================================================
+ * ASCII FLOW: DATA ACCESS & TEMPORAL NORMALIZATION PIPELINE
+ * ============================================================================
+ *               [ AI Controller / Command Pipeline Request ]
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  |  fetchTransactionsForAi(org, user)   |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | ensureUserTransactionsMigrated()     |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Compute Cutoff: now - 365 days       |
+ *                  | Filter: { orgId, userId, date>=cut } |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  |    Promise.all Concurrent Queries    |
+ *                  +------------------+-------------------+
+ *                                /          \
+ *                               /            \
+ *                              v              v
+ *                  [ countDocuments ]    [ find().limit(300).lean() ]
+ *                  Total Pool Size       Most Recent 300 Items (Desc)
+ *                              \              /
+ *                               \            /
+ *                                v          v
+ *                  +--------------------------------------+
+ *                  | .reverse() -> Chronological (Asc)    |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Normalize to AiTransaction[]         |
+ *                  | - Ensure positive income / neg spend |
+ *                  | - Compute droppedTransactions count  |
+ *                  +------------------+-------------------+
+ *                                     |
+ *                                     v
+ *                  +--------------------------------------+
+ *                  | Return AiTransactionFetchResult      |
+ *                  | Ready for aiRequestBuilder & Core    |
+ *                  +--------------------------------------+
+ *
+ * WHY A SEPARATE SERVICE?
+ * The AI service needs transactions in a specific format (AiTransaction type)
+ * with specific limits (max items, max age). Rather than embedding this logic
+ * in the controller or the request builder, this service encapsulates the
+ * data retrieval strategy for AI consumption.
+ *
+ * RELATIONSHIP TO OTHER MODULES:
+ * - TransactionModel: Raw MongoDB queries
+ * - transactionMigration: Ensures legacy data is in the correct format
+ * - aiRequestBuilder: Consumes the output of this service
+ * - aiCoreClient: Sends the final request to the AI service
+ *
+ * DATA FLOW:
+ * Controller -> fetchTransactionsForAi() -> aiRequestBuilder.buildProcessRequest()
+ *   -> aiCoreClient.processAiCoreRequest() -> Python AI service
+ *
+ * @module services/transactionService
+ */
 
+import type { Types } from "mongoose"; // MongoDB ObjectId type
+import TransactionModel from "../models/transactionModel"; // Transaction MongoDB model
+import { ensureUserTransactionsMigrated } from "./transactionMigration"; // Legacy data migration check
+
+/**
+ * Normalized transaction type for AI consumption.
+ * All fields are guaranteed to be non-null and properly typed.
+ */
+// Defines a normalized financial transaction formatted for AI context ingestion.
+// Enforces non-null numerical amounts, categories, descriptions, and date stamps.
+// Categorizes ledger entries across income, expense, and investment types.
 export type AiTransaction = {
-  amount: number;
-  category: string;
-  description: string;
-  date: Date;
-  type: "income" | "expense" | "investment";
+  amount: number; // Normalized amount (positive for income, negative for expenses)
+  category: string; // Transaction category (e.g., "Food", "Rent", "Salary")
+  description: string; // Transaction description (may be empty string, never null)
+  date: Date; // Transaction date (guaranteed to be a valid Date object)
+  type: "income" | "expense" | "investment"; // Normalized transaction type
 };
 
+/**
+ * Result type including both the transactions and statistics about the fetch.
+ * Stats are used for logging and displayed in the AI response metadata.
+ */
+// Represents the payload returned by the AI transaction retrieval pipeline.
+// Encapsulates normalized chronological transaction records and retrieval stats.
+// Tracks total matched volume, transmitted count, and dropped historical items.
 export type AiTransactionFetchResult = {
-  transactions: AiTransaction[];
+  transactions: AiTransaction[]; // Normalized transactions ready for AI
   stats: {
-    totalTransactions: number;
-    sentTransactions: number;
-    droppedTransactions: number;
+    totalTransactions: number; // Total matching transactions in the database
+    sentTransactions: number; // Number actually sent (may be less due to limits)
+    droppedTransactions: number; // Transactions excluded due to age/count limits
   };
 };
 
+/**
+ * Fetches transactions for AI processing with automatic migration and limits.
+ *
+ * PIPELINE:
+ * 1. Run migration check (ensures legacy data is compatible)
+ * 2. Calculate date cutoff (default 365 days ago)
+ * 3. Count total matching transactions
+ * 4. Fetch most recent N transactions (default 300)
+ * 5. Reverse to chronological order (oldest first -- AI processes history in order)
+ * 6. Normalize each document to the AiTransaction type
+ *
+ * PERFORMANCE NOTE: countDocuments and find run in parallel via Promise.all
+ * to minimize total query time. The .lean() flag tells Mongoose to return
+ * plain objects instead of full documents, which is faster for read-only use.
+ *
+ * @param {object} params - Fetch parameters
+ * @param {Types.ObjectId} params.orgId - Organization ID (multi-tenancy)
+ * @param {Types.ObjectId} params.userId - User ID
+ * @param {number} [params.maxAgeDays=365] - Maximum age of transactions in days
+ * @param {number} [params.maxItems=300] - Maximum number of transactions to return
+ * @returns {Promise<AiTransactionFetchResult>} Transactions and fetch statistics
+ */
+// Fetches, filters, and normalizes tenant transactions for AI prompt context windows.
+// Runs legacy data migrations and executes parallel query count and retrieval calls.
+// Reverses fetched descending batches into chronological order for agent reasoning.
 export const fetchTransactionsForAi = async (params: {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;
   maxAgeDays?: number;
   maxItems?: number;
 }): Promise<AiTransactionFetchResult> => {
-  const maxAgeDays = params.maxAgeDays ?? 365;
-  const maxItems = params.maxItems ?? 300;
+  const maxAgeDays = params.maxAgeDays ?? 365; // Default: 1 year of history
+  const maxItems = params.maxItems ?? 300; // Default: 300 transactions max
 
+  // Ensure any legacy transaction data has been migrated to the current schema
   await ensureUserTransactionsMigrated({ orgId: params.orgId, userId: params.userId });
 
+  // Calculate the date cutoff -- transactions older than this are excluded
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - maxAgeDays);
 
+  // Base filter: scoped to this org + user + date range
   const filter = { orgId: params.orgId, userId: params.userId, date: { $gte: cutoff } };
 
+  // Run count and fetch in parallel for better performance
   const [totalTransactions, docs] = await Promise.all([
-    TransactionModel.countDocuments(filter),
+    TransactionModel.countDocuments(filter), // Total matching count (for stats)
     TransactionModel.find(filter)
-      .sort({ date: -1 })
-      .limit(maxItems)
-      .select({ amount: 1, category: 1, description: 1, date: 1, type: 1 })
-      .lean()
+      .sort({ date: -1 }) // Most recent first (will be reversed below)
+      .limit(maxItems) // Cap at maxItems to prevent sending too much data
+      .select({ amount: 1, category: 1, description: 1, date: 1, type: 1 }) // Only needed fields
+      .lean() // Return plain objects (faster, less memory)
   ]);
 
+  // Reverse to chronological order (oldest first)
+  // The AI processes transactions in order, so chronological is the natural sequence
   const reversed = [...docs].reverse();
 
   return {
+    // Normalize each document to guarantee consistent types
     transactions: reversed.map(doc => ({
       amount: Number(doc.amount) || 0,
       category: String(doc.category || "Other"),
@@ -57,7 +202,31 @@ export const fetchTransactionsForAi = async (params: {
     stats: {
       totalTransactions,
       sentTransactions: reversed.length,
-      droppedTransactions: Math.max(0, totalTransactions - reversed.length)
+      droppedTransactions: Math.max(0, totalTransactions - reversed.length) // How many were excluded by limits
     }
   };
 };
+
+// =============================================================================
+// END-OF-FILE SUMMARY
+// =============================================================================
+//
+// KEY TAKEAWAYS:
+//
+// 1. SINGLE RESPONSIBILITY: This module does exactly one thing -- fetch and
+//    normalize transactions for AI consumption. It does not handle AI
+//    communication (that's aiCoreClient) or data transformation (that's
+//    aiRequestBuilder).
+//
+// 2. MIGRATION SAFETY: The ensureUserTransactionsMigrated call ensures that
+//    legacy data formats are automatically converted before being sent to the
+//    AI service. This prevents crashes from unexpected data shapes.
+//
+// 3. PERFORMANCE OPTIMIZATION: Parallel queries (countDocuments + find),
+//    .lean() for faster reads, and field selection (.select) minimize
+//    database load and response time.
+//
+// 4. CHRONOLOGICAL ORDER: Transactions are reversed after fetching (most recent
+//    last) because the AI service processes them in order. Having the most
+//    recent transactions at the end gives the AI better context for its analysis.
+// =============================================================================

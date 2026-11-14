@@ -1,4 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+/**
+ * @fileoverview TaskApplyDialog — rich dialog for converting a task recommendation into
+ * real financial actions: transactions, goal progress updates, debt payments, or profile updates.
+ *
+ * WHAT IT DOES
+ *  - Displays the task's title and rationale ("why"), then lets the user compose one or
+ *    more "effects" using a draft builder (transaction / goal_progress / debt_payment / profile_update).
+ *  - Each effect is validated (amount > 0, required fields) before being added to a list.
+ *  - "Apply outcomes" sends all effects via `applyTaskEffects` with an idempotency key;
+ *    "Mark completed" skips effects and just updates task status.
+ *  - Fetches goals and debts from the user's financial profile to populate dropdowns.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `task` (Task) — the task being applied.
+ *  - `open` / `onOpenChange` — controlled dialog visibility.
+ *  - `defaultNote` — optional pre-filled note (e.g. "Applied from dashboard task widget").
+ *  - Mutations: `applyTaskEffects`, `updateTaskStatus`.
+ *
+ * ARCHITECTURE NOTES
+ *  - Opened from `TasksWidget` when user clicks the "apply" (rocket) button on a task.
+ *  - Uses idempotency keys (crypto.randomUUID) to prevent duplicate effect applications.
+ *  - Invalidates multiple query caches on success: tasks, transactions, and financial profile.
+ */
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/Button";
@@ -11,6 +34,9 @@ import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import { ApiError, applyTaskEffects, type Task, type TaskEffect, type TaskStatus, updateTaskStatus, type TransactionType } from "@/lib/apiClient";
 import type { IDebt, IFinancialGoal, IFinancialProfile } from "@/types";
 
+// Generates a unique idempotency key string bound to a specific task execution.
+// Combines the task ID with cryptographic random UUIDs or random hexadecimal tokens.
+// Guarantees network retries and duplicate submissions do not execute effects twice.
 const makeIdempotencyKey = (taskId: string) => {
   const cryptoAny = globalThis.crypto as any;
   if (cryptoAny?.randomUUID) {
@@ -19,20 +45,32 @@ const makeIdempotencyKey = (taskId: string) => {
   return `${taskId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
+// Normalizes API network exceptions into user-friendly error string descriptions.
+// Extracts server-side request tracing IDs for diagnostic support cross-referencing.
+// Yields safe fallback notices when incoming error payloads omit details.
 const formatError = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
+// Type alias representing the category of financial effect to construct.
+// Distinguishes ledger transactions, goal progressions, debt repayments, and profiles.
+// Controls the conditional effect draft form rendered in the application modal.
 type DraftType = TaskEffect["type"];
 
+// Maps task domain classifications into corresponding transaction entry types.
+// Translates investment and cashflow tasks into investment and income categories.
+// Defaults all other task classifications to standard expense transactions.
 const inferTxType = (kind: Task["kind"]): TransactionType => {
   if (kind === "invest") return "investment";
   if (kind === "cashflow") return "income";
   return "expense";
 };
 
+// Action modal enabling users to convert recommendation tasks into concrete records.
+// Facilitates batch drafting of transactions, savings goals, and debt reductions.
+// Submits all configured effects under an idempotent payload to update the ledger.
 export function TaskApplyDialog(props: {
   task: Task;
   open: boolean;
@@ -45,6 +83,7 @@ export function TaskApplyDialog(props: {
 
   const task = props.task;
 
+  const draftTask = useRef<string | null>(null);
   const [note, setNote] = useState(props.defaultNote || "");
   const [idempotencyKey, setIdempotencyKey] = useState(() => makeIdempotencyKey(task._id));
   const [effects, setEffects] = useState<TaskEffect[]>([]);
@@ -75,7 +114,9 @@ export function TaskApplyDialog(props: {
   const debts = useMemo(() => ((profileQuery.data?.debts || []) as IDebt[]) || [], [profileQuery.data?.debts]);
 
   useEffect(() => {
-    if (!props.open) return;
+    if (!props.open) { draftTask.current = null; return; }
+    if (draftTask.current === task._id) return;
+    draftTask.current = task._id;
     setNote(props.defaultNote || "");
     setIdempotencyKey(makeIdempotencyKey(task._id));
     setEffects([]);
@@ -93,6 +134,12 @@ export function TaskApplyDialog(props: {
     setProfileMonthlyExpenses("");
     setProfileSavings("");
   }, [props.open, props.defaultNote, task._id, task.kind, task.title, goals, debts]);
+
+  useEffect(() => {
+    if (!props.open) return;
+    setGoalId(previous => previous || goals[0]?.id || "");
+    setDebtId(previous => previous || debts[0]?.id || "");
+  }, [props.open, goals, debts]);
 
   const addEffect = () => {
     if (draftType === "transaction") {
@@ -224,8 +271,8 @@ export function TaskApplyDialog(props: {
           </Card>
 
           <div className="space-y-2">
-            <Label>Note (optional)</Label>
-            <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="What did you do?" />
+            <Label htmlFor="task-effect-note">Note (optional)</Label>
+            <Input id="task-effect-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="What did you do?" />
           </div>
 
           <div className="space-y-2">
@@ -266,7 +313,7 @@ export function TaskApplyDialog(props: {
           <Card className="p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-semibold text-foreground">Add effect</div>
-              <select
+              <select aria-label="Effect type"
                 value={draftType}
                 onChange={(e) => setDraftType(e.target.value as DraftType)}
                 className="rounded-md border border-border bg-background px-3 py-2 text-sm"
@@ -281,12 +328,12 @@ export function TaskApplyDialog(props: {
             {draftType === "transaction" ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <Label>Amount ({currency})</Label>
-                  <Input value={txAmount} onChange={(e) => setTxAmount(e.target.value)} type="number" min="0" step="1" />
+                  <Label htmlFor="task-effect-tx-amount">Amount ({currency})</Label>
+                  <Input id="task-effect-tx-amount" value={txAmount} onChange={(e) => setTxAmount(e.target.value)} type="number" min="0" step="0.01" />
                 </div>
                 <div>
-                  <Label>Type</Label>
-                  <select
+                  <Label htmlFor="task-effect-tx-type">Type</Label>
+                  <select id="task-effect-tx-type" aria-label="Transaction type"
                     value={txType}
                     onChange={(e) => setTxType(e.target.value as TransactionType)}
                     className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
@@ -297,12 +344,12 @@ export function TaskApplyDialog(props: {
                   </select>
                 </div>
                 <div>
-                  <Label>Category</Label>
-                  <Input value={txCategory} onChange={(e) => setTxCategory(e.target.value)} placeholder="Food, Rent..." />
+                  <Label htmlFor="task-effect-category">Category</Label>
+                  <Input id="task-effect-category" value={txCategory} onChange={(e) => setTxCategory(e.target.value)} placeholder="Food, Rent..." />
                 </div>
                 <div>
-                  <Label>Description</Label>
-                  <Input value={txDescription} onChange={(e) => setTxDescription(e.target.value)} placeholder={task.title} />
+                  <Label htmlFor="task-effect-description">Description</Label>
+                  <Input id="task-effect-description" value={txDescription} onChange={(e) => setTxDescription(e.target.value)} placeholder={task.title} />
                 </div>
               </div>
             ) : null}
@@ -310,8 +357,8 @@ export function TaskApplyDialog(props: {
             {draftType === "goal_progress" ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="md:col-span-2">
-                  <Label>Goal</Label>
-                  <select
+                  <Label htmlFor="task-effect-goal">Goal</Label>
+                  <select id="task-effect-goal"
                     value={goalId}
                     onChange={(e) => setGoalId(e.target.value)}
                     className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
@@ -326,8 +373,8 @@ export function TaskApplyDialog(props: {
                   </select>
                 </div>
                 <div>
-                  <Label>Mode</Label>
-                  <select
+                  <Label htmlFor="task-effect-goal-mode">Mode</Label>
+                  <select id="task-effect-goal-mode"
                     value={goalMode}
                     onChange={(e) => setGoalMode(e.target.value as any)}
                     className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
@@ -337,8 +384,8 @@ export function TaskApplyDialog(props: {
                   </select>
                 </div>
                 <div className="md:col-span-3">
-                  <Label>Amount</Label>
-                  <Input value={goalAmount} onChange={(e) => setGoalAmount(e.target.value)} type="number" min="0" step="1" />
+                  <Label htmlFor="task-effect-goal-amount">Goal progress amount</Label>
+                  <Input id="task-effect-goal-amount" value={goalAmount} onChange={(e) => setGoalAmount(e.target.value)} type="number" min="0" step="0.01" />
                 </div>
               </div>
             ) : null}
@@ -346,8 +393,8 @@ export function TaskApplyDialog(props: {
             {draftType === "debt_payment" ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <Label>Debt</Label>
-                  <select
+                  <Label htmlFor="task-effect-debt">Debt</Label>
+                  <select id="task-effect-debt"
                     value={debtId}
                     onChange={(e) => setDebtId(e.target.value)}
                     className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
@@ -362,8 +409,8 @@ export function TaskApplyDialog(props: {
                   </select>
                 </div>
                 <div>
-                  <Label>Amount</Label>
-                  <Input value={debtAmount} onChange={(e) => setDebtAmount(e.target.value)} type="number" min="0" step="1" />
+                  <Label htmlFor="task-effect-debt-amount">Debt payment amount</Label>
+                  <Input id="task-effect-debt-amount" value={debtAmount} onChange={(e) => setDebtAmount(e.target.value)} type="number" min="0" step="0.01" />
                 </div>
               </div>
             ) : null}
@@ -371,16 +418,16 @@ export function TaskApplyDialog(props: {
             {draftType === "profile_update" ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <Label>Annual income</Label>
-                  <Input value={profileAnnualIncome} onChange={(e) => setProfileAnnualIncome(e.target.value)} type="number" min="0" step="1" />
+                  <Label htmlFor="task-effect-income">Annual income</Label>
+                  <Input id="task-effect-income" value={profileAnnualIncome} onChange={(e) => setProfileAnnualIncome(e.target.value)} type="number" min="0" step="0.01" />
                 </div>
                 <div>
-                  <Label>Monthly expenses</Label>
-                  <Input value={profileMonthlyExpenses} onChange={(e) => setProfileMonthlyExpenses(e.target.value)} type="number" min="0" step="1" />
+                  <Label htmlFor="task-effect-expenses">Monthly expenses</Label>
+                  <Input id="task-effect-expenses" value={profileMonthlyExpenses} onChange={(e) => setProfileMonthlyExpenses(e.target.value)} type="number" min="0" step="0.01" />
                 </div>
                 <div>
-                  <Label>Savings</Label>
-                  <Input value={profileSavings} onChange={(e) => setProfileSavings(e.target.value)} type="number" step="1" />
+                  <Label htmlFor="task-effect-savings">Savings</Label>
+                  <Input id="task-effect-savings" value={profileSavings} onChange={(e) => setProfileSavings(e.target.value)} type="number" step="0.01" />
                 </div>
               </div>
             ) : null}

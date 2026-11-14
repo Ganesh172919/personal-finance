@@ -4,6 +4,9 @@ import { Check } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// Interactive toggle checkbox control built on Radix UI Checkbox primitive.
+// Features animated Check icon indicator with focus rings and primary color states.
+// Integrates seamlessly with form validation, tables, and bulk selection lists.
 const Checkbox = React.forwardRef<
   React.ElementRef<typeof CheckboxPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof CheckboxPrimitive.Root>

@@ -1,18 +1,134 @@
+"""
+investment_advisor.py - Investment Advisor Agent
+==================================================
+
+The ``InvestmentAdvisorAgent`` provides personalised investment advice
+based on a user's risk profile, age, time horizon, and experience level.
+It operates entirely deterministically -- no LLM calls are made.
+
+Key responsibilities
+--------------------
+- Assess the user's risk profile (conservative/moderate/aggressive) using
+  a weighted scoring system across age, experience, time horizon, and
+  stated risk tolerance.
+- Create an investment strategy with focus areas and rebalancing cadence.
+- Generate a portfolio allocation across asset classes (domestic equity,
+  international equity, bonds, real assets, cash).
+- Calculate expected returns (annual, inflation-adjusted, compounded).
+- Produce a markdown recommendation with vehicle guidance and risk controls.
+
+MINDMAP FLOW
+------------
+::
+
+    InvestmentAdvisorAgent
+    ├── 1. Profile Ingestion & Attribute Extraction
+    │   ├── Demographics (Age, Career Phase)
+    │   ├── Financial Status (Available Savings, Monthly Disposable Capital)
+    │   ├── Stated Risk Tolerance & Experience (Beginner/Intermediate/Advanced)
+    │   └── Target Investment Horizon (Years)
+    ├── 2. Deterministic Risk Assessment Engine
+    │   ├── Multi-Factor Scoring (Age + Horizon + Experience + Tolerance)
+    │   ├── Risk Tier Classification (Conservative / Moderate / Aggressive)
+    │   └── Verification with tools.RiskProfile
+    ├── 3. Strategic Asset Allocation Matrix
+    │   ├── Conservative: High Fixed Income & Capital Preservation (e.g. 60% Bonds, 30% Equity, 10% Cash)
+    │   ├── Moderate: Balanced Growth (e.g. 60% Equity, 30% Bonds, 10% Real Assets/Cash)
+    │   ├── Aggressive: Capital Appreciation (e.g. 80-85% Equity, 10% Bonds, 5% Real Assets)
+    │   └── Advanced Sleeve: 5% Alternatives Allocation for accredited/experienced investors
+    ├── 4. Return Modeling & Projection Engine
+    │   ├── Historical Asset Return Multipliers
+    │   ├── Blended Nominal & Real (Inflation-Adjusted) Portfolio CAGR
+    │   └── Compound Growth Trajectory Calculation (tools.FinancialCalculators)
+    └── 5. Synthesis & Vehicle Recommendations
+        ├── Low-cost Index Funds & ETF Guidance
+        ├── Rebalancing Frequency (Quarterly / Annual) & Dollar-Cost Averaging
+        └── Deterministic Markdown Report Assembly
+
+ASCII FLOW
+----------
+::
+
+    +---------------------------------------------------------------+
+    |              Input: User Profile & Goals                      |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |               Assess Comprehensive Risk Profile               |
+    |  - Score factors: Age, Horizon, Experience, Risk Stated       |
+    |  - Total Score -> [Conservative | Moderate | Aggressive]      |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |             Construct Targeted Asset Allocation               |
+    |  - Equity (Domestic & International)                          |
+    |  - Fixed Income / Debt (Government & Corporate Bonds)         |
+    |  - Real Estate / Gold / Commodities                           |
+    |  - Cash / Liquid Equivalents                                  |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |               Compound Return Growth Modeling                 |
+    |  - Nominal Return & Real (Net Inflation) Return Modeling      |
+    |  - Calculate Compound Value over 5, 10, 20 Year Milestones   |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |           Formulate Strategic Execution Plan                  |
+    |  - Recommended Vehicles (Broad Index ETFs, Mutual Funds)      |
+    |  - Tax Advantaged Account Prioritization                      |
+    |  - Rebalancing Trigger Thresholds                             |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    | Output: { risk_assessment, strategy, asset_allocation,        |
+    |   expected_returns, detailed_recommendations, projection }    |
+    +---------------------------------------------------------------+
+
+Design decisions
+----------------
+- Risk profile scoring: age (1-3), experience (0-3), time horizon (1-3),
+  tolerance (0-2).  Score >= 8 = aggressive, >= 5 = moderate, else conservative.
+- Expert investors get a 5% "Alternatives" sleeve (private equity, etc.).
+- Expected returns use long-term historical averages: equities ~9%,
+  bonds ~4.5%, cash ~2%.
+"""
+
 import logging
 from typing import Any, Dict
 
 from tools import FinancialCalculators, RiskProfile
 from utils import format_currency
+from utils.agent_helpers import get_currency_code
 
 logger = logging.getLogger(__name__)
 
 
+# Wealth management agent formulating personalized asset allocation strategies.
+# Evaluates risk profiles based on age, time horizon, and investing experience.
+# Generates multi-asset portfolio distributions and compound retirement forecasts.
 class InvestmentAdvisorAgent:
-    """Provides personalized investment advice and portfolio recommendations."""
+    """Provides personalized investment advice and portfolio recommendations.
 
+    This agent is part of the multi-agent financial advisory system.
+    It receives a user profile dict and returns a structured investment
+    plan with risk assessment, allocation, and expected returns.
+    """
+
+    # Initializes investment advisor with quantitative financial calculation tools.
+    # Connects to risk evaluation, asset return, and retirement projection modules.
+    # Provides deterministic mathematical underpinning for portfolio recommendations.
     def __init__(self):
         self.calculators = FinancialCalculators()
 
+    # Synthesizes comprehensive portfolio advice based on user profile parameters.
+    # Evaluates risk tolerance, target allocation, expected returns, and retirement models.
+    # Returns structured guidance dictionary with deterministic markdown insights.
     def provide_advice(self, user_profile: Dict[str, Any]) -> Dict[str, Any]:
         """Provide comprehensive investment advice."""
         logger.info("Generating investment advice for user profile")
@@ -31,12 +147,16 @@ class InvestmentAdvisorAgent:
                 "portfolio_allocation": portfolio,
                 "recommendations": recommendations,
                 "expected_returns": self._calculate_expected_returns(portfolio, risk_profile),
+                "retirement_projection": self._calculate_retirement_projection(user_profile, portfolio, risk_profile),
                 "time_horizon": user_profile.get("time_horizon", 10),
             }
         except Exception as exc:
             logger.error("Error generating investment advice: %s", exc)
             return {"error": str(exc), "recommendations": "Unable to generate investment advice."}
 
+    # Assesses client risk category by integrating age, timeline, and risk appetite.
+    # Invokes FinancialCalculators to classify conservative, moderate, or aggressive profiles.
+    # Establishes the risk foundation for equity, fixed income, and alternative splits.
     def _assess_risk_profile(self, user_profile: Dict[str, Any]) -> RiskProfile:
         age = user_profile.get("age", 30)
         risk_tolerance = user_profile.get("risk_tolerance", "moderate")
@@ -50,6 +170,9 @@ class InvestmentAdvisorAgent:
             risk_tolerance=risk_tolerance,
         )
 
+    # Formulates strategic investment focus matching assessed risk profile tier.
+    # Defines overarching objectives including preservation, balanced growth, or wealth expansion.
+    # Prescribes rebalancing cadence and active risk management rules.
     def _create_investment_strategy(
         self,
         user_profile: Dict[str, Any],
@@ -87,6 +210,9 @@ class InvestmentAdvisorAgent:
 
         return strategy
 
+    # Constructs percentage asset class distribution across equities, bonds, and cash.
+    # Adjusts allocation weights based on risk tier and expert investor experience.
+    # Yields target weights for domestic equity, international equity, and real assets.
     def _create_portfolio_allocation(
         self,
         risk_profile: RiskProfile,
@@ -124,6 +250,9 @@ class InvestmentAdvisorAgent:
 
         return allocation
 
+    # Projects expected annual, real, and multi-year compounded investment returns.
+    # Applies weighted asset return expectations adjusted by risk profile adjustments.
+    # Returns 5-year and 10-year cumulative growth rate projections.
     def _calculate_expected_returns(
         self,
         portfolio: Dict[str, float],
@@ -157,6 +286,53 @@ class InvestmentAdvisorAgent:
             "compounded_10yr": round(((1 + adjusted_return / 100) ** 10 - 1) * 100, 2),
         }
 
+    # Projects accumulated retirement capital at standard age 65 retirement.
+    # Factors current savings, monthly retirement contributions, and weighted returns.
+    # Computes total corpus and safe sustainable monthly retirement income.
+    def _calculate_retirement_projection(
+        self,
+        user_profile: Dict[str, Any],
+        portfolio: Dict[str, float],
+        risk_profile: RiskProfile,
+    ) -> Dict[str, float]:
+        """Calculate retirement savings projection using FinancialCalculators.
+
+        Uses the expected annual return from the portfolio allocation and the
+        user's current savings / monthly contribution to project retirement
+        savings at age 65.
+        """
+        age = user_profile.get("age", 30)
+        retirement_age = 65
+        current_savings = user_profile.get("savings", 0)
+        annual_income = user_profile.get("annual_income", 0)
+        # Assume a reasonable monthly contribution (15% of income / 12).
+        monthly_contribution = (annual_income * 0.15 / 12) if annual_income > 0 else 0
+
+        # Compute expected return from portfolio allocation.
+        asset_returns = {
+            "Domestic Equity": 9.0,
+            "International Equity": 7.5,
+            "Bonds": 4.5,
+            "Real Assets": 6.0,
+            "Cash": 2.0,
+            "Alternatives": 8.0,
+        }
+        expected_return = sum(
+            (allocation / 100) * asset_returns.get(asset, 0)
+            for asset, allocation in portfolio.items()
+        )
+
+        return self.calculators.calculate_retirement_savings(
+            current_age=age,
+            retirement_age=retirement_age,
+            current_savings=current_savings,
+            monthly_contribution=monthly_contribution,
+            expected_return=expected_return,
+        )
+
+    # Generates deterministic markdown report detailing recommended asset allocation.
+    # Outlines target weights, recommended fund vehicles, and rebalancing tolerances.
+    # Highlights tax-advantaged accounts, SIP automation, and risk control measures.
     def _generate_investment_recommendations(
         self,
         user_profile: Dict[str, Any],
@@ -169,11 +345,12 @@ class InvestmentAdvisorAgent:
         age = user_profile.get("age", 30)
         time_horizon = user_profile.get("time_horizon", 10)
         experience = user_profile.get("investment_experience", "beginner")
+        currency_code = get_currency_code(user_profile)
 
         portfolio_lines = [f"- {asset}: {allocation:.1f}%" for asset, allocation in portfolio.items()]
         goals = user_profile.get("financial_goals", [])
         goal_lines = [
-            f"- {goal.get('name', 'Goal')}: {format_currency(goal.get('target', 0))}"
+            f"- {goal.get('name', 'Goal')}: {format_currency(goal.get('target', 0), currency_code)}"
             for goal in goals[:4]
         ] or ["- No explicit long-term goal provided yet."]
 

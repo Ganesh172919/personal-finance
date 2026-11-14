@@ -1,0 +1,38 @@
+# Compose override for load/smoke testing. NEVER use for a real deployment.
+#
+#   docker compose -f compose.yaml -f loadtest/compose.loadtest.yaml up -d --wait
+#
+# What it changes, and why:
+#   * ai-core: LLM_PROVIDER=mock (deterministic canned reply, no network or key)
+#     so the run measures the platform, not a provider's quota. Override with
+#     LLM_PROVIDER=gemini (and a key in server/AI_Core/.env) for a real-LLM run.
+#   * server: NODE_ENV=development so POST /api/auth/register returns `dev_otp`
+#     (the k6 helpers use it to verify the throwaway accounts). The security-
+#     relevant switches are pinned back explicitly (CSRF on, trust proxy 1).
+#   * server: auth / API / per-user AI rate limits raised. One k6 machine looks
+#     like one IP, and registering N users would trip AUTH_RATE_LIMIT_MAX (20/min).
+#     The limiters are exercised by their own unit tests, not by this load run.
+#   * server: METRICS_ENABLED so Prometheus/k6 can scrape /api/metrics from the
+#     replicas (token below is a throwaway; the endpoint is not published to the host).
+#
+# Required in the environment (compose.yaml refuses to start without them):
+#   JWT_SECRET, AI_CORE_INTERNAL_TOKEN, WEBHOOK_CREDENTIALS_KEY (base64, 32 bytes).
+services:
+  server:
+    environment:
+      NODE_ENV: development
+      CSRF_ENABLED: "true"
+      TRUST_PROXY: "1"
+      AUTH_RATE_LIMIT_MAX: "100000"
+      RATE_LIMIT_MAX: "100000"
+      AI_USER_RATE_LIMIT_MAX: "100000"
+      METRICS_ENABLED: "true"
+      METRICS_TOKEN: ${METRICS_TOKEN:-loadtest-metrics-token}
+  worker:
+    environment:
+      NODE_ENV: development
+  ai-core:
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      LLM_MOCK_LATENCY_MS: ${LLM_MOCK_LATENCY_MS:-150}
+      AI_CORE_METRICS_TOKEN: ${AI_CORE_METRICS_TOKEN:-loadtest-metrics-token}

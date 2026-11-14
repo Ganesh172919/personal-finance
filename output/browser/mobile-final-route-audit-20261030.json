@@ -1,0 +1,852 @@
+{
+  "build": "index-CDaF2EqX.js",
+  "date": "2026-10-30",
+  "method": "Inbuilt browser through Computer Use; route fit and rendered controls, not every mutation",
+  "routes": [
+    {
+      "route": "/dashboard",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Detailed answer",
+        "Send question to the finance assistant",
+        "Manage →",
+        "Manage →",
+        "Refresh conversation insights",
+        "Open chat",
+        "Open files workspace",
+        "View all",
+        "Take Action",
+        "Take Action"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Good afternoon, Deployment"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/transactions",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Scan Receipt",
+        "Import CSV",
+        "Add Transaction",
+        "Ledger",
+        "Review Queue",
+        "Clear",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete",
+        "Prev",
+        "Next"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Transactions"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/finance",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Accounts",
+        "Merchants",
+        "Budgets",
+        "Insights",
+        "Recurring",
+        "checking",
+        "Create account",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close",
+        "Close"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Finance"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/files",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Upload files",
+        "processedworkspace_source_check_qa.pdfDocument2.4 KBWorkspace source check QA\nGenerated from a text request on 2026-10-30T09:37:35.301Z\nSaved platform activity\nSnapshot: 2026-10-30 (UTC).\nSource: your saved records in the current workspace. This is a bounded snapshot, not a complete\nactivity history.\nSaved goals\n• QA emergency fund: USD 5000.00 saved toward USD 18000.00. Deadline: 2027-04-01.\n• QA laptop cents 26 Oct: USD 25.25 saved toward USD 1250.50. Deadline: 2027-05-01.\nOpen tasks\n• Automate goal savings (medium priority). Due: 2026-11-01. Automation prevents goal savings\nfrom being crowded out by discretionary spending.\n• QA review 1792909959664 (medium priority). Due: 2026-11-01. Local regression test\n• QA review 1792933390345 (medium priority). Due: 2026-11-01. Local regression test\n• Weekly money check-in (medium priority). Due: 2026-11-03. A short weekly review improves\nfollow-through and prevents drift.\n• QA review 1793292508451 (medium priority). Due: 2026-11-05. Local regression test\n• QA review 1793293430748 (medium priority). Due: 2026-11-05. Local regression test\n• QA review 1793294444820 (medium priority). Due: 2026-11-05. Local regression test\n• Direct API Task Test 1793294458559 (high priority). Due: 2026-11-05. Verify task creation\nendpoint directly\nReview\nReview the source records before sharing. Completed tasks are excluded. No transactions or\ntransfers were made.\nThis PDF was generated from a user-authored text request. Review financial figures against source records before\nsharing.",
+        "processedmobile_release_check_30_oct.pdfDocument2.4 KBMobile release check 30 Oct\nGenerated from a text request on 2026-10-29T23:45:36.844Z\nSaved platform activity\nSnapshot: 2026-10-29 (UTC).\nSource: your saved records in the current workspace. This is a bounded snapshot, not a complete\nactivity history.\nSaved goals\n• QA emergency fund: USD 5000.00 saved toward USD 18000.00. Deadline: 2027-04-01.\n• QA laptop cents 26 Oct: USD 25.25 saved toward USD 1250.50. Deadline: 2027-05-01.\nOpen tasks\n• Automate goal savings (medium priority). Due: 2026-11-01. Automation prevents goal savings\nfrom being crowded out by discretionary spending.\n• QA review 1792909959664 (medium priority). Due: 2026-11-01. Local regression test\n• QA review 1792933390345 (medium priority). Due: 2026-11-01. Local regression test\n• Weekly money check-in (medium priority). Due: 2026-11-03. A short weekly review improves\nfollow-through and prevents drift.\n• QA review 1793292508451 (medium priority). Due: 2026-11-05. Local regression test\n• QA review 1793293430748 (medium priority). Due: 2026-11-05. Local regression test\n• QA review 1793294444820 (medium priority). Due: 2026-11-05. Local regression test\n• Direct API Task Test 1793294458559 (high priority). Due: 2026-11-05. Verify task creation\nendpoint directly\nReview\nReview the source records before sharing. Completed tasks are excluded. No transactions or\ntransfers were made.\nThis PDF was generated from a user-authored text request. Review financial figures against source records before\nsharing.",
+        "processedmobile_savings_review_qa.pdfDocument2.5 KBMobile savings review QA\nGenerated from a text request on 2026-10-29T15:36:43.211Z\nSaved platform activity\nSnapshot: 2026-10-29 (UTC).\nSource: your saved records in the current workspace. This is a bounded snapshot, not a complete\nactivity history.\nSaved goals\n• QA emergency fund: USD 5000.00 saved toward USD 18000.00. Deadline: 2027-04-01.\n• QA laptop cents 26 Oct: USD 25.25 saved toward USD 1250.50. Deadline: 2027-05-01.\nOpen tasks\n• Automate goal savings (medium priority). Due: 2026-11-01. Automation prevents goal savings\nfrom being crowded out by discretionary spending.\n• QA review 1792909959664 (medium priority). Due: 2026-11-01. Local regression test\n• QA review 1792933390345 (medium priority). Due: 2026-11-01. Local regression test\n• Weekly money check-in (medium priority). Due: 2026-11-03. A short weekly review improves\nfollow-through and prevents drift.\n• Execute a debt payoff strategy (snowball) (high priority). Due: 2026-11-24. Reducing high-\ninterest debt typically yields the best risk-free return.\n• Execute a debt payoff strategy (high priority). Due: 2026-11-28. Reducing high-interest debt\ntypically yields the best risk-free return.\n• Automate long-term investing (medium priority). Due: 2027-10-25. Consistency reduces timing\nrisk and builds wealth gradually.\nReview\nReview the source records before sharing. Completed tasks are excluded. No transactions or\ntransfers were made.\nThis PDF was generated from a user-authored text request. Review financial figures against source records before\nsharing.",
+        "processedsaved_activity_final_qa.pdfDocument2.5 KBSaved activity final QA\nGenerated from a text request on 2026-10-29T11:00:01.466Z\nSaved platform activity\nSnapshot: 2026-10-29 (UTC).\nSource: your saved records in the current workspace. This is a bounded snapshot, not a complete\nactivity history.\nSaved goals\n• QA emergency fund: USD 5000.00 saved toward USD 18000.00. Deadline: 2027-04-01.\n• QA laptop cents 26 Oct: USD 25.25 saved toward USD 1250.50. Deadline: 2027-05-01.\nOpen tasks\n• Automate goal savings (medium priority). Due: 2026-11-01. Automation prevents goal savings\nfrom being crowded out by discretionary spending.\n• QA review 1792909959664 (medium priority). Due: 2026-11-01. Local regression test\n• QA review 1792933390345 (medium priority). Due: 2026-11-01. Local regression test\n• Weekly money check-in (medium priority). Due: 2026-11-03. A short weekly review improves\nfollow-through and prevents drift.\n• Execute a debt payoff strategy (snowball) (high priority). Due: 2026-11-24. Reducing high-\ninterest debt typically yields the best risk-free return.\n• Execute a debt payoff strategy (high priority). Due: 2026-11-28. Reducing high-interest debt\ntypically yields the best risk-free return.\n• Automate long-term investing (medium priority). Due: 2027-10-25. Consistency reduces timing\nrisk and builds wealth gradually.\nReview\nReview the source records before sharing. Completed tasks are excluded. No transactions or\ntransfers were made.\nThis PDF was generated from a user-authored text request. Review financial figures against source records before\nsharing.",
+        "processedyour_saved_activity.pdfDocument2.5 KBYour saved activity\nGenerated from a text request on 2026-10-29T10:54:57.280Z\nSaved platform activity\nSnapshot: 2026-10-29 (UTC).\nSource: your saved records in the current workspace. This is a bounded snapshot, not a complete\nactivity history.\n# Saved goals\n• QA emergency fund: USD 5000.00 saved toward USD 18000.00. Deadline: 2027-04-01.\n• QA laptop cents 26 Oct: USD 25.25 saved toward USD 1250.50. Deadline: 2027-05-01.\n# Open tasks\n• Automate goal savings (medium priority). Due: 2026-11-01. Automation prevents goal savings\nfrom being crowded out by discretionary spending.\n• QA review 1792909959664 (medium priority). Due: 2026-11-01. Local regression test\n• QA review 1792933390345 (medium priority). Due: 2026-11-01. Local regression test\n• Weekly money check-in (medium priority). Due: 2026-11-03. A short weekly review improves\nfollow-through and prevents drift.\n• Execute a debt payoff strategy (snowball) (high priority). Due: 2026-11-24. Reducing high-\ninterest debt typically yields the best risk-free return.\n• Execute a debt payoff strategy (high priority). Due: 2026-11-28. Reducing high-interest debt\ntypically yields the best risk-free return.\n• Automate long-term investing (medium priority). Due: 2027-10-25. Consistency reduces timing\nrisk and builds wealth gradually.\n# Review\nReview the source records before sharing. Completed tasks are excluded. No transactions or\ntransfers were made.\nThis PDF was generated from a user-authored text request. Review financial figures against source records before\nsharing.",
+        "processedfollow_up_budget_qa.pdfDocument3.0 KBFollow-up Budget QA\nGenerated from a text request on 2026-10-29T05:26:29.935Z\nSynthetic budget review\nSynthetic QA data only. Monthly savings target USD 500.\nReview item 1: Check the synthetic budget progress.\nReview item 2: Check the synthetic budget progress.\nReview item 3: Check the synthetic budget progress.\nReview item 4: Check the synthetic budget progress.\nReview item 5: Check the synthetic budget progress.\nReview item 6: Check the synthetic budget progress.\nReview item 7: Check the synthetic budget progress.\nReview item 8: Check the synthetic budget progress.\nReview item 9: Check the synthetic budget progress.\nReview item 10: Check the synthetic budget progress.\nReview item 11: Check the synthetic budget progress.\nReview item 12: Check the synthetic budget progress.\nReview item 13: Check the synthetic budget progress.\nReview item 14: Check the synthetic budget progress.\nReview item 15: Check the synthetic budget progress.\nReview item 16: Check the synthetic budget progress.\nReview item 17: Check the synthetic budget progress.\nReview item 18: Check the synthetic budget progress.\nReview item 19: Check the synthetic budget progress.\nReview item 20: Check the synthetic budget progress.\nReview item 21: Check the synthetic budget progress.\nReview item 22: Check the synthetic budget progress.\nReview item 23: Check the synthetic budget progress.\nReview item 24: Check the synthetic budget progress.\nReview item 25: Check the synthetic budget progress.\nReview item 26: Check the synthetic budget progress.\nReview item 27: Check the synthetic budget progress.\nReview item 28: Check the synthetic budget progress.\nReview item 29: Check the synthetic budget progress.\nReview item 30: Check the synthetic budget progress.\nReview item 31: Check the synthetic budget progress.\nRevie...",
+        "processedstudent_budget_qa.pdfDocument2.0 KB# Student budget checklist\nSynthetic QA example only. These are test figures, not personal records.\n\n## Monthly targets\nMonthly income: USD 7500.\nSavings target: USD 500 per month.\n\n## Review checklist\n- Review spending and categorize new transactions.\n- Set aside the planned monthly savings.\n- Check progress toward the savings goal.\n- Review original source documents before changing a plan.\n\n## Notes\nRecord any income changes and update the budget at the next monthly review.",
+        "processedpdf-pages-20261027.pdfDocument2.9 KBSYNTHETIC QA DOCUMENT\nMonthly income USD 7500. Reference CAMPUS-PDF-27.\n\n\n\nPREPAYMENT TERMS\nPrepayment fee USD 25. This clause is on physical page 4. Synthetic test data only.",
+        "processedpdf-pages-20261027.pdfDocument2.9 KBSYNTHETIC QA DOCUMENT\nMonthly income USD 7500. Reference CAMPUS-PDF-27.\n\n\n\nPREPAYMENT TERMS\nPrepayment fee USD 25. This clause is on physical page 4. Synthetic test data only.",
+        "processedpdf-pages-20261027.pdfDocument2.9 KBSYNTHETIC QA DOCUMENT\nMonthly income USD 7500. Reference CAMPUS-PDF-27.\n\n\n\nPREPAYMENT TERMS\nPrepayment fee USD 25. This clause is on physical page 4. Synthetic test data only.",
+        "processedpdf-pages-20261027.pdfDocument2.9 KBSYNTHETIC QA DOCUMENT\nMonthly income USD 7500. Reference CAMPUS-PDF-27.\n\n\n\nPREPAYMENT TERMS\nPrepayment fee USD 25. This clause is on physical page 4. Synthetic test data only.",
+        "processedqa-statement-20261026.txtDocument143 BSynthetic QA statement for 26 October 2026. Monthly income USD 7500. Grocery budget USD 250. Reference CAMPUS-QA-26. Demonstration data only.",
+        "processedqa-statement-20261026.txtDocument143 BSynthetic QA statement for 26 October 2026. Monthly income USD 7500. Grocery budget USD 250. Reference CAMPUS-QA-26. Demonstration data only.",
+        "processedqa-statement.txtCode118 BDeployment QA statement. October 2026. Salary 7500 USD. Rent 1600 USD. Grocery 250 USD. This is synthetic test data.FINANCIAL PLAN\n==================================================\n\n1. Executive summary\nCash flow is positive; you can allocate surplus to goals, debt, and investing. Emergency fund coverage looks healthy. Debt exists; prioritize high-interest balances while maintaining minimum p",
+        "Previous",
+        "Next"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Files"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/tasks",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Add Task",
+        "Open",
+        "Completed",
+        "Dismissed",
+        "View task: Automate goal savings",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1792909959664",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1792933390345",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: Weekly money check-in",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793292508451",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793293430748",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793294444820",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: Direct API Task Test 1793294458559",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793295403252",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793296315836",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793296533922",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793297976482",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793299401040",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793300889705",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793301856098",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793302594369",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793304007513",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793304653212",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793320748415",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793323007236",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: QA review 1793339579350",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: Execute a debt payoff strategy (snowball)",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: Execute a debt payoff strategy",
+        "Complete",
+        "Dismiss",
+        "Apply",
+        "View task: Automate long-term investing",
+        "Complete",
+        "Dismiss",
+        "Apply"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Tasks"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/goals-debts",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Add Goal",
+        "Cancel",
+        "Edit",
+        "Delete",
+        "+ Create Task",
+        "Edit",
+        "Delete",
+        "+ Create Task",
+        "Add Debt",
+        "Cancel",
+        "+ Create Payoff Task",
+        "+ Create Snowball Task",
+        "+$50.00",
+        "+$100.00",
+        "+$250.00",
+        "+$500.00",
+        "+ Schedule Avalanche Plan",
+        "+ Schedule Snowball Plan",
+        "Edit",
+        "Delete",
+        "Edit",
+        "Delete"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Goals & Debts"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/portfolio",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Add Investment",
+        "Overview",
+        "Holdings",
+        "Performance",
+        "Analysis"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Investment Portfolio"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/scenarios",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "New Expense",
+        "+500/mo Salary Raise",
+        "-350/mo Car EMI",
+        "+200/mo SIP Booster",
+        "+1.2k/mo Freelance",
+        "-450/mo Rent Upgrade",
+        "Calculate Impact"
+      ],
+      "headings": [
+        "Personal Finance",
+        "What-If Scenarios"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/financial-story",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Share",
+        "View Details",
+        "View Details"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Your Financial Story"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/all-insights",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Ask Copilot",
+        "All Agents",
+        "All (20)",
+        "High (0)",
+        "Medium (5)",
+        "Low (15)",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action",
+        "Take Action"
+      ],
+      "headings": [
+        "Personal Finance",
+        "All AI-Generated Insights"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/analytics",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "3M",
+        "6M",
+        "12M"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Financial analytics that highlight movement, not just totals"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/calendar",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Previous month",
+        "Next month",
+        "Today",
+        "27",
+        "28",
+        "29",
+        "30",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24",
+        "25",
+        "26",
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Financial Calendar"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/activity",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Refresh",
+        "All",
+        "Transactions",
+        "Budgets",
+        "Goals",
+        "Workflows",
+        "AI",
+        "Members",
+        "Load more"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Activity Feed"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/onboarding",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Save & Continue",
+        "Skip for now"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Welcome to FinWise"
+      ],
+      "scrollWidth": 390,
+      "width": 390
+    },
+    {
+      "route": "/workflows",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "My workflows",
+        "Create",
+        "Templates",
+        "Refresh",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template",
+        "Run now",
+        "Disable",
+        "Share template"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Workflows"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/exports",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "This Month",
+        "Last Month",
+        "YTD",
+        "All Time",
+        "Any",
+        "Create CSV export",
+        "Current Month",
+        "Previous Month",
+        "Create PDF export",
+        "All statuses",
+        "Refresh",
+        "Download",
+        "Download",
+        "Download",
+        "Download"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Data Exports"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/receipts",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Scan Receipt",
+        "All",
+        "Parsed",
+        "Confirmed",
+        "Prev",
+        "Next"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Receipts"
+      ],
+      "scrollWidth": 390,
+      "width": 390
+    },
+    {
+      "route": "/org",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Deployment QA's Personal Finance (personal)",
+        "Create org",
+        "Members",
+        "Settings",
+        "Integrations",
+        "Marketplace",
+        "API keys",
+        "Referrals",
+        "Usage",
+        "Add member"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Organization"
+      ],
+      "scrollWidth": 390,
+      "width": 390
+    },
+    {
+      "route": "/billing",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Manage Invoices & Payment",
+        "Downgrade to Free",
+        "Current Plan",
+        "Upgrade to Team"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Subscription & Billing"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/settings",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Profile",
+        "Security",
+        "API Keys",
+        "Preferences",
+        "Newsletter",
+        "Edit Profile"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Security, profile, and workspace preferences in one place"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/blogs",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Write a Post",
+        "All Topics"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Financial Intelligence"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/growth-stories",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Share Your Story",
+        "All Stories",
+        "Be the first to share!"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Growth Stories"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/docs",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Is my financial data secure?",
+        "How does the AI generate financial insights?",
+        "Can I import transactions from my bank?",
+        "What file formats does the Receipt OCR support?",
+        "How is the free plan different from paid plans?",
+        "Can I share my financial data with my partner or advisor?",
+        "How do I export my data?",
+        "What currencies are supported?",
+        "Back to top"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Documentation"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "route": "/notes",
+      "alerts": [],
+      "buttons": [
+        "Open menu",
+        "Undo",
+        "Clear",
+        "Recognize",
+        "Update",
+        "Prev",
+        "Next"
+      ],
+      "headings": [
+        "Personal Finance",
+        "Financial Journal"
+      ],
+      "scrollWidth": 382,
+      "width": 390
+    }
+  ],
+  "settings": [
+    {
+      "screen": "Settings API Keys",
+      "alerts": [],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "screen": "Settings Preferences",
+      "alerts": [],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "screen": "Settings Newsletter",
+      "alerts": [],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "screen": "Settings Profile",
+      "alerts": [],
+      "scrollWidth": 382,
+      "width": 390
+    }
+  ],
+  "organization": [
+    {
+      "screen": "Organization Settings",
+      "alerts": [],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "screen": "Organization Integrations",
+      "alerts": [],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "screen": "Organization Marketplace",
+      "alerts": [],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "screen": "Organization API keys",
+      "alerts": [],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "screen": "Organization Referrals",
+      "alerts": [],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "screen": "Organization Usage",
+      "alerts": [],
+      "scrollWidth": 382,
+      "width": 390
+    },
+    {
+      "screen": "Organization Members",
+      "alerts": [],
+      "scrollWidth": 390,
+      "width": 390
+    }
+  ],
+  "chat320": {
+    "scrollWidth": 320,
+    "sourceLinks": [
+      "/files?file=6ae46563395cef275417c4ad&page=1&returnTo=%2Fchat%2F6ae46553395cef275417c482",
+      "/files?file=6ae46563395cef275417c4ad&returnTo=%2Fchat%2F6ae46553395cef275417c482"
+    ],
+    "width": 320,
+    "copyExactFigures": true,
+    "expandedAllSevenSources": true,
+    "conversation": "/chat/6ae46553395cef275417c482",
+    "documentCreation": true,
+    "download": true,
+    "pageOneReloadAndReturn": true,
+    "screenshotCapture": "Unavailable from browser API; CDP alternatives timed out"
+  }
+}

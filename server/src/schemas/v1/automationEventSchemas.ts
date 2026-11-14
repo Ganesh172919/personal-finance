@@ -1,5 +1,23 @@
+/**
+ * @fileoverview Zod validation schemas for automation event emission.
+ *
+ * Exported schemas:
+ *   emitAutomationEventBodySchema - Validates emitting an automation/domain event
+ *
+ * Used by: v1Routes (POST /automation/events/emit)
+ *
+ * Key validation rules:
+ *   - event_type: required, 2-120 characters (e.g., "transaction.created")
+ *   - aggregate_type: optional, 2-120 chars (the entity type this event relates to)
+ *   - aggregate_id: optional, 2-200 chars (the entity ID this event relates to)
+ *   - payload: optional arbitrary key-value metadata object
+ *   - Schema uses .strict() to reject unknown fields
+ */
 import { z } from "zod";
 
+// Validates incoming HTTP payloads emitting automated domain events.
+// Enforces event type strings, optional aggregate entity references, and metadata.
+// Powers external webhook triggers and event-driven workflow automation pipelines.
 export const emitAutomationEventBodySchema = z
   .object({
     event_type: z.string().trim().min(2).max(120),

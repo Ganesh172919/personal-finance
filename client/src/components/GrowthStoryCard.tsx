@@ -1,3 +1,24 @@
+/**
+ * @fileoverview GrowthStoryCard — renders a user-submitted financial transformation story
+ * as either a featured hero card or a standard grid card, with net-worth growth metrics.
+ *
+ * WHAT IT DOES
+ *  - When `featured=true`: renders a two-column hero layout with cover image (left),
+ *    story summary, starting/current net worth comparison, timeline, persona, and location (right).
+ *  - When `featured=false`: renders a compact card with cover image overlay showing net-worth
+ *    growth delta, title, summary, strategy tags, and footer with persona + views/likes.
+ *  - `formatCompactCurrency` converts large numbers to Indian lakhs/crores notation.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `story` (IGrowthStory) — the growth story data including financialMetrics, strategies, etc.
+ *  - `featured` (boolean) — toggles hero vs. grid layout.
+ *  - Uses `resolveGrowthStoryCoverImage` for media URL resolution.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used on the /growth-stories listing page; featured variant is the top story.
+ *  - Links to `/growth-stories/:slug` via wouter.
+ *  - `DIFFICULTY_COLORS` and `CATEGORY_COLORS` provide semantic colour coding for badges.
+ */
 import { motion } from "framer-motion";
 import { Link } from "wouter";
 import { Clock, Eye, Heart, MapPin, Target, User } from "lucide-react";
@@ -8,17 +29,26 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/Card"
 import { resolveGrowthStoryCoverImage } from "@/lib/media";
 import { IGrowthStory } from "@/types/apiTypes";
 
+// Property structure definition for the growth story card component.
+// Supplies the financial journey model alongside an optional featured hero flag.
+// Governs layout presentation across featured landing hero cards and story grids.
 export interface GrowthStoryCardProps {
   story: IGrowthStory;
   featured?: boolean;
 }
 
+// Badge color styling map reflecting journey implementation difficulty levels.
+// Differentiates beginner, intermediate, and advanced financial transformation strategies.
+// Applies theme-aware borders and background fills for readability across dark modes.
 const DIFFICULTY_COLORS: Record<string, string> = {
   beginner: "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/20",
   intermediate: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20",
   advanced: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/20",
 };
 
+// Theme token mapping dictionary assigning distinct chart colors to story categories.
+// Pairs categories like debt freedom, wealth building, and early retirement with palettes.
+// Ensures consistent visual category distinction across user transformation stories.
 const CATEGORY_COLORS: Record<string, string> = {
   "debt-freedom": "bg-chart-4 text-chart-4-foreground",
   "wealth-building": "bg-chart-2 text-chart-2-foreground",
@@ -29,12 +59,18 @@ const CATEGORY_COLORS: Record<string, string> = {
   "student-finance": "bg-chart-4/80 text-chart-4-foreground",
 };
 
+// Helper function normalizing raw hyphenated category slugs into title case strings.
+// Splits hyphenated words and capitalizes individual word beginnings.
+// Produces clean display labels for story badges and filter chips.
 const formatCategory = (category: string) =>
   category
     .split("-")
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 
+// Presentation component rendering personal financial transformation journeys.
+// Highlights net worth deltas, strategy tags, location badges, and timelines.
+// Supports full-width featured hero presentations alongside compact grid cards.
 export function GrowthStoryCard({ story, featured = false }: GrowthStoryCardProps) {
   const netWorthDiff =
     (story.financialMetrics?.currentNetWorth || 0) - (story.financialMetrics?.startingNetWorth || 0);

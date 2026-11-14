@@ -1,10 +1,28 @@
 /**
- * Two-Factor Authentication Controller
+ * @fileoverview Two-Factor Authentication Controller (v1)
  *
- * Endpoints for enabling, verifying, and disabling TOTP-based 2FA.
+ * TOTP-based two-factor authentication lifecycle: setup, verify, disable, status.
+ * Uses a pending-secret pattern where the secret is generated during setup and
+ * only persisted after the user successfully verifies a TOTP code.
+ *
+ * Routes served:
+ *   POST /api/v1/auth/2fa/setup    - setup2FA (generates secret + QR URI)
+ *   POST /api/v1/auth/2fa/verify   - verify2FA (confirms setup, generates backup codes)
+ *   POST /api/v1/auth/2fa/disable  - disable2FA (requires TOTP or backup code)
+ *   GET  /api/v1/auth/2fa/status   - get2FAStatus
+ *
+ * Key patterns:
+ *   - Two-phase setup: generate secret -> verify token -> activate
+ *   - Pending secret stored temporarily; moved to permanent field on verify
+ *   - Backup codes generated as plaintext, stored as hashes
+ *   - Disable requires valid TOTP token OR backup code (fallback authentication)
+ *   - Audit events recorded for enable, disable, and failed attempts
+ *
+ * @module controllers/v1/twoFactorController
  */
 
 import type { Request, Response } from "express";
+import crypto from "crypto";
 import {
   generateTotpSecret,
   generateTotpUri,
@@ -15,7 +33,11 @@ import {
 import { auditFromRequest } from "../../services/auditService";
 import UserModel from "../../models/userModel";
 import { HttpError } from "../../middleware/httpError";
+import { generateAndSetToken } from "../authController";
 
+// Initiates two-factor authentication setup by creating a pending TOTP secret.
+// Generates an authenticator-compatible registration URI and QR configuration payload.
+// Temporarily stages the unconfirmed secret until completed verification occurs.
 /**
  * POST /api/v1/auth/2fa/setup
  * Generate a TOTP secret and return the QR URI (user must verify before it's saved).
@@ -34,7 +56,8 @@ export const setup2FA = async (req: Request, res: Response) => {
   const secret = generateTotpSecret();
   const uri = generateTotpUri(secret, user.email);
 
-  // Temporarily store unverified secret (will be confirmed in verify step)
+  // Store secret temporarily in a separate field; it only moves to the permanent
+  // twoFactorSecret field after the user successfully verifies a TOTP code
   await UserModel.updateOne(
     { _id: userId },
     { $set: { twoFactorPendingSecret: secret } },
@@ -48,6 +71,9 @@ export const setup2FA = async (req: Request, res: Response) => {
   });
 };
 
+// Verifies a user-supplied TOTP token against the pending two-factor enrollment secret.
+// Activates two-factor authentication, generates hashed backup codes, and rotates sessions.
+// Returns plain-text backup codes that must be stored securely by the account owner.
 /**
  * POST /api/v1/auth/2fa/verify
  * Verify a TOTP token against the pending secret to confirm 2FA setup.
@@ -80,20 +106,27 @@ export const verify2FA = async (req: Request, res: Response) => {
   const backupCodes = generateBackupCodes(8);
   const hashedCodes = backupCodes.map(hashBackupCode);
 
-  // Activate 2FA
-  await UserModel.updateOne(
-    { _id: userId },
+  // Rotate the session generation so all pre-enrollment or previous-factor
+  // sessions are rejected, including on other replicas.
+  const sessionVersion = crypto.randomBytes(32).toString("hex");
+  const activated = await UserModel.updateOne(
+    { _id: userId, twoFactorEnabled: { $ne: true }, twoFactorPendingSecret: pendingSecret },
     {
       $set: {
         twoFactorEnabled: true,
         twoFactorSecret: pendingSecret,
         twoFactorBackupCodes: hashedCodes,
+        twoFactorLastCounter: Math.floor(Date.now() / 30_000) + result.drift,
+        sessionVersion,
       },
-      $unset: { twoFactorPendingSecret: 1 },
+      $unset: { twoFactorPendingSecret: 1, twoFactorChallengeHash: 1, twoFactorChallengeExpires: 1 },
     },
   );
+  if (!activated.modifiedCount) throw new HttpError(409, "SETUP_CHANGED", "Start two-factor setup again.");
 
   auditFromRequest(req, "2fa_enabled");
+  // Replace the pre-enrollment JWT; it is no longer authorized after activation.
+  generateAndSetToken(res, String(userId), true, sessionVersion);
 
   res.json({
     enabled: true,
@@ -103,6 +136,9 @@ export const verify2FA = async (req: Request, res: Response) => {
   });
 };
 
+// Disables two-factor authentication for an account following security verification.
+// Validates identity using either an active authenticator token or single-use backup code.
+// Purges stored secrets and backup code hashes while rotating active session versions.
 /**
  * POST /api/v1/auth/2fa/disable
  * Disable 2FA — requires a valid TOTP token or backup code.
@@ -128,7 +164,7 @@ export const disable2FA = async (req: Request, res: Response) => {
   const totpResult = verifyTotp(token, secret);
 
   if (!totpResult.valid) {
-    // Check backup codes
+    // TOTP failed — try the token as a backup code (hashed comparison)
     const hashedInput = hashBackupCode(token);
     const backupCodes: string[] = (user as any).twoFactorBackupCodes || [];
     if (!backupCodes.includes(hashedInput)) {
@@ -137,19 +173,27 @@ export const disable2FA = async (req: Request, res: Response) => {
     }
   }
 
-  await UserModel.updateOne(
-    { _id: userId },
+  const sessionVersion = crypto.randomBytes(32).toString("hex");
+  const disabled = await UserModel.updateOne(
+    { _id: userId, twoFactorEnabled: true, twoFactorSecret: secret,
+      ...(!totpResult.valid ? { twoFactorBackupCodes: hashBackupCode(token) } : {}) },
     {
-      $set: { twoFactorEnabled: false },
+      $set: { twoFactorEnabled: false, sessionVersion },
       $unset: {
         twoFactorSecret: 1,
         twoFactorPendingSecret: 1,
         twoFactorBackupCodes: 1,
+        twoFactorLastCounter: 1,
+        twoFactorChallengeHash: 1,
+        twoFactorChallengeExpires: 1,
       },
     },
   );
+  if (!disabled.modifiedCount) throw new HttpError(409, "FACTOR_CHANGED", "Start again with your current factor.");
 
   auditFromRequest(req, "2fa_disabled");
+  // Keep this browser signed in while revoking every previously issued session.
+  generateAndSetToken(res, String(userId), false, sessionVersion);
 
   res.json({
     enabled: false,
@@ -158,6 +202,9 @@ export const disable2FA = async (req: Request, res: Response) => {
   });
 };
 
+// Retrieves the current two-factor authentication configuration status for the caller.
+// Queries the database to ascertain whether 2FA protection is actively enforced.
+// Returns a boolean flag indicating whether multi-factor security is activated.
 /**
  * GET /api/v1/auth/2fa/status
  * Check if 2FA is enabled for the current user.

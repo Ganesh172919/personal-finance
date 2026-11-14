@@ -1,10 +1,16 @@
 import { BlogPost, IBlogPost } from '../models/blogPostModel';
 import { FilterQuery, Types } from 'mongoose';
 
+// Encapsulates core business logic for managing published blog publications.
+// Handles post discovery, pagination, category taxonomy aggregation, and reader engagement.
+// Operates against the MongoDB blog post collection with projection optimizations.
 export class BlogService {
   /**
    * Fetch paginated list of published blog posts.
    */
+  // Queries paginated blog posts matching category, tag, search text, or featured flags.
+  // Applies dynamic sorting options including popularity, trending metrics, or recency.
+  // Omits heavy article body content from listing projections to accelerate client payload speeds.
   async getPosts(params: {
     page?: number;
     limit?: number;
@@ -72,6 +78,9 @@ export class BlogService {
   /**
    * Fetch a single post by slug and increment views
    */
+  // Retrieves a comprehensive blog post record identified by its unique URL slug.
+  // Populates related post previews and optionally increments article view counters.
+  // Returns the fully populated blog post document or null if no published post matches.
   async getPostBySlug(slug: string, incrementView: boolean = true) {
     const post = await BlogPost.findOne({ slug, isPublished: true })
       .populate('relatedPosts', 'title slug excerpt coverImage category readTime publishedAt author')
@@ -91,6 +100,9 @@ export class BlogService {
   /**
    * Get category counts
    */
+  // Aggregates published blog articles into distinct category groupings with post counts.
+  // Uses an efficient MongoDB aggregation pipeline to compute category frequency distributions.
+  // Returns categories sorted in descending order of article volume for navigation filters.
   async getCategories() {
     return BlogPost.aggregate([
       { $match: { isPublished: true } },
@@ -103,6 +115,9 @@ export class BlogService {
   /**
    * Toggle like on a blog post
    */
+  // Records user engagement by incrementing the like counter for a targeted blog post.
+  // Validates post existence before persisting updated interaction statistics.
+  // Returns the updated total count of likes recorded for the article.
   async toggleLike(postId: string) {
     const post = await BlogPost.findById(postId);
     if (!post) throw new Error('Post not found');
@@ -115,6 +130,9 @@ export class BlogService {
   /**
    * Create a new blog post
    */
+  // Persists a newly authored blog post record with automated slug generation.
+  // Converts post titles into URL-friendly slugs while resolving slug collision conflicts.
+  // Saves and returns the newly instantiated blog post document model.
   async createPost(postData: Partial<IBlogPost>) {
     // Basic slug generation if not provided
     if (!postData.slug && postData.title) {
@@ -136,4 +154,7 @@ export class BlogService {
   }
 }
 
+// Instantiates and exports singleton instance of the blog service class.
+// Provides a shared operational service interface across API controller endpoints.
+// Avoids repeated instantiation overhead across incoming HTTP request lifecycles.
 export const blogService = new BlogService();

@@ -25,6 +25,9 @@ import SubscriptionModel from "../models/subscriptionModel";
 
 dotenv.config();
 
+// Structured CLI options passed to the organization ID backfill migration script.
+// Captures dry-run toggle, batch sizing, concurrency limits, and output format choices.
+// Provides type-safe arguments for database backfill orchestration routines.
 type CliArgs = {
   dryRun: boolean;
   batchSize: number;
@@ -33,6 +36,9 @@ type CliArgs = {
   reportJson: boolean;
 };
 
+// Parses command line arguments into validated migration configuration options.
+// Enforces numeric bounds on batch size and concurrency, and verifies ISO timestamps.
+// Handles help banner output and terminates script on invalid argument combinations.
 const parseArgs = (): CliArgs => {
   const argv = process.argv.slice(2);
   const out: CliArgs = {
@@ -120,6 +126,9 @@ const parseArgs = (): CliArgs => {
   return out;
 };
 
+// Partitions an array of items into fixed-size contiguous sub-arrays.
+// Used to chunk large sets of user IDs into bounded database update batches.
+// Avoids oversized query payloads and excessive document lock contention.
 const chunk = <T>(values: T[], size: number): T[][] => {
   const out: T[][] = [];
   for (let index = 0; index < values.length; index += size) {
@@ -128,6 +137,9 @@ const chunk = <T>(values: T[], size: number): T[][] => {
   return out;
 };
 
+// Executes an asynchronous worker task across an array of items with bounded concurrency.
+// Allocates fixed number of worker promises processing items from a shared cursor.
+// Returns an ordered array of worker results preserving input index positions.
 const runPool = async <T, R>(
   items: T[],
   concurrency: number,
@@ -151,16 +163,25 @@ const runPool = async <T, R>(
   return results;
 };
 
+// MongoDB query filter identifying legacy documents lacking an organization ID.
+// Matches documents where orgId is missing or explicitly set to null.
+// Used across collections to target records requiring tenant backfill.
 const missingOrgFilter = {
   $or: [{ orgId: { $exists: false } }, { orgId: null }],
 };
 
+// Descriptor defining a database collection target for organization ID backfill.
+// Contains target name, Mongoose model handle, and user association field name.
+// Drives migration across heterogeneous domain models.
 type BackfillTarget = {
   name: string;
   model: any;
   userField?: string;
 };
 
+// Structured execution statistics recorded for a specific target collection backfill.
+// Tracks initial missing count, updated document count, and encountered error messages.
+// Aggregated into final audit summary output for migration verification.
 type TargetReport = {
   name: string;
   collection: string;
@@ -172,11 +193,17 @@ type TargetReport = {
   skipped_unscoped_missing?: number;
 };
 
+// Helper testing whether a MongoDB database exception represents a unique key collision.
+// Detects error code 11000 or duplicate key message strings.
+// Triggers fallback to document-by-document updates when bulk operations encounter duplicates.
 const isDuplicateKey = (error: any) => {
   const code = error?.code;
   return code === 11000 || String(error?.message || "").includes("E11000");
 };
 
+// Core migration execution flow scanning active memberships and backfilling orgId properties.
+// Connects to MongoDB, resolves user-to-organization mappings, and updates target collections in parallel.
+// Compiles detailed report summaries and verifies remaining unscoped document counts.
 async function main() {
   const args = parseArgs();
 
@@ -373,6 +400,9 @@ async function main() {
   await mongoose.disconnect();
 }
 
+// Script execution handler invoking main migration routine with process exit bindings.
+// Gracefully exits with code 0 on success or code 1 on fatal error.
+// Ensures MongoDB connection is disconnected prior to process termination.
 main()
   .then(() => process.exit(0))
   .catch(async (error) => {

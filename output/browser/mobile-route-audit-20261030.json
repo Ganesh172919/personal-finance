@@ -1,0 +1,2020 @@
+{
+  "measuredViewport": {
+    "width": 390,
+    "height": 844
+  },
+  "routes": [
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Detailed answer"
+        },
+        {
+          "disabled": true,
+          "name": "Send question to the finance assistant"
+        },
+        {
+          "disabled": false,
+          "name": "Manage →"
+        },
+        {
+          "disabled": true,
+          "name": "Refresh conversation insights"
+        },
+        {
+          "disabled": false,
+          "name": "Open chat"
+        },
+        {
+          "disabled": false,
+          "name": "Open files workspace"
+        },
+        {
+          "disabled": false,
+          "name": "View all"
+        }
+      ],
+      "heading": "Good morning, Deployment",
+      "loading": [],
+      "path": "/dashboard",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Scan Receipt"
+        },
+        {
+          "disabled": false,
+          "name": "Import CSV"
+        },
+        {
+          "disabled": false,
+          "name": "Add Transaction"
+        },
+        {
+          "disabled": false,
+          "name": "Ledger"
+        },
+        {
+          "disabled": false,
+          "name": "Review Queue"
+        },
+        {
+          "disabled": false,
+          "name": "Clear"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": true,
+          "name": "Prev"
+        },
+        {
+          "disabled": false,
+          "name": "Next"
+        }
+      ],
+      "heading": "Transactions",
+      "loading": [],
+      "path": "/transactions",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Accounts"
+        },
+        {
+          "disabled": false,
+          "name": "Merchants"
+        },
+        {
+          "disabled": false,
+          "name": "Budgets"
+        },
+        {
+          "disabled": false,
+          "name": "Insights"
+        },
+        {
+          "disabled": false,
+          "name": "Recurring"
+        },
+        {
+          "disabled": false,
+          "name": "checking"
+        },
+        {
+          "disabled": true,
+          "name": "Create account"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        },
+        {
+          "disabled": false,
+          "name": "Close"
+        }
+      ],
+      "heading": "Finance",
+      "loading": [],
+      "path": "/finance",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Upload files"
+        },
+        {
+          "disabled": false,
+          "name": "processedmobile_release_check_30_oct.pdfDocument2.4 KBMobile release check 30 Oct\nGenerated from a text request on 2026-10-29T23:45:36.844Z\nSaved platform activity\nSnapshot: 2026-10-29 (UTC).\nSource: your saved records in the current workspace. This is a bounded snapshot, not a complete\nactivity history.\nSaved goals\n• QA emergency fund: USD 5000.00 saved toward USD 18000.00. Deadline: 2027-04-01.\n• QA laptop cents 26 Oct: USD 25.25 saved toward USD 1250.50. Deadline: 2027-05-01.\nOpen tasks\n• Automate goal savings (medium priority). Due: 2026-11-01. Automation prevents goal savings\nfrom being crowded out by discretionary spending.\n• QA review 1792909959664 (medium priority). Due: 2026-11-01. Local regression test\n• QA review 1792933390345 (medium priority). Due: 2026-11-01. Local regression test\n• Weekly money check-in (medium priority). Due: 2026-11-03. A short weekly review improves\nfollow-through and prevents drift.\n• QA review 1793292508451 (medium priority). Due: 2026-11-05. Local regression test\n• QA review 1793293430748 (medium priority). Due: 2026-11-05. Local regression test\n• QA review 1793294444820 (medium priority). Due: 2026-11-05. Local regression test\n• Direct API Task Test 1793294458559 (high priority). Due: 2026-11-05. Verify task creation\nendpoint directly\nReview\nReview the source records before sharing. Completed tasks are excluded. No transactions or\ntransfers were made.\nThis PDF was generated from a user-authored text request. Review financial figures against source records before\nsharing."
+        },
+        {
+          "disabled": false,
+          "name": "processedmobile_savings_review_qa.pdfDocument2.5 KBMobile savings review QA\nGenerated from a text request on 2026-10-29T15:36:43.211Z\nSaved platform activity\nSnapshot: 2026-10-29 (UTC).\nSource: your saved records in the current workspace. This is a bounded snapshot, not a complete\nactivity history.\nSaved goals\n• QA emergency fund: USD 5000.00 saved toward USD 18000.00. Deadline: 2027-04-01.\n• QA laptop cents 26 Oct: USD 25.25 saved toward USD 1250.50. Deadline: 2027-05-01.\nOpen tasks\n• Automate goal savings (medium priority). Due: 2026-11-01. Automation prevents goal savings\nfrom being crowded out by discretionary spending.\n• QA review 1792909959664 (medium priority). Due: 2026-11-01. Local regression test\n• QA review 1792933390345 (medium priority). Due: 2026-11-01. Local regression test\n• Weekly money check-in (medium priority). Due: 2026-11-03. A short weekly review improves\nfollow-through and prevents drift.\n• Execute a debt payoff strategy (snowball) (high priority). Due: 2026-11-24. Reducing high-\ninterest debt typically yields the best risk-free return.\n• Execute a debt payoff strategy (high priority). Due: 2026-11-28. Reducing high-interest debt\ntypically yields the best risk-free return.\n• Automate long-term investing (medium priority). Due: 2027-10-25. Consistency reduces timing\nrisk and builds wealth gradually.\nReview\nReview the source records before sharing. Completed tasks are excluded. No transactions or\ntransfers were made.\nThis PDF was generated from a user-authored text request. Review financial figures against source records before\nsharing."
+        },
+        {
+          "disabled": false,
+          "name": "processedsaved_activity_final_qa.pdfDocument2.5 KBSaved activity final QA\nGenerated from a text request on 2026-10-29T11:00:01.466Z\nSaved platform activity\nSnapshot: 2026-10-29 (UTC).\nSource: your saved records in the current workspace. This is a bounded snapshot, not a complete\nactivity history.\nSaved goals\n• QA emergency fund: USD 5000.00 saved toward USD 18000.00. Deadline: 2027-04-01.\n• QA laptop cents 26 Oct: USD 25.25 saved toward USD 1250.50. Deadline: 2027-05-01.\nOpen tasks\n• Automate goal savings (medium priority). Due: 2026-11-01. Automation prevents goal savings\nfrom being crowded out by discretionary spending.\n• QA review 1792909959664 (medium priority). Due: 2026-11-01. Local regression test\n• QA review 1792933390345 (medium priority). Due: 2026-11-01. Local regression test\n• Weekly money check-in (medium priority). Due: 2026-11-03. A short weekly review improves\nfollow-through and prevents drift.\n• Execute a debt payoff strategy (snowball) (high priority). Due: 2026-11-24. Reducing high-\ninterest debt typically yields the best risk-free return.\n• Execute a debt payoff strategy (high priority). Due: 2026-11-28. Reducing high-interest debt\ntypically yields the best risk-free return.\n• Automate long-term investing (medium priority). Due: 2027-10-25. Consistency reduces timing\nrisk and builds wealth gradually.\nReview\nReview the source records before sharing. Completed tasks are excluded. No transactions or\ntransfers were made.\nThis PDF was generated from a user-authored text request. Review financial figures against source records before\nsharing."
+        },
+        {
+          "disabled": false,
+          "name": "processedyour_saved_activity.pdfDocument2.5 KBYour saved activity\nGenerated from a text request on 2026-10-29T10:54:57.280Z\nSaved platform activity\nSnapshot: 2026-10-29 (UTC).\nSource: your saved records in the current workspace. This is a bounded snapshot, not a complete\nactivity history.\n# Saved goals\n• QA emergency fund: USD 5000.00 saved toward USD 18000.00. Deadline: 2027-04-01.\n• QA laptop cents 26 Oct: USD 25.25 saved toward USD 1250.50. Deadline: 2027-05-01.\n# Open tasks\n• Automate goal savings (medium priority). Due: 2026-11-01. Automation prevents goal savings\nfrom being crowded out by discretionary spending.\n• QA review 1792909959664 (medium priority). Due: 2026-11-01. Local regression test\n• QA review 1792933390345 (medium priority). Due: 2026-11-01. Local regression test\n• Weekly money check-in (medium priority). Due: 2026-11-03. A short weekly review improves\nfollow-through and prevents drift.\n• Execute a debt payoff strategy (snowball) (high priority). Due: 2026-11-24. Reducing high-\ninterest debt typically yields the best risk-free return.\n• Execute a debt payoff strategy (high priority). Due: 2026-11-28. Reducing high-interest debt\ntypically yields the best risk-free return.\n• Automate long-term investing (medium priority). Due: 2027-10-25. Consistency reduces timing\nrisk and builds wealth gradually.\n# Review\nReview the source records before sharing. Completed tasks are excluded. No transactions or\ntransfers were made.\nThis PDF was generated from a user-authored text request. Review financial figures against source records before\nsharing."
+        },
+        {
+          "disabled": false,
+          "name": "processedfollow_up_budget_qa.pdfDocument3.0 KBFollow-up Budget QA\nGenerated from a text request on 2026-10-29T05:26:29.935Z\nSynthetic budget review\nSynthetic QA data only. Monthly savings target USD 500.\nReview item 1: Check the synthetic budget progress.\nReview item 2: Check the synthetic budget progress.\nReview item 3: Check the synthetic budget progress.\nReview item 4: Check the synthetic budget progress.\nReview item 5: Check the synthetic budget progress.\nReview item 6: Check the synthetic budget progress.\nReview item 7: Check the synthetic budget progress.\nReview item 8: Check the synthetic budget progress.\nReview item 9: Check the synthetic budget progress.\nReview item 10: Check the synthetic budget progress.\nReview item 11: Check the synthetic budget progress.\nReview item 12: Check the synthetic budget progress.\nReview item 13: Check the synthetic budget progress.\nReview item 14: Check the synthetic budget progress.\nReview item 15: Check the synthetic budget progress.\nReview item 16: Check the synthetic budget progress.\nReview item 17: Check the synthetic budget progress.\nReview item 18: Check the synthetic budget progress.\nReview item 19: Check the synthetic budget progress.\nReview item 20: Check the synthetic budget progress.\nReview item 21: Check the synthetic budget progress.\nReview item 22: Check the synthetic budget progress.\nReview item 23: Check the synthetic budget progress.\nReview item 24: Check the synthetic budget progress.\nReview item 25: Check the synthetic budget progress.\nReview item 26: Check the synthetic budget progress.\nReview item 27: Check the synthetic budget progress.\nReview item 28: Check the synthetic budget progress.\nReview item 29: Check the synthetic budget progress.\nReview item 30: Check the synthetic budget progress.\nReview item 31: Check the synthetic budget progress.\nRevie..."
+        },
+        {
+          "disabled": false,
+          "name": "processedstudent_budget_qa.pdfDocument2.0 KB# Student budget checklist\nSynthetic QA example only. These are test figures, not personal records.\n\n## Monthly targets\nMonthly income: USD 7500.\nSavings target: USD 500 per month.\n\n## Review checklist\n- Review spending and categorize new transactions.\n- Set aside the planned monthly savings.\n- Check progress toward the savings goal.\n- Review original source documents before changing a plan.\n\n## Notes\nRecord any income changes and update the budget at the next monthly review."
+        },
+        {
+          "disabled": false,
+          "name": "processedpdf-pages-20261027.pdfDocument2.9 KBSYNTHETIC QA DOCUMENT\nMonthly income USD 7500. Reference CAMPUS-PDF-27.\n\n\n\nPREPAYMENT TERMS\nPrepayment fee USD 25. This clause is on physical page 4. Synthetic test data only."
+        },
+        {
+          "disabled": false,
+          "name": "processedpdf-pages-20261027.pdfDocument2.9 KBSYNTHETIC QA DOCUMENT\nMonthly income USD 7500. Reference CAMPUS-PDF-27.\n\n\n\nPREPAYMENT TERMS\nPrepayment fee USD 25. This clause is on physical page 4. Synthetic test data only."
+        },
+        {
+          "disabled": false,
+          "name": "processedpdf-pages-20261027.pdfDocument2.9 KBSYNTHETIC QA DOCUMENT\nMonthly income USD 7500. Reference CAMPUS-PDF-27.\n\n\n\nPREPAYMENT TERMS\nPrepayment fee USD 25. This clause is on physical page 4. Synthetic test data only."
+        },
+        {
+          "disabled": false,
+          "name": "processedpdf-pages-20261027.pdfDocument2.9 KBSYNTHETIC QA DOCUMENT\nMonthly income USD 7500. Reference CAMPUS-PDF-27.\n\n\n\nPREPAYMENT TERMS\nPrepayment fee USD 25. This clause is on physical page 4. Synthetic test data only."
+        },
+        {
+          "disabled": false,
+          "name": "processedqa-statement-20261026.txtDocument143 BSynthetic QA statement for 26 October 2026. Monthly income USD 7500. Grocery budget USD 250. Reference CAMPUS-QA-26. Demonstration data only."
+        },
+        {
+          "disabled": false,
+          "name": "processedqa-statement-20261026.txtDocument143 BSynthetic QA statement for 26 October 2026. Monthly income USD 7500. Grocery budget USD 250. Reference CAMPUS-QA-26. Demonstration data only."
+        },
+        {
+          "disabled": false,
+          "name": "processedqa-statement.txtCode118 BDeployment QA statement. October 2026. Salary 7500 USD. Rent 1600 USD. Grocery 250 USD. This is synthetic test data.FINANCIAL PLAN\n==================================================\n\n1. Executive summary\nCash flow is positive; you can allocate surplus to goals, debt, and investing. Emergency fund coverage looks healthy. Debt exists; prioritize high-interest balances while maintaining minimum p"
+        },
+        {
+          "disabled": true,
+          "name": "Previous"
+        },
+        {
+          "disabled": true,
+          "name": "Next"
+        }
+      ],
+      "heading": "Files",
+      "loading": [],
+      "path": "/files",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Add Task"
+        },
+        {
+          "disabled": false,
+          "name": "Open"
+        },
+        {
+          "disabled": false,
+          "name": "Completed"
+        },
+        {
+          "disabled": false,
+          "name": "Dismissed"
+        },
+        {
+          "disabled": false,
+          "name": "View task: Automate goal savings"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1792909959664"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1792933390345"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: Weekly money check-in"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793292508451"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793293430748"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793294444820"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: Direct API Task Test 1793294458559"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793295403252"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793296315836"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793296533922"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793297976482"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793299401040"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793300889705"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793301856098"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793302594369"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793304007513"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: QA review 1793304653212"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: Execute a debt payoff strategy (snowball)"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: Execute a debt payoff strategy"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        },
+        {
+          "disabled": false,
+          "name": "View task: Automate long-term investing"
+        },
+        {
+          "disabled": false,
+          "name": "Complete"
+        },
+        {
+          "disabled": false,
+          "name": "Dismiss"
+        },
+        {
+          "disabled": false,
+          "name": "Apply"
+        }
+      ],
+      "heading": "Tasks",
+      "loading": [],
+      "path": "/tasks",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Add Goal"
+        },
+        {
+          "disabled": false,
+          "name": "Cancel"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "+ Create Task"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "+ Create Task"
+        },
+        {
+          "disabled": false,
+          "name": "Add Debt"
+        },
+        {
+          "disabled": false,
+          "name": "Cancel"
+        },
+        {
+          "disabled": false,
+          "name": "+ Create Payoff Task"
+        },
+        {
+          "disabled": false,
+          "name": "+ Create Snowball Task"
+        },
+        {
+          "disabled": false,
+          "name": "+$50.00"
+        },
+        {
+          "disabled": false,
+          "name": "+$100.00"
+        },
+        {
+          "disabled": false,
+          "name": "+$250.00"
+        },
+        {
+          "disabled": false,
+          "name": "+$500.00"
+        },
+        {
+          "disabled": false,
+          "name": "+ Schedule Avalanche Plan"
+        },
+        {
+          "disabled": false,
+          "name": "+ Schedule Snowball Plan"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        },
+        {
+          "disabled": false,
+          "name": "Edit"
+        },
+        {
+          "disabled": false,
+          "name": "Delete"
+        }
+      ],
+      "heading": "Goals & Debts",
+      "loading": [],
+      "path": "/goals-debts",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Add Investment"
+        },
+        {
+          "disabled": false,
+          "name": "Overview"
+        },
+        {
+          "disabled": false,
+          "name": "Holdings"
+        },
+        {
+          "disabled": false,
+          "name": "Performance"
+        },
+        {
+          "disabled": false,
+          "name": "Analysis"
+        }
+      ],
+      "heading": "Investment Portfolio",
+      "loading": [],
+      "path": "/portfolio",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "New Expense"
+        },
+        {
+          "disabled": false,
+          "name": "+500/mo Salary Raise"
+        },
+        {
+          "disabled": false,
+          "name": "-350/mo Car EMI"
+        },
+        {
+          "disabled": false,
+          "name": "+200/mo SIP Booster"
+        },
+        {
+          "disabled": false,
+          "name": "+1.2k/mo Freelance"
+        },
+        {
+          "disabled": false,
+          "name": "-450/mo Rent Upgrade"
+        },
+        {
+          "disabled": true,
+          "name": "Calculate Impact"
+        }
+      ],
+      "heading": "What-If Scenarios",
+      "loading": [],
+      "path": "/scenarios",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Share"
+        },
+        {
+          "disabled": false,
+          "name": "View Details"
+        },
+        {
+          "disabled": false,
+          "name": "View Details"
+        }
+      ],
+      "heading": "Your Financial Story",
+      "loading": [],
+      "path": "/financial-story",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Ask Copilot"
+        },
+        {
+          "disabled": false,
+          "name": "All Agents"
+        },
+        {
+          "disabled": false,
+          "name": "All (20)"
+        },
+        {
+          "disabled": false,
+          "name": "High (0)"
+        },
+        {
+          "disabled": false,
+          "name": "Medium (4)"
+        },
+        {
+          "disabled": false,
+          "name": "Low (16)"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Take Action"
+        },
+        {
+          "disabled": false,
+          "name": "Manage Debt"
+        },
+        {
+          "disabled": false,
+          "name": "Review Budget"
+        },
+        {
+          "disabled": false,
+          "name": "Increase Savings"
+        }
+      ],
+      "heading": "All AI-Generated Insights",
+      "loading": [],
+      "path": "/all-insights",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "3M"
+        },
+        {
+          "disabled": false,
+          "name": "6M"
+        },
+        {
+          "disabled": false,
+          "name": "12M"
+        }
+      ],
+      "heading": "Financial analytics that highlight movement, not just totals",
+      "loading": [],
+      "path": "/analytics",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Previous month"
+        },
+        {
+          "disabled": false,
+          "name": "Next month"
+        },
+        {
+          "disabled": false,
+          "name": "Today"
+        },
+        {
+          "disabled": false,
+          "name": "27"
+        },
+        {
+          "disabled": false,
+          "name": "28"
+        },
+        {
+          "disabled": false,
+          "name": "29"
+        },
+        {
+          "disabled": false,
+          "name": "30"
+        },
+        {
+          "disabled": false,
+          "name": "1"
+        },
+        {
+          "disabled": false,
+          "name": "2"
+        },
+        {
+          "disabled": false,
+          "name": "3"
+        },
+        {
+          "disabled": false,
+          "name": "4"
+        },
+        {
+          "disabled": false,
+          "name": "5"
+        },
+        {
+          "disabled": false,
+          "name": "6"
+        },
+        {
+          "disabled": false,
+          "name": "7"
+        },
+        {
+          "disabled": false,
+          "name": "8"
+        },
+        {
+          "disabled": false,
+          "name": "9"
+        },
+        {
+          "disabled": false,
+          "name": "10"
+        },
+        {
+          "disabled": false,
+          "name": "11"
+        },
+        {
+          "disabled": false,
+          "name": "12"
+        },
+        {
+          "disabled": false,
+          "name": "13"
+        },
+        {
+          "disabled": false,
+          "name": "14"
+        },
+        {
+          "disabled": false,
+          "name": "15"
+        },
+        {
+          "disabled": false,
+          "name": "16"
+        },
+        {
+          "disabled": false,
+          "name": "17"
+        },
+        {
+          "disabled": false,
+          "name": "18"
+        },
+        {
+          "disabled": false,
+          "name": "19"
+        },
+        {
+          "disabled": false,
+          "name": "20"
+        },
+        {
+          "disabled": false,
+          "name": "21"
+        },
+        {
+          "disabled": false,
+          "name": "22"
+        },
+        {
+          "disabled": false,
+          "name": "23"
+        },
+        {
+          "disabled": false,
+          "name": "24"
+        },
+        {
+          "disabled": false,
+          "name": "25"
+        },
+        {
+          "disabled": false,
+          "name": "26"
+        },
+        {
+          "disabled": false,
+          "name": "27"
+        },
+        {
+          "disabled": false,
+          "name": "28"
+        },
+        {
+          "disabled": false,
+          "name": "29"
+        },
+        {
+          "disabled": false,
+          "name": "30"
+        },
+        {
+          "disabled": false,
+          "name": "31"
+        },
+        {
+          "disabled": false,
+          "name": "1"
+        },
+        {
+          "disabled": false,
+          "name": "2"
+        },
+        {
+          "disabled": false,
+          "name": "3"
+        },
+        {
+          "disabled": false,
+          "name": "4"
+        },
+        {
+          "disabled": false,
+          "name": "5"
+        },
+        {
+          "disabled": false,
+          "name": "6"
+        },
+        {
+          "disabled": false,
+          "name": "7"
+        }
+      ],
+      "heading": "Financial Calendar",
+      "loading": [],
+      "path": "/calendar",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Refresh"
+        },
+        {
+          "disabled": false,
+          "name": "All"
+        },
+        {
+          "disabled": false,
+          "name": "Transactions"
+        },
+        {
+          "disabled": false,
+          "name": "Budgets"
+        },
+        {
+          "disabled": false,
+          "name": "Goals"
+        },
+        {
+          "disabled": false,
+          "name": "Workflows"
+        },
+        {
+          "disabled": false,
+          "name": "AI"
+        },
+        {
+          "disabled": false,
+          "name": "Members"
+        },
+        {
+          "disabled": false,
+          "name": "Load more"
+        }
+      ],
+      "heading": "Activity Feed",
+      "loading": [],
+      "path": "/activity",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Save & Continue"
+        },
+        {
+          "disabled": false,
+          "name": "Skip for now"
+        },
+        {
+          "disabled": false,
+          "name": "Open AI Copilot"
+        }
+      ],
+      "heading": "Welcome to FinWise",
+      "loading": [],
+      "path": "/onboarding",
+      "scroll": 390,
+      "width": 390
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "My workflows"
+        },
+        {
+          "disabled": false,
+          "name": "Create"
+        },
+        {
+          "disabled": false,
+          "name": "Templates"
+        },
+        {
+          "disabled": false,
+          "name": "Refresh"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        },
+        {
+          "disabled": false,
+          "name": "Run now"
+        },
+        {
+          "disabled": false,
+          "name": "Disable"
+        },
+        {
+          "disabled": false,
+          "name": "Share template"
+        }
+      ],
+      "heading": "Workflows",
+      "loading": [],
+      "path": "/workflows",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "This Month"
+        },
+        {
+          "disabled": false,
+          "name": "Last Month"
+        },
+        {
+          "disabled": false,
+          "name": "YTD"
+        },
+        {
+          "disabled": false,
+          "name": "All Time"
+        },
+        {
+          "disabled": false,
+          "name": "Any"
+        },
+        {
+          "disabled": false,
+          "name": "Create CSV export"
+        },
+        {
+          "disabled": false,
+          "name": "Current Month"
+        },
+        {
+          "disabled": false,
+          "name": "Previous Month"
+        },
+        {
+          "disabled": false,
+          "name": "Create PDF export"
+        },
+        {
+          "disabled": false,
+          "name": "All statuses"
+        },
+        {
+          "disabled": false,
+          "name": "Refresh"
+        },
+        {
+          "disabled": false,
+          "name": "Download"
+        },
+        {
+          "disabled": false,
+          "name": "Download"
+        }
+      ],
+      "heading": "Data Exports",
+      "loading": [],
+      "path": "/exports",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Scan Receipt"
+        },
+        {
+          "disabled": false,
+          "name": "All"
+        },
+        {
+          "disabled": false,
+          "name": "Parsed"
+        },
+        {
+          "disabled": false,
+          "name": "Confirmed"
+        },
+        {
+          "disabled": true,
+          "name": "Prev"
+        },
+        {
+          "disabled": true,
+          "name": "Next"
+        }
+      ],
+      "heading": "Receipts",
+      "loading": [],
+      "path": "/receipts",
+      "scroll": 390,
+      "width": 390
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Deployment QA's Personal Finance (personal)"
+        },
+        {
+          "disabled": false,
+          "name": "Create org"
+        },
+        {
+          "disabled": false,
+          "name": "Members"
+        },
+        {
+          "disabled": false,
+          "name": "Settings"
+        },
+        {
+          "disabled": false,
+          "name": "Integrations"
+        },
+        {
+          "disabled": false,
+          "name": "Marketplace"
+        },
+        {
+          "disabled": false,
+          "name": "API keys"
+        },
+        {
+          "disabled": false,
+          "name": "Referrals"
+        },
+        {
+          "disabled": false,
+          "name": "Usage"
+        },
+        {
+          "disabled": false,
+          "name": "Add member"
+        }
+      ],
+      "heading": "Organization",
+      "loading": [],
+      "path": "/org",
+      "scroll": 390,
+      "width": 390
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Manage Invoices & Payment"
+        },
+        {
+          "disabled": false,
+          "name": "Downgrade to Free"
+        },
+        {
+          "disabled": true,
+          "name": "Current Plan"
+        },
+        {
+          "disabled": false,
+          "name": "Upgrade to Team"
+        }
+      ],
+      "heading": "Subscription & Billing",
+      "loading": [],
+      "path": "/billing",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Profile"
+        },
+        {
+          "disabled": false,
+          "name": "Security"
+        },
+        {
+          "disabled": false,
+          "name": "API Keys"
+        },
+        {
+          "disabled": false,
+          "name": "Preferences"
+        },
+        {
+          "disabled": false,
+          "name": "Newsletter"
+        },
+        {
+          "disabled": false,
+          "name": "Edit Profile"
+        }
+      ],
+      "heading": "Security, profile, and workspace preferences in one place",
+      "loading": [],
+      "path": "/settings",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Write a Post"
+        },
+        {
+          "disabled": false,
+          "name": "All Topics"
+        }
+      ],
+      "heading": "Financial Intelligence",
+      "loading": [],
+      "path": "/blogs",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Share Your Story"
+        },
+        {
+          "disabled": false,
+          "name": "All Stories"
+        },
+        {
+          "disabled": false,
+          "name": "Be the first to share!"
+        }
+      ],
+      "heading": "Growth Stories",
+      "loading": [],
+      "path": "/growth-stories",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Is my financial data secure?"
+        },
+        {
+          "disabled": false,
+          "name": "How does the AI generate financial insights?"
+        },
+        {
+          "disabled": false,
+          "name": "Can I import transactions from my bank?"
+        },
+        {
+          "disabled": false,
+          "name": "What file formats does the Receipt OCR support?"
+        },
+        {
+          "disabled": false,
+          "name": "How is the free plan different from paid plans?"
+        },
+        {
+          "disabled": false,
+          "name": "Can I share my financial data with my partner or advisor?"
+        },
+        {
+          "disabled": false,
+          "name": "How do I export my data?"
+        },
+        {
+          "disabled": false,
+          "name": "What currencies are supported?"
+        },
+        {
+          "disabled": false,
+          "name": "Back to top"
+        }
+      ],
+      "heading": "Documentation",
+      "loading": [],
+      "path": "/docs",
+      "scroll": 382,
+      "width": 382
+    },
+    {
+      "alerts": [],
+      "buttons": [
+        {
+          "disabled": false,
+          "name": "Open menu"
+        },
+        {
+          "disabled": false,
+          "name": "Undo"
+        },
+        {
+          "disabled": false,
+          "name": "Clear"
+        },
+        {
+          "disabled": false,
+          "name": "Recognize"
+        },
+        {
+          "disabled": true,
+          "name": "Update"
+        },
+        {
+          "disabled": true,
+          "name": "Prev"
+        },
+        {
+          "disabled": true,
+          "name": "Next"
+        }
+      ],
+      "heading": "Financial Journal",
+      "loading": [],
+      "path": "/notes",
+      "scroll": 382,
+      "width": 382
+    }
+  ]
+}

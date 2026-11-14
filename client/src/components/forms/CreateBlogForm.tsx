@@ -1,5 +1,28 @@
+/**
+ * @fileoverview CreateBlogForm — dialog-based form for authoring and publishing a new blog
+ * post with title, excerpt, category, cover image, tags, and Markdown content.
+ *
+ * WHAT IT DOES
+ *  - Renders inside a `Dialog` (controlled by `open`/`onOpenChange` props).
+ *  - Uses `react-hook-form` for validation: title (required, min 5 chars), excerpt (required,
+ *    max 300 chars), content (required), and optional category, cover image, tags.
+ *  - Tags are entered as a comma-separated string and split into an array on submit.
+ *  - Default cover image is provided if none is entered.
+ *  - On success: invalidates "blogs" query cache, shows toast, resets form, closes dialog.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `open` (boolean) — controls dialog visibility.
+ *  - `onOpenChange` ((open: boolean) => void) — callback to toggle dialog state.
+ *  - Mutation: `createBlog` from `@/lib/apiClient`.
+ *  - Category options are defined locally (9 categories from investing to personal-growth).
+ *
+ * ARCHITECTURE NOTES
+ *  - Opened from the /blogs page "Write a Blog" button.
+ *  - Form state is fully local; no global store involvement.
+ *  - `isSubmitting` state is managed separately from the mutation to handle the `onSettled` callback.
+ */
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -12,25 +35,31 @@ import { createBlog } from "@/lib/apiClient";
 import { BlogPostCategory, IBlogPost } from "@/types/apiTypes";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
 
+// Property definition contract for the blog post authoring modal form.
+// Manages dialog visibility state alongside change notification dispatchers.
+// Governs modal presentation when users trigger new article creation workflows.
 interface CreateBlogFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+// Modal authoring dialog enabling publication of educational financial blog articles.
+// Collects post titles, Markdown content, categories, cover images, and tags.
+// Integrates react-hook-form validation with TanStack Query cache invalidations.
 export function CreateBlogForm({ open, onOpenChange }: CreateBlogFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { register, handleSubmit, formState: { errors }, setValue, reset, watch } = useForm<Partial<IBlogPost>>({
+  const { register, handleSubmit, formState: { errors }, setValue, reset, control } = useForm<Partial<IBlogPost>>({
     defaultValues: {
       category: 'personal-growth',
       tags: [],
     }
   });
 
-  const selectedCategory = watch("category");
-  const tagsString = watch("tags")?.join(", ") || "";
+  const selectedCategory = useWatch({ control, name: "category" });
+  const tagsString = useWatch({ control, name: "tags" })?.join(", ") || "";
 
   const mutation = useMutation({
     mutationFn: createBlog,

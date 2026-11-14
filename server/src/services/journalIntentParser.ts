@@ -3,8 +3,14 @@ const DATE_LIKE_RE = /\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1
 const AMOUNT_RE =
   /(?:(?<sym>[₹$€£])\s*)?(?<num>\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?<suf>[kKmM])?/g;
 
+// Collapses multi-character whitespace runs into single space separators.
+// Trims leading and trailing whitespace characters from input strings.
+// Sanitizes raw line inputs for consistent regex-based entity parsing.
 const normalizeWs = (value: string) => String(value || "").replace(/\s+/g, " ").trim();
 
+// Extracts currency amounts, currency symbols, and numeric suffixes from text.
+// Normalizes shorthand multiplier notations like 'k' thousands and 'm' millions.
+// Returns an array of parsed numeric amounts with identified currency codes.
 const parseAmounts = (text: string) => {
   const results: Array<{ value: number; currency: string | null; raw: string }> = [];
   for (const match of text.matchAll(AMOUNT_RE)) {
@@ -31,6 +37,9 @@ const parseAmounts = (text: string) => {
   return results;
 };
 
+// Identifies and extracts numeric percentage values from textual content.
+// Matches floating point and integer figures followed by percent signs.
+// Returns an array of floating-point numbers representing percentages.
 const parsePercentages = (text: string) => {
   const out: number[] = [];
   for (const match of text.matchAll(PERCENT_RE)) {
@@ -41,6 +50,9 @@ const parsePercentages = (text: string) => {
   return out;
 };
 
+// Normalizes and validates delimited date strings into ISO format.
+// Accommodates varying date segment orderings including year-first patterns.
+// Returns standardized YYYY-MM-DD date strings or null for invalid dates.
 const parseDateLike = (raw: string) => {
   const normalized = raw.replace(/[\.]/g, "-").replace(/[\/]/g, "-");
   const parts = normalized.split("-").map((p) => p.trim()).filter(Boolean);
@@ -65,6 +77,9 @@ const parseDateLike = (raw: string) => {
   return dt.toISOString().slice(0, 10);
 };
 
+// Extracts all date-like expressions from unstructured text content.
+// Resolves raw matches through date normalization and validates formats.
+// Returns a deduplicated array of recognized ISO calendar date strings.
 const parseDates = (text: string) => {
   const out: string[] = [];
   for (const match of text.matchAll(DATE_LIKE_RE)) {
@@ -75,6 +90,9 @@ const parseDates = (text: string) => {
   return Array.from(new Set(out));
 };
 
+// Identifies financial goal creation intentions within journal notes.
+// Matches keyword patterns for emergency buffers, savings goals, and debt paydown.
+// Associates detected financial targets with extracted primary amounts.
 const extractGoalCandidates = (text: string, amounts: Array<{ value: number; currency: string | null }>) => {
   const lowered = text.toLowerCase();
   const patterns: Array<{ name: string; keywords: string[] }> = [
@@ -93,6 +111,9 @@ const extractGoalCandidates = (text: string, amounts: Array<{ value: number; cur
   return [];
 };
 
+// Identifies budget modification intent keywords within journal text.
+// Detects expense adjustment mentions and correlates them with extracted amounts.
+// Returns candidate budget adjustment entries for downstream financial planning.
 const extractBudgetAdjustments = (text: string, amounts: Array<{ value: number; currency: string | null }>) => {
   const lowered = text.toLowerCase();
   if (!lowered.includes("budget") && !lowered.includes("expense") && !lowered.includes("spend")) {
@@ -106,6 +127,9 @@ const extractBudgetAdjustments = (text: string, amounts: Array<{ value: number; 
   }));
 };
 
+// Parses raw handwriting-recognized journal text into structured financial intents.
+// Extracts currency amounts, percentage figures, dates, goals, and budget signals.
+// Supplies structured financial parameters for downstream AI advice generation.
 export const parseJournalIntent = (recognizedText: string) => {
   const lines = String(recognizedText || "")
     .split("\n")

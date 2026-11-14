@@ -3,8 +3,14 @@ import * as TabsPrimitive from "@radix-ui/react-tabs";
 
 import { cn } from "@/lib/utils";
 
+// Root tabbed interface container coordinating active tab index and view panels.
+// Built on Radix UI TabsPrimitive Root with accessible keyboard tab traversal.
+// Controls display toggling across multiple complementary panel views.
 const Tabs = TabsPrimitive.Root;
 
+// Tab header navigation bar container holding tab triggers in an inline pill track.
+// Applies muted background, rounded border radius, and flexbox alignment.
+// Forwards DOM references to the underlying Radix List primitive.
 const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
@@ -20,6 +26,9 @@ const TabsList = React.forwardRef<
 ));
 TabsList.displayName = TabsPrimitive.List.displayName;
 
+// Interactive tab button activating its associated content view on press.
+// Highlights active tabs with foreground text, background surface, and shadow.
+// Manages aria-selected and aria-controls attributes automatically.
 const TabsTrigger = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
@@ -35,6 +44,9 @@ const TabsTrigger = React.forwardRef<
 ));
 TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
 
+// Content panel revealed when its corresponding TabsTrigger is selected.
+// Configures focus rings and margin spacing above the tabbed body view.
+// Forwards DOM references to the underlying Radix Content primitive.
 const TabsContent = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>

@@ -317,7 +317,7 @@ describe("v2 tool handlers", () => {
     } as any);
 
     const res = await request(app)
-      .get("/api/v1/notifications?status=unread&limit=10")
+      .get("/api/notifications?status=unread&limit=10")
       .set("Cookie", cookie)
       .set("X-Org-Id", orgId)
       .expect(200);

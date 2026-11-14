@@ -20,6 +20,10 @@
 
 ---
 
+> [!TIP]
+> **Ready to Build an Item from the Roadmap?**  
+> Consult the [**Master Developer Handbook: Building on This Project**](../docs/BUILDING_ON_THIS_PROJECT.md) for standardized full-stack blueprints, Mongoose models, and LangGraph subagents.
+
 ## 1. Roadmap Overview
 
 ### Vision
@@ -46,9 +50,35 @@ FinWise aims to become a comprehensive, AI-powered personal and small-business f
 
 ---
 
-## 2. Planned Features
+---
 
-### 2.1 Bank Integration
+## 2. Features Delivered in 2026 Enterprise Release (Batches 1–37)
+
+The following major capabilities previously on the roadmap have been fully implemented, verified, and integrated into production:
+
+| Feature Area | Delivered Capabilities | Verification Status |
+| :--- | :--- | :--- |
+| **Multi-Currency FX Engine** | Standardized ISO 4217 conversion across 7 global currencies (`USD`, `EUR`, `GBP`, `INR`, `CAD`, `AUD`, `JPY`), JPY zero-decimal integer rounding, normalized analytics net worth cockpits, and Cross-Border Dividend Withholding Tax (WHT) / Double Tax Treaty (DTAA) relief modeling. | 🟢 Fully Verified (`currencyFx.ts`, `analytics.test.ts`, `Portfolio.test.tsx`) |
+| **Real-Time Bank Connector Feeds** | Inbound HTTP webhook ingestion (`POST /api/transactions/bank-feed`), `externalId` deduplication, anomaly detection, review queue triage, and an interactive in-app test simulator in `Transactions.tsx`. | 🟢 Fully Verified (`transactionsBankFeed.test.ts`, `Transactions.test.tsx`) |
+| **Machine Learning Merchant Clustering** | 64-dimensional L2-normalized vector space (`merchantEmbeddingClustering.ts`), sector taxonomy projections, brand anchor aliases, FastText subword character n-gram FNV-1a hashing, agglomerative cosine centroid clustering ($C_{\text{sim}} \ge 0.70$), and 1-click batch normalization rules. | 🟢 Fully Verified (`merchantEmbeddingClustering.test.ts`, `TransactionReviewQueue.test.tsx`) |
+| **Multi-Modal Grounded RAG (Phase 2)** | Bounded window chunking (1800 ch / 260 ch overlap) preserving physical PDF pages (`\f`), 64-D vector indexing, financial entity extraction, and hybrid dense semantic + BM25 lexical ranking ($G \ge 0.70$) with interactive `[docId:chunkIndex]` citation drawers. | 🟢 Fully Verified (`retrievalService.test.ts`, `Files.test.tsx`) |
+| **Visual Workflow Node Canvas & Delays** | Drag-and-drop node graph canvas editor, multi-step delay timers ($1\text{s}$ to $30\text{d}$), token-authenticated inbound webhooks (`POST /api/workflows/webhook/:token`), conditional branch filtering (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `contains`), and runtime template interpolation. | 🟢 Fully Verified (`workflows.test.ts`, `Workflows.test.tsx`) |
+| **Peer Spending Benchmarks & Auto-Rebalancing** | Cohort IQR spending benchmarks, peer alignment index, and automated zero-sum envelope transfers satisfying the mathematical invariant $\sum \Delta B_i = 0$. | 🟢 Fully Verified (`budgetHealth.test.ts`, `BudgetHealthCard.test.tsx`) |
+| **Multi-Goal Rebalancing & Windfall Routing** | Priority, Urgency, and Balanced allocation strategies, months-to-completion projections, and interactive lump-sum windfall redistribution dialog. | 🟢 Fully Verified (`GoalsAndDebts.test.tsx`) |
+| **Portfolio Target Models & DRIP Simulator** | 60/40, 80/20, and All-Weather presets, tax-efficient Smart Cash Inflow rebalancing, dividend tracking, and interactive DRIP compounding simulator. | 🟢 Fully Verified (`Portfolio.test.tsx`, `summaryEndpoints.test.ts`) |
+| **What-If Matrix & Historical Macro Crisis Replay** | 4-scenario comparison matrix with Monte Carlo stochastic risk bounds ($P_{10}, P_{50}, P_{90}$), progressive tax estimation, 5 historical market shocks replay, and live linked account stress testing. | 🟢 Fully Verified (`Scenarios.test.tsx`) |
+| **Financial Calendar Bill Sync & RFC 5545 Export** | Auto-detection of recurring payment cadences with `.ics` calendar sync and reminder alarms (`FinancialCalendar.tsx`). | 🟢 Fully Verified (`FinancialCalendar.test.tsx`) |
+| **Scheduled Multi-Channel Exports** | Automated recurring export dispatches to Email, Webhook Push (with SHA-256 checksums), and Cloud Storage (AWS S3 & Google Cloud Storage GCS). | 🟢 Fully Verified (`scheduledExports.test.ts`, `Exports.test.tsx`) |
+| **Financial Journal Offline Stroke Sync** | HTML5 canvas handwriting notes with `localStorage` draft queuing, idempotent `clientDraftId` batch sync, and dense 64-D vector semantic search. | 🟢 Fully Verified (`journalOfflineSyncAndSemanticSearch.test.ts`, `Notes.test.tsx`) |
+| **Subscription Billing Dunning & Credit Boosters** | On-demand credit booster packs, annual billing discounts (20% off), automated PDF tax receipts, and automated dunning payment recovery with 7-day grace period alerts. | 🟢 Fully Verified (`monetization.test.ts`, `Billing.test.tsx`) |
+
+---
+
+## 3. Next-Generation Planned Features (Future Horizon)
+
+### 3.1 Live Production Bank OAuth
+
+#### Production Plaid & Tink Direct Credentials
 
 Automated bank connectivity eliminates manual transaction entry and ensures data accuracy through direct financial institution connections.
 
@@ -69,7 +99,7 @@ Automated bank connectivity eliminates manual transaction entry and ensures data
 
 ---
 
-### 2.2 Multi-Currency Support
+#### Automated FX Rate Streaming
 
 Enable users to manage finances across multiple currencies with accurate conversion and reporting.
 
@@ -90,7 +120,7 @@ Enable users to manage finances across multiple currencies with accurate convers
 
 ---
 
-### 2.3 Mobile App
+### 3.2 Native Mobile Application (React Native)
 
 A native mobile experience for on-the-go financial management with offline capabilities.
 
@@ -112,7 +142,7 @@ A native mobile experience for on-the-go financial management with offline capab
 
 ---
 
-### 2.4 Advanced Investment Analytics
+### 3.3 Advanced Machine Learning & Autonomous Agents
 
 Comprehensive portfolio analysis tools for informed investment decisions.
 
@@ -135,7 +165,7 @@ Comprehensive portfolio analysis tools for informed investment decisions.
 
 ---
 
-### 2.5 Tax Optimization Engine
+### 3.4 Enterprise Tax Compliance & Multi-Jurisdiction Rules
 
 Automated tax planning and reporting to minimize tax liability and simplify compliance.
 
@@ -157,7 +187,7 @@ Automated tax planning and reporting to minimize tax liability and simplify comp
 
 ---
 
-### 2.6 Collaborative Budgeting
+### 3.5 Collaborative Team Workspaces
 
 Shared financial planning tools for families, teams, and organizations.
 
@@ -437,45 +467,31 @@ Features ranked by weighted score (Impact × Urgency ÷ Effort).
 
 ## 7. Version Roadmap
 
-Planned releases with target features and timelines.
+Planned and completed releases with target features and statuses.
 
-### v1.4 — Stability & Polish (Q2 2026)
+### v1.4 & v1.5 — Core Platform, AI SubAgents & RAG (Current Release)
 
-**Theme:** Harden the existing feature set and improve user experience.
+**Theme:** Full-stack operational cockpit, subagent DAG orchestration, RAG Phase 2, and resilience.
 
-| Feature | Type | Status |
-|---------|------|--------|
-| Dark mode | UI | Planned |
-| Keyboard shortcuts | UX | Planned |
-| Custom transaction categories | Feature | Planned |
-| Recurring transaction templates | Feature | Planned |
-| Transfer tracking | Feature | Planned |
-| Audit log for data changes | Infrastructure | Planned |
-| Performance optimizations (pagination, indexing) | Performance | Planned |
-| Test coverage improvements (target: 70%) | Quality | Planned |
-| Accessibility improvements (WCAG 2.1 AA) | Quality | Planned |
-| Legacy API route cleanup | Technical Debt | Planned |
+| Feature | Type | Status | Implementation Details |
+|---|---|---|---|
+| **SubAgent DAG Orchestration** | AI | Completed | `SubAgentManager`, `TaskDecomposer`, Kahn's topological sort |
+| **Pydantic V2 Output Contracts** | AI | Completed | `contracts/agent_outputs.py` for all 5 specialist domains |
+| **RAG Phase 2 Grounding** | AI / Search | Completed | Bounded window chunking, BM25 retrieval, Grounding Confidence Score |
+| **Financial Health Score** | Finance | Completed | 0–100 composite scoring, trend direction, monthly history |
+| **Weekly Financial Newsletter** | Automation | Completed | `NewsletterAgent`, preference toggles, BullMQ scheduled dispatch |
+| **Server-Side PDF Compilation** | Feature | Completed | PDFKit rendering streamed from GridFS (`pdfController.ts`) |
+| **Dead Letter Queue (DLQ)** | Infrastructure | Completed | Poison-pill job isolation and administrative replay |
+| **Transaction Review Queue** | UX / Feature | Completed | Batch approvals, rule learning, anomaly flags |
+| **FinanceOS Cockpit** | UI | Completed | 5 integrated operational surfaces in React 18 |
+| **Dark / Light Theme Engine** | UI | Completed | `ThemeToggle.tsx` and custom CSS properties |
+| **Global Keyboard Shortcuts** | UX | Completed | `useKeyboardShortcuts.ts` for Command Palette (Cmd+K) |
+| **Audit Logging System** | Security | Completed | 26 event types captured in `AuditEvent` and `AuditLog` |
+| **Exports to CSV, PDF & Excel** | Reporting | Completed | Background worker compilation via BullMQ and GridFS |
 
-### v1.5 — AI & Intelligence (Q3 2026)
+### v2.0 — Connectivity & Mobility (Next Major Milestone - Q4 2026)
 
-**Theme:** Expand AI capabilities and introduce predictive features.
-
-| Feature | Type | Status |
-|---------|------|--------|
-| Additional LLM providers (Claude, Gemini, local) | AI | Planned |
-| Natural language financial queries | AI | Planned |
-| Predictive cash flow analytics | AI | Planned |
-| Anomaly detection for transactions | AI | Planned |
-| Personalized financial coaching | AI | Planned |
-| Recurring transaction detection | Feature | Planned |
-| Net worth dashboard | Feature | Planned |
-| Goal tracking with progress | Feature | Planned |
-| Split transaction support | Feature | Planned |
-| Export to PDF and Excel | Reporting | Planned |
-
-### v2.0 — Connectivity & Mobility (Q4 2026)
-
-**Theme:** Bank integrations and mobile application launch.
+**Theme:** Direct bank integrations, real-time banking feeds, and native mobile experience.
 
 | Feature | Type | Status |
 |---------|------|--------|
@@ -586,4 +602,113 @@ Features are evaluated based on:
 
 ---
 
+## Strategic Roadmap & Innovation Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#9333ea', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#7e22ce', 'lineColor': '#3b82f6', 'secondaryColor': '#06b6d4', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((🔮 FinWise Innovation Matrix))
+    🧭 Phase 1: Near-Term Enhancements
+      Plaid & Teller Live Bank Feed Integration
+      Advanced Vector RAG Knowledge Base
+      Predictive Cashflow & Burn Rate Forecasting
+      Multi-Currency Realtime FX Conversion
+    🚀 Phase 2: Medium-Term Capabilities
+      Autonomous Financial Optimization Agents
+      Collaborative Household & Org Portfolios
+      Native Mobile Client (React Native / Expo)
+      Tax Loss Harvesting Suggestions
+    🌐 Phase 3: Long-Term Horizons
+      Multi-Region Active-Active MongoDB Cluster
+      Open Banking PSD2 Compliant Integration
+      Enterprise Granular SSO (SAML / Okta)
+      Autonomous Subscription Cancellation Bot
+```
+
+## Feature RFC to Production Release ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STAGE 1: COMMUNITY PROPOSAL & RFC INITIATION                        │
+│    GitHub Discussion / Issue ──► Structured RFC Specification Template  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📊 STAGE 2: TRIAGE & PRIORITY SCORING MATRIX                           │
+│    Evaluation: User Impact (30%) • Feasibility (20%) • Demand (15%)    │
+│    ├── Score >= Threshold ──► Approved for Milestone Target 🎯          │
+│    └── Score < Threshold ──► Backlog for Community Incubation ⏳        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ (Approved)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛠️ STAGE 3: ARCHITECTURE DESIGN & CONTRACT FREEZE                       │
+│    ├─► Define OpenAPI Schemas & Zod Contracts                          │
+│    ├─► MongoDB Model Migrations & Compound Indexes                     │
+│    └─► LangGraph Agent State & Tool Registration                       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧪 STAGE 4: DEVELOPMENT, TEST HARNESS & SHADOW EVALS                   │
+│    ├─► Unit & Integration Test Coverage (100% threshold)               │
+│    ├─► AI Core Provider Failover & Cost Benchmarking                   │
+│    └─► Internal Dogfooding in Staging Environment                      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🚀 STAGE 5: PROGRESSIVE ROLLOUT & MONITORING                           │
+│    Feature Flag Enablement (10% ➔ 50% ➔ 100%) ──► General Availability │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
 *This document is a living roadmap and will be updated as features are completed, priorities shift, and new requirements emerge. Last reviewed: March 2026.*
+
+
+---
+
+## Production Implementation Blueprints
+
+### 1. Feature Flag Evaluation Service (`server/src/services/featureFlags.ts`)
+
+```typescript
+// Progressive rollout and tenant-specific feature gate evaluation
+export async function isFeatureEnabled(orgId: string, featureKey: string, rolloutPercentage = 100): Promise<boolean> {
+  const flag = await FeatureFlagModel.findOne({ key: featureKey, enabled: true });
+  if (!flag) return false;
+
+  // Direct tenant override check
+  if (flag.enabledOrgs?.includes(orgId)) return true;
+  if (flag.disabledOrgs?.includes(orgId)) return false;
+
+  // Consistent hashing for percentage-based progressive rollout
+  const hash = crypto.createHash("md5").update(`${orgId}:${featureKey}`).digest("hex");
+  const bucket = parseInt(hash.substring(0, 4), 16) % 100;
+  return bucket < (flag.rolloutPercentage ?? rolloutPercentage);
+}
+```
+
+### 2. Plaid Webhook Ingestion Pipeline Blueprint (`server/src/controllers/plaidWebhook.ts`)
+
+```typescript
+// Incoming webhook handler for direct banking transaction synchronization
+export async function handlePlaidWebhook(req: Request, res: Response) {
+  const { webhook_type, webhook_code, item_id, new_transactions } = req.body;
+
+  if (webhook_type === "TRANSACTIONS" && webhook_code === "SYNC_UPDATES_AVAILABLE") {
+    const connection = await IntegrationConnectionModel.findOne({ "metadata.itemId": item_id });
+    if (!connection) return res.status(404).json({ error: "Unknown Plaid Item" });
+
+    // Enqueue background transaction sync job to BullMQ
+    await integrationQueue.add("sync-plaid-transactions", {
+      orgId: connection.orgId,
+      connectionId: connection._id,
+      count: new_transactions
+    });
+  }
+
+  res.status(200).json({ received: true });
+}
+```

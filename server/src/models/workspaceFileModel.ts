@@ -1,5 +1,67 @@
+/**
+ * workspaceFileModel.ts - Workspace File Metadata & Analysis Schema
+ * ==================================================================
+ *
+ * Manages metadata, GridFS backing IDs, extracted text, and AI analysis
+ * results for user-uploaded documents and spreadsheets.
+ *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * WorkspaceFileModel
+ * ├── 1. Tenant & Ownership
+ * │   ├── orgId: ObjectId (Ref: Organization)
+ * │   ├── userId: ObjectId (Ref: User)
+ * │   └── fileId: ObjectId (MongoDB GridFS file ID)
+ * ├── 2. File Properties
+ * │   ├── originalName: string & filename: string
+ * │   ├── mimeType: string & size: number (bytes)
+ * │   ├── kind: "document" | "spreadsheet" | "image" | "code" | "data" | "archive" | "other"
+ * │   └── status: "uploaded" | "processed" | "error"
+ * ├── 3. RAG & Content Extraction
+ * │   ├── extractedText?: string (Normalized plain text)
+ * │   ├── textExtractionStatus?: "pending" | "completed" | "failed" | "unsupported"
+ * │   └── chunkCount?: number (Count of generated WorkspaceKnowledgeChunks)
+ * └── 4. AI Analysis Results (latestAnalysis)
+ *     ├── summary & response markdown
+ *     ├── evidence items list with confidence score
+ *     └── workflowTrace & agentsInvolved audit
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +-------------------------------------------------------------+
+ *   |                 File Uploaded to Express API                |
+ *   +------------------------------+------------------------------+
+ *                                  |
+ *                                  v
+ *   +-------------------------------------------------------------+
+ *   |  1. Stream File to MongoDB GridFS -> fileId                 |
+ *   |  2. Create WorkspaceFileModel with status: "uploaded"       |
+ *   +------------------------------+------------------------------+
+ *                                  |
+ *                                  v
+ *   +-------------------------------------------------------------+
+ *   |         Text Extraction Worker (fileTextExtraction)         |
+ *   |  - Parse PDF / TXT / CSV / DOCX                             |
+ *   |  - Save extractedText on WorkspaceFileModel                 |
+ *   +------------------------------+------------------------------+
+ *                                  |
+ *                                  v
+ *   +-------------------------------------------------------------+
+ *   |             Trigger RAG Chunk Sync (retrievalService)       |
+ *   |  - Generate knowledge chunks in WorkspaceKnowledgeChunkModel|
+ *   |  - Update chunkCount on WorkspaceFileModel                  |
+ *   +-------------------------------------------------------------+
+ * ```
+ */
+
 import { Document, Schema, Types, model } from "mongoose";
 
+// Defines file category kinds supported within the tenant document workspace.
+// Categorizes uploads into documents, spreadsheets, images, source code, data, and archives.
+// Used by parsing routers to select appropriate content extraction pipelines.
 export type WorkspaceFileKind =
   | "document"
   | "spreadsheet"
@@ -9,12 +71,32 @@ export type WorkspaceFileKind =
   | "archive"
   | "other";
 
+// Defines processing state values for uploaded workspace documents.
+// Distinguishes between freshly uploaded files, parsed documents, and extraction errors.
+// Governs asynchronous pipeline status displays in the workspace file explorer.
 export type WorkspaceFileStatus = "uploaded" | "processed" | "error";
 
+// Defines structured AI document analysis payloads including evidence and plans.
+// Captures markdown summaries, cited evidence snippets with page numbers, and workflow traces.
+// Preserves analytical insights produced by agentic document inspection tools.
 export type WorkspaceFileAnalysis = {
   summary: string;
   response: string;
   plan?: Record<string, unknown>;
+  evidence?: Array<{
+    id?: string;
+    type?: string;
+    label?: string;
+    snippet?: string;
+    entity_id?: string;
+    page_number?: number;
+  }>;
+  confidence?: {
+    score?: number;
+    label?: string;
+    notes?: string[];
+    coverage?: Record<string, unknown>;
+  };
   analysisType?: string;
   agentsInvolved?: string[];
   workflowTrace?: Array<{
@@ -30,6 +112,9 @@ export type WorkspaceFileAnalysis = {
   updatedAt?: Date;
 };
 
+// Defines the domain attributes for user-uploaded workspace files and documents.
+// Links MongoDB GridFS binary storage IDs with extracted text and AI analysis artifacts.
+// Acts as the authoritative document entity supporting semantic search and retrieval.
 export interface IWorkspaceFile {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;
@@ -42,6 +127,7 @@ export interface IWorkspaceFile {
   status: WorkspaceFileStatus;
   extractedText?: string;
   extractedPreview?: string;
+  extractedPageCount?: number;
   extractionWarnings: string[];
   analysis?: WorkspaceFileAnalysis;
   lastAnalyzedAt?: Date;
@@ -49,10 +135,16 @@ export interface IWorkspaceFile {
   updatedAt: Date;
 }
 
+// Combines workspace file domain attributes with standard Mongoose Document methods.
+// Exposes database primary keys, lifecycle management methods, and timestamp fields.
+// Represents a persistent workspace file document returned by catalog queries.
 export interface IWorkspaceFileDocument extends IWorkspaceFile, Document {
   _id: Types.ObjectId;
 }
 
+// Configures the Mongoose schema mapping for the workspace file metadata collection.
+// Enforces validation rules on file names, MIME types, byte sizes, and status enums.
+// Automatically records document creation and modification timestamps on all writes.
 const workspaceFileSchema = new Schema<IWorkspaceFileDocument>(
   {
     orgId: {
@@ -109,6 +201,10 @@ const workspaceFileSchema = new Schema<IWorkspaceFileDocument>(
       type: String,
       default: "",
     },
+    extractedPageCount: {
+      type: Number,
+      min: 1,
+    },
     extractionWarnings: {
       type: [String],
       default: [],
@@ -117,6 +213,14 @@ const workspaceFileSchema = new Schema<IWorkspaceFileDocument>(
       summary: String,
       response: String,
       plan: {
+        type: Schema.Types.Mixed,
+        default: undefined,
+      },
+      evidence: {
+        type: [Schema.Types.Mixed],
+        default: [],
+      },
+      confidence: {
         type: Schema.Types.Mixed,
         default: undefined,
       },
@@ -141,9 +245,15 @@ const workspaceFileSchema = new Schema<IWorkspaceFileDocument>(
   }
 );
 
+// Configures compound database indexes for workspace file listing and lookups.
+// Accelerates chronological queries for user-uploaded files within an organization.
+// Optimizes filename search queries to quickly resolve existing document duplicates.
 workspaceFileSchema.index({ orgId: 1, userId: 1, createdAt: -1 });
 workspaceFileSchema.index({ orgId: 1, userId: 1, originalName: 1 });
 
+// Compiles and exports the Mongoose model for workspace file metadata entities.
+// Exposes data access methods to query, create, update, or delete user workspace files.
+// Connects uploaded binary file storage to semantic analysis and RAG knowledge bases.
 const WorkspaceFileModel = model<IWorkspaceFileDocument>("WorkspaceFile", workspaceFileSchema);
 
 export default WorkspaceFileModel;

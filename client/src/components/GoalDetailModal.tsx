@@ -1,3 +1,21 @@
+/**
+ * @fileoverview GoalDetailModal — presents a single financial goal in a dialog with
+ * progress bar, remaining amount, and time-to-deadline indicator.
+ *
+ * WHAT IT DOES
+ *  - Accepts an `IFinancialGoal` object and renders its current/target amounts
+ *    as a percentage progress bar with color-coded deadline urgency.
+ *  - Uses `useOrgFormatters` for locale-aware currency display.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `goal` (IFinancialGoal | null) — the goal to display; when null the dialog is hidden.
+ *  - `onClose` () => void — callback to dismiss the modal.
+ *
+ * ARCHITECTURE NOTES
+ *  - Opened from dashboard components (e.g. GoalProgress) when a user clicks on a goal row.
+ *  - Stateless presentational component — all financial data is passed in via props.
+ *  - Uses shadcn Dialog primitives for accessible focus trapping and backdrop overlay.
+ */
 import {
   Dialog,
   DialogContent,
@@ -13,12 +31,18 @@ import { IFinancialGoal } from "@/types";
 import { Clock, PiggyBank } from "lucide-react";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
+// Property structure definition for the individual goal detail inspection modal.
+// Accepts an optional financial goal record alongside a dialog dismissal handler.
+// Dictates modal visibility and populates target progress data when non-null.
 interface GoalDetailModalProps {
   goal: IFinancialGoal | null;
   onClose: () => void;
 }
 
 // Helper to calculate time remaining
+// Calculates remaining duration intervals until a financial goal's deadline date.
+// Returns humanized countdown strings and color-coded status styling classes.
+// Identifies overdue targets, near-term milestones, and standard remaining months.
 const getTimeToDeadline = (deadline: string) => {
   const deadlineDate = new Date(deadline);
   const now = new Date();
@@ -30,6 +54,9 @@ const getTimeToDeadline = (deadline: string) => {
   return { text: `${diffMonths} months remaining`, color: "text-muted-foreground" };
 };
 
+// Modal dialog rendering granular progress details for an active savings goal.
+// Displays visual completion progress bars, remaining amounts, and target deadlines.
+// Employs accessible Dialog primitives with focus management and backdrop dismissals.
 export function GoalDetailModal({ goal, onClose }: GoalDetailModalProps) {
   const { formatMoney } = useOrgFormatters();
   if (!goal) return null;

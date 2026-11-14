@@ -20,6 +20,10 @@ If you need API behavior, read `docs/MEGA_API_PLAYBOOK.md`.
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## 1) Core Principles Used Throughout the Data Model
 
 ### 1.1 Multi-tenancy (org isolation)
@@ -686,3 +690,391 @@ Cleanup:
 - Remove dual-write code after stabilization.
 - Remove unused indexes (after verifying no reads depend on them).
 - Remove legacy fields only after backup/retention requirements are met.
+
+## Documentation mind map
+
+```text
+FinWise Data Model Compendium (Mega)
+|
++-- Scope
+|   +-- Purpose: explain the subject covered by this file
+|   +-- Source: docs/MEGA_DATA_MODEL_COMPENDIUM.md
+|   +-- Inputs: prerequisites, linked references, and implementation facts
+|   +-- Audience: readers who need to understand, use, or maintain this area
+|
++-- Main path
+|   +-- Establish constraints and entry points
+|   +-- Trace components, decisions, and dependencies
+|   +-- Check outputs, risks, and verification evidence
+|
++-- Maintenance
+    +-- Recheck links and examples after changes
+    +-- Record assumptions, limits, and known drift
+    +-- Keep this map aligned with documented behavior
+```
+
+## Documentation ASCII flow
+
+```text
+[Open FinWise Data Model Compendium (Mega)]
+        |
+        v
+[Define the scope and required inputs]
+        |
+        v
+[Follow the documented sequence and decision points]
+        |
+        +--> [Missing context or exception?] --yes--> [Read linked reference]
+        |                                               |
+        +---------------------------no-----------------+
+                                                        v
+[Check outputs, risks, and verification evidence]
+        |
+        v
+[Record the change and refresh this document]
+```
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#047857', 'lineColor': '#06b6d4', 'secondaryColor': '#8b5cf6', 'tertiaryColor': '#f59e0b'}}}%%
+mindmap
+  root((🗄️ FinWise Data Model Compendium))
+    🔐 Identity & Multi-Tenancy
+      User (Argon2id, TOTP, RBAC roles)
+      Organization (Tenant boundary, settings)
+      Invite (Secure email activation tokens)
+      ApiKey (Hashed SHA-256 tokens, rate tiers)
+      AuditLog (26 immutable security event codes)
+    💳 Core Ledger & Banking
+      Account (Checking, savings, credit, loan)
+      Transaction (Debits, credits, review queue)
+      Budget (Category envelopes, threshold alerts)
+      RecurringTransaction (Predictive schedules)
+    📈 Investments & Wealth
+      Holding (Tickers, shares, cost basis)
+      Portfolio (Asset allocation, dividend yield)
+      Debt (Interest APR, amortization schedules)
+      Goal (Target dates, automated contributions)
+    🤖 AI State & Memory
+      AgentRun (LangGraph execution metrics)
+      AgentState (Persistent graph checkpoints)
+      MemoryChunk (Vector embeddings + BM25 text)
+      DocumentArtifact (Receipt OCR, PDF reports)
+```
+
+## System Architecture & Component ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📥 APPLICATION DATA INGRESS: Mutative Operation (Write / Update)       │
+│    Target Entity: Transaction / Budget / Goal / Account                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STAGE 1: TENANT ENFORCEMENT VIA OrgScopePlugin                       │
+│    ├─► Intercepts Model.find(), update(), delete(), aggregate()       │
+│    ├─► Enforces predicate: { ...query, orgId: req.orgId }              │
+│    └─► Prevents cross-tenant data leakage across all 52 models 🟢      │
+└──────────────────┬─────────────────────────────────┬───────────────────┘
+                   │                                 │
+                   ▼                                 ▼
+┌──────────────────────────────────────┐  ┌──────────────────────────────┐
+│ ⚡ FAST CACHE TIER: Redis 7.0        │  │ 🗄️ PRIMARY STORAGE: MongoDB 7│
+│  ├── Session & Token Blacklists      │  │  ├── BSON Document Stores    │
+│  ├── Rate Limit Counters (Windowed)  │  │  ├── Compound B-Tree Indexes │
+│  └── Hot Aggregations (TTL: 60s)     │  │  └── Org-Scoped Collections  │
+└──────────────────────────────────────┘  └──────────────┬───────────────┘
+                                                         │
+                                                         ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🗃️ COLD STORAGE & BLOB PERSISTENCE: GridFS / S3                        │
+│    ├── Receipt Images (.png, .jpg) & Invoices                          │
+│    └── Generated Financial PDF Exports & Historical Archives           │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## Multi-Tenant Mongoose Schema Implementation (`server/src/models/plugins/orgScope.plugin.ts`)
+
+```typescript
+import { Schema, Document, Query } from "mongoose";
+
+export interface OrgScopedDocument extends Document {
+  orgId: string;
+}
+
+/**
+ * Universal OrgScopePlugin: Injects mandatory { orgId } query filtering
+ * to guarantee strict multi-tenant boundary isolation.
+ */
+export function orgScopePlugin(schema: Schema): void {
+  // Add required indexed orgId field if not explicitly defined
+  if (!schema.path("orgId")) {
+    schema.add({
+      orgId: {
+        type: String,
+        required: true,
+        index: true,
+      },
+    });
+  }
+
+  // Pre-hook for find and findOne queries
+  schema.pre<Query<any, any>>(/^find/, function (this: any) {
+    const filter = this.getFilter();
+    if (this.options?.bypassOrgScope) return;
+    if (!filter.orgId) {
+      throw new Error("SECURITY_VIOLATION: Query executed without mandatory orgId tenant filter");
+    }
+  });
+
+  // Pre-hook for count and update queries
+  schema.pre<Query<any, any>>(/^(count|update|delete)/, function (this: any) {
+    const filter = this.getFilter();
+    if (this.options?.bypassOrgScope) return;
+    if (!filter.orgId) {
+      throw new Error("SECURITY_VIOLATION: Mutation executed without mandatory orgId tenant filter");
+    }
+  });
+}
+```
+
+
+---
+
+## 6) Latest Platform Models (2026 Phase 1–5 Additions)
+
+### 6.1 HealthScore Model (`server/src/models/HealthScore.ts`)
+Stores historical snapshots of the composite 0–100 financial vitals calculated by `budgetHealthService.ts`.
+
+```typescript
+export interface IHealthScore extends Document {
+  orgId: string;
+  userId: string;
+  healthScore: number; // 0-100 composite
+  periodStart: Date;
+  periodEnd: Date;
+  breakdown: {
+    budgetAdherence: number; // 0-40 points
+    reviewCleanliness: number; // 0-20 points
+    goalProgress: number; // 0-20 points
+    debtManagement: number; // 0-20 points
+  };
+  burnRateAlerts: Array<{
+    categoryId: string;
+    categoryName: string;
+    burnRate: number;
+    recommendedCap: number;
+  }>;
+  runwayDays: number;
+  createdAt: Date;
+}
+```
+**Indexing Strategy:**
+- `{ orgId: 1, userId: 1, periodEnd: -1 }`: Optimizes dashboard lookups for latest health score.
+
+---
+
+### 6.2 NewsletterPreference Model (`server/src/models/newsletterPreferenceModel.ts`)
+Stores subscriber delivery preferences and scheduled UTC dispatch windows for automated digests.
+
+```typescript
+export interface INewsletterPreference extends Document {
+  orgId: string;
+  userId: string;
+  email: string;
+  enabled: boolean;
+  cadence: 'weekly' | 'biweekly' | 'monthly';
+  preferredDay: number; // 0 (Sun) - 6 (Sat)
+  preferredTimeUtc: string; // '08:00'
+  sections: {
+    includeKpis: boolean;
+    includeInsights: boolean;
+    includeUpcomingBills: boolean;
+    includeBurnRateAlerts: boolean;
+  };
+  lastSentAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+**Indexing Strategy:**
+- `{ orgId: 1, enabled: 1, preferredDay: 1 }`: Optimizes the BullMQ `newsletterScheduler.ts` cron polling query.
+
+---
+
+### 6.3 WorkspaceKnowledgeChunk Model (`server/src/models/workspaceKnowledgeChunkModel.ts`)
+Stores bounded 1,800-character text chunks extracted from uploaded workspace documents for RAG Phase 2 retrieval.
+
+```typescript
+export interface IWorkspaceKnowledgeChunk extends Document {
+  orgId: string;
+  documentId: mongoose.Types.ObjectId;
+  chunkIndex: number;
+  text: string;
+  charStart: number;
+  charEnd: number;
+  tokenCount: number;
+  embedding?: number[]; // Dense 768-dim vector for semantic search
+  metadata: {
+    fileName: string;
+    fileType: string;
+    pageNumber?: number;
+  };
+  createdAt: Date;
+}
+```
+**Indexing Strategy:**
+- Compound Index: `{ orgId: 1, documentId: 1, chunkIndex: 1 }`
+- Full-Text Search Index: `{ text: "text" }` (Supports fast lexical BM25 retrieval for grounding formula $G \ge 0.70$)
+
+---
+
+## 12) 2026 Enterprise Database Models & Vector Schemas
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#7c3aed', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#6d28d9', 'lineColor': '#8b5cf6', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((2026 Data Schema Compendium))
+    Knowledge Retrieval
+      WorkspaceKnowledgeChunkModel
+        embedding: Array 64 of Number
+        sourceDocument: String
+        pageNumber: Number
+        modality: text | table | structured
+        Index: orgId + sourceDocument + pageNumber
+    Financial Journal
+      JournalEntryModel
+        clientKey: String (Idempotency)
+        vector: Array 64 of Number
+        offlineSynced: Boolean
+        Index: orgId + clientKey (Unique)
+    Calendar & Reminders
+      CalendarReminderModel
+        dueDate: Date
+        cadence: once | weekly | monthly | yearly
+        status: pending | completed
+        Index: orgId + userId + dueDate
+    Automation Workflows
+      WorkflowModel & RunModel
+        nodes: Array of Graph Nodes
+        status: RUNNING | DELAYED | COMPLETED
+        resumeAt: Date (Delay Queue Timer)
+```
+
+### 12.1 Model: `WorkspaceKnowledgeChunkModel` (`server/src/models/workspaceKnowledgeChunkModel.ts`)
+
+Stores partitioned knowledge chunks extracted from user filings, 10-K disclosures, and bank statements for Grounded RAG.
+
+```typescript
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface IWorkspaceKnowledgeChunk extends Document {
+  orgId: string;
+  sourceDocument: string;
+  pageNumber: number;
+  content: string;
+  modality: 'text' | 'table' | 'structured';
+  embedding: number[]; // 64-dimensional normalized vector
+  metadata?: Record<string, any>;
+  createdAt: Date;
+}
+
+const WorkspaceKnowledgeChunkSchema = new Schema<IWorkspaceKnowledgeChunk>({
+  orgId: { type: String, required: true, index: true },
+  sourceDocument: { type: String, required: true },
+  pageNumber: { type: Number, required: true, default: 1 },
+  content: { type: String, required: true },
+  modality: { type: String, enum: ['text', 'table', 'structured'], default: 'text' },
+  embedding: { type: [Number], required: true, validate: [(v: number[]) => v.length === 64, 'Must be 64-D'] },
+  metadata: { type: Schema.Types.Mixed },
+  createdAt: { type: Date, default: Date.now, index: true }
+});
+
+// Full-text search index for BM25 sparse retrieval
+WorkspaceKnowledgeChunkSchema.index({ content: 'text', sourceDocument: 'text' });
+// Compound index for fast document-scoped lookups
+WorkspaceKnowledgeChunkSchema.index({ orgId: 1, sourceDocument: 1, pageNumber: 1 });
+
+export const WorkspaceKnowledgeChunkModel = mongoose.model<IWorkspaceKnowledgeChunk>(
+  'WorkspaceKnowledgeChunk',
+  WorkspaceKnowledgeChunkSchema
+);
+```
+
+---
+
+### 12.2 Model: `JournalEntryModel` (`server/src/models/journalEntryModel.ts`)
+
+Persists offline-synced personal financial journal entries with client idempotency deduplication and 64-D semantic vector representations.
+
+```typescript
+export interface IJournalEntry extends Document {
+  orgId: string;
+  userId: string;
+  clientKey: string; // Idempotency key generated in client browser (e.g. draft_17300000_uuid)
+  title: string;
+  content: string;
+  tags: string[];
+  embedding?: number[]; // 64-dimensional vector for semantic similarity search
+  isOfflineSynced: boolean;
+  syncedAt?: Date;
+  updatedAt: Date;
+}
+
+// Compound unique index ensuring idempotent batch sync
+JournalEntrySchema.index({ orgId: 1, userId: 1, clientKey: 1 }, { unique: true });
+```
+
+---
+
+### 12.3 Model: `CalendarReminderModel` (`server/src/models/calendarReminderModel.ts`)
+
+Tracks time-sensitive financial events, recurring liabilities, and tax filing deadlines.
+
+```typescript
+export interface ICalendarReminder extends Document {
+  orgId: string;
+  userId: string;
+  title: string;
+  amount?: number;
+  currency: string;
+  dueDate: Date;
+  cadence: 'once' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  status: 'pending' | 'completed';
+  alertDaysOffset: number;
+  completedAt?: Date;
+}
+
+// Compound index for querying due reminders
+CalendarReminderSchema.index({ orgId: 1, userId: 1, dueDate: 1, status: 1 });
+```
+
+---
+
+### 12.4 Model: `WorkflowModel` & `WorkflowRunModel` (`server/src/models/workflowModel.ts`)
+
+Defines autonomous node graphs and tracks individual execution instances across delays and conditional forks.
+
+```typescript
+export interface IWorkflowRun extends Document {
+  orgId: string;
+  workflowId: string;
+  triggerEvent: Record<string, any>;
+  status: 'RUNNING' | 'DELAYED' | 'COMPLETED' | 'FAILED';
+  resumeAt?: Date; // Target resume timestamp if status === 'DELAYED'
+  nextNodeId?: string;
+  stepLogs: Array<{
+    nodeId: string;
+    type: string;
+    executedAt: Date;
+    status: 'RUNNING' | 'SUCCESS' | 'ERROR';
+    output?: any;
+    error?: string;
+  }>;
+  createdAt: Date;
+  completedAt?: Date;
+}
+
+// Index for polling workers to sweep delayed workflows
+WorkflowRunSchema.index({ status: 1, resumeAt: 1 });
+```

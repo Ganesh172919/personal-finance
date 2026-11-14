@@ -1,3 +1,29 @@
+/**
+ * @fileoverview Sidebar — the primary application navigation shell, rendering as a fixed
+ * desktop sidebar on large screens and a bottom tab bar + slide-in drawer on mobile.
+ *
+ * WHAT IT DOES
+ *  - Defines all navigation items grouped into four sections: Daily flow, Planning,
+ *    Workspace, and Library. Each item has a route, icon, section, and optional feature gate.
+ *  - Desktop: renders a 22rem-wide fixed sidebar with BrandBlock (logo + theme toggle +
+ *    notification bell), grouped navigation sections, and a user panel with logout.
+ *  - Mobile: renders a bottom tab bar with pinned items (AI Chat, Dashboard, Transactions,
+ *    Finance, Settings) plus a "More" button that opens the full drawer.
+ *  - Integrates `NotificationCenter` (slide-in panel) and `NotificationBell` (badge trigger).
+ *  - Feature-gates navigation items (Tasks, Receipts, Notes) based on app config.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — all data comes from `useAuth`, `useAppConfig`, `useNotifications`, and `useLocation`.
+ *  - `navigationItems` array defines the canonical route map for the entire application.
+ *  - `groupedNavItems` is memoised from `visibleNavItems` (filtered by feature flags).
+ *
+ * ARCHITECTURE NOTES
+ *  - The single source of truth for app navigation; routes added here automatically appear
+ *    in both desktop and mobile layouts.
+ *  - Sub-components: `BrandBlock`, `NavigationSections`, `UserPanel`, `DesktopSidebar`,
+ *    `MobileBottomBar`, `MobileDrawer` — each is a local function component for readability.
+ *  - Uses `useIsMobile()` hook to switch between desktop and mobile layouts.
+ */
 import { useCallback, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -12,11 +38,13 @@ import {
   Download,
   FolderOpen,
   FileText,
+  FlaskConical,
   Gauge,
   ListTodo,
   LogOut,
   Menu,
   MessageSquare,
+  Mic,
   PieChart,
   ReceiptText,
   ScanLine,
@@ -40,17 +68,49 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { reportClientError } from "@/lib/runtimeLogger";
 
+// Section identifier classifying navigation items within the application sidebar.
+// Segregates links across daily operations, financial planning, workspaces, and libraries.
+// Powers visual grouping and semantic divider headers throughout sidebar menus.
 type NavigationSectionId = "daily" | "planning" | "workspace" | "library";
 
+/** Minimal user shape needed by the Sidebar. */
+// Lightweight user identity contract consumed by the sidebar presentation view.
+// Supplies profile display names, email addresses, and optional avatar picture URLs.
+// Populates authenticated profile badges and logout controls in the bottom drawer.
+interface SidebarUser {
+  name?: string;
+  email?: string;
+  photoURL?: string;
+}
+
+/** Feature flags that gate navigation items. */
+// Feature flag configuration contract governing navigation item availability.
+// Evaluates server-side rollout toggles for tasks, receipt OCR, and journals.
+// Conditionally filters gated links out of the rendered sidebar navigation menu.
+interface FeatureFlags {
+  tasks_enabled?: boolean;
+  receipts_ocr_enabled?: boolean;
+  journal_enabled?: boolean;
+  [key: string]: boolean | undefined;
+}
+
+// Structural specification representing a discrete navigation route entry.
+// Associates route paths with Lucide icons, display titles, and feature gates.
+// Supports role restrictions and mobile tab-bar pinning configuration flags.
 type NavigationItem = {
   href: string;
   icon: LucideIcon;
   label: string;
   section: NavigationSectionId;
   requiresFeature?: "tasks_enabled" | "receipts_ocr_enabled" | "journal_enabled";
+  /** Only shown to org owners/admins. */
+  requiresAdmin?: boolean;
   mobilePin?: boolean;
 };
 
+// Navigation section schema combining category metadata with item collections.
+// Groups related navigation item links under a common label and identifier.
+// Drives structured rendering across collapsible desktop and mobile drawer menus.
 type GroupedNavigationSection = {
   id: NavigationSectionId;
   label: string;
@@ -58,6 +118,9 @@ type GroupedNavigationSection = {
   items: NavigationItem[];
 };
 
+// Ordered registry defining primary structural categories for sidebar navigation.
+// Groups application routes across daily operations, planning, workspace, and library.
+// Provides localized headings and category descriptions for the sidebar hierarchy.
 const navigationSections: Omit<GroupedNavigationSection, "items">[] = [
   {
     id: "daily",
@@ -81,15 +144,21 @@ const navigationSections: Omit<GroupedNavigationSection, "items">[] = [
   },
 ];
 
-const navigationItems: NavigationItem[] = [
+// Master catalog specifying all application navigation routes and metadata.
+// Maps discrete URL endpoints to icons, category sections, and permission gates.
+// Serves as the single source of truth for desktop menus, command bars, and drawers.
+export const navigationItems: NavigationItem[] = [
   { href: "/chat", icon: MessageSquare, label: "AI Chat", section: "daily", mobilePin: true },
-  { href: "/dashboard", icon: Gauge, label: "Strategist's Desk", section: "daily", mobilePin: true },
+  { href: "/dashboard", icon: Gauge, label: "Dashboard", section: "daily", mobilePin: true },
   { href: "/transactions", icon: ReceiptText, label: "Transactions", section: "daily", mobilePin: true },
-  { href: "/finance", icon: Wallet, label: "Finance OS", section: "daily", mobilePin: true },
+  { href: "/finance", icon: Wallet, label: "Finance", section: "daily", mobilePin: true },
+  { href: "/voice", icon: Mic, label: "Bharat Voice AI", section: "daily", mobilePin: true },
   { href: "/files", icon: FolderOpen, label: "Files", section: "daily" },
   { href: "/tasks", icon: ListTodo, label: "Tasks", section: "daily", requiresFeature: "tasks_enabled" },
   { href: "/goals-debts", icon: Target, label: "Goals & Debts", section: "planning" },
   { href: "/portfolio", icon: PieChart, label: "Investment Portfolio", section: "planning" },
+  { href: "/scenarios", icon: TrendingUp, label: "What-if Scenarios", section: "planning" },
+  { href: "/financial-story", icon: BookOpen, label: "Financial Story", section: "planning" },
   { href: "/all-insights", icon: BarChart3, label: "All Insights", section: "planning" },
   { href: "/analytics", icon: BarChart3, label: "Analytics", section: "planning" },
   { href: "/calendar", icon: CalendarDays, label: "Calendar", section: "planning" },
@@ -100,6 +169,7 @@ const navigationItems: NavigationItem[] = [
   { href: "/receipts", icon: ScanLine, label: "Receipts", section: "workspace", requiresFeature: "receipts_ocr_enabled" },
   { href: "/org", icon: Building2, label: "Organization", section: "workspace" },
   { href: "/billing", icon: CreditCard, label: "Billing", section: "workspace" },
+  { href: "/ai-learning", icon: FlaskConical, label: "AI Learning", section: "workspace", requiresAdmin: true },
   { href: "/settings", icon: Settings, label: "Settings", section: "workspace", mobilePin: true },
   { href: "/blogs", icon: FileText, label: "Blogs", section: "library" },
   { href: "/growth-stories", icon: TrendingUp, label: "Growth Stories", section: "library" },
@@ -107,6 +177,9 @@ const navigationItems: NavigationItem[] = [
   { href: "/notes", icon: StickyNote, label: "Note Taking", section: "library", requiresFeature: "journal_enabled" },
 ];
 
+// Top header branding block featuring application logos and utility controls.
+// Embeds theme mode switching toggles alongside interactive notification bells.
+// Maintains visual branding and quick system actions at the top of the sidebar.
 function BrandBlock({
   planLabel,
   onNotificationsOpen,
@@ -117,15 +190,15 @@ function BrandBlock({
   notificationUnreadCount: number;
 }) {
   return (
-    <div className="rounded-[calc(var(--radius)+6px)] border border-border/70 bg-gradient-to-br from-primary/14 via-card to-chart-2/10 p-4 shadow-[0_18px_45px_-34px_rgba(15,23,42,0.7)]">
-      <div className="flex items-start justify-between gap-3">
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <Link href="/dashboard" className="flex items-center gap-3 no-underline">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25">
             <Brain className="h-5 w-5" />
           </div>
           <div>
             <h1 className="text-base font-semibold text-foreground">Personal Finance</h1>
-            <p className="text-xs text-muted-foreground">AI strategist workspace</p>
+            <p className="text-xs text-muted-foreground">Personal finance tracker</p>
           </div>
         </Link>
         <div className="flex items-center gap-2">
@@ -144,6 +217,9 @@ function BrandBlock({
   );
 }
 
+// Renders categorized lists of navigation links within the sidebar layout.
+// Applies active route highlighting, hover animations, and accessible link landmarks.
+// Dispatches optional click handlers to dismiss mobile navigation drawers upon selection.
 function NavigationSections({
   groupedNavItems,
   location,
@@ -154,15 +230,12 @@ function NavigationSections({
   onNavigate?: () => void;
 }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {groupedNavItems.map((section) => (
-        <section key={section.id} className="space-y-3">
+        <section key={section.id} className="space-y-2">
           <div className="px-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+            <p className="text-xs font-semibold text-muted-foreground">
               {section.label}
-            </p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground/90">
-              {section.description}
             </p>
           </div>
 
@@ -180,7 +253,7 @@ function NavigationSections({
                   <Link
                     href={item.href}
                     onClick={onNavigate}
-                    className={`group flex items-center gap-3 rounded-[calc(var(--radius)-4px)] border px-3 py-3 no-underline transition-all duration-200 ${
+                    className={`group flex items-center gap-2 rounded-md border px-2 py-2 no-underline transition-colors ${
                       isActive
                         ? "border-primary/30 bg-primary text-primary-foreground shadow-[0_18px_32px_-24px_rgba(255,255,255,0.24)]"
                         : "border-transparent text-foreground hover:border-border/70 hover:bg-accent/70 hover:shadow-[0_14px_26px_-22px_rgba(15,23,42,0.45)]"
@@ -189,7 +262,7 @@ function NavigationSections({
                     data-testid={`nav-${item.label.toLowerCase().replace(/\s/g, "-")}`}
                   >
                     <div
-                      className={`flex h-10 w-10 items-center justify-center rounded-2xl transition-colors ${
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
                         isActive
                           ? "bg-white/15 text-primary-foreground"
                           : "bg-background/80 text-primary group-hover:bg-primary/10"
@@ -199,13 +272,6 @@ function NavigationSections({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{item.label}</p>
-                      <p
-                        className={`truncate text-xs ${
-                          isActive ? "text-primary-foreground/75" : "text-muted-foreground"
-                        }`}
-                      >
-                        {section.label}
-                      </p>
                     </div>
                   </Link>
                 </motion.div>
@@ -218,12 +284,15 @@ function NavigationSections({
   );
 }
 
+// Authenticated user summary footer anchoring the bottom of the sidebar.
+// Displays profile avatars, user email addresses, and active workspace roles.
+// Embeds an accessible sign-out button to trigger credential invalidation flows.
 function UserPanel({
   user,
   planLabel,
   handleLogout,
 }: {
-  user: any;
+  user: SidebarUser | null;
   planLabel: string;
   handleLogout: () => void;
 }) {
@@ -255,6 +324,9 @@ function UserPanel({
   );
 }
 
+// Fixed-width desktop application sidebar rendering persistent navigation menus.
+// Incorporates brand blocks, categorized route links, and user session footers.
+// Automatically adjusts responsive styling on viewports exceeding mobile breakpoints.
 function DesktopSidebar({
   groupedNavItems,
   location,
@@ -266,7 +338,7 @@ function DesktopSidebar({
 }: {
   groupedNavItems: GroupedNavigationSection[];
   location: string;
-  user: any;
+  user: SidebarUser | null;
   planLabel: string;
   handleLogout: () => void;
   onNotificationsOpen: () => void;
@@ -274,7 +346,7 @@ function DesktopSidebar({
 }) {
   return (
     <aside
-      className="hidden w-[22rem] shrink-0 border-r border-sidebar-border/80 bg-sidebar/85 lg:flex lg:flex-col lg:backdrop-blur-xl"
+      className="sticky top-0 hidden h-screen w-64 shrink-0 border-r border-sidebar-border bg-sidebar lg:flex lg:flex-col"
       data-testid="sidebar"
     >
       <div className="border-b border-sidebar-border/70 p-5">
@@ -300,6 +372,9 @@ function DesktopSidebar({
   );
 }
 
+// Responsive bottom navigation tab bar rendered on compact mobile viewports.
+// Displays pinned high-frequency destinations including chat, ledger, and dashboard.
+// Includes a drawer toggle button providing access to secondary application views.
 function MobileBottomBar({
   pinnedItems,
   location,
@@ -330,7 +405,7 @@ function MobileBottomBar({
             >
               <item.icon className="h-5 w-5" />
               <span className="text-[10px] font-semibold leading-tight">
-                {item.label.split(" ")[0]}
+                {item.href === "/chat" ? "Chat" : item.label}
               </span>
             </Link>
           );
@@ -349,6 +424,9 @@ function MobileBottomBar({
   );
 }
 
+// Slide-over navigation drawer providing full application menu access on mobile devices.
+// Employs Framer Motion spring physics with touch backdrop dismissal handlers.
+// Renders the full catalog of categorized route links and user account settings.
 function MobileDrawer({
   isOpen,
   onClose,
@@ -364,7 +442,7 @@ function MobileDrawer({
   onClose: () => void;
   groupedNavItems: GroupedNavigationSection[];
   location: string;
-  user: any;
+  user: SidebarUser | null;
   planLabel: string;
   handleLogout: () => void;
   onNotificationsOpen: () => void;
@@ -428,6 +506,9 @@ function MobileDrawer({
   );
 }
 
+// Responsive master navigation container adapting between desktop and mobile viewports.
+// Orchestrates desktop panels, mobile bottom bars, and slide-in navigation drawers.
+// Filters accessible routes based on active organization roles and feature toggles.
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
@@ -439,18 +520,23 @@ export function Sidebar() {
     : configQuery.data?.entitlements
       ? `${planTier} plan`
       : "free plan";
-  const isMobile = useIsMobile();
+  // Desktop navigation starts at lg. Keep the drawer available on tablets too.
+  const isMobile = useIsMobile(1024);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const { unreadCount: notificationUnreadCount } = useNotifications({ enabled: !!user });
 
+  const orgRole = configQuery.data?.org?.role;
+  const isOrgAdmin = orgRole === "owner" || orgRole === "admin";
+
   const visibleNavItems = useMemo(
     () =>
       navigationItems.filter((item) => {
+        if (item.requiresAdmin && !isOrgAdmin) return false;
         if (!item.requiresFeature) return true;
-        return features ? Boolean((features as any)[item.requiresFeature]) : true;
+        return features ? Boolean((features as FeatureFlags)[item.requiresFeature]) : true;
       }),
-    [features]
+    [features, isOrgAdmin]
   );
 
   const groupedNavItems = useMemo(

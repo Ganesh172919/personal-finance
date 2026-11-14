@@ -1,8 +1,53 @@
 # FinWise API Reference
 
 > **Version:** v1 (canonical) / legacy (deprecated)
-> **Base URL:** `https://api.finwise.app` (production) / `http://localhost:3001` (development)
+> **Base URL:** `https://api.finwise.app` (production) / `http://localhost:3000` (development)
 > **Last Updated:** 2026-03-31
+
+> [!TIP]
+> **Adding New Endpoints?**  
+> See the [**Master Developer Handbook: Building on This Project**](../docs/BUILDING_ON_THIS_PROJECT.md) for complete Zod request validation, Express 5 controller, and React Query hook blueprints.
+
+## Latest API Addendum
+
+The latest backend release introduced or elevated the importance of several API contracts. Read this addendum before relying only on the older endpoint listings below.
+
+### Newly important endpoint areas
+
+- AI runtime and inspection:
+  - `GET /api/v1/ai-core/status`
+  - `GET /api/v1/ai-core/ai/status`
+  - `GET /api/v1/ai-core/ai/models`
+  - `GET /api/v1/ai-core/ai/sessions`
+  - `GET /api/v1/ai-core/ai/sessions/:sessionId`
+  - `POST /api/v1/ai-core/ai/sessions/:sessionId/resume`
+- Dashboard operational summaries:
+  - `GET /api/v1/command-center`
+  - `GET /api/v1/budget-health`
+- Transaction review actions:
+  - `POST /api/v1/transactions/:id/approve`
+  - `POST /api/v1/transactions/bulk-approve`
+  - `POST /api/v1/transactions/:id/always-categorize`
+
+### AI response metadata now seen in practice
+
+Recent AI responses may now include:
+
+- `session_id`
+- `session_status`
+- `workflow_phase`
+- `active_provider`
+- `active_model`
+- `active_key_id`
+- `fallback_path`
+- `recovered_failures`
+- `recovered_from_checkpoint`
+
+### Guidance for current development
+
+- Treat `/api/v1/*` as the canonical target for new frontend and integration work.
+- Preserve review metadata when building transaction experiences.
+- Do not assume AI responses are plain text only; many consumers now depend on runtime metadata.
 
 ---
 
@@ -50,6 +95,10 @@
    - [3.37 Content (`/api/v1/blogs/*`, `/api/v1/growth-stories/*`)](#337-content-apiv1blogs-apiv1growth-stories)
    - [3.38 Public Shares (`/api/v1/public/*`)](#338-public-shares-apiv1public)
    - [3.39 Internal Tools (`/api/internal/tools/*`)](#339-internal-tools-apiinternaltools)
+   - [3.40 Newsletter (`/api/v1/newsletter/*`)](#340-newsletter-apiv1newsletter)
+   - [3.41 Health Score (`/api/v1/finance/health-score/*`)](#341-health-score-apiv1financehealth-score)
+   - [3.42 PDF Generation & Downloads (`/api/v1/files/*`)](#342-pdf-generation--downloads-apiv1files)
+   - [3.43 RAG Retrieval & Knowledge Chunks (`/api/v1/retrieval/*`)](#343-rag-retrieval--knowledge-chunks-apiv1retrieval)
 4. [Response Format](#4-response-format)
 5. [Error Codes](#5-error-codes)
 6. [Authentication Requirements](#6-authentication-requirements)
@@ -65,7 +114,7 @@
 | Environment | URL |
 |---|---|
 | Production | `https://api.finwise.app` |
-| Development | `http://localhost:3001` |
+| Development | `http://localhost:3000` |
 
 ### Authentication
 
@@ -327,7 +376,7 @@ curl -v https://api.finwise.app/api/v1/auth/google
 
 **Step 2 — Callback:**
 
-Google redirects back to `/api/v1/auth/google/callback?code=...&state=...`. The server exchanges the code, creates or finds the user, sets JWT cookies, and redirects to the client app.
+Google redirects back to `/api/auth/google/callback?code=...&state=...` (the registered redirect URI; `/api/v1/auth/google/callback` is also mounted). The server verifies the signed state cookie + PKCE, requires a verified Google email, creates or links the user, sets the JWT and CSRF cookies, and redirects to the client app. Failures redirect to `CLIENT_URL/login?error=<code>`.
 
 ### 2.8 Get Profile
 
@@ -1824,6 +1873,240 @@ data: {"type": "notification", "data": {"id": "notif_xyz", "message": "New trans
 
 These endpoints are for internal AI Core service communication only and require a dedicated bearer token.
 
+### 3.40 Newsletter (`/api/v1/newsletter/*`)
+
+The newsletter service provides personalized weekly and monthly financial digests, content preferences, and immediate test sends.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/newsletter/preferences` | JWT | Get authenticated user's newsletter preferences |
+| `PUT` | `/newsletter/preferences` | JWT | Update newsletter preferences (cadence, topics, email destination) |
+| `POST` | `/newsletter/preview` | JWT | Generate and preview newsletter digest without dispatching |
+| `POST` | `/newsletter/send-now` | JWT | Immediately generate and email newsletter digest |
+| `GET` | `/newsletter/unsubscribe/:token` | None | One-click unsubscribe from newsletter emails |
+| `GET` | `/newsletter/history` | JWT | View past newsletter dispatches and delivery statuses |
+
+#### Request Example: Update Newsletter Preferences
+
+```http
+PUT /api/v1/newsletter/preferences HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer <jwt-token>
+
+{
+  "enabled": true,
+  "cadence": "weekly",
+  "preferredDay": "sunday",
+  "includeTips": true,
+  "includeSpendingSummary": true,
+  "includeBudgetAlerts": true,
+  "includeUpcomingBills": true,
+  "includeHealthScore": true
+}
+```
+
+### 3.41 Health Score (`/api/v1/finance/health-score/*`)
+
+Provides real-time scoring, historical trends, and visual chart data for the composite Financial Health Score (0–100).
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/finance/health-score/trend` | JWT + Org | Get health score trend, delta, and direction |
+| `GET` | `/finance/health-score/chart` | JWT + Org | Get monthly historical data points for Recharts |
+| `POST` | `/finance/health-score` | JWT + Org | Record a new snapshot health score |
+
+#### Response Example: Health Score Trend
+
+```json
+{
+  "success": true,
+  "data": {
+    "currentScore": 84,
+    "previousScore": 79,
+    "direction": "improving",
+    "delta": 5,
+    "metrics": {
+      "savingsRate": 24.5,
+      "debtToIncome": 12.0,
+      "runwayMonths": 6.2,
+      "budgetAdherence": 92.0
+    },
+    "categoryBreakdown": {
+      "savings": 28,
+      "debt": 25,
+      "runway": 18,
+      "adherence": 13
+    },
+    "history": [
+      { "period": "2026-01", "score": 75 },
+      { "period": "2026-02", "score": 79 },
+      { "period": "2026-03", "score": 84 }
+    ]
+  }
+}
+```
+
+### 3.42 PDF Generation & Downloads (`/api/v1/files/*`)
+
+Compiles structured text documents, financial summaries, or workspace files into branded PDF documents using PDFKit and GridFS.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/files/render-prompt` | JWT + Org | Render a prompt text body into a structured PDF |
+| `POST` | `/files/:workspaceFileId/render-pdf` | JWT + Org | Render an uploaded workspace text file into a PDF |
+| `GET` | `/files/rendered/:fileId/download` | JWT + Org | Stream rendered PDF directly from GridFS |
+
+### 3.43 RAG Retrieval & Knowledge Chunks (`/api/v1/retrieval/*`)
+
+Endpoints supporting RAG Phase 2 bounded window retrieval and knowledge chunk administration.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/retrieval/query` | JWT + Org | Perform lexical BM25 query against tenant knowledge chunks |
+| `GET` | `/retrieval/chunks/:workspaceFileId` | JWT + Org | List indexed chunks for a given workspace document |
+| `POST` | `/retrieval/backfill` | JWT (Admin) | Trigger background chunking of un-indexed files |
+
+### 3.44 Dead Letter Queue (`/api/v1/dlq/*`)
+
+Administration and recovery endpoints for quarantined BullMQ background jobs. Backed by Redis `bull:finwise-dlq` (500 job cap) with payload scrubbing to eliminate sensitive tokens or PII.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/dlq/stats` | JWT (Admin) | Retrieve queue capacity, total quarantined count, and queue status |
+| `GET` | `/dlq/jobs` | JWT (Admin) | List paginated quarantined jobs with scrubbed payloads and error stack traces |
+| `POST` | `/dlq/replay/:id` | JWT (Admin) | Replay a failed job by id back to its original BullMQ processing queue |
+| `DELETE` | `/dlq/purge` | JWT (Admin) | Purge all quarantined jobs from the DLQ Redis store |
+
+#### Example: Inspecting DLQ Health & Statistics
+
+```bash
+curl -X GET "http://localhost:3000/api/v1/dlq/stats" \
+  -H "Authorization: Bearer <ADMIN_JWT_TOKEN>" \
+  -H "X-Org-Id: org_ent_9901"
+```
+
+Response (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "queue": "bull:finwise-dlq",
+    "quarantinedCount": 2,
+    "maxCapacity": 500,
+    "status": "HEALTHY",
+    "oldestJobTimestamp": "2026-03-31T18:14:22.109Z",
+    "newestJobTimestamp": "2026-03-31T19:02:11.442Z"
+  }
+}
+```
+
+#### Example: Replaying a Quarantined Job
+
+```bash
+curl -X POST "http://localhost:3000/api/v1/dlq/replay/dlq_job_9f8a2" \
+  -H "Authorization: Bearer <ADMIN_JWT_TOKEN>" \
+  -H "X-Org-Id: org_ent_9901"
+```
+
+Response (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "jobId": "dlq_job_9f8a2",
+    "originalQueue": "newsletter-queue",
+    "requeuedAt": "2026-03-31T20:15:00.000Z",
+    "status": "requeued"
+  }
+}
+```
+
+### 3.45 Financial Calendar Reminders & `.ics` Sync (`/api/v1/calendar-reminders/*`)
+
+Endpoints for synchronizing recurring bills, debt payment deadlines, and budget reviews with external calendar applications (Google Calendar, Apple Calendar, Outlook) via standard RFC 5545 `.ics` feeds.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/calendar-reminders` | JWT + Org | List scheduled bill reminders, paydays, and tax deadlines |
+| `POST` | `/calendar-reminders` | JWT + Org | Create a new calendar reminder event |
+| `GET` | `/calendar-reminders/export.ics` | JWT / Token | Stream an RFC 5545 formatted `.ics` iCalendar feed for external subscription |
+
+#### Example: Generating iCalendar `.ics` Export
+
+```bash
+curl -X GET "http://localhost:3000/api/v1/calendar-reminders/export.ics" \
+  -H "Authorization: Bearer <USER_JWT_TOKEN>" \
+  -H "X-Org-Id: org_ent_9901"
+```
+
+Response (`200 OK` with `Content-Type: text/calendar; charset=utf-8`):
+```text
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//FinWise//Financial Calendar Sync 2026//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:FinWise Financial Obligations
+X-WR-TIMEZONE:UTC
+BEGIN:VEVENT
+UID:bill_rent_2026_04@finwise.app
+DTSTAMP:20260331T120000Z
+DTSTART:20260401T090000Z
+DTEND:20260401T093000Z
+SUMMARY:Apartment Rent Payment ($2,400.00)
+DESCRIPTION:Category: Housing | Payee: Prime Properties LLC | Status: Pending
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR
+```
+
+### 3.46 Conversation Insights Cache (`/api/v1/chat/sessions/:id/insights`)
+
+High-performance, in-process coalesced insights summaries for chat sessions. Computes extracted financial action items, sentiment vitals, and conversation summaries with bounded concurrency to prevent thundering-herd LLM evaluation spikes.
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/chat/sessions/:id/insights` | JWT + Org | Retrieve cached action items and conversation financial vitals |
+| `POST` | `/chat/sessions/:id/insights/refresh` | JWT + Org | Bypass coalescing cache and force real-time re-summarization |
+
+#### Example: Querying Session Conversation Insights
+
+```bash
+curl -X GET "http://localhost:3000/api/v1/chat/sessions/sess_99182/insights" \
+  -H "Authorization: Bearer <USER_JWT_TOKEN>" \
+  -H "X-Org-Id: org_ent_9901"
+```
+
+Response (`200 OK`):
+```json
+{
+  "success": true,
+  "data": {
+    "sessionId": "sess_99182",
+    "summary": "User requested rebalancing analysis for excess emergency cash and Q2 ETF dollar-cost averaging plan.",
+    "actionItems": [
+      {
+        "description": "Transfer $3,500 surplus cash into High-Yield Savings Account",
+        "priority": "HIGH",
+        "status": "PENDING"
+      },
+      {
+        "description": "Rebalance US Total Market ETF from 64% back to target 50%",
+        "priority": "MEDIUM",
+        "status": "IN_PROGRESS"
+      }
+    ],
+    "financialVitals": {
+      "sentiment": "OPTIMISTIC",
+      "riskScore": 42,
+      "detectedIntent": "PORTFOLIO_REBALANCE"
+    },
+    "cached": true,
+    "cacheExpiresAt": "2026-03-31T20:45:00.000Z"
+  }
+}
+```
+
 ---
 
 ## 4. Response Format
@@ -2177,7 +2460,7 @@ Endpoints that accept file uploads use `multipart/form-data`:
 
 | Variable | Description | Default |
 |---|---|---|
-| `PORT` | Server port | `3001` |
+| `PORT` | Server port | `3000` |
 | `NODE_ENV` | Environment | `development` |
 | `CORS_ORIGINS` | Allowed CORS origins (comma-separated) | — |
 | `RATE_LIMIT_WINDOW_MS` | Rate limit window | `60000` (1 min) |
@@ -2190,3 +2473,494 @@ Endpoints that accept file uploads use `multipart/form-data`:
 | `TASKS_ENABLED` | Enable task routes | `true` |
 | `METRICS_TOKEN` | Bearer token for `/api/metrics` | — |
 | `AI_CORE_TOOLS_TOKEN` | Bearer token for internal tools | — |
+
+## API Routing & Surface Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#7c3aed', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#6d28d9', 'lineColor': '#06b6d4', 'secondaryColor': '#f59e0b', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((📡 FinWise API Surface))
+    🔐 Authentication & Identity
+      POST /api/auth/register
+      POST /api/auth/login
+      POST /api/auth/refresh
+      POST /api/auth/2fa/verify
+      GET /api/auth/me
+    💼 Financial Core (/api/v1)
+      Transactions & Review
+        GET /transactions & pagination
+        POST /transactions (manual & CSV import)
+        POST /transactions/review-queue
+      Budgets & Health
+        GET /budgets & thresholds
+        GET /budgets/health-score
+        POST /budgets/rebalance
+      Investments & Goals
+        GET /investments/portfolio
+        POST /goals & progress tracking
+    🧠 AI & Intelligent Workflows
+      POST /api/ai/process (LangGraph Dispatch)
+      GET /api/ai/process/stream (SSE Tokens)
+      POST /api/v1/retrieval/query (RAG Knowledge)
+      POST /api/v1/workflows/execute
+    🏢 Multi-Tenancy & Platform
+      Organizations & Members (/api/v1/orgs)
+      API Key Management (/api/v1/api-keys)
+      Audit Trail Logs (/api/v1/audit)
+      Newsletter & Reporting (/api/v1/newsletter)
+```
+
+## API Request Dispatch & Validation ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 INCOMING HTTP REQUEST (Client / External Integration)               │
+│    POST /api/v1/transactions/import (Bearer JWT or X-API-Key)          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STAGE 1: GLOBAL GATEWAY GUARDS                                     │
+│    ├─► Helmet (Security headers)                                       │
+│    ├─► CORS Origin Validator                                           │
+│    └─► Sliding Window Rate Limiter (200 req/min per IP/Key)            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔑 STAGE 2: AUTHENTICATION & MULTI-TENANT ISOLATION                    │
+│    ├─► authAny: Verify JWT Token OR lookup SHA-256 hashed API Key      │
+│    ├─► Resolve req.user and req.user.orgId                             │
+│    └─► Apply OrgScopePlugin: strict tenant boundary filtering          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📋 STAGE 3: SCHEMA VALIDATION & CONTROLLER EXECUTION                   │
+│    ├─► Zod Validation Schema (Validate payload types & constraints)    │
+│    │   ├── Valid? ──► Continue to Controller                           │
+│    │   └── Invalid? ──► Return 400 Bad Request with field errors       │
+│    └─► Domain Service Execution (Database / Queue / AI Core)           │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STAGE 4: RESPONSE SERIALIZATION & AUDIT DISPATCH                    │
+│    ├─► Omit sensitive internal fields (_id transform, password hashes) │
+│    ├─► Dispatch background AuditLog event (User, Action, Resource)     │
+│    └─► HTTP 200/201 JSON Payload delivered to client                  │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+## Production Implementation Blueprints
+
+### 1. Canonical API Response Envelope (`server/src/utils/apiResponse.ts`)
+
+```typescript
+// Standardized REST response wrapper ensuring consistent API contracts
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  meta?: {
+    page?: number;
+    limit?: number;
+    total?: number;
+    requestId?: string;
+  };
+}
+
+export function sendSuccess<T>(res: Response, data: T, statusCode = 200, meta?: ApiResponse["meta"]) {
+  return res.status(statusCode).json({ success: true, data, meta });
+}
+
+export function sendError(res: Response, error: string, statusCode = 400) {
+  return res.status(statusCode).json({ success: false, error });
+}
+```
+
+### 2. Runtime Zod Validation Middleware (`server/src/middleware/validate.ts`)
+
+```typescript
+// Validates incoming HTTP body, query, and params against Zod schemas
+export function validate(schema: AnyZodObject) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      req.body = await schema.parseAsync(req.body);
+      next();
+    } catch (err: any) {
+      if (err instanceof ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: "Validation failed",
+          details: err.errors.map((e) => ({ path: e.path.join("."), message: e.message }))
+        });
+      }
+      next(err);
+    }
+  };
+}
+```
+
+---
+
+## 4. Advanced & Enterprise Route Additions (Latest 2026 API Contracts)
+
+### 4.1 Inbound Bank Connector Webhook Feed
+
+#### `POST /api/transactions/bank-feed`
+Ingests real-time transaction webhooks from external financial institutions or Plaid/Tink aggregators. Enforces `externalId` deduplication and routes unclassified charges to the review queue.
+
+- **Authentication:** HMAC-SHA256 Signature header (`x-finwise-signature`) or JWT Bearer.
+- **Request Headers:**
+  - `Content-Type: application/json`
+  - `x-org-id: <org_id>`
+  - `x-finwise-signature: <sha256_hex_digest>`
+- **Request Body:**
+  ```json
+  {
+    "accountId": "65f019a2b7c4d1234567890a",
+    "externalId": "tx_plaid_994827104",
+    "amount": -54.20,
+    "currency": "USD",
+    "description": "WHOLEFDS SOHO 10294 NY",
+    "date": "2026-10-31T14:22:00.000Z",
+    "category": "Groceries",
+    "merchant": "Whole Foods Market",
+    "pending": false
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "6724a1b9c3e4f1a2b3c4d5e6",
+      "externalId": "tx_plaid_994827104",
+      "amount": -54.20,
+      "description": "WHOLEFDS SOHO 10294 NY",
+      "category": "Groceries",
+      "needsReview": false,
+      "confidence": 0.95
+    },
+    "meta": {
+      "isDuplicate": false,
+      "ruleApplied": "rule_wholefoods_default"
+    }
+  }
+  ```
+
+---
+
+### 4.2 Machine Learning Merchant Embedding Clustering
+
+#### `GET /api/transactions/merchant-clusters`
+Generates 64-dimensional L2-normalized vector embeddings for all unreviewed or unmapped merchant transactions, clustering them via agglomerative cosine similarity ($C_{\text{sim}} \ge 0.70$).
+
+- **Query Parameters:**
+  - `days_back` (optional, default: 90): Number of lookback days for clustering.
+  - `min_cluster_size` (optional, default: 2): Minimum transactions required to form a cluster.
+  - `threshold` (optional, default: 0.70): Cosine similarity linkage threshold.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "clusters": [
+        {
+          "cluster_id": "cluster_amazon_retail",
+          "canonical_name": "Amazon",
+          "prototype_category": "Shopping",
+          "semantic_similarity": 0.942,
+          "confidence": 0.98,
+          "transaction_count": 8,
+          "total_spend": 342.50,
+          "raw_variants": [
+            "AMZN MKTP US*2A41B",
+            "Amazon.com*MB92 SEATTLE WA",
+            "Amazon Prime Video"
+          ],
+          "transaction_ids": ["6724a1b9c3e4...", "6724a2c0d4f5..."]
+        }
+      ],
+      "total_unmapped_transactions": 24,
+      "clusters_formed": 4
+    }
+  }
+  ```
+
+#### `POST /api/transactions/merchant-clusters/apply`
+Applies canonical normalization, category assignment, and optionally synthesizes a permanent `CategoryRule` for all transactions within a cluster.
+
+- **Request Body:**
+  ```json
+  {
+    "cluster_id": "cluster_amazon_retail",
+    "canonical_name": "Amazon",
+    "category": "Shopping",
+    "transaction_ids": ["6724a1b9c3e4...", "6724a2c0d4f5..."],
+    "create_permanent_rule": true
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "updated_transactions_count": 8,
+      "rule_created": {
+        "_id": "6724b9a1c2d3e4f5a6b7c8d9",
+        "name": "Auto-Rule: Amazon",
+        "pattern": "amazon",
+        "category": "Shopping"
+      }
+    }
+  }
+  ```
+
+---
+
+### 4.3 External Workflow Inbound Webhook
+
+#### `POST /api/workflows/webhook/:token`
+Executes an automated multi-step workflow from third-party systems (CI/CD, Stripe, Zapier, custom scripts) authenticated via a cryptographic 48-character webhook token.
+
+- **URL Parameter:** `token` (48-character hex string)
+- **Request Body:** Arbitrary JSON trigger payload context:
+  ```json
+  {
+    "event": "large_invoice_received",
+    "vendor": "Google Cloud Platform",
+    "amount": 2400.00,
+    "department": "Engineering"
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "workflow_id": "6724c0d1e2f3a4b5c6d7e8f9",
+      "run_id": "run_994821039",
+      "status": "succeeded",
+      "actions_executed": 2,
+      "actions_skipped": [
+        {
+          "index": 1,
+          "action_type": "send_notification",
+          "reason": "Condition evaluated to false: department eq Marketing"
+        }
+      ],
+      "delays_executed": []
+    }
+  }
+  ```
+
+---
+
+### 4.4 Financial Journal Offline Sync & 64-D Semantic Vector Search
+
+#### `POST /api/financial-journal/entries/batch-sync`
+Idempotently synchronizes batches of offline stylus or keyboard drafts created while disconnected from the network.
+
+- **Request Body:**
+  ```json
+  {
+    "notes": [
+      {
+        "clientDraftId": "draft_1730000000_abc123",
+        "title": "Emergency Fund Strategy Note",
+        "content": "Need to boost our HYSA cushion to 6 months expenses. #savings #emergency",
+        "createdAt": "2026-10-31T09:15:00.000Z"
+      }
+    ]
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "syncedCount": 1,
+      "duplicatesSkipped": 0,
+      "entries": [
+        {
+          "_id": "6724d1a2b3c4d5e6f7a8b9c0",
+          "clientDraftId": "draft_1730000000_abc123",
+          "title": "Emergency Fund Strategy Note",
+          "tags": ["savings", "emergency"],
+          "sentiment": "optimistic",
+          "embeddingDimensions": 64
+        }
+      ]
+    }
+  }
+  ```
+
+#### `GET /api/financial-journal/semantic-search`
+Performs dense 64-D cosine similarity search across journal entries, returning ranked results with concept match scores.
+
+- **Query Parameters:**
+  - `query` (required): Search inquiry (e.g. `emergency reserve planning`)
+  - `threshold` (optional, default: 0.65): Minimum cosine similarity score.
+  - `tag` (optional): Filter by concept tag (`savings`, `budget`, `debt`, `investing`, etc.).
+  - `limit` (optional, default: 10): Maximum results to return.
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "results": [
+        {
+          "_id": "6724d1a2b3c4d5e6f7a8b9c0",
+          "title": "Emergency Fund Strategy Note",
+          "snippet": "Need to boost our HYSA cushion to 6 months...",
+          "similarity_score": 0.892,
+          "tags": ["savings", "emergency"],
+          "sentiment": "optimistic"
+        }
+      ],
+      "query_embedding_dimension": 64
+    }
+  }
+  ```
+
+---
+
+### 4.5 Scheduled Reports Multi-Destination Delivery
+
+#### `POST /api/v1/exports/scheduled`
+Configures automated recurring transaction ledger and financial statement deliveries to Email, Webhook Push, or Cloud Storage (AWS S3 / Google Cloud Storage GCS).
+
+- **Request Body (Cloud Storage Example):**
+  ```json
+  {
+    "frequency": "monthly",
+    "exportType": "csv",
+    "destination": "cloud_storage",
+    "destinationConfig": {
+      "cloudProvider": "s3",
+      "bucketName": "finwise-enterprise-exports",
+      "bucketRegion": "us-east-1",
+      "bucketPrefix": "monthly_ledgers",
+      "customFilename": "q3_ledger_report.csv"
+    }
+  }
+  ```
+- **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "_id": "6724e1f2a3b4c5d6e7f8a9b0",
+      "frequency": "monthly",
+      "destination": "cloud_storage",
+      "status": "active",
+      "nextRunAt": "2026-11-01T00:00:00.000Z"
+    }
+  }
+  ```
+
+#### `POST /api/v1/exports/scheduled/:id/deliver-now`
+Triggers immediate generation and dispatch of a scheduled report to its configured destination with SHA-256 cryptographic checksum calculation.
+
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "deliveryId": "del_8839210",
+      "destination": "cloud_storage",
+      "cloudUri": "s3://finwise-enterprise-exports/monthly_ledgers/q3_ledger_report.csv",
+      "byteLength": 184920,
+      "sha256Checksum": "a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0"
+    }
+  }
+  ```
+
+---
+
+### 4.6 AI Core Resumable Sessions & Model Health
+
+#### `GET /api/v1/ai-core/status`
+Returns live operational health, active LLM key pool statistics, and provider circuit breaker states.
+
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "status": "healthy",
+      "active_provider": "gemini",
+      "key_pools": {
+        "gemini": { "total_keys": 4, "healthy_keys": 4, "cooldown_keys": 0, "circuit_state": "CLOSED" },
+        "groq": { "total_keys": 2, "healthy_keys": 2, "cooldown_keys": 0, "circuit_state": "CLOSED" }
+      },
+      "p95_latency_ms": 1120,
+      "error_rate_percent": 0.2
+    }
+  }
+  ```
+
+#### `POST /api/v1/ai-core/ai/sessions/:sessionId/resume`
+Resumes an in-flight or paused LangGraph workflow from its latest persisted SQLite checkpoint.
+
+- **Request Body:**
+  ```json
+  {
+    "user_feedback": "Approved. Proceed with debt avalanche payoff plan."
+  }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "session_id": "sess_994821039",
+      "recovered_from_phase": "VERIFICATION",
+      "current_phase": "SYNTHESIS",
+      "status": "COMPLETED",
+      "plan_output": { ... }
+    }
+  }
+  ```
+
+
+---
+
+## 9. Latest Enterprise Subsystems & Endpoints (2026 Release)
+
+### Cross-Silo Unified Context Engine
+- `GET /api/v1/search/unified-context`: Searches across User Memories, Workspace Documents, and Ledger Transactions with RRF ($k=60$).
+- `POST /api/v1/search/unified-context`: Assembles unified citations for LLM prompt injection.
+
+### Personalized Follow-Through
+- `GET /api/v1/follow-through/recommendations`: Prioritized multi-domain financial actions.
+- `POST /api/v1/follow-through/feedback`: Adaptively tunes domain weights via user feedback (upvote/dismiss/complete).
+- `GET /api/v1/follow-through/preferences`: Retrieves active domain focus weights and cadence.
+- `PUT /api/v1/follow-through/preferences`: Updates domain focus weights and risk tolerance.
+
+### Zero-Sum Budget Rebalancing
+- `POST /api/v1/finance/budgets/:periodKey/rebalance`: Rebalances categories while strictly preserving aggregate budget cap ($\sum \Delta B_i = 0$).
+
+### Multi-Modal Document QA & Authorship
+- `POST /api/files/qa`: Strict physical page cited document question-answering with zero hallucination tolerance.
+- `POST /api/files/search`: Searches workspace knowledge chunks by modality and semantic score.
+- `POST /api/files/authored-document`: Generates publication-grade PDF statements across 6 structured formats.
+
+### Financial Calendar Reminders
+- `GET /api/v1/calendar-reminders/export.ics`: Live RFC 5545 iCalendar feed.
+- `POST /api/v1/calendar-reminders/batch-complete`: Batch completes reminder obligations.
+- `POST /api/v1/calendar-reminders/clear-completed`: Clears completed reminder entries.
+
+### AI Canary Invariant Validation
+- `GET /api/v1/ai/canary/status`: Returns 5-invariant pass rates and recent violation logs.
+- `POST /api/v1/ai/canary/validate`: Real-time mathematical verification of numbers, budgets, balance sheet, cash flow, and debt amortization.
+- `POST /api/v1/ai/canary/run-probes`: On-demand provider audit probe runner.
+
+---
+
+**Evidence:** `server/src/routes/v1Routes.ts`, `server/src/routes/fileRoutes.ts`, `server/src/routes/financialJournalRoutes.ts`, `server/src/routes/financialDataRoutes.ts`

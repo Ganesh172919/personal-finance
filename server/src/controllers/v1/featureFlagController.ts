@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Feature Flag Controller (v1)
+ *
+ * Organization-level feature flags with variant and rollout percentage support.
+ * Admins can create, update, and delete flags per organization.
+ *
+ * Routes served:
+ *   GET    /api/v1/feature-flags          - listFeatureFlags (admin)
+ *   PUT    /api/v1/feature-flags/:key     - upsertFeatureFlag (admin)
+ *   DELETE /api/v1/feature-flags/:key     - deleteFeatureFlag (admin)
+ *
+ * Key patterns:
+ *   - All endpoints require admin role
+ *   - Flags are keyed by lowercase string within an org
+ *   - upsert uses findOneAndUpdate with upsert:true (create or update in one call)
+ *   - Rollout percent clamped to 0-100
+ *   - Variant field unset when not provided (via $unset)
+ *
+ * @module controllers/v1/featureFlagController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -11,8 +32,14 @@ const roleRank: Record<"member" | "admin" | "owner", number> = {
   owner: 3,
 };
 
+// Escapes regular expression special characters in user-provided query patterns.
+// Prevents regex injection attacks when compiling dynamic feature flag search filters.
+// Returns a sanitized string safe for direct inclusion in MongoDB regex patterns.
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// Validates administrative privileges for tenant feature flag configuration.
+// Confirms presence of organization context and verifies caller administrative rank.
+// Aborts request handling with an unauthorized or access denied exception on failure.
 const requireOrgAdmin = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -23,6 +50,9 @@ const requireOrgAdmin = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Queries all tenant-scoped feature flags matching optional key prefix filters.
+// Extracts rollout percentages, enablement statuses, variants, and metadata payloads.
+// Returns an array of feature flag configurations to guide client-side toggling.
 export const listFeatureFlags = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const query = req.query as { key_prefix?: string; enabled?: boolean };
@@ -54,6 +84,9 @@ export const listFeatureFlags = async (req: Request, res: Response) => {
   });
 };
 
+// Idempotently creates or mutates a tenant-scoped feature flag configuration.
+// Updates rollout percentages, variant strings, metadata objects, and author stamps.
+// Persists the feature flag definition and responds with the updated flag entity.
 export const upsertFeatureFlag = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;
@@ -111,6 +144,9 @@ export const upsertFeatureFlag = async (req: Request, res: Response) => {
   });
 };
 
+// Permanently deletes an organization-specific feature flag record by key name.
+// Asserts administrative rights and targets the specific organization tenant scope.
+// Confirms whether the record was deleted and returns request correlation metrics.
 export const deleteFeatureFlag = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const key = String((req.params as any).key || "").trim().toLowerCase();

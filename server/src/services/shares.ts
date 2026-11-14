@@ -8,10 +8,19 @@ import { getEnv } from "../config/env";
 import { ensureProfile } from "./profileService";
 import OrganizationModel from "../models/organizationModel";
 
+// Computes a SHA-256 hexadecimal hash string for a supplied text value.
+// Used for hashing share tokens to prevent storage of raw credentials.
+// Secures public link lookups against token disclosure in database logs.
 const sha256Hex = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
 
+// Generates a cryptographically secure URL-safe random string token.
+// Utilizes 24 pseudo-random bytes encoded in base64url format.
+// Serves as the high-entropy access secret for public resource sharing.
 const randomToken = () => crypto.randomBytes(24).toString("base64url");
 
+// Validates and bounds a requested expiration window in days.
+// Falls back to safe default periods if input is invalid or non-numeric.
+// Enforces a strict upper ceiling on allowed link duration validity.
 const clampDays = (value: unknown, fallback: number, max: number) => {
   const num = Number(value);
   if (!Number.isFinite(num)) return fallback;
@@ -19,6 +28,9 @@ const clampDays = (value: unknown, fallback: number, max: number) => {
   return Math.max(1, Math.min(max, whole));
 };
 
+// Configuration options for generating a public financial story share link.
+// Dictates expiration windows and controls disclosure of sensitive goals.
+// Configures milestone display limits and goal deadline inclusions.
 type FinancialStoryShareOptions = {
   expires_in_days?: number;
   include_goal_names?: boolean;
@@ -27,12 +39,18 @@ type FinancialStoryShareOptions = {
   max_milestones?: number;
 };
 
+// Sanitizes goal names for public financial story sharing representations.
+// Returns user-specified names when full privacy disclosure is approved.
+// Masks proprietary names with generic indexed identifiers when restricted.
 const toSafeGoalName = (name: string, index: number, includeNames: boolean) => {
   if (includeNames) return name;
   const safeIndex = index + 1;
   return `Goal ${safeIndex}`;
 };
 
+// Aggregates user profile metrics and milestone records into a public snapshot.
+// Formats financial health percentages, goal progress, and timeline events.
+// Enforces privacy filters based on caller-specified sharing options.
 const buildFinancialStorySnapshot = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -120,6 +138,9 @@ const buildFinancialStorySnapshot = async (params: {
   };
 };
 
+// Creates an active share link record containing a snapshot of user financial goals.
+// Generates secure link tokens and computes SHA-256 hashes for storage.
+// Constructs public client sharing URLs with bounded expiration dates.
 export const createFinancialStoryShareLink = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -183,6 +204,9 @@ export const createFinancialStoryShareLink = async (params: {
   };
 };
 
+// Resolves and validates a publicly accessed share link using its raw secret token.
+// Matches SHA-256 token hashes against active non-expired share documents.
+// Returns stored payload snapshots or throws HTTP 404 when expired or invalid.
 export const resolveShareLinkPayload = async (params: { type: ShareLinkType; token: string }) => {
   const token = String(params.token || "").trim();
   if (!token) {

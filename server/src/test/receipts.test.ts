@@ -57,9 +57,16 @@ vi.mock("../services/aiCoreClient", async () => {
 import { createApp } from "../app";
 import { configurePassport } from "../config/passport";
 import ReceiptModel from "../models/receiptModel";
+import OrganizationModel from "../models/organizationModel";
+import OrgMemberModel from "../models/orgMemberModel";
+import { ensurePersonalOrgForUser } from "../services/orgService";
+import { uploadBufferToGridFs } from "../services/gridfs";
 import { processAiCoreReceiptOcr } from "../services/aiCoreClient";
 import { createAuthedUser } from "./authHelpers";
 import { clearTestDb, startTestDb, stopTestDb } from "./testDb";
+
+// Minimal genuine PNG; a suffix keeps buffers distinct without breaking magic bytes.
+const pngBytes = (suffix = "") => Buffer.concat([Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"), Buffer.from(suffix)]);
 
 describe("receipts OCR API", () => {
   const app = createApp();
@@ -91,7 +98,7 @@ describe("receipts OCR API", () => {
       .post("/api/receipts/parse")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
-      .attach("file", Buffer.from("fakepng"), { filename: "receipt.png", contentType: "image/png" })
+      .attach("file", pngBytes("fakepng"), { filename: "receipt.png", contentType: "image/png" })
       .field("currencyHint", "INR")
       .expect(200);
 
@@ -130,10 +137,85 @@ describe("receipts OCR API", () => {
     expect(confirmRes.body.receipt.status).toBe("confirmed");
     expect(confirmRes.body.receipt.transactionId).toBeTruthy();
 
+    const duplicateConfirm = await request(app)
+      .post(`/api/receipts/${parseRes.body.receipt_id}/confirm`)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({
+        vendor: "ACME STORE",
+        date: "2026-02-12",
+        total: 123.45,
+        category: "Groceries",
+      })
+      .expect(409);
+    expect(duplicateConfirm.body.code).toBe("ALREADY_CONFIRMED");
+
     await request(app)
       .get(`/api/media/${parseRes.body.file_id}`)
       .set("Cookie", [cookie])
       .expect(200);
+  });
+
+  it("does not serve owned media from another active workspace or after membership revocation", async () => {
+    const auth = await createAuthedUser();
+    const first = await ensurePersonalOrgForUser(auth.user._id);
+    const second = await OrganizationModel.create({
+      name: "Another workspace", slug: `media-other-${Date.now()}`,
+      type: "team", createdByUserId: auth.user._id,
+    });
+    await OrgMemberModel.create({ orgId: second._id, userId: auth.user._id, role: "owner", status: "active" });
+    const fileId = await uploadBufferToGridFs({
+      userId: String(auth.user._id), orgId: String(first.orgId), purpose: "receipt",
+      filename: "private.png", contentType: "image/png", buffer: pngBytes(),
+    });
+
+    await request(app).get(`/api/media/${fileId}`).set("Cookie", auth.cookie)
+      .set("X-Org-Id", String(first.orgId)).expect(200);
+    await request(app).get(`/api/media/${fileId}`).set("Cookie", auth.cookie)
+      .set("X-Org-Id", String(second._id)).expect(404);
+
+    await OrgMemberModel.updateOne({ orgId: first.orgId, userId: auth.user._id }, { $set: { status: "removed" } });
+    await request(app).get(`/api/media/${fileId}`).set("Cookie", auth.cookie)
+      .set("X-Org-Id", String(first.orgId)).expect(403);
+    await request(app).get(`/api/media/${fileId}`).set("Cookie", auth.cookie)
+      .set("X-Org-Id", String(second._id)).expect(404);
+  });
+
+  it("rejects confirmation with non-positive total amount via schema validation", async () => {
+    const parseRes = await request(app)
+      .post("/api/receipts/parse")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .attach("file", pngBytes("fakepng_amount"), { filename: "receipt_amt.png", contentType: "image/png" })
+      .expect(200);
+
+    const badZero = await request(app)
+      .post(`/api/receipts/${parseRes.body.receipt_id}/confirm`)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ vendor: "Test", date: "2026-02-12", category: "Groceries", total: 0 })
+      .expect(400);
+    expect(badZero.body.code).toBe("VALIDATION_ERROR");
+
+    const badNegative = await request(app)
+      .post(`/api/receipts/${parseRes.body.receipt_id}/confirm`)
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ vendor: "Test", date: "2026-02-12", category: "Groceries", total: -50 })
+      .expect(400);
+    expect(badNegative.body.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects a non-image upload before OCR, storage, or quota use", async () => {
+    vi.mocked(processAiCoreReceiptOcr).mockClear();
+    const response = await request(app)
+      .post("/api/receipts/parse")
+      .set("Cookie", [cookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .attach("file", Buffer.from("this is not an image"), { filename: "fake.png", contentType: "image/png" })
+      .expect(400);
+    expect(response.body.code).toBe("INVALID_FILE_TYPE");
+    expect(vi.mocked(processAiCoreReceiptOcr)).not.toHaveBeenCalled();
   });
 
   it("defaults OCR currency hint to org currency when omitted", async () => {
@@ -143,7 +225,7 @@ describe("receipts OCR API", () => {
       .post("/api/receipts/parse")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
-      .attach("file", Buffer.from("fakepng"), { filename: "receipt.png", contentType: "image/png" })
+      .attach("file", pngBytes("fakepng"), { filename: "receipt.png", contentType: "image/png" })
       .expect(200);
 
     expect(vi.mocked(processAiCoreReceiptOcr)).toHaveBeenCalled();
@@ -156,7 +238,7 @@ describe("receipts OCR API", () => {
       .post("/api/receipts/parse")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
-      .attach("file", Buffer.from("fakepng"), { filename: "receipt.png", contentType: "image/png" })
+      .attach("file", pngBytes("fakepng"), { filename: "receipt.png", contentType: "image/png" })
       .field("currencyHint", "INR")
       .expect(200);
 
@@ -178,7 +260,7 @@ describe("receipts OCR API", () => {
       .post("/api/receipts/parse")
       .set("Cookie", [cookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
-      .attach("file", Buffer.from("fakepng2"), { filename: "receipt2.png", contentType: "image/png" })
+      .attach("file", pngBytes("fakepng2"), { filename: "receipt2.png", contentType: "image/png" })
       .field("currencyHint", "INR")
       .expect(200);
 

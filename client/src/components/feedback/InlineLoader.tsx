@@ -1,8 +1,32 @@
+/**
+ * @fileoverview InlineLoader — compact loading indicator for use inside cards, sections,
+ * or list areas where a full-screen loader would be too heavy.
+ *
+ * WHAT IT DOES
+ *  - Renders a small spinning circle (border-2 with primary accent) alongside a label.
+ *  - Centred horizontally with `py-10` vertical padding to visually separate from
+ *    surrounding content.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `label` (string, default "Loading...") — text shown next to the spinner.
+ *  - `className` (string, optional) — additional classes for the container.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used as a loading placeholder in data-fetching cards (e.g. while tasks or insights load).
+ *  - Pure presentational — no hooks, no state, no API calls.
+ *  - Lighter-weight alternative to FullScreenLoader; intended for section-level loading states.
+ */
+// Property structure defining options for inline loading state indicators.
+// Accommodates customizable text labels communicating specific pending operations.
+// Allows custom CSS class extensions for padding and positioning flexibility.
 type InlineLoaderProps = {
   label?: string;
   className?: string;
 };
 
+// Lightweight spinner component embedded within cards, tables, and modal dialogs.
+// Pairs a rotating primary accent spinner with concise descriptive status text.
+// Signals asynchronous background activity without blocking full page layouts.
 export function InlineLoader({
   label = "Loading...",
   className = "",

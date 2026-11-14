@@ -4,12 +4,24 @@ import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/Button";
 
+// Root component for accessible modal alert dialogs requiring user confirmation.
+// Wraps Radix UI AlertDialogPrimitive Root to manage dialog visibility state.
+// Interrupts user workflow for critical confirmations and destructive actions.
 const AlertDialog = AlertDialogPrimitive.Root;
 
+// Interactive trigger element opening the associated alert dialog on click.
+// Re-exports Radix UI AlertDialogPrimitive Trigger with accessibility attributes.
+// Automatically manages aria-haspopup and aria-expanded attributes.
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
 
+// Portal wrapper mounting alert dialog contents into document body DOM.
+// Re-exports Radix UI AlertDialogPrimitive Portal for backdrop and modal isolation.
+// Prevents parent container clipping and z-index stacking context conflicts.
 const AlertDialogPortal = AlertDialogPrimitive.Portal;
 
+// Dimmed backdrop overlay covering the screen behind the alert dialog.
+// Animates fade-in and fade-out transitions synchronized with dialog state.
+// Prevents interactions with background elements while modal remains active.
 const AlertDialogOverlay = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Overlay>
@@ -25,6 +37,9 @@ const AlertDialogOverlay = React.forwardRef<
 ));
 AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName;
 
+// Main modal dialog container rendered centered in the viewport.
+// Combines portal, backdrop overlay, and animated scale/fade transitions.
+// Houses dialog headers, descriptions, and action confirmation buttons.
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
@@ -43,6 +58,9 @@ const AlertDialogContent = React.forwardRef<
 ));
 AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName;
 
+// Header wrapper organizing the title and description of an alert dialog.
+// Aligns text centrally on mobile devices and left-aligned on larger viewports.
+// Applies consistent vertical spacing between headline and explanatory text.
 const AlertDialogHeader = ({
   className,
   ...props
@@ -57,6 +75,9 @@ const AlertDialogHeader = ({
 );
 AlertDialogHeader.displayName = "AlertDialogHeader";
 
+// Action button container positioned at the bottom of the alert dialog.
+// Renders responsive reverse-column layout on mobile and row alignment on desktop.
+// Houses primary confirmation and secondary dismissal action triggers.
 const AlertDialogFooter = ({
   className,
   ...props
@@ -71,6 +92,9 @@ const AlertDialogFooter = ({
 );
 AlertDialogFooter.displayName = "AlertDialogFooter";
 
+// Heading element establishing the accessible title of the alert dialog.
+// Sets bold typography and dark foreground color for high visual prominence.
+// Forwards DOM references to the underlying Radix Title primitive.
 const AlertDialogTitle = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Title>
@@ -83,6 +107,9 @@ const AlertDialogTitle = React.forwardRef<
 ));
 AlertDialogTitle.displayName = AlertDialogPrimitive.Title.displayName;
 
+// Explanatory content text communicating the consequences of the confirmation.
+// Uses muted foreground styling to establish visual hierarchy under the title.
+// Forwards DOM references to the underlying Radix Description primitive.
 const AlertDialogDescription = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Description>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Description>
@@ -96,6 +123,9 @@ const AlertDialogDescription = React.forwardRef<
 AlertDialogDescription.displayName =
   AlertDialogPrimitive.Description.displayName;
 
+// Primary confirmation button executing the intended alert dialog action.
+// Styled with standard primary button variants and auto-focus accessibility.
+// Forwards DOM references to the Radix Action primitive for automatic dismissal.
 const AlertDialogAction = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Action>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action>
@@ -108,6 +138,9 @@ const AlertDialogAction = React.forwardRef<
 ));
 AlertDialogAction.displayName = AlertDialogPrimitive.Action.displayName;
 
+// Dismissal button allowing the user to cancel out of the alert dialog.
+// Styled with outline button variants and responsive top margin on mobile.
+// Forwards DOM references to the Radix Cancel primitive to close the dialog.
 const AlertDialogCancel = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Cancel>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Cancel>

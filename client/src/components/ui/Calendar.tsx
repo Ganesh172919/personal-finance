@@ -5,8 +5,14 @@ import { DayPicker } from "react-day-picker";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/Button";
 
+// Type alias configuring props for the custom Calendar date picker component.
+// Inherits all properties and callback events from react-day-picker DayPicker.
+// Enables customized styling classes, single/range selection modes, and bounds.
 export type CalendarProps = React.ComponentProps<typeof DayPicker>;
 
+// Interactive date picker component built on react-day-picker.
+// Applies Tailwind styles to months, days, nav controls, and range selections.
+// Injects custom Chevron icons for month navigation with accessible keyboard support.
 function Calendar({
   className,
   classNames,

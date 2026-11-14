@@ -1,0 +1,22 @@
+# PDF Request Title
+
+Executive Summary
+Describe the document you want generated and the tone you want.
+
+Required Sections
+- Section 1 title and what it should contain
+- Section 2 title and what it should contain
+- Section 3 title and what it should contain
+
+Data Points To Include
+- Important number or statement 1
+- Important number or statement 2
+- Important number or statement 3
+
+Formatting Preferences
+- Use short paragraphs
+- Use bullet lists for action items
+- End with a verification note
+
+Audience
+State who this PDF is for.

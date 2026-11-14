@@ -1,3 +1,28 @@
+/**
+ * @fileoverview Full organization management page for multi-tenant workspaces.
+ *
+ * Provides a tabbed admin panel covering: tenant switching and creation,
+ * member management (add/role assignment), org settings (name, currency,
+ * locale, timezone), installed integrations and marketplace plugins,
+ * API key lifecycle (create with scopes, revoke), referral program
+ * (view code, redeem), and a usage ledger for billing visibility.
+ *
+ * Key data flows:
+ * - getMyOrgs() lists all orgs the user belongs to; active org is
+ *   tracked in both server config and client-side localStorage.
+ * - addOrgMember(), updateOrgSettings() mutate the current org.
+ * - listIntegrations() / syncIntegration() manage third-party connections.
+ * - listMarketplaceCatalog() / installMarketplacePlugin() browse and
+ *   install plugins from the marketplace.
+ * - createApiKey() / revokeApiKey() / listApiKeys() manage API keys
+ *   with granular scopes (usage:read, transactions:read/write, etc.).
+ * - getMyReferral() / redeemReferral() handle the referral program.
+ * - getUsageLedger() surfaces per-org billing usage.
+ *
+ * Some tabs are feature-flagged via useAppConfig(); admin mutations
+ * require owner or admin role.
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -6,6 +31,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -13,6 +39,7 @@ import {
 } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
+import { Switch } from "@/components/ui/Switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/Table";
@@ -40,6 +67,9 @@ import {
 } from "@/lib/apiClient";
 import { getActiveOrgId, setActiveOrgId } from "@/lib/orgContext";
 
+// Exhaustive array of API key scopes available for organization integrations.
+// Governs granular permissions for reading/writing workflows, usage, and transactions.
+// Used in API key creation dialogs to configure token access rights.
 const ALL_SCOPES: ApiKeyScope[] = [
   "usage:read",
   "workflows:read",
@@ -48,9 +78,15 @@ const ALL_SCOPES: ApiKeyScope[] = [
   "transactions:write",
 ];
 
+// Formats numeric monetary amounts as standard US Dollar currency strings.
+// Employs Intl.NumberFormat to render localized currency signs and commas.
+// Used for displaying team tier costs, credit balances, and platform usage.
 const formatUsd = (amount: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
 
+// Immutable empty fallback array for organizations listing query state.
+// Prevents unneeded empty array allocations during loading or initial render.
+// Guarantees memoization stability for active organization lookups.
 const EMPTY_ORGS: Array<{
   id: string;
   name: string;
@@ -63,6 +99,9 @@ const EMPTY_ORGS: Array<{
   is_default: boolean;
 }> = [];
 
+// Organization and tenant workspace management administration panel.
+// Facilitates tenant switching, team member invitations, role RBAC, and API keys.
+// Manages organization localization settings, currencies, and plan entitlements.
 export default function Organization() {
   const queryClient = useQueryClient();
   const configQuery = useAppConfig();
@@ -122,6 +161,8 @@ export default function Organization() {
     queryFn: getMyReferral,
     enabled: Boolean(activeOrgIdFromServer),
   });
+
+  const [activeTab, setActiveTab] = useState<string>("members");
 
   const [orgName, setOrgName] = useState("");
   const [orgSlug, setOrgSlug] = useState("");
@@ -222,7 +263,7 @@ export default function Organization() {
   });
 
   const updateSettingsMutation = useMutation({
-    mutationFn: (input: { orgId: string; body: { currency?: string; locale?: string; timezone?: string } }) =>
+    mutationFn: (input: { orgId: string; body: { currency?: string; locale?: string; timezone?: string; aiLearningOptOut?: boolean } }) =>
       updateOrgSettings(input.orgId, input.body),
     onSuccess: async () => {
       setNotice("Organization settings updated.");
@@ -375,9 +416,9 @@ export default function Organization() {
   const canAdmin = Boolean(configQuery.data?.org?.role && ["owner", "admin"].includes(configQuery.data.org.role));
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 space-y-4" data-testid="organization-page">
       <div className="space-y-1">
-        <div className="text-xl font-semibold text-foreground">Organization</div>
+        <h1 className="text-xl font-semibold text-foreground">Organization</h1>
         <div className="text-sm text-muted-foreground">
           Active org: {activeOrg ? `${activeOrg.name} (${configQuery.data?.org?.role || activeOrg.role})` : "—"}
         </div>
@@ -397,9 +438,9 @@ export default function Organization() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
-            <Label>Active organization</Label>
+            <Label htmlFor="active-organization">Active organization</Label>
             <Select value={activeOrgIdFromServer || ""} onValueChange={switchOrg} disabled={orgs.length === 0}>
-              <SelectTrigger className="mt-1">
+              <SelectTrigger id="active-organization" className="mt-1" data-testid="active-org-select">
                 <SelectValue placeholder={orgsQuery.isLoading ? "Loading…" : "Select org"} />
               </SelectTrigger>
               <SelectContent>
@@ -419,6 +460,7 @@ export default function Organization() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create organization</DialogTitle>
+                <DialogDescription>Set up a separate workspace for your financial records.</DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
                 <div>
@@ -446,16 +488,16 @@ export default function Organization() {
         </CardContent>
       </Card>
 
-        <Tabs defaultValue="members">
-          <TabsList>
-            <TabsTrigger value="members">Members</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
-            <TabsTrigger value="integrations">Integrations</TabsTrigger>
-            <TabsTrigger value="marketplace">Marketplace</TabsTrigger>
-            <TabsTrigger value="api_keys">API keys</TabsTrigger>
-            <TabsTrigger value="referrals">Referrals</TabsTrigger>
-            <TabsTrigger value="usage">Usage</TabsTrigger>
-          </TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="members" data-testid="tab-members" onClick={() => setActiveTab("members")}>Members</TabsTrigger>
+          <TabsTrigger value="settings" data-testid="tab-settings" onClick={() => setActiveTab("settings")}>Settings</TabsTrigger>
+          <TabsTrigger value="integrations" data-testid="tab-integrations" onClick={() => setActiveTab("integrations")}>Integrations</TabsTrigger>
+          <TabsTrigger value="marketplace" data-testid="tab-marketplace" onClick={() => setActiveTab("marketplace")}>Marketplace</TabsTrigger>
+          <TabsTrigger value="api_keys" data-testid="tab-api-keys" onClick={() => setActiveTab("api_keys")}>API keys</TabsTrigger>
+          <TabsTrigger value="referrals" data-testid="tab-referrals" onClick={() => setActiveTab("referrals")}>Referrals</TabsTrigger>
+          <TabsTrigger value="usage" data-testid="tab-usage" onClick={() => setActiveTab("usage")}>Usage</TabsTrigger>
+        </TabsList>
 
         <TabsContent value="members" className="mt-4">
           <Card>
@@ -486,11 +528,12 @@ export default function Organization() {
 
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button disabled={!canAdmin || !activeOrgIdFromServer}>Add member</Button>
+                  <Button disabled={!canAdmin || !activeOrgIdFromServer} data-testid="add-member-trigger">Add member</Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Add member</DialogTitle>
+                    <DialogDescription>Choose who can access this workspace and their role.</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-3">
                     <div>
@@ -499,6 +542,7 @@ export default function Organization() {
                         value={memberEmail}
                         onChange={(e) => setMemberEmail(e.target.value)}
                         placeholder="person@example.com"
+                        data-testid="member-email-input"
                       />
                     </div>
                     <div>
@@ -523,6 +567,7 @@ export default function Organization() {
                           : null
                       }
                       disabled={addMemberMutation.isPending || !activeOrgIdFromServer || memberEmail.trim().length < 3}
+                      data-testid="add-member-submit"
                     >
                       {addMemberMutation.isPending ? "Adding…" : "Add"}
                     </Button>
@@ -548,6 +593,7 @@ export default function Organization() {
                     onChange={(e) => setCurrency(e.target.value)}
                     placeholder="USD"
                     disabled={!canAdmin}
+                    data-testid="settings-currency-input"
                   />
                   <div className="mt-1 text-xs text-muted-foreground">Example: USD, EUR, INR</div>
                 </div>
@@ -558,6 +604,7 @@ export default function Organization() {
                     onChange={(e) => setLocale(e.target.value)}
                     placeholder="en-US"
                     disabled={!canAdmin}
+                    data-testid="settings-locale-input"
                   />
                   <div className="mt-1 text-xs text-muted-foreground">Example: en-US, en-GB, hi-IN</div>
                 </div>
@@ -568,13 +615,39 @@ export default function Organization() {
                     onChange={(e) => setTimezone(e.target.value)}
                     placeholder="UTC"
                     disabled={!canAdmin}
+                    data-testid="settings-timezone-input"
                   />
                   <div className="mt-1 text-xs text-muted-foreground">Example: UTC, America/New_York</div>
                 </div>
               </div>
 
+              <div className="flex items-start justify-between gap-4 rounded-md border border-border p-3">
+                <div className="space-y-1">
+                  <Label htmlFor="ai-learning-opt-out">Opt out of AI learning</Label>
+                  <div className="text-xs text-muted-foreground">
+                    When on, feedback from this workspace is not shared with the AI learning loop and AI runs are not
+                    stored as learning traces. Feedback is still saved for your own history.
+                  </div>
+                </div>
+                <Switch
+                  id="ai-learning-opt-out"
+                  data-testid="settings-ai-learning-opt-out"
+                  checked={Boolean((activeOrg as any)?.ai_learning_opt_out)}
+                  disabled={!canAdmin || !activeOrgIdFromServer || updateSettingsMutation.isPending}
+                  onCheckedChange={(checked) =>
+                    activeOrgIdFromServer
+                      ? updateSettingsMutation.mutate({
+                          orgId: activeOrgIdFromServer,
+                          body: { aiLearningOptOut: Boolean(checked) },
+                        })
+                      : null
+                  }
+                />
+              </div>
+
               <div className="flex justify-end">
                 <Button
+                  data-testid="save-settings-btn"
                   disabled={!canAdmin || !activeOrgIdFromServer || updateSettingsMutation.isPending}
                   onClick={() =>
                     activeOrgIdFromServer
@@ -683,6 +756,7 @@ export default function Organization() {
                 <DialogContent className="max-w-3xl">
                   <DialogHeader>
                     <DialogTitle>Integration history</DialogTitle>
+                    <DialogDescription>Review this workspace's integration activity and delivery results.</DialogDescription>
                   </DialogHeader>
                   {integrationHistoryQuery.isLoading ? (
                     <div className="text-sm text-muted-foreground">Loading history…</div>
@@ -737,6 +811,7 @@ export default function Organization() {
                     value={marketplaceQuery}
                     onChange={(e) => setMarketplaceQuery(e.target.value)}
                     placeholder="Search plugins (bank, digest, templates...)"
+                    data-testid="marketplace-search-input"
                   />
                 </div>
                 <div>
@@ -865,16 +940,17 @@ export default function Organization() {
             <CardContent className="space-y-4">
               <Dialog onOpenChange={(open) => (!open ? setCreatedApiKeySecret(null) : null)}>
                 <DialogTrigger asChild>
-                  <Button disabled={!canAdmin || !activeOrgIdFromServer}>Create API key</Button>
+                  <Button disabled={!canAdmin || !activeOrgIdFromServer} data-testid="create-apikey-trigger">Create API key</Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-xl">
                   <DialogHeader>
                     <DialogTitle>Create API key</DialogTitle>
+                    <DialogDescription>Choose a name and limit this key to the permissions its integration needs.</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-3">
                     <div>
                       <Label>Name</Label>
-                      <Input value={apiKeyName} onChange={(e) => setApiKeyName(e.target.value)} placeholder="CI / Integration" />
+                      <Input value={apiKeyName} onChange={(e) => setApiKeyName(e.target.value)} placeholder="CI / Integration" data-testid="apikey-name-input" />
                     </div>
                     <div className="space-y-2">
                       <Label>Scopes</Label>
@@ -887,7 +963,7 @@ export default function Organization() {
                                 type="checkbox"
                                 checked={checked}
                                 onChange={(e) => {
-                                  const next = e.target.checked
+                                   const next = e.target.checked
                                     ? Array.from(new Set([...apiKeyScopes, scope]))
                                     : apiKeyScopes.filter((s) => s !== scope);
                                   setApiKeyScopes(next);
@@ -904,7 +980,7 @@ export default function Organization() {
                       <div className="rounded-md border border-border bg-muted/30 p-3">
                         <div className="text-xs font-semibold text-foreground">Copy this key now</div>
                         <div className="mt-2 flex items-center gap-2">
-                          <Input value={createdApiKeySecret} readOnly />
+                          <Input value={createdApiKeySecret} readOnly data-testid="created-apikey-secret" />
                           <Button
                             variant="secondary"
                             onClick={async () => {
@@ -927,6 +1003,7 @@ export default function Organization() {
                     <Button
                       onClick={() => createApiKeyMutation.mutate({ name: apiKeyName, scopes: apiKeyScopes })}
                       disabled={createApiKeyMutation.isPending || apiKeyName.trim().length < 2 || apiKeyScopes.length < 1}
+                      data-testid="apikey-create-submit"
                     >
                       {createApiKeyMutation.isPending ? "Creating…" : "Create"}
                     </Button>
@@ -997,7 +1074,7 @@ export default function Organization() {
                   <div className="grid gap-2">
                     <Label>Your referral code</Label>
                     <div className="flex items-center gap-2">
-                      <Input value={(referralQuery.data as any).referral_code || ""} readOnly />
+                      <Input value={(referralQuery.data as any).referral_code || ""} readOnly data-testid="referral-code-input" />
                       <Button
                         variant="secondary"
                         onClick={async () => {
@@ -1060,10 +1137,11 @@ export default function Organization() {
                   <div className="border-t border-border pt-4">
                     <div className="text-sm font-medium text-foreground">Redeem a referral code</div>
                     <div className="mt-2 flex items-center gap-2">
-                      <Input placeholder="Enter code" value={redeemCode} onChange={(e) => setRedeemCode(e.target.value)} />
+                      <Input placeholder="Enter code" value={redeemCode} onChange={(e) => setRedeemCode(e.target.value)} data-testid="redeem-code-input" />
                       <Button
                         onClick={() => redeemReferralMutation.mutate()}
                         disabled={!redeemCode.trim() || redeemReferralMutation.isPending || !activeOrgIdFromServer}
+                        data-testid="redeem-code-btn"
                       >
                         {redeemReferralMutation.isPending ? "Redeeming…" : "Redeem"}
                       </Button>
@@ -1094,7 +1172,7 @@ export default function Organization() {
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div className="rounded-md border border-border p-3">
                       <div className="text-xs text-muted-foreground">Plan</div>
-                      <div className="text-sm font-semibold">{usageQuery.data.plan}</div>
+                      <div className="text-sm font-semibold" data-testid="usage-plan">{usageQuery.data.plan}</div>
                       <div className="text-xs text-muted-foreground">{usageQuery.data.status}</div>
                     </div>
                     <div className="rounded-md border border-border p-3">
@@ -1103,7 +1181,7 @@ export default function Organization() {
                     </div>
                     <div className="rounded-md border border-border p-3">
                       <div className="text-xs text-muted-foreground">AI calls (used / limit)</div>
-                      <div className="text-sm font-semibold">
+                      <div className="text-sm font-semibold" data-testid="usage-ai-calls">
                         {usageQuery.data.usage.monthly_ai_calls} / {usageQuery.data.limits.monthly_ai_calls}
                       </div>
                     </div>

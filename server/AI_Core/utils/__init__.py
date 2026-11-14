@@ -2,8 +2,19 @@
 Utility functions and helpers
 """
 
+from .agent_telemetry import (
+    get_agent_metrics,
+    get_model_metrics,
+    get_telemetry_summary,
+    get_workflow_metrics,
+    record_agent_invocation,
+    record_model_usage,
+    record_workflow_execution,
+)
 from .helpers import (
+    AgentLogger,
     ColorFormatter,
+    WorkflowLogger,
     calculate_age,
     calculate_months_between,
     format_currency,
@@ -12,6 +23,16 @@ from .helpers import (
     safe_json_loads,
     setup_logging,
     validate_email,
+)
+from .key_pool import (
+    KeyEntry,
+    KeyHealth,
+    KeyPool,
+    KeyPoolConfig,
+    KeyStatus,
+    get_all_key_pools,
+    get_key_pool,
+    reset_all_key_pools,
 )
 from .llm_wrapper import (
     FALLBACK_RESPONSES,
@@ -22,12 +43,37 @@ from .llm_wrapper import (
     RateLimitedLLM,
     create_llm,
     get_fallback_response,
+    get_last_route_snapshot,
+)
+from .model_catalog import (
+    MODEL_CATALOG,
+    CostTier,
+    ModelCapability,
+    ModelEntry,
+    ReasoningStrength,
+    SpeedTier,
+    get_all_models,
+    get_best_model_for_task,
+    get_catalog_stats,
+    get_cheapest_model_for_task,
+    get_enabled_models,
+    get_fallback_chain,
+    get_fastest_model_for_task,
+    get_model_by_id,
+    get_models_by_provider,
+    get_models_for_task,
+)
+from .model_health import (
+    ModelHealthStatus,
+    ModelHealthTracker,
+    get_model_health_tracker,
+    reset_model_health_tracker,
 )
 from .provider_registry import (
-    list_providers,
-    get_provider_config,
-    create_chat_model,
     PROVIDER_CONFIGS,
+    create_chat_model,
+    get_provider_config,
+    list_providers,
 )
 from .rate_limiter import (
     RateLimitError,
@@ -46,17 +92,22 @@ from .request_metrics import (
     record_llm_usage,
 )
 
+# Exports the public API symbols for the AI Core utility module.
+# Includes helpers, rate limiters, model catalogs, and telemetry tools.
+# Defines accessible interfaces for external subpackages and services.
 __all__ = [
     # Helpers
     "setup_logging",
     "validate_email",
-    "format_currency", 
+    "format_currency",
     "parse_financial_input",
     "calculate_age",
     "generate_report_id",
     "safe_json_loads",
     "calculate_months_between",
     "ColorFormatter",
+    "AgentLogger",
+    "WorkflowLogger",
     # Rate limiting
     "TokenBucketRateLimiter",
     "RetryHandler",
@@ -73,6 +124,7 @@ __all__ = [
     "create_llm",
     "get_fallback_response",
     "FALLBACK_RESPONSES",
+    "get_last_route_snapshot",
     # Provider Registry
     "list_providers",
     "get_provider_config",
@@ -84,5 +136,44 @@ __all__ = [
     "get_llm_call_count",
     "record_llm_usage",
     "get_llm_usage",
-    "get_request_id"
+    "get_request_id",
+    # Key Pool
+    "KeyPool",
+    "KeyPoolConfig",
+    "KeyEntry",
+    "KeyHealth",
+    "KeyStatus",
+    "get_key_pool",
+    "get_all_key_pools",
+    "reset_all_key_pools",
+    # Model Catalog
+    "ModelEntry",
+    "ModelCapability",
+    "SpeedTier",
+    "CostTier",
+    "ReasoningStrength",
+    "get_model_by_id",
+    "get_all_models",
+    "get_enabled_models",
+    "get_models_by_provider",
+    "get_models_for_task",
+    "get_fallback_chain",
+    "get_cheapest_model_for_task",
+    "get_fastest_model_for_task",
+    "get_best_model_for_task",
+    "get_catalog_stats",
+    "MODEL_CATALOG",
+    # Model health
+    "ModelHealthStatus",
+    "ModelHealthTracker",
+    "get_model_health_tracker",
+    "reset_model_health_tracker",
+    # Agent telemetry
+    "get_telemetry_summary",
+    "get_agent_metrics",
+    "get_model_metrics",
+    "get_workflow_metrics",
+    "record_agent_invocation",
+    "record_model_usage",
+    "record_workflow_execution",
 ]

@@ -1,8 +1,14 @@
 import { Types, PipelineStage } from "mongoose";
 import TransactionModel from "../models/transactionModel";
 
+// Defines supported domain entity types searchable through global search.
+// Includes core ledger items like transactions, goals, debts, and journals.
+// Restricts search execution to valid searchable system entities.
 export type SearchableType = "transaction" | "goal" | "debt" | "receipt" | "journal_entry";
 
+// Standardized output representation for individual search result items.
+// Contains target entity type, identifier, human-readable title, and date.
+// Houses optional metadata attributes specific to the discovered entity.
 export interface SearchResult {
   type: SearchableType;
   id: string;
@@ -12,6 +18,9 @@ export interface SearchResult {
   meta?: Record<string, unknown>;
 }
 
+// Encapsulates parameters for executing a global cross-entity search request.
+// Specifies tenant identifiers, search query string, and entity type filters.
+// Supports result limit configuration and cursor-based pagination offsets.
 export interface SearchParams {
   orgId: Types.ObjectId;
   userId: Types.ObjectId;
@@ -21,6 +30,9 @@ export interface SearchParams {
   cursor?: string;
 }
 
+// Represents the aggregated response returned by the global search engine.
+// Contains the ordered list of matched results and total count.
+// Provides an optional continuation cursor for paginated result sets.
 export interface SearchResponse {
   results: SearchResult[];
   total: number;
@@ -32,6 +44,9 @@ export interface SearchResponse {
  * Uses Mongo $text index for transactions and regex fallback for others.
  * Designed to be extended as new searchable collections are added.
  */
+// Executes global full-text search across tenant financial entities and records.
+// Uses MongoDB text index scoring for transactions and aggregates matching items.
+// Sorts unified results chronologically and enforces cursor-based pagination limits.
 export async function globalSearch(params: SearchParams): Promise<SearchResponse> {
   const { orgId, userId, query, types, limit = 20, cursor } = params;
   const wantedTypes = types && types.length > 0 ? new Set(types) : null;

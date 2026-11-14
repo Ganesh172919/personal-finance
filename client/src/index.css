@@ -1,51 +1,51 @@
 /* stylelint-disable at-rule-no-unknown */
 
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap");
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
+  color-scheme: light;
   --background: hsl(0 0% 100%);
-  --foreground: hsl(222 35% 12%);
+  --foreground: hsl(0 0% 7%);
   --card: hsl(0 0% 100%);
-  --card-foreground: hsl(222 35% 12%);
+  --card-foreground: var(--foreground);
   --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(222 35% 12%);
-  --primary: hsl(222 47% 11%);
+  --popover-foreground: var(--foreground);
+  --primary: hsl(0 0% 9%);
   --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(210 32% 96%);
-  --secondary-foreground: hsl(222 35% 14%);
-  --muted: hsl(210 32% 96%);
-  --muted-foreground: hsl(215 16% 43%);
-  --accent: hsl(210 40% 97%);
-  --accent-foreground: hsl(222 35% 12%);
-  --destructive: hsl(0 84% 60%);
+  --secondary: hsl(0 0% 95%);
+  --secondary-foreground: var(--foreground);
+  --muted: hsl(0 0% 96%);
+  --muted-foreground: hsl(0 0% 34%);
+  --accent: hsl(0 0% 94%);
+  --accent-foreground: var(--foreground);
+  --destructive: hsl(0 68% 42%);
   --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(214 24% 88%);
-  --input: hsl(214 24% 88%);
-  --ring: hsl(222 47% 11%);
-  --chart-1: hsl(221 83% 53%);
-  --chart-2: hsl(186 96% 38%);
-  --chart-3: hsl(262 83% 58%);
-  --chart-4: hsl(24 94% 53%);
-  --chart-5: hsl(142 76% 36%);
-  --sidebar: hsl(210 40% 98% / 0.94);
-  --sidebar-foreground: hsl(222 35% 12%);
-  --sidebar-primary: hsl(222 47% 11%);
-  --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(210 40% 97%);
-  --sidebar-accent-foreground: hsl(222 35% 12%);
-  --sidebar-border: hsl(214 24% 88%);
-  --sidebar-ring: hsl(222 47% 11%);
-  --font-sans: "Manrope", system-ui, sans-serif;
+  --border: hsl(0 0% 85%);
+  --input: hsl(0 0% 68%);
+  --ring: var(--foreground);
+  --chart-1: hsl(0 0% 20%);
+  --chart-2: hsl(0 0% 35%);
+  --chart-3: hsl(0 0% 50%);
+  --chart-4: hsl(0 0% 65%);
+  --chart-5: hsl(0 0% 80%);
+  --sidebar: hsl(0 0% 98%);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--foreground);
+  --sidebar-primary-foreground: var(--background);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+  --font-sans: Arial, system-ui, sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: "JetBrains Mono", monospace;
-  --radius: 20px;
+  --font-mono: ui-monospace, Consolas, monospace;
+  --radius: 10px;
 }
 
 .dark {
+  color-scheme: dark;
   --background: hsl(0 0% 0%);
   --foreground: hsl(0 0% 98%);
   --card: hsl(0 0% 4%);
@@ -61,22 +61,22 @@
   --accent: hsl(0 0% 10%);
   --accent-foreground: hsl(0 0% 98%);
   --destructive: hsl(0 84% 60%);
-  --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(0 0% 14%);
-  --input: hsl(0 0% 14%);
+  --destructive-foreground: hsl(0 0% 0%);
+  --border: hsl(0 0% 18%);
+  --input: hsl(0 0% 30%);
   --ring: hsl(0 0% 100%);
-  --chart-1: hsl(0 0% 98%);
-  --chart-2: hsl(0 0% 84%);
-  --chart-3: hsl(0 0% 70%);
-  --chart-4: hsl(0 0% 56%);
-  --chart-5: hsl(0 0% 42%);
-  --sidebar: hsl(0 0% 3% / 0.98);
+  --chart-1: hsl(0 0% 95%);
+  --chart-2: hsl(0 0% 80%);
+  --chart-3: hsl(0 0% 65%);
+  --chart-4: hsl(0 0% 50%);
+  --chart-5: hsl(0 0% 35%);
+  --sidebar: hsl(0 0% 2%);
   --sidebar-foreground: hsl(0 0% 98%);
   --sidebar-primary: hsl(0 0% 100%);
   --sidebar-primary-foreground: hsl(0 0% 0%);
   --sidebar-accent: hsl(0 0% 10%);
   --sidebar-accent-foreground: hsl(0 0% 98%);
-  --sidebar-border: hsl(0 0% 14%);
+  --sidebar-border: var(--border);
   --sidebar-ring: hsl(0 0% 100%);
 }
 
@@ -92,16 +92,18 @@
   body {
     @apply bg-background font-sans text-foreground antialiased;
     min-height: 100vh;
-    background-image:
-      radial-gradient(circle at top left, hsl(221 83% 53% / 0.08), transparent 24%),
-      radial-gradient(circle at bottom right, hsl(186 96% 38% / 0.08), transparent 26%),
-      linear-gradient(180deg, hsl(0 0% 100%), hsl(210 33% 99%));
+    background-image: radial-gradient(circle at 50% 0%, hsl(0 0% 97%) 0%, hsl(0 0% 100%) 70%);
+    background-attachment: fixed;
+  }
+
+  .dark body {
+    background-image: radial-gradient(circle at 50% 0%, hsl(0 0% 8% / 0.7) 0%, hsl(0 0% 0%) 70%);
     background-attachment: fixed;
   }
 
   ::selection {
-    background: hsl(221 83% 53% / 0.18);
-    color: hsl(222 47% 11%);
+    background: hsl(0 0% 50% / 0.25);
+    color: currentColor;
   }
 
   #root {
@@ -111,10 +113,7 @@
 }
 
 .dark body {
-  background-image:
-    radial-gradient(circle at top left, hsl(0 0% 100% / 0.07), transparent 20%),
-    radial-gradient(circle at bottom right, hsl(0 0% 100% / 0.04), transparent 24%),
-    linear-gradient(180deg, hsl(0 0% 0%), hsl(0 0% 0%));
+  background-image: none;
 }
 
 .dark ::selection {
@@ -124,10 +123,12 @@
 
 @layer utilities {
   .gradient-border {
-    background:
-      linear-gradient(var(--background), var(--background)) padding-box,
-      linear-gradient(135deg, hsl(221 83% 53%), hsl(186 96% 38%)) border-box;
-    border: 1px solid transparent;
+    background: var(--background);
+    border: 1px solid var(--input);
+  }
+
+  .gradient-border:focus-within {
+    border-color: var(--primary);
   }
 
   .agent-workflow-line {
@@ -148,42 +149,27 @@
   }
 
   .chart-container {
-    background: linear-gradient(135deg, hsl(0 0% 100%), hsl(210 40% 97%));
-    backdrop-filter: blur(12px);
+    background: var(--card);
   }
 
   .surface-panel {
-    background:
-      linear-gradient(180deg, hsl(0 0% 100% / 0.86), hsl(210 40% 98% / 0.96)),
-      radial-gradient(circle at top left, hsl(221 83% 53% / 0.08), transparent 35%);
-    backdrop-filter: blur(18px);
-  }
-
-  .dark .surface-panel {
-    background:
-      linear-gradient(180deg, hsl(0 0% 4% / 0.92), hsl(0 0% 1% / 0.98));
-  }
-
-  .dark .gradient-border {
-    background:
-      linear-gradient(var(--background), var(--background)) padding-box,
-      linear-gradient(135deg, hsl(0 0% 100%), hsl(0 0% 48%)) border-box;
-  }
-
-  .dark .chart-container {
-    background: linear-gradient(135deg, hsl(0 0% 6%), hsl(0 0% 3%));
+    background: var(--card);
   }
 
   .page-grid {
     background-image:
-      linear-gradient(hsl(214 24% 88% / 0.65) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(214 24% 88% / 0.65) 1px, transparent 1px);
+      linear-gradient(hsl(0 0% 94%) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(0 0% 94%) 1px, transparent 1px);
     background-size: 32px 32px;
     background-position: center;
   }
 
   .dark .page-grid {
-    background-image: none;
+    background-image:
+      linear-gradient(hsl(0 0% 12%) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(0 0% 12%) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-position: center;
   }
 }
 

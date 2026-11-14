@@ -2,9 +2,13 @@
 
 > Complete reference for the Personal Finance backend API. All protected endpoints require a valid JWT token in the `Authorization: Bearer <token>` header or a valid API key.
 
-> **vNext Migration**: The canonical API surface is `/api/v1`. Legacy `/api` routes remain available during the deprecation window and include an `X-API-Deprecation` header.
+> **vNext Migration**: The canonical API surface is `/api/v1`. Legacy `/api` routes remain available during the deprecation window.
 
 ---
+
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
 
 ## Base URL
 
@@ -14,6 +18,114 @@ Production:  https://<your-domain>/api
 ```
 
 All versioned endpoints are prefixed with `/api/v1`.
+
+---
+
+## API Surface Topology Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#1e293b', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#3b82f6', 'lineColor': '#60a5fa', 'secondaryColor': '#0f172a', 'tertiaryColor': '#1e1e2e'}}}%%
+mindmap
+  root((FinWise Canonical API Surface))
+    Core Authentication & Org
+      POST /api/v1/auth/register
+      POST /api/v1/auth/login
+      GET /api/v1/auth/me
+      GET /api/v1/orgs/current
+    Financial Data & Cockpit
+      GET /api/v1/finance/accounts
+      GET /api/v1/finance/transactions
+      GET /api/v1/command-center
+      GET /api/v1/budget-health
+      POST /api/v1/transactions/bulk-approve
+    AI Runtime & Proxies
+      POST /process-command
+      POST /api/ai/process/stream
+      GET /api/ai-core/status
+      GET /api/ai-core/ai/models
+      POST /api/ai-core/ai/sessions/:sessionId/resume
+    Knowledge & Document Pipeline
+      POST /api/v1/files/upload
+      POST /api/v1/files/generate-pdf
+      GET /api/v1/files/:fileId/chunks
+    Autonomous Automations
+      GET /api/v1/workflows
+      POST /api/v1/workflows/:id/execute
+      GET /api/v1/newsletter/preference
+```
+
+---
+
+## API Gateway Request Pipeline ASCII Flow
+
+```text
+  Client Request (Browser / External Tool)
+        │
+        ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 1. Edge Guards: Helmet CSP • CORS • Rate Limiter (200 req)  │
+  └─────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 2. Authentication: authAny (JWT Bearer OR Peppered API Key) │
+  └─────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 3. Tenant Boundary: orgContext Middleware ({ orgId })       │
+  └─────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 4. Validation: Zod v4 Schemas with Strict Error Mapping     │
+  └─────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 5. Execution: Business Service OR AI Core Proxy (/process)  │
+  └─────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 6. Response: Standardized ApiResponse envelope { success }  │
+  └─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## AI Runtime And Chat Orchestration
+
+FinWise now exposes both Node-level AI endpoints and proxied AI Core operational endpoints.
+
+### Node server AI endpoints
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /process-command` | Run a structured AI command through the Node server and AI Core |
+| `POST /api/ai/process/stream` | Stream AI responses and workflow progress |
+| `GET /api/ai-core/status` | Aggregated Node + AI Core health snapshot |
+| `GET /api/ai-core/ai/status` | Detailed AI Core status, key pools, model health, sessions |
+| `GET /api/ai-core/ai/models` | Proxied model catalog listing |
+| `GET /api/ai-core/ai/sessions` | Proxied resumable AI sessions list |
+| `GET /api/ai-core/ai/sessions/:sessionId` | Proxied AI session detail |
+| `POST /api/ai-core/ai/sessions/:sessionId/resume` | Resume a paused or interrupted AI session |
+
+### AI response metadata
+
+Recent AI responses may now include:
+
+- `session_id`
+- `session_status`
+- `workflow_phase`
+- `active_provider`
+- `active_model`
+- `active_key_id`
+- `fallback_path`
+- `recovered_failures`
+- `recovered_from_checkpoint`
+
+This metadata is used by the chat UI to display session continuity, failover visibility, and active model/provider status.
 
 ---
 
@@ -47,11 +159,11 @@ Reset password with a valid reset token.
 
 ### `GET /api/v1/auth/google`
 
-Initiate Google OAuth2 sign-in flow.
+Initiate Google OAuth2 sign-in flow (also served at `/api/auth/google`). Redirects to Google with `state` + PKCE kept in a signed 10-minute `fw_oauth_state` cookie. Optional query: `next` (same-origin relative path to open after sign-in) and `ref` (referral code for new accounts). Returns `501 OAUTH_NOT_CONFIGURED` when `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` are unset; `GET /auth/providers` returns `{ email, google }`.
 
 ### `GET /api/v1/auth/google/callback`
 
-Google OAuth2 callback handler.
+Google OAuth2 callback handler. Verifies state + PKCE and requires a Google-verified email, then sets the same `jwt` cookie as email login (plus a fresh CSRF cookie) and redirects to `CLIENT_URL/dashboard` (or `next`). On failure it redirects to `CLIENT_URL/login?error=<code>` with `google_unverified_email`, `google_no_email`, `google_account_conflict`, `google_state_invalid`, `google_denied` or `google_failed`.
 
 ### `GET /api/v1/auth/me`
 
@@ -755,6 +867,184 @@ Prometheus metrics (requires `METRICS_TOKEN` in Authorization header).
 
 ---
 
+## Newsletter & Health Score
+
+### `GET /api/v1/newsletter/preferences`
+
+🔒 Retrieve authenticated user's newsletter delivery schedule and section toggles.
+
+### `PUT /api/v1/newsletter/preferences`
+
+🔒 Update newsletter preferences (delivery cadence, preferred day, included sections).
+
+### `POST /api/v1/newsletter/preview`
+
+🔒 Generate a sample digest preview without sending an email.
+
+### `POST /api/v1/newsletter/send-now`
+
+🔒 Immediately compile and dispatch the financial newsletter to user's registered email.
+
+### `GET /api/v1/newsletter/unsubscribe/:token`
+
+One-click unsubscribe link embedded in email footers.
+
+### `GET /api/v1/newsletter/history`
+
+🔒 View past newsletter generation runs and delivery timestamps.
+
+### `GET /api/v1/finance/health-score/trend`
+
+🔒 Retrieve composite Financial Health Score (0–100), trend direction (`improving`/`stable`/`declining`), delta, and metric breakdowns.
+
+### `GET /api/v1/finance/health-score/chart`
+
+🔒 Retrieve historical monthly data points for health score trend visualizations.
+
+### `POST /api/v1/finance/health-score`
+
+🔒 Record a new snapshot health score.
+
+### `POST /api/v1/files/:workspaceFileId/render-pdf`
+
+🔒 **Render Workspace Document into PDF**: Compiles an uploaded workspace text file into a styled PDF document using PDFKit, streaming directly into MongoDB GridFS.
+
+**Headers:**
+- `Authorization: Bearer <jwt>`
+- `X-Org-Id: <orgId>`
+
+**Parameters:**
+- `workspaceFileId` (path, string, required): MongoDB ObjectId of the workspace file.
+
+**Response `201 Created`:**
+```json
+{
+  "success": true,
+  "data": {
+    "fileId": "6631ad02e9b8b548f029bc41",
+    "filename": "quarterly_budget_audit_2026.pdf",
+    "byteLength": 142850,
+    "downloadUrl": "/api/v1/files/rendered/6631ad02e9b8b548f029bc41/download"
+  }
+}
+```
+
+---
+
+### `POST /api/v1/files/render-prompt`
+
+🔒 **Render Direct Text into PDF**: Renders arbitrary prompt or markdown text into a formal PDF report.
+
+**Headers:**
+- `Authorization: Bearer <jwt>`
+- `X-Org-Id: <orgId>`
+
+**Request Body:**
+```json
+{
+  "title": "Monthly Cash Flow Statement",
+  "content": "# Executive Summary\n\nMonthly surplus reached $1,450.00.\n\n## Envelopes\n- Groceries: $600\n- Rent: $1,800",
+  "filenameStem": "monthly_statement_october"
+}
+```
+
+**Response `201 Created`:**
+```json
+{
+  "success": true,
+  "data": {
+    "fileId": "6631ad02e9b8b548f029bc42",
+    "filename": "monthly_statement_october_1730412000.pdf",
+    "byteLength": 89420,
+    "downloadUrl": "/api/v1/files/rendered/6631ad02e9b8b548f029bc42/download"
+  }
+}
+```
+
+---
+
+### `GET /api/v1/files/rendered/:fileId/download`
+
+🔒 **Stream PDF Statement**: Streams a rendered PDF directly from MongoDB GridFS chunks with proper `Content-Type: application/pdf` and `Content-Disposition: attachment` headers.
+
+**Headers:**
+- `Authorization: Bearer <jwt>`
+- `X-Org-Id: <orgId>`
+
+**Response:** Binary PDF stream (`application/pdf`).
+
+---
+
+### `GET /api/v1/files/:fileId/chunks`
+
+🔒 **Retrieve Bounded Knowledge Chunks**: Fetches all 1,800-character RAG knowledge chunks and verified page offsets associated with an uploaded document.
+
+**Headers:**
+- `Authorization: Bearer <jwt>`
+- `X-Org-Id: <orgId>`
+
+**Response `200 OK`:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "6631ad02e9b8b548f029bc50",
+      "chunkIndex": 0,
+      "pageNumber": 1,
+      "tokenCountEstimate": 420,
+      "text": "FINANCIAL SERVICES AGREEMENT\nThis Agreement is entered into...",
+      "sourceKind": "document"
+    }
+  ]
+}
+```
+
+---
+
+### `GET /api/v1/dlq/stats`
+
+🔒 **Dead Letter Queue Diagnostics**: Returns operational metrics on poisoned background jobs quarantined in Redis.
+
+**Headers:**
+- `Authorization: Bearer <jwt>` (Admin only)
+- `X-Org-Id: <orgId>`
+
+**Response `200 OK`:**
+```json
+{
+  "success": true,
+  "data": {
+    "totalQuarantined": 2,
+    "byOperation": {
+      "newsletter:send": 1,
+      "csv_import:batch": 1
+    }
+  }
+}
+```
+
+---
+
+### `POST /api/v1/dlq/replay/:id`
+
+🔒 **Replay Dead Letter Job**: Re-enqueues a quarantined failed job back into active BullMQ processing after underlying service resolution.
+
+**Headers:**
+- `Authorization: Bearer <jwt>` (Admin only)
+- `X-Org-Id: <orgId>`
+
+**Response `200 OK`:**
+```json
+{
+  "success": true,
+  "message": "Job re-enqueued to active processing queue",
+  "jobId": "dlq_job_9f8a2"
+}
+```
+
+---
+
 ## Error Response Format
 
 All errors follow a consistent flat shape:
@@ -781,3 +1071,442 @@ All errors follow a consistent flat shape:
 ---
 
 _See also_: [ARCHITECTURE.md](./ARCHITECTURE.md) · [DATABASE.md](./DATABASE.md) · [SETUP.md](./SETUP.md) · [MIDDLEWARE.md](./MIDDLEWARE.md) · [SERVICES.md](./SERVICES.md)
+
+## API Surface & Route Architecture Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#8b5cf6', 'secondaryColor': '#06b6d4', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((📡 REST API Architecture (/api/v1)))
+    🔐 Authentication & Identity
+      POST /api/auth/register
+      POST /api/auth/login
+      POST /api/auth/refresh
+      POST /api/auth/2fa/verify
+      GET /api/auth/me
+    💳 Financial Management
+      Transactions (/transactions)
+        GET /transactions (filtered, paginated)
+        POST /transactions (manual & CSV import)
+        POST /transactions/review-queue (rules & batch)
+      Budgets (/budgets)
+        GET /budgets (category limits & spend)
+        GET /budgets/health-score (composite vitals)
+      Investments & Debts (/investments, /debts)
+    🧠 AI & Intelligent Workflows
+      POST /ai/process (LangGraph multi-agent)
+      GET /ai/process/stream (SSE token stream)
+      POST /ai/command-center (quick actions)
+      POST /retrieval/query (RAG chunk matching)
+    🏢 Tenancy & Platform Operations
+      Organizations & Invites (/orgs, /invites)
+      Hashed API Keys (/api-keys)
+      Audit Trail Logs (/audit)
+      PDF Reports & Newsletters (/pdf, /newsletter)
+```
+
+## API Gateway Request Pipeline & Verification ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 INCOMING INGRESS REQUEST (HTTP 1.1 / TLS 1.3)                       │
+│    POST /api/v1/transactions/review-queue/batch-approve                │
+│    Headers: Authorization: Bearer <jwt> • X-Org-Id: "org_prod_01"      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STAGE 1: GLOBAL GUARDS & OBSERVABILITY                              │
+│    ├─► Assign UUIDv4 Correlation ID (X-Request-Id)                     │
+│    ├─► Helmet (Strict-Transport-Security, CSP, X-Frame-Options)        │
+│    ├─► CORS Origin Whitelist Check                                     │
+│    └─► Sliding Window Rate Limiter (200 req/min per caller)            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ (Allowed)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔑 STAGE 2: CREDENTIAL & TENANT SCOPE EXTRACTION (authAny)             │
+│    ├─► Header: Bearer <JWT> ──► Verify token, extract userId & orgId   │
+│    ├─► Header: X-API-Key ──► SHA-256 peppered hash lookup in DB        │
+│    ├─► Ensure caller belongs to target organization                    │
+│    └─► OrgScopePlugin: Injects strict orgId filter into Mongoose       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ (Authenticated)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📋 STAGE 3: PAYLOAD VALIDATION & CONTROLLER EXECUTION                  │
+│    ├─► Zod Schema Parser (strip extra attributes, validate types)      │
+│    │   ├── Validation Error? ──► Return 400 Bad Request envelope 🔴    │
+│    │   └── Payload Valid? ──► Execute Domain Controller 🟢             │
+│    └─► Domain Service (Mongo Replica Set / Redis Cache / AI Core)      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟣 STAGE 4: RESPONSE SERIALIZATION & EVENT DISPATCH                    │
+│    ├─► Omit sensitive fields (_id mapping, password hashes)            │
+│    ├─► Asynchronously record AuditLog event                            │
+│    └─► Send 200 OK / 201 Created JSON response envelope 🟢             │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Production TypeScript Client & Axios Interceptor Implementation
+
+```typescript
+import axios, { AxiosInstance, InternalAxiosRequestConfig } from "axios";
+
+export interface FinWiseClientConfig {
+  baseURL: string;
+  token?: string;
+  orgId?: string;
+}
+
+/**
+ * Creates a pre-configured Axios client instance with automatic JWT injection,
+ * multi-tenant X-Org-Id headers, and CSRF double-submit token propagation.
+ */
+export function createFinWiseClient(config: FinWiseClientConfig): AxiosInstance {
+  const client = axios.create({
+    baseURL: config.baseURL,
+    timeout: 30000,
+    headers: {
+      "Content-Type": "application/json",
+      ...(config.orgId ? { "X-Org-Id": config.orgId } : {}),
+    },
+  });
+
+  client.interceptors.request.use((reqConfig: InternalAxiosRequestConfig) => {
+    // Inject Authorization header if Bearer token is provided
+    if (config.token) {
+      reqConfig.headers.set("Authorization", `Bearer ${config.token}`);
+    }
+
+    // In browser runtime, extract XSRF-TOKEN cookie for double-submit CSRF verification
+    if (typeof document !== "undefined") {
+      const match = document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/);
+      if (match && match[1]) {
+        reqConfig.headers.set("x-csrf-token", decodeURIComponent(match[1]));
+      }
+    }
+
+    return reqConfig;
+  });
+
+  // Response interceptor for automatic refresh token handling
+  client.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      const originalRequest = error.config;
+      if (error.response?.status === 401 && !originalRequest._retry) {
+        originalRequest._retry = true;
+        try {
+          const { data } = await axios.post(`${config.baseURL}/api/v1/auth/refresh`, {}, { withCredentials: true });
+          if (data.token) {
+            config.token = data.token;
+            originalRequest.headers.Authorization = `Bearer ${data.token}`;
+            return client(originalRequest);
+          }
+        } catch (refreshErr) {
+          // Token refresh failed; redirect to login
+          if (typeof window !== "undefined") {
+            window.location.href = "/login";
+          }
+        }
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  return client;
+}
+```
+
+---
+
+## Latest API Endpoints (2026 Enterprise Release)
+
+### Authenticated Bank-Feed Import Simulator
+- **`POST /api/transactions/bank-feed`**: Ingests authenticated Plaid/Teller-style test payloads, enforcing `externalId` deduplication. This route is intentionally JWT-protected; deploy a provider-specific signed callback before accepting live bank webhooks.
+
+### Machine Learning Merchant Embedding Clustering
+- **`GET /api/transactions/merchant-clusters`**: Generates 64-D L2-normalized vector embeddings for unreviewed transactions, grouping them via agglomerative cosine similarity ($C_{\text{sim}} \ge 0.70$).
+- **`POST /api/transactions/merchant-clusters/apply`**: Applies canonical normalization, category assignment, and optionally synthesizes a permanent `CategoryRule` for all transactions within a cluster.
+
+### External Workflow Inbound Webhook
+- **`POST /api/workflows/webhook/:token`**: Executes an automated multi-step workflow from external systems authenticated via a 48-character cryptographic token, supporting variable template interpolation (`{{field}}`).
+
+### Financial Journal Offline Sync & 64-D Vector Search
+- **`POST /api/financial-journal/entries/batch-sync`**: Idempotently synchronizes batches of offline stylus or keyboard drafts created while disconnected from the network.
+- **`GET /api/financial-journal/semantic-search`**: Performs dense 64-D cosine similarity search across journal entries, returning ranked results with concept match scores.
+
+### Multi-Channel Scheduled Exports
+- **`POST /api/v1/exports/scheduled`**: Configures automated recurring transaction ledger and statement deliveries to Email, Webhook Push, or Cloud Storage (AWS S3 & Google Cloud Storage GCS).
+- **`POST /api/v1/exports/scheduled/:id/deliver-now`**: Triggers immediate generation and dispatch of a scheduled report with SHA-256 cryptographic checksum verification.
+
+### AI Core Resumable Sessions & Model Health
+- **`GET /api/v1/ai-core/status`**: Returns live operational health, active LLM key pool statistics, and provider circuit breaker states.
+- **`POST /api/v1/ai-core/ai/sessions/:sessionId/resume`**: Resumes an in-flight or paused LangGraph workflow from its latest persisted SQLite checkpoint.
+
+
+### Continuous Production AI Canary Invariant Validation
+- **`GET /api/v1/ai/canary/status`**: Returns health status across all 5 mathematical invariants, recent violation logs, and uptime metrics.
+- **`GET /api/v1/ai/canary/number-safety`**: Returns real-time number safety health and verification pass rates.
+- **`POST /api/v1/ai/canary/validate`**: Audits a candidate response or financial allocation against Number Safety ($D_{\text{cand}} \subseteq D_{\text{ref}} \cup D_{\text{allowlist}}$), Zero-Sum Conservation ($\sum \Delta B_i = 0$), Balance Sheet Identity, Cash Flow Identity, and Debt Amortization.
+  - **Request Body (`application/json`)**:
+    ```json
+    {
+      "candidate": "Reallocate $150 from Dining to Groceries",
+      "reference": "Ledger: Dining spent $400, Groceries spent $600. Transfer $150.00.",
+      "initial_allocations": { "Dining": 500, "Groceries": 500 },
+      "proposed_allocations": { "Dining": 350, "Groceries": 650 },
+      "assets": 12500,
+      "liabilities": 2500,
+      "net_worth": 10000,
+      "income": 5000,
+      "expenses": 3500,
+      "net_cashflow": 1500,
+      "payment": 350,
+      "principal": 300,
+      "interest": 50
+    }
+    ```
+  - **Response `200 OK`**:
+    ```json
+    {
+      "valid": true,
+      "invariants_checked": [
+        "number_safety",
+        "zero_sum_budget",
+        "balance_sheet",
+        "cash_flow",
+        "debt_amortization"
+      ],
+      "violations": [],
+      "circuit_breaker_tripped": false
+    }
+    ```
+- **`POST /api/v1/ai/canary/run-probes`**: Executes on-demand synthetic audit probes against the active LLM provider.
+  - **Request Body**: `{ "sample_size": 25 }`
+  - **Response `200 OK`**: `{ "probes_run": 25, "passed": 25, "failed": 0, "pass_rate": 1.0 }`
+
+### Financial Calendar & RFC 5545 iCalendar Feed
+- **`GET /api/v1/calendar-reminders/export.ics`**: Streams live RFC 5545 `.ics` iCalendar subscription feeds for Apple Calendar, Google Calendar, and Microsoft Outlook with automated bill cadences and `VALARM` notifications.
+  - **Query Parameters**: Optional `token` for authenticated subscription feed fetching.
+  - **Response Headers**: `Content-Type: text/calendar; charset=utf-8`, `Content-Disposition: inline; filename="finwise-reminders.ics"`.
+- **`GET /api/v1/calendar-reminders`**: Retrieves paginated calendar reminders and bill deadlines with optional status filtering.
+- **`POST /api/v1/calendar-reminders`**: Creates a new calendar reminder with custom notification offsets.
+  - **Request Body**:
+    ```json
+    {
+      "title": "Quarterly Estimated Tax Payment",
+      "amount": 1250.00,
+      "category": "Taxes",
+      "dueDate": "2026-12-15T00:00:00.000Z",
+      "cadence": "quarterly",
+      "sourceKind": "tax",
+      "alarmMinutesBefore": 2880
+    }
+    ```
+- **`POST /api/v1/calendar-reminders/batch-complete`**: Marks multiple reminder IDs as completed in an atomic transaction.
+  - **Request Body**: `{ "reminderIds": ["653ad1e...", "653ad2f..."] }`
+- **`POST /api/v1/calendar-reminders/clear-completed`**: Removes or archives completed reminders.
+  - **Request Body**: `{ "reminderIds": ["653ad1e..."] }`
+
+### Cross-Silo Unified Context Engine
+- **`GET /api/v1/search/unified-context`** / **`GET /api/v1/unified-context/query`**: Executes ranked cross-silo retrieval fusing User Memories, Workspace Documents, and Ledger Transactions using Reciprocal Rank Fusion ($k = 60$) and 90-day recency decay.
+  - **Query Parameters**:
+    - `q` (string, required): Search query string (1–500 chars).
+    - `sources` (string, optional): Comma-separated list of sources (`memory`, `file`, `transaction`). Default: all sources.
+    - `limit` (number, optional, default: 15, max: 50): Maximum unified results to return.
+    - `minScore` (number, optional, default: 0): Minimum composite score threshold.
+  - **Response `200 OK`**:
+    ```json
+    {
+      "query": "rent payment history",
+      "totalResults": 4,
+      "results": [
+        {
+          "id": "tx_9812",
+          "source": "transaction",
+          "title": "Apartment Lease Monthly Rent",
+          "content": "Date: 2026-11-01, Amount: $2,200.00, Merchant: Equity Residential",
+          "score": 0.892,
+          "timestamp": "2026-11-01T00:00:00.000Z",
+          "metadata": { "category": "Housing", "currency": "USD" }
+        },
+        {
+          "id": "doc_chunk_14",
+          "source": "file",
+          "title": "Lease_Agreement_2026.pdf",
+          "content": "Tenant agrees to pay $2,200 on the first day of each calendar month.",
+          "score": 0.841,
+          "metadata": { "pageNumber": 2, "charLength": 1420 }
+        }
+      ]
+    }
+    ```
+- **`POST /api/v1/search/unified-context`** / **`POST /api/v1/unified-context/prompt`**: Formats cross-silo retrieved facts into a structured, citation-annotated markdown context block for direct LLM system prompt injection.
+  - **Request Body**:
+    ```json
+    {
+      "query": "How much did I allocate to savings this quarter?",
+      "sources": ["memory", "file", "transaction"],
+      "limit": 10,
+      "minScore": 0.2
+    }
+    ```
+  - **Response `200 OK`**: Structured prompt context string with footnote citations (`[^1]`, `[^2]`) and source references.
+
+### Personalized Multi-Domain Follow-Through & Ranking Engine
+- **`GET /api/v1/follow-through/recommendations`**: Retrieves personalized, prioritized action item signals across tasks, goals, budgets, calendar reminders, recurring items, and debts.
+  - **Query Parameters**: `limit` (int, 1–50, default: 10).
+  - **Response `200 OK`**: Ranked list of actionable items with domain weights, urgency tags, due dates, and priority scores $S \in [0.0, 100.0]$.
+- **`POST /api/v1/follow-through/feedback`**: Records explicit user feedback (upvote, dismiss, complete) to adaptively tune per-user domain affinity weights using exponential time decay.
+  - **Request Body**:
+    ```json
+    {
+      "signalId": "goal_emergency_fund_99",
+      "domain": "goal",
+      "action": "upvote",
+      "reason": "Prioritizing 6-month runway before year-end"
+    }
+    ```
+  - **Response `200 OK`**: `{ "success": true, "updatedWeight": 1.45 }`
+- **`GET /api/v1/follow-through/preferences`**: Retrieves active user follow-through preferences, domain weights, risk tolerance, and cadence.
+- **`PUT /api/v1/follow-through/preferences`**: Updates user domain weights, risk tolerance (`conservative`, `moderate`, `aggressive`), or cadence (`daily`, `weekly`, `biweekly`).
+
+### Zero-Sum Budget Allocation Rebalancing
+- **`POST /api/v1/finance/budgets/:periodKey/rebalance`**: Executes zero-sum inter-envelope transfers between categories while preserving the overall monthly budget limit.
+  - **URL Parameter**: `periodKey` (format: `YYYY-MM`, e.g. `2026-11`).
+  - **Request Body**:
+    ```json
+    {
+      "transfers": [
+        {
+          "from_category": "Dining Out",
+          "to_category": "Groceries",
+          "amount": 150.00,
+          "reason": "Surplus in dining reallocated to grocery spike"
+        }
+      ]
+    }
+    ```
+  - **Response `200 OK`**: Updated envelope allocations and validation confirmation that $\sum \Delta B_i = 0$.
+
+### Multi-Modal Document QA & Rich Authorship Studio
+- **`POST /api/files/qa`**: Performs semantic question answering grounded in workspace financial documents with strict page citations and zero hallucination tolerance.
+  - **Request Body**:
+    ```json
+    {
+      "question": "What is my total taxable income on Line 15 of Form 1040?",
+      "workspaceFileIds": ["653ac011..."],
+      "minConfidence": 0.70,
+      "limit": 5
+    }
+    ```
+  - **Response `200 OK`**: Grounded answer text with cited physical page numbers, extracted numbers, and grounding confidence score $G$.
+- **`POST /api/files/search`**: Searches workspace knowledge chunks by semantic query and document modality.
+  - **Request Body**:
+    ```json
+    {
+      "query": "Form 1040 Schedule D capital gains",
+      "modality": "all",
+      "limit": 10,
+      "minConfidence": 0.65
+    }
+    ```
+- **`POST /api/files/authored-document`**: Generates a publication-grade PDFKit financial statement across 6 structured formats (`standard`, `executive_brief`, `tax_prep_summary`, `cash_flow_audit`, `debt_payoff_schedule`, `net_worth_statement`).
+  - **Request Body**: Includes `title`, `format`, `kpis`, `tables`, `callouts`, `filenameStem`, and `includeProfileData`.
+  - **Response `200 OK`**: `{ "fileId": "653b...", "filename": "tax_prep_summary_2026.pdf", "pages": 3, "downloadUrl": "/api/files/rendered/653b.../download" }`
+
+### Conversation Summary Capacity & Coordination Metrics
+- **`GET /api/chat/insights/coordination-metrics`**: Returns in-process request coalescing stats, snapshot cache hit ratios, and token capacity metrics for conversation summaries.
+- **`POST /api/chat/insights/capacity-benchmark`**: Runs staging load benchmarks simulating concurrent summary requests and measuring generation-only accounting accuracy.
+
+### Dead-Letter Job Administration & Manual Replay (Org Admin)
+- **`GET /api/v1/admin/dead-letter-jobs`**: Lists failed background jobs that exhausted all retry attempts and were routed to the Dead Letter Queue.
+  - **Headers**: `Authorization: Bearer <jwt>` (Requires Org Admin or Owner role)
+  - **Query Parameters**:
+    - `page` (integer, default: `1`)
+    - `limit` (integer, default: `20`, max: `100`)
+    - `queueName` (string, optional: filter by queue type, e.g. `exports`, `newsletter`, `ai_batch`, `integrations`)
+    - `errorStatus` (string, optional: filter by terminal status)
+  - **Response `200 OK`**:
+    ```json
+    {
+      "success": true,
+      "jobs": [
+        {
+          "id": "672e819b48c12a001ef0491a",
+          "queueName": "exports",
+          "jobId": "job_exp_8829",
+          "failedAt": "2026-11-08T18:45:00.000Z",
+          "attemptsMade": 5,
+          "error": {
+            "message": "S3 connection timeout during multipart upload",
+            "stack": "Error: S3 connection timeout..."
+          },
+          "payload": {
+            "exportId": "exp_90214",
+            "format": "csv"
+          }
+        }
+      ],
+      "pagination": { "page": 1, "totalPages": 1, "totalCount": 1 }
+    }
+    ```
+- **`POST /api/v1/admin/dead-letter-jobs/:id/replay`**: Resurrects a dead-letter job and re-enqueues it into the active worker queue for reprocessing.
+  - **URL Parameter**: `id` (ObjectId of the dead-letter record)
+  - **Request Body**:
+    ```json
+    {
+      "resetAttempts": true,
+      "priorityOverride": 2
+    }
+    ```
+  - **Response `200 OK`**: `{ "success": true, "replayed": true, "newJobId": "job_exp_8829_retry" }`
+
+### Continuous AI Learning Loop & Feedback Review Queue
+- **`GET /api/v1/agent-outputs/review-queue`**: Retrieves AI agent outputs flagged by users or heuristic confidence filters awaiting human supervisor review.
+  - **Query Parameters**: `status` (`pending`, `reviewed`, `discarded`), `page`, `limit`.
+  - **Response `200 OK`**: Array of flagged agent output items with prompt versions, inputs, tool calls, and user ratings.
+- **`POST /api/v1/agent-outputs/:id/review`**: Submits a human alignment review decision to update RL / bandit training datasets.
+  - **Request Body**:
+    ```json
+    {
+      "decision": "approved",
+      "correctedOutput": "...",
+      "notes": "Adjustment on withholding tax calculation"
+    }
+    ```
+- **`GET /api/v1/ai/learning/status`**: Provides live operational metrics for the continuous learning pipeline (pending feedback count, offline optimization schedule, active bandit policy).
+- **`GET /api/v1/ai/learning/artifacts`**: Lists versioned AI prompt templates, system instructions, and adapter weights.
+- **`GET /api/v1/ai/learning/reports`**: Fetches offline benchmark evaluation reports measuring precision, latency, and number safety across candidate revisions.
+- **`POST /api/v1/ai/learning/optimize`**: Triggers an asynchronous optimization cycle across approved feedback signals.
+- **`POST /api/v1/artifacts/:id/promote`**: Promotes an evaluated AI learning artifact revision to active production serving.
+- **`POST /api/v1/artifacts/:id/rollback`**: Reverts active AI prompt or model weights to a previous known-stable revision.
+
+### Distributed Reliability & Idempotency Protocol
+All state-modifying or expensive AI endpoints support idempotent execution and distributed tracing:
+- **`Idempotency-Key: <UUID>`**: Client-supplied unique token (`^[A-Za-z0-9_\-:.]{8,128}$`).
+  - **First Request**: Executes and persists the JSON response in Redis with a 24-hour TTL.
+  - **Identical In-Flight Retry**: Returns `409 Conflict` (`IDEMPOTENCY_IN_PROGRESS`).
+  - **Identical Completed Retry**: Returns cached status and body immediately with response header `Idempotent-Replay: true`.
+  - **Reused Key with Different Body**: Returns `422 Unprocessable Entity` (`IDEMPOTENCY_KEY_REUSED`).
+- **Distributed Trace Propagation**: Accepts standard W3C `traceparent` headers (`00-<trace_id>-<span_id>-01`) and `X-Request-Id` headers. Gateway validates against `^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$` to prevent header injection, and automatically derives W3C traces downstream to AI Core.
+
+---
+
+**Evidence:**
+- `server/src/routes/v1Routes.ts` (`/search/unified-context`, `/follow-through/*`, `/ai/canary/*`, `/finance/budgets/:periodKey/rebalance`, `/calendar-reminders/*`)
+- `server/src/routes/fileRoutes.ts` (`/api/files/qa`, `/api/files/search`, `/api/files/authored-document`)
+- `server/src/routes/financialJournalRoutes.ts` (`/financial-journal/entries/batch-sync`, `/financial-journal/semantic-search`)
+- `server/src/routes/financialDataRoutes.ts` (`/transactions/merchant-clusters`, `/transactions/bank-feed`)
+- `server/src/controllers/v1/summaryCapacityController.ts` (`getSummaryCoordinationMetricsHandler`)
+- `server/src/schemas/v1/` (`aiCanarySchemas.ts`, `followThroughSchemas.ts`, `unifiedContextSchemas.ts`, `financeSchemas.ts`)
+- `server/src/routes/v1/deadLetterJobRoutes.ts` (`/admin/dead-letter-jobs`, `/admin/dead-letter-jobs/:id/replay`)
+- `server/src/routes/aiLearningRoutes.ts` (`/agent-outputs/review-queue`, `/agent-outputs/:id/review`, `/ai/learning/*`, `/ai/artifacts/*`)
+- `server/src/middleware/idempotency.ts` (`Idempotency-Key` and `Idempotent-Replay`)
+- `server/src/observability/tracing.ts` (`REQUEST_ID_PATTERN` and `buildTraceparent`)

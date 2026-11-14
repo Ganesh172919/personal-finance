@@ -3,6 +3,9 @@ import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 
 import { cn } from "@/lib/utils";
 
+// Custom scrollable viewport container built on Radix UI ScrollArea primitive.
+// Replaces default browser scrollbars with cross-browser custom styled thumbs.
+// Manages viewport clipping, responsive dimensions, and scroll corner geometry.
 const ScrollArea = React.forwardRef<
   React.ElementRef<typeof ScrollAreaPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>
@@ -21,6 +24,9 @@ const ScrollArea = React.forwardRef<
 ));
 ScrollArea.displayName = ScrollAreaPrimitive.Root.displayName;
 
+// Custom scrollbar track and draggable thumb element supporting vertical and horizontal axes.
+// Applies subtle border styling and rounded thumb graphics with hover transitions.
+// Automatically fades in during scroll interactions and fades out when idle.
 const ScrollBar = React.forwardRef<
   React.ElementRef<typeof ScrollAreaPrimitive.ScrollAreaScrollbar>,
   React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.ScrollAreaScrollbar>

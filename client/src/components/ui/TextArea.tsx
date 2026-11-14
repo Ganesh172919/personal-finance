@@ -2,6 +2,9 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+// Multi-line text input control for comments, notes, and messages.
+// Configures minimum height, border styling, focus rings, and placeholder colors.
+// Forwards DOM references to the underlying native HTML textarea element.
 const Textarea = React.forwardRef<
   HTMLTextAreaElement,
   React.ComponentProps<"textarea">

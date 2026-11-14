@@ -10,98 +10,30 @@
  *   npx tsx server/src/scripts/generateOpenApiPaths.ts
  */
 
-import { Router } from "express";
+process.env.NODE_ENV = process.env.NODE_ENV || "test";
+process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret";
+process.env.CSRF_ENABLED = process.env.CSRF_ENABLED || "true";
+process.env.MONETIZATION_ENABLED = process.env.MONETIZATION_ENABLED || "true";
+
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getEnv } from "../config/env.js";
 
-// Route files — same imports the test uses
-import authRoutes from "../routes/authRoutes.js";
-import configRoutes from "../routes/configRoutes.js";
-import publicShareRoutes from "../routes/publicShareRoutes.js";
-import v1Routes from "../routes/v1Routes.js";
-import aiRoutes from "../routes/aiRoutes.js";
-import chatRoutes from "../routes/chatRoutes.js";
-import financialDataRoutes from "../routes/financialDataRoutes.js";
-import receiptRoutes from "../routes/receiptRoutes.js";
-import financialJournalRoutes from "../routes/financialJournalRoutes.js";
-import fileRoutes from "../routes/fileRoutes.js";
-import mediaRoutes from "../routes/mediaRoutes.js";
-import monetizationRoutes from "../routes/monetizationRoutes.js";
-import taskRoutes from "../routes/taskRoutes.js";
+import { getApiRoutes } from "../routes/routeRegistry.js";
+import { collectRouterRoutes, expressPathToOpenApi, type HttpMethod } from "../utils/routeInventory.js";
 
-type HttpMethod = "get" | "post" | "put" | "patch" | "delete";
-
-interface RouterMount {
-  prefix: string;
-  router: Router;
-}
-
-const normalizePrefix = (prefix: string) => {
-  const trimmed = prefix.trim();
-  if (trimmed === "") return "";
-  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
-};
-
-const joinPaths = (prefix: string, routePath: string) => {
-  const base = normalizePrefix(prefix);
-  const route = String(routePath || "");
-  if (!route || route === "/") return base || "/";
-  if (route.startsWith("/")) return `${base}${route}`;
-  return `${base}/${route}`;
-};
-
-const expressPathToOpenApi = (expressPath: string) =>
-  expressPath.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
-
-const collectRouterRoutes = (router: any, mountPrefix: string) => {
-  const routes: Array<{ path: string; methods: Set<HttpMethod> }> = [];
-  const stack = Array.isArray(router?.stack) ? router.stack : [];
-  for (const layer of stack) {
-    const route = layer?.route;
-    if (!route?.path || !route?.methods) continue;
-    if (typeof route.path !== "string") continue;
-
-    const methods = new Set<HttpMethod>();
-    for (const key of Object.keys(route.methods || {})) {
-      const method = String(key || "").toLowerCase() as HttpMethod;
-      if (["get", "post", "put", "patch", "delete"].includes(method)) {
-        methods.add(method);
-      }
-    }
-
-    if (methods.size === 0) continue;
-    routes.push({ path: joinPaths(mountPrefix, route.path), methods });
-  }
-  return routes;
-};
-
-// Build mounts matching the test's definition
-const env = getEnv();
-const mounts: RouterMount[] = [
-  { prefix: "/api/v1/auth", router: authRoutes },
-  { prefix: "/api/v1/config", router: configRoutes },
-  { prefix: "/api/v1/public", router: publicShareRoutes },
-  { prefix: "/api/v1", router: v1Routes },
-  { prefix: "/api/v1", router: aiRoutes },
-  { prefix: "/api/v1/chat", router: chatRoutes },
-  { prefix: "/api/v1", router: financialDataRoutes },
-  { prefix: "/api/v1/files", router: fileRoutes },
-  { prefix: "/api/v1", router: receiptRoutes },
-  { prefix: "/api/v1", router: financialJournalRoutes },
-  { prefix: "/api/v1", router: mediaRoutes },
-];
-
-if (env.MONETIZATION_ENABLED) {
-  mounts.push({ prefix: "/api/v1", router: monetizationRoutes });
-}
-if (env.TASKS_ENABLED) {
-  mounts.push({ prefix: "/api/v1/tasks", router: taskRoutes });
-}
+// Instantiates application API route table with all optional feature modules activated.
+// Extracts route prefix URLs and corresponding Express router instances.
+// Serves as input for automated route tree reflection and schema extraction.
+const mounts = getApiRoutes({ ...getEnv(), MONETIZATION_ENABLED: true, TASKS_ENABLED: true })
+  .map(({ path, router }) => ({ prefix: path, router }));
 
 // Collect and deduplicate all routes
+// Map accumulating unique OpenAPI path templates mapped to accepted HTTP methods.
+// Aggregates route definitions across all mounted sub-routers and controller modules.
+// Ensures complete path coverage without duplicate method registrations.
 const allPaths = new Map<string, Set<HttpMethod>>();
 
 for (const mount of mounts) {
@@ -118,9 +50,15 @@ for (const mount of mounts) {
 }
 
 // Sort paths for deterministic output
+// Sorts accumulated OpenAPI paths alphabetically to generate deterministic file outputs.
+// Prevents arbitrary filesystem ordering from producing noisy Git diff changes.
+// Provides predictable contract layout for documentation generators.
 const sortedPaths = [...allPaths.entries()].sort(([a], [b]) => a.localeCompare(b));
 
 // Build YAML
+// Buffer array storing generated YAML text lines for the OpenAPI paths manifest.
+// Pre-pends auto-generation warning comments advising against direct manual edits.
+// Assembled sequentially before writing the final specification file to disk.
 const lines: string[] = [
   "# Auto-generated OpenAPI v1 paths contract.",
   "# DO NOT EDIT MANUALLY — regenerate with:",
@@ -128,6 +66,9 @@ const lines: string[] = [
   "",
 ];
 
+// Defines canonical presentation order for HTTP verbs in OpenAPI specification documents.
+// Orders methods logically starting with GET and progressing through POST, PUT, PATCH, and DELETE.
+// Guarantees uniform verb sequences under each route path block.
 const methodOrder: HttpMethod[] = ["get", "post", "put", "patch", "delete"];
 
 for (const [pathStr, methods] of sortedPaths) {
@@ -140,9 +81,15 @@ for (const [pathStr, methods] of sortedPaths) {
 
 lines.push(""); // trailing newline
 
+// Formats lines array into a single contiguous YAML document string separated by newlines.
+// Represents the fully generated OpenAPI paths contract content ready for persistence.
+// Formatted with trailing newline according to POSIX text file standards.
 const yaml = lines.join("\n");
 
 // Write to disk
+// Resolves current module directory path in ESM execution context.
+// Converts file URL into absolute filesystem path string.
+// Provides base directory anchor for locating destination packages directory.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outputPath = path.resolve(__dirname, "../../../packages/contracts/openapi/v1/paths/index.yaml");
 

@@ -6,8 +6,14 @@ import * as RechartsPrimitive from "recharts";
 import { cn } from "@/lib/utils";
 
 // Format: { THEME_NAME: CSS_SELECTOR }
+// Theme mapping dictionary matching theme identifiers to CSS root selectors.
+// Maps light theme to default root and dark theme to .dark selector.
+// Used for injecting scoped CSS variables into dynamic chart style tags.
 const THEMES = { light: "", dark: ".dark" } as const;
 
+// Configuration type dictionary mapping chart series keys to presentation metadata.
+// Defines series labels, icons, static colors, and theme-dependent color palettes.
+// Drives tooltip styling, legend indicators, and dynamic CSS variable generation.
 export type ChartConfig = {
   [k in string]: {
     label?: React.ReactNode;
@@ -18,12 +24,21 @@ export type ChartConfig = {
   );
 };
 
+// Context shape exposing chart configuration to nested visualization components.
+// Shares the active ChartConfig object containing series metadata and palette colors.
+// Powers tooltip and legend components with unified labels and icons.
 type ChartContextProps = {
   config: ChartConfig;
 };
 
+// React context instance providing chart configuration to child elements.
+// Scoped to the ChartContainer wrapper around Recharts visual components.
+// Defaults to null to prevent uncontextualized tooltip and legend usage.
 const ChartContext = React.createContext<ChartContextProps | null>(null);
 
+// Custom hook to consume the active chart configuration context.
+// Throws an error when invoked outside of a ChartContainer component.
+// Supplies series metadata and colors to tooltips, legends, and styling tags.
 function useChart() {
   const context = React.useContext(ChartContext);
 
@@ -34,6 +49,9 @@ function useChart() {
   return context;
 }
 
+// Responsive container component wrapping Recharts visualizations.
+// Generates unique chart identifiers and injects dynamic theme color variables.
+// Applies aspect ratio constraints and unified cartesian grid styling.
 const ChartContainer = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> & {
@@ -67,6 +85,9 @@ const ChartContainer = React.forwardRef<
 });
 ChartContainer.displayName = "Chart";
 
+// Inlines dynamic stylesheet elements injecting CSS variables per series color.
+// Generates separate selectors for light and dark theme mode palettes.
+// Assigns --color-[key] variables scoped to the specific chart container id.
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   const colorConfig = Object.entries(config).filter(
     ([, config]) => config.theme || config.color
@@ -100,8 +121,14 @@ ${colorConfig
   );
 };
 
+// Recharts tooltip primitive re-exported for building rich hover cards.
+// Manages hover cursor coordinates and active payload propagation.
+// Pairs with ChartTooltipContent to render customized series metrics.
 const ChartTooltip = RechartsPrimitive.Tooltip;
 
+// Rich interactive tooltip content component displaying hovering data points.
+// Renders indicator dots or lines, series labels, and formatted numerical values.
+// Supports custom label formatters and nested label indicators.
 const ChartTooltipContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
@@ -256,8 +283,14 @@ const ChartTooltipContent = React.forwardRef<
 );
 ChartTooltipContent.displayName = "ChartTooltip";
 
+// Re-exported Recharts Legend primitive for data series attribution.
+// Positions and coordinates legend items across the chart canvas.
+// Pairs with ChartLegendContent for consistent theme styling and icons.
 const ChartLegend = RechartsPrimitive.Legend;
 
+// Interactive legend display component rendering chart series markers.
+// Displays color swatches or custom icons alongside descriptive series labels.
+// Supports top and bottom vertical alignments with consistent gap spacing.
 const ChartLegendContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> &
@@ -316,6 +349,9 @@ const ChartLegendContent = React.forwardRef<
 );
 ChartLegendContent.displayName = "ChartLegend";
 
+// Helper utility resolving series configuration metadata from payload keys.
+// Inspects nested payload properties and data keys against the ChartConfig.
+// Returns resolved label, icon, and color definitions for tooltips and legends.
 // Helper to extract item config from a payload.
 function getPayloadConfigFromPayload(
   config: ChartConfig,

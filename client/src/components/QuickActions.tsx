@@ -1,9 +1,30 @@
+/**
+ * @fileoverview QuickActions — dashboard shortcut grid with four common actions
+ * (Add Transaction, New Goal, View Reports, Connect Account) for fast navigation.
+ *
+ * WHAT IT DOES
+ *  - Renders a 2x2 grid of action buttons, each with an icon, label, and hover animation.
+ *  - "Connect Account" is disabled with a "Coming soon" tooltip; the other three
+ *    navigate to their respective routes via wouter.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — entirely self-contained.
+ *  - Uses `useLocation().navigate` from wouter for client-side routing.
+ *
+ * ARCHITECTURE NOTES
+ *  - A lightweight "launcher" card on the Dashboard page.
+ *  - Framer Motion `whileHover`/`whileTap` scale effects give tactile feedback.
+ *  - Designed to be extensible — new actions can be added to the `actions` array.
+ */
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { ArrowRight, FileText, Link2, LucideIcon, PlusCircle, Target } from "lucide-react";
 import { useLocation } from "wouter";
 
+// Property structure definition for individual quick action launcher buttons.
+// Specifies button labels, Lucide icons, click event handlers, and disabled flags.
+// Supplies hover title text for features that are disabled or pending rollout.
 interface QuickAction {
   label: string;
   icon: LucideIcon;
@@ -12,6 +33,9 @@ interface QuickAction {
   title?: string;
 }
 
+// Dashboard shortcut launcher component rendering primary financial workflow buttons.
+// Provides instant one-click navigation to transactions, goal creation, and reports.
+// Delivers responsive motion hover and tap scale effects for tactile feedback.
 export function QuickActions() {
   const [, navigate] = useLocation();
 

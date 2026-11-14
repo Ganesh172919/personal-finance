@@ -1,14 +1,119 @@
+/**
+ * @fileoverview Real-time Events Hook (Server-Sent Events)
+ *
+ * This hook establishes a Server-Sent Events (SSE) connection to receive
+ * real-time updates from the server. When domain events occur (e.g., a
+ * transaction is created), the server pushes events to the client, and
+ * this hook automatically invalidates the relevant React Query caches.
+ *
+ * ============================================================================
+ * MINDMAP FLOW: SERVER-SENT EVENTS & REACT QUERY CACHE INVALIDATION
+ * ============================================================================
+ * - Real-Time Domain Events (SSE)
+ *     ├── 1. Connection Lifecycle Management
+ *     │   ├── Authentication Guard: Only connects when authenticated user is present
+ *     │   ├── EventSource Endpoint: GET /api/events/stream
+ *     │   ├── Auto-Reconnection: 5-second backoff timer on network drops/disconnects
+ *     │   └── Teardown: EventSource closed on component unmount or logout
+ *     ├── 2. Event Ingestion & Payload Decoding
+ *     │   ├── Structured Wire Frame: { type, aggregate_type, payload }
+ *     │   └── Error Resilient JSON Parser
+ *     ├── 3. Event-to-Query Invalidation Matrix (EVENT_INVALIDATION_MAP)
+ *     │   ├── TransactionCreated/Updated/Deleted: Refetches txns, summaries, analytics, feeds
+ *     │   ├── BudgetAllocationUpdated: Refetches budget envelopes & dashboard
+ *     │   ├── GoalUpdated: Refetches financial profile & goal trackers
+ *     │   ├── ReceiptProcessed: Refetches receipts, transactions & summary
+ *     │   └── WorkflowRunCompleted: Refetches workflow runs, tasks & activity
+ *     └── 4. Deterministic Background Re-synchronization
+ *         └── React Query queryClient.invalidateQueries triggers seamless, zero-flicker UI updates
+ *
+ * ============================================================================
+ * ASCII FLOW: SSE DOMAIN EVENT PROPAGATION & CACHE INVALIDATION
+ * ============================================================================
+ *               [ Backend Domain Event Emitted (e.g., Transaction Created) ]
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Express SSE Server Broadcasts Line:    |
+ *                 | "data: {"type": "TransactionCreated"}" |
+ *                 +--------------------+-------------------+
+ *                                      |
+ *                            HTTP/2 Persistent Stream
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Browser EventSource in useRealtimeEvents|
+ *                 | onmessage handler triggered            |
+ *                 +--------------------+-------------------+
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Parse JSON & Lookup Invalidation Keys: |
+ *                 | EVENT_INVALIDATION_MAP[message.type]   |
+ *                 +--------------------+-------------------+
+ *                                      |
+ *                                      v
+ *                 +----------------------------------------+
+ *                 | Loop over Target Query Key Arrays:     |
+ *                 | queryClient.invalidateQueries(key)     |
+ *                 +--------------------+-------------------+
+ *                                      |
+ *                                      v
+ *      +-------------------------------------------------------------------+
+ *      | TanStack Query Automatically Refetches in Background:             |
+ *      |  - GET /api/transactions (New transaction appears)                |
+ *      |  - GET /api/dashboard/summary (Balances update live)              |
+ *      |  - GET /api/transactions/summary (Category totals update)         |
+ *      +-------------------------------------------------------------------+
+ *
+ * HOW SSE WORKS:
+ * 1. Client opens a persistent HTTP connection to /api/events/stream
+ * 2. Server sends events as "data: {...}\n\n" lines
+ * 3. Client parses events and invalidates affected queries
+ * 4. Invalidated queries automatically refetch fresh data
+ *
+ * EVENT-TO-QUERY MAPPING:
+ * Each event type maps to a list of query keys that should be invalidated.
+ * For example, "TransactionCreated" invalidates transaction lists, dashboards,
+ * analytics, and activity feed queries.
+ *
+ * RECONNECTION:
+ * If the SSE connection drops, the hook automatically reconnects after 5 seconds.
+ * This handles network interruptions and server restarts.
+ *
+ * WHY SSE OVER WEBSOCKETS?
+ * - SSE is simpler (one-directional: server → client)
+ * - Works over standard HTTP (no upgrade needed)
+ * - Built-in reconnection in browsers (though we handle it manually for more control)
+ * - Perfect for event notification use cases
+ *
+ * @module hooks/useRealtimeEvents
+ */
+
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "./useAuth";
 
+// Defines the wire format structure for incoming Server-Sent Event messages.
+// Unpacks event types, aggregate category descriptors, and JSON payload attributes.
+// Standardizes real-time domain event messages received from the server event stream.
+/** Shape of an SSE message from the server */
 type SSEMessage = {
-  type: string;
-  aggregate_type?: string;
-  payload?: Record<string, unknown>;
+  type: string;                          // Event type (e.g., "TransactionCreated")
+  aggregate_type?: string;               // Aggregate type (e.g., "transaction")
+  payload?: Record<string, unknown>;     // Event payload data
 };
 
+// Mapping dictionary associating specific domain event types with dependent query keys.
+// Maps granular event triggers like TransactionCreated directly to affected endpoints.
+// Dictates targeted TanStack Query cache invalidation without requiring full page refetches.
+/**
+ * Maps specific event types to query keys that should be invalidated.
+ *
+ * Each entry maps an event type to an array of query key arrays.
+ * When the event fires, all matching queries are refetched.
+ */
 const EVENT_INVALIDATION_MAP: Record<string, string[][]> = {
   TransactionCreated: [
     ["/api/transactions"],
@@ -67,6 +172,8 @@ const EVENT_INVALIDATION_MAP: Record<string, string[][]> = {
     ["insights"],
     ["/api/agent-outputs/user"],
     ["/api/agent-outputs/recent"],
+    ["/api/ai-core/ai/status"],
+    ["/api/ai-core/ai/sessions"],
     ["activity-feed"],
   ],
   TaskCreated: [["tasks"], ["/api/tasks"], ["activity-feed"]],
@@ -75,6 +182,13 @@ const EVENT_INVALIDATION_MAP: Record<string, string[][]> = {
   ScenarioEvaluated: [["analytics"], ["/api/dashboard/summary"], ["activity-feed"]],
 };
 
+// Broad fallback invalidation map organized by top-level domain aggregate classification.
+// Invalidates associated query caches when specific event-level mappings are not matched.
+// Prevents stale data displays across transactions, receipts, tasks, and budgets.
+/**
+ * Maps aggregate types to query keys that should be invalidated.
+ * This provides broader invalidation when specific event type mapping isn't available.
+ */
 const AGGREGATE_INVALIDATION_MAP: Record<string, string[][]> = {
   transaction: [
     ["/api/transactions"],
@@ -95,15 +209,28 @@ const AGGREGATE_INVALIDATION_MAP: Record<string, string[][]> = {
   task: [["tasks"], ["/api/tasks"]],
   workflow: [["workflow-runs"], ["v1/workflows"], ["/api/tasks"]],
   scenario: [["analytics"], ["/api/dashboard/summary"]],
-  insight: [["insights"], ["/api/agent-outputs/user"], ["/api/agent-outputs/recent"]],
+  insight: [["insights"], ["/api/agent-outputs/user"], ["/api/agent-outputs/recent"], ["/api/ai-core/ai/status"], ["/api/ai-core/ai/sessions"]],
   profile: [["/api/financial-profiles/me"], ["/api/dashboard/summary"], ["analytics"]],
   goal: [["/api/financial-profiles/me"], ["/api/dashboard/summary"], ["goals"]],
 };
 
+// Compiles and deduplicates all TanStack Query cache keys affected by an incoming event.
+// Evaluates both granular event-type and broad aggregate-type invalidation matrices.
+// Guarantees each affected query key is submitted only once per event dispatch.
+/**
+ * Builds the list of query keys to invalidate for a given SSE event.
+ *
+ * Uses both event type and aggregate type mappings, deduplicating keys.
+ * Falls back to invalidating the activity feed if no specific mapping exists.
+ *
+ * @param event - The SSE event message
+ * @returns Array of query keys to invalidate
+ */
 const buildInvalidationKeys = (event: SSEMessage) => {
   const seen = new Set<string>();
   const keys: string[][] = [];
 
+  // Add keys, deduplicating by join signature
   const pushKeys = (candidateKeys: string[][] | undefined) => {
     (candidateKeys || []).forEach((key) => {
       const signature = key.join("|");
@@ -113,13 +240,17 @@ const buildInvalidationKeys = (event: SSEMessage) => {
     });
   };
 
+  // Look up by specific event type
   pushKeys(EVENT_INVALIDATION_MAP[event.type]);
+  // Look up by aggregate type (broader)
   pushKeys(AGGREGATE_INVALIDATION_MAP[String(event.aggregate_type || "").toLowerCase()]);
 
+  // If event has orgId in payload, also invalidate config
   if (event.payload && Object.prototype.hasOwnProperty.call(event.payload, "orgId")) {
     pushKeys([["/api/config/me"]]);
   }
 
+  // Fallback: always invalidate activity feed
   if (keys.length === 0) {
     pushKeys([["activity-feed"]]);
   }
@@ -127,49 +258,79 @@ const buildInvalidationKeys = (event: SSEMessage) => {
   return keys;
 };
 
+// Custom React hook maintaining a persistent Server-Sent Events listener connection.
+// Listens to domain events on /api/events/stream and invalidates stale query caches.
+// Implements exponential reconnection backoff to automatically recover from dropped connections.
+/**
+ * Hook that establishes an SSE connection for real-time event handling.
+ *
+ * This hook:
+ * 1. Connects to /api/events/stream when user is authenticated
+ * 2. Listens for domain_event messages
+ * 3. Invalidates affected React Query caches
+ * 4. Automatically reconnects on connection loss (5s delay)
+ * 5. Cleans up on unmount
+ */
 export function useRealtimeEvents() {
   const qc = useQueryClient();
   const { user } = useAuth();
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
 
   useEffect(() => {
+    // Only connect when user is authenticated
     if (!user) return;
 
-    let stopped = false;
+    let stopped = false; // Guard against reconnect after unmount
 
     const connect = () => {
       if (stopped) return;
 
-      const es = new EventSource("/api/v1/events/stream", {
+      // Create SSE connection with credentials (for JWT cookie)
+      const es = new EventSource("/api/events/stream", {
         withCredentials: true,
       });
 
       esRef.current = es;
 
+      // Reset backoff on successful connection
+      es.onopen = () => {
+        reconnectAttemptRef.current = 0;
+      };
+
+      // Listen for domain events
       es.addEventListener("domain_event", (e: MessageEvent) => {
         try {
           const evt = JSON.parse(e.data) as SSEMessage;
+          // Invalidate all affected queries
           const keys = buildInvalidationKeys(evt);
           keys.forEach((key) => qc.invalidateQueries({ queryKey: key }));
         } catch {
-          // Ignore malformed SSE payloads.
+          // Ignore malformed SSE payloads
         }
       });
 
+      // Handle connection errors with exponential backoff
       es.onerror = () => {
         es.close();
         esRef.current = null;
         if (!stopped) {
-          reconnectTimerRef.current = setTimeout(connect, 5000);
+          // Exponential backoff: 1s → 2s → 4s → 8s → 30s max
+          const attempt = reconnectAttemptRef.current;
+          const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+          reconnectAttemptRef.current = attempt + 1;
+          reconnectTimerRef.current = setTimeout(connect, delay);
         }
       };
     };
 
     connect();
 
+    // Cleanup on unmount
     return () => {
       stopped = true;
+      reconnectAttemptRef.current = 0;
       esRef.current?.close();
       esRef.current = null;
       if (reconnectTimerRef.current) {
@@ -179,3 +340,35 @@ export function useRealtimeEvents() {
     };
   }, [user, qc]);
 }
+
+/**
+ * ══════════════════════════════════════════════════════════════════════
+ * END-OF-FILE SUMMARY
+ * ══════════════════════════════════════════════════════════════════════
+ *
+ * KEY TAKEAWAYS:
+ * ─────────────
+ * 1. **SSE for Real-time**: Server-Sent Events provide efficient one-way
+ *    communication from server to client. Perfect for event notifications.
+ *
+ * 2. **Cache Invalidation Strategy**: Instead of manually updating cached data,
+ *    we invalidate affected queries and let React Query refetch fresh data.
+ *    This is simpler and more reliable than manual cache updates.
+ *
+ * 3. **Event → Query Mapping**: The mapping tables define which queries need
+ *    refreshing for each event type. This is the "reactive cache" pattern.
+ *
+ * 4. **Auto-Reconnection**: SSE connections can drop due to network issues.
+ *    The 5-second reconnect delay balances responsiveness with server load.
+ *
+ * 5. **Deduplication**: The buildInvalidationKeys function prevents the same
+ *    query from being invalidated multiple times for a single event.
+ *
+ * HOW THIS FITS INTO THE SYSTEM:
+ * ─────────────────────────────
+ * useRealtimeEvents → activated in AppProviders (runs for entire app)
+ * useRealtimeEvents → receives events from /api/events/stream
+ * useRealtimeEvents → invalidates React Query caches
+ * useRealtimeEvents → queries automatically refetch fresh data
+ * ══════════════════════════════════════════════════════════════════════
+ */

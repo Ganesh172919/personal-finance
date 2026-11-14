@@ -1,3 +1,35 @@
+"""
+vision/engine.py - OCR Engine (PaddleOCR)
+===========================================
+
+The core OCR engine that converts raw image bytes into structured text
+lines.  Uses **PaddleOCR** (Baidu's open-source OCR library) with
+angle correction and space-character support.
+
+Pipeline
+--------
+1. ``decode_image()`` -- decode raw bytes to a numpy BGR array (OpenCV).
+2. ``preprocess_for_ocr()`` -- denoise, equalise, and binarise for
+   better OCR accuracy on receipts and handwritten notes.
+3. ``PaddleOCR.ocr()`` -- run the neural OCR model to extract tokens
+   with bounding boxes and confidence scores.
+4. ``_group_tokens_into_lines()`` -- cluster tokens into horizontal
+   lines based on y-coordinate proximity (median height threshold).
+
+Data structures
+---------------
+- ``OcrToken`` -- a single recognised text unit with bounding box and
+  confidence.
+- ``OcrLine`` -- a line of text formed by grouping nearby tokens.
+
+Design decisions
+----------------
+- PaddleOCR is lazily imported and cached (``@lru_cache``) to keep
+  non-vision endpoints fast to start up.
+- Line grouping uses an adaptive y-threshold (0.6 * median token
+  height) to handle varying font sizes on receipts.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,19 +43,29 @@ from .errors import VisionDependencyError
 from .preprocess import decode_image, preprocess_for_ocr
 
 
+# Represents an individual token detected by the optical recognition engine.
+# Stores recognized token text, model confidence score, and bounding coordinates.
+# Defined as an immutable frozen dataclass for efficient handling in pipelines.
 @dataclass(frozen=True)
 class OcrToken:
+    """A single OCR token with text, confidence score, and bounding box."""
     text: str
     confidence: float
     box: List[List[float]]
 
 
+# Represents a grouped horizontal line of recognized optical character text.
+# Encapsulates combined line text content and average detection confidence.
+# Defined as an immutable frozen dataclass used across vision processors.
 @dataclass(frozen=True)
 class OcrLine:
     text: str
     confidence: float
 
 
+# Safely converts arbitrary input values into floating-point numbers.
+# Falls back to a predefined default float if parsing fails or produces NaN.
+# Prevents numeric parsing exceptions during confidence score calculations.
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
         f = float(value)
@@ -32,6 +74,9 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+# Evaluates system environment availability for required computer vision libraries.
+# Inspects import specifications for OpenCV, PaddlePaddle, and PaddleOCR packages.
+# Returns a status dictionary indicating readiness and any missing modules.
 def get_vision_dependency_status() -> Dict[str, Any]:
     required_modules = {
         "cv2": "opencv-python-headless",
@@ -43,6 +88,9 @@ def get_vision_dependency_status() -> Dict[str, Any]:
     return {"ready": len(missing) == 0, "missing": missing}
 
 
+# Instantiates and caches the PaddleOCR model runner for a specified language.
+# Delays heavy module imports to minimize initial application startup overhead.
+# Raises VisionDependencyError if required optical recognition libraries are absent.
 @lru_cache(maxsize=8)
 def _get_paddle_ocr(lang: str):
     # Heavy import is delayed to keep non-vision endpoints fast to import.
@@ -62,6 +110,9 @@ def _get_paddle_ocr(lang: str):
     )
 
 
+# Clusters individual OCR tokens into coherent ordered horizontal text lines.
+# Sorts tokens by coordinates and applies adaptive vertical distance thresholds.
+# Merges token text left-to-right and calculates mean line confidence scores.
 def _group_tokens_into_lines(tokens: List[OcrToken]) -> List[OcrLine]:
     if not tokens:
         return []
@@ -121,6 +172,9 @@ def _group_tokens_into_lines(tokens: List[OcrToken]) -> List[OcrLine]:
     return grouped
 
 
+# Processes raw image bytes through preprocessing and the PaddleOCR pipeline.
+# Checks dependency readiness, extracts tokens, and aggregates text lines.
+# Returns a list of structured OcrLine objects containing text and confidence.
 def ocr_image_to_lines(image_bytes: bytes, *, lang: str = "en") -> List[OcrLine]:
     """
     Run OCR and return normalized text lines.

@@ -6,6 +6,9 @@ import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/Dialog";
 
+// Root command palette container built on top of the cmdk library.
+// Provides keyboard-driven fast filtering and command execution primitives.
+// Manages internal focus traversal and active selection across command items.
 const Command = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive>
@@ -21,6 +24,9 @@ const Command = React.forwardRef<
 ));
 Command.displayName = CommandPrimitive.displayName;
 
+// Modal dialog wrapper hosting the command palette in a centered overlay.
+// Couples Radix UI Dialog primitives with the cmdk Command interface.
+// Configures tailored sizing and typography overrides for quick search palettes.
 const CommandDialog = ({ children, ...props }: DialogProps) => {
   return (
     <Dialog {...props}>
@@ -33,6 +39,9 @@ const CommandDialog = ({ children, ...props }: DialogProps) => {
   );
 };
 
+// Text input search box for filtering command palette options and actions.
+// Pre-renders a search magnifying glass icon within a bordered header.
+// Forwards DOM references to the underlying cmdk Input component.
 const CommandInput = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Input>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
@@ -52,6 +61,9 @@ const CommandInput = React.forwardRef<
 
 CommandInput.displayName = CommandPrimitive.Input.displayName;
 
+// Scrollable container rendering filtered command results and categorized groups.
+// Constrains max height with smooth vertical scrolling and hidden horizontal overflow.
+// Forwards DOM references to the underlying cmdk List container.
 const CommandList = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.List>
@@ -65,6 +77,9 @@ const CommandList = React.forwardRef<
 
 CommandList.displayName = CommandPrimitive.List.displayName;
 
+// Empty state indicator displayed when search filters yield no matching items.
+// Formats centered muted text communicating zero matching command results.
+// Forwards DOM references to the underlying cmdk Empty component.
 const CommandEmpty = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Empty>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Empty>
@@ -78,6 +93,9 @@ const CommandEmpty = React.forwardRef<
 
 CommandEmpty.displayName = CommandPrimitive.Empty.displayName;
 
+// Categorized grouping container organizing related command items under headings.
+// Renders subtle header labels with consistent padding and typography.
+// Automatically hides entire group when all child items are filtered out.
 const CommandGroup = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Group>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Group>
@@ -94,6 +112,9 @@ const CommandGroup = React.forwardRef<
 
 CommandGroup.displayName = CommandPrimitive.Group.displayName;
 
+// Visual divider line rendered between distinct command groups or sections.
+// Styled with horizontal border lines and negative margin for full-width division.
+// Forwards DOM references to the underlying cmdk Separator primitive.
 const CommandSeparator = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Separator>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Separator>
@@ -106,6 +127,9 @@ const CommandSeparator = React.forwardRef<
 ));
 CommandSeparator.displayName = CommandPrimitive.Separator.displayName;
 
+// Selectable item element representing an executable action or navigation link.
+// Applies hover and keyboard navigation focus styles via data-selected attributes.
+// Automatically triggers onSelect callbacks when activated by mouse or Enter key.
 const CommandItem = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Item>
@@ -122,6 +146,9 @@ const CommandItem = React.forwardRef<
 
 CommandItem.displayName = CommandPrimitive.Item.displayName;
 
+// Right-aligned accessory span displaying keyboard shortcut key combinations.
+// Formats shortcut combinations with wide tracking and muted typography.
+// Provides visual keyboard cues directly adjacent to command palette items.
 const CommandShortcut = ({
   className,
   ...props

@@ -71,7 +71,7 @@ describe("org invites + audit API", () => {
 
   it("creates invite for unknown email, accepts it, and records audit events", async () => {
     const createdOrg = await request(app)
-      .post("/api/v1/orgs")
+      .post("/api/orgs")
       .set("Cookie", [ownerCookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({ name: "Team Alpha" })
@@ -109,7 +109,7 @@ describe("org invites + audit API", () => {
     ]);
 
     const inviteRes = await request(app)
-      .post(`/api/v1/orgs/${orgId}/members`)
+      .post(`/api/orgs/${orgId}/members`)
       .set("Cookie", [ownerCookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({ email: "invitee@example.com", role: "member" })
@@ -138,7 +138,7 @@ describe("org invites + audit API", () => {
     const inviteeCookie = `jwt=${inviteeJwt}`;
 
     const accepted = await request(app)
-      .post("/api/v1/org-invites/accept")
+      .post("/api/org-invites/accept")
       .set("Cookie", [inviteeCookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({ token: inviteToken })
@@ -148,8 +148,32 @@ describe("org invites + audit API", () => {
     expect(accepted.body.member?.org_id).toBe(orgId);
     expect(accepted.body.member?.user_id).toBe(invitee._id.toString());
 
+    // Re-submitting the same token as the same user is idempotent (page remount / retry).
+    const again = await request(app)
+      .post("/api/org-invites/accept")
+      .set("Cookie", [inviteeCookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ token: inviteToken })
+      .expect(200);
+    expect(again.body.member?.org_id).toBe(orgId);
+
+    // ...but a different user still cannot reuse the consumed token.
+    const other = await UserModel.create({
+      email: "other@example.com",
+      name: "Other User",
+      authProvider: "email",
+      isEmailVerified: true,
+    });
+    const otherCookie = `jwt=${jwt.sign({ id: other._id.toString() }, secret, { expiresIn: "1d" })}`;
+    await request(app)
+      .post("/api/org-invites/accept")
+      .set("Cookie", [otherCookie, csrfCookie])
+      .set("X-CSRF-Token", csrfToken)
+      .send({ token: inviteToken })
+      .expect(409);
+
     const myOrgs = await request(app)
-      .get("/api/v1/orgs/me")
+      .get("/api/orgs/me")
       .set("Cookie", [inviteeCookie, csrfCookie])
       .expect(200);
 
@@ -157,7 +181,7 @@ describe("org invites + audit API", () => {
     expect(myOrgs.body.orgs.some((o: any) => o?.id === orgId)).toBe(true);
 
     const audit = await request(app)
-      .get("/api/v1/audit/events?limit=50")
+      .get("/api/audit/events?limit=50")
       .set("Cookie", [ownerCookie, csrfCookie])
       .set("X-Org-Id", orgId)
       .expect(200);

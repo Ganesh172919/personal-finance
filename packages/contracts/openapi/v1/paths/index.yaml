@@ -2,22 +2,544 @@
 # DO NOT EDIT MANUALLY — regenerate with:
 #   npx tsx server/src/scripts/generateOpenApiPaths.ts
 
+/api/activity-feed:
+  get:
+/api/admin/dead-letter-jobs:
+  get:
+/api/admin/dead-letter-jobs/{id}/replay:
+  post:
+/api/agent-outputs/{id}:
+  get:
+/api/agent-outputs/{id}/feedback:
+  post:
+/api/agent-outputs/{id}/review:
+  post:
+/api/agent-outputs/recent:
+  get:
+/api/agent-outputs/review-queue:
+  get:
+/api/agent-outputs/user/{userId}:
+  get:
+/api/ai-core/ai/models:
+  get:
+/api/ai-core/ai/sessions:
+  get:
+/api/ai-core/ai/sessions/{sessionId}:
+  get:
+/api/ai-core/ai/sessions/{sessionId}/resume:
+  post:
+/api/ai-core/ai/status:
+  get:
+/api/ai-core/canary/number-safety:
+  get:
+/api/ai-core/canary/run-probes:
+  post:
+/api/ai-core/canary/validate:
+  post:
+/api/ai-core/newsletter:
+  post:
+/api/ai-core/providers:
+  get:
+/api/ai-core/status:
+  get:
+/api/ai/artifacts/{id}/promote:
+  post:
+/api/ai/artifacts/{id}/rollback:
+  post:
+/api/ai/canary/number-safety:
+  get:
+/api/ai/canary/run-probes:
+  post:
+/api/ai/canary/validate:
+  post:
+/api/ai/command:
+  post:
+/api/ai/learning/artifacts:
+  get:
+/api/ai/learning/optimize:
+  post:
+/api/ai/learning/reports:
+  get:
+/api/ai/learning/status:
+  get:
+/api/ai/process/stream:
+  post:
+/api/ai/scenario:
+  post:
+/api/ai/stream:
+  post:
+/api/analytics/account-balances:
+  get:
+/api/analytics/category-trends:
+  get:
+/api/analytics/income-expense:
+  get:
+/api/analytics/multi-currency-summary:
+  get:
+/api/analytics/overview:
+  get:
+/api/analytics/spending-heatmap:
+  get:
+/api/analytics/top-merchants:
+  get:
+/api/api-keys:
+  get:
+  post:
+/api/api-keys/{id}/revoke:
+  post:
+/api/audit/events:
+  get:
+/api/auth/2fa/complete:
+  post:
+/api/auth/2fa/disable:
+  post:
+/api/auth/2fa/setup:
+  post:
+/api/auth/2fa/status:
+  get:
+/api/auth/2fa/verify:
+  post:
+/api/auth/csrf:
+  get:
+/api/auth/google:
+  get:
+/api/auth/google/callback:
+  get:
+/api/auth/login:
+  post:
+/api/auth/logout:
+  post:
+/api/auth/password:
+  post:
+/api/auth/profile:
+  get:
+  put:
+/api/auth/providers:
+  get:
+/api/auth/register:
+  post:
+/api/auth/resend-verification:
+  post:
+/api/auth/verify-email:
+  post:
+/api/automation/events:
+  get:
+/api/automation/events/emit:
+  post:
+/api/autopilot/approve:
+  post:
+/api/autopilot/execute:
+  post:
+/api/autopilot/plan:
+  post:
+/api/autopilot/runs/{id}:
+  get:
+/api/autopilot/simulate:
+  post:
+/api/billing/checkout:
+  post:
+/api/billing/credits:
+  post:
+/api/billing/dunning:
+  get:
+/api/billing/dunning/retry:
+  post:
+/api/billing/dunning/simulate-failure:
+  post:
+/api/billing/invoices:
+  get:
+/api/billing/invoices/{id}/pdf:
+  get:
+/api/billing/portal:
+  get:
+/api/billing/webhook:
+  post:
+/api/blogs:
+  get:
+  post:
+/api/blogs/{id}/like:
+  post:
+/api/blogs/{slug}:
+  get:
+/api/blogs/categories:
+  get:
+/api/blogs/featured:
+  get:
+/api/budget-health:
+  get:
+/api/calendar-reminders:
+  get:
+  post:
+/api/calendar-reminders/{id}:
+  delete:
+/api/calendar-reminders/{id}/toggle:
+  patch:
+/api/calendar-reminders/batch-complete:
+  post:
+/api/calendar-reminders/clear-completed:
+  post:
+/api/category-rules:
+  get:
+  post:
+/api/category-rules/{id}:
+  patch:
+  delete:
+/api/chat/insights/conversation:
+  get:
+/api/chat/sessions:
+  get:
+  post:
+/api/chat/sessions/{sessionId}:
+  get:
+  patch:
+  delete:
+/api/chat/sessions/{sessionId}/messages:
+  get:
+  post:
+/api/command-center:
+  get:
+/api/comments:
+  get:
+  post:
+/api/comments/{id}:
+  patch:
+  delete:
+/api/config/me:
+  get:
+/api/dashboard/summary:
+  get:
+/api/debts:
+  post:
+/api/debts/{debtId}:
+  patch:
+  delete:
+/api/entitlements/me:
+  get:
+/api/events/stream:
+  get:
+/api/exports:
+  get:
+  post:
+/api/exports/{id}:
+  get:
+/api/exports/{id}/download:
+  get:
+/api/exports/schedules:
+  get:
+  post:
+/api/exports/schedules/{id}:
+  patch:
+  delete:
+/api/exports/schedules/{id}/run:
+  post:
+/api/feature-flags:
+  get:
+/api/feature-flags/{key}:
+  put:
+  delete:
+/api/files:
+  get:
+  post:
+/api/files/{id}:
+  get:
+  delete:
+/api/files/{id}/analyze:
+  post:
+/api/files/{id}/render-pdf:
+  post:
+/api/files/authored-document:
+  post:
+/api/files/qa:
+  post:
+/api/files/render-pdf:
+  post:
+/api/files/rendered/{fileId}/download:
+  get:
+/api/files/search:
+  post:
+/api/finance/accounts:
+  get:
+  post:
+/api/finance/accounts/{id}:
+  patch:
+/api/finance/budgets/{periodKey}/allocations:
+  get:
+  put:
+/api/finance/budgets/{periodKey}/allocations/{id}:
+  delete:
+/api/finance/budgets/{periodKey}/envelopes:
+  get:
+/api/finance/budgets/{periodKey}/rebalance:
+  post:
+/api/finance/forecast:
+  get:
+/api/finance/health-score:
+  post:
+/api/finance/health-score/chart:
+  get:
+/api/finance/health-score/trend:
+  get:
+/api/finance/merchants:
+  get:
+  post:
+/api/finance/recurring:
+  get:
+  post:
+/api/finance/recurring/{id}:
+  patch:
+/api/finance/recurring/candidates:
+  get:
+/api/financial-journal/entries:
+  get:
+/api/financial-journal/entries/{id}:
+  get:
+  patch:
+/api/financial-journal/entries/{id}/insights:
+  post:
+/api/financial-journal/entries/batch-sync:
+  post:
+/api/financial-journal/recognize-handwriting:
+  post:
+/api/financial-journal/semantic-search:
+  get:
+/api/financial-profiles/{userId}:
+  get:
+  put:
+/api/financial-profiles/investments:
+  post:
+/api/financial-profiles/me:
+  get:
+  put:
+/api/follow-through/feedback:
+  post:
+/api/follow-through/preferences:
+  get:
+  put:
+/api/follow-through/recommendations:
+  get:
+/api/goals:
+  post:
+/api/goals/{goalId}:
+  patch:
+  delete:
+/api/growth-stories:
+  get:
+  post:
+/api/growth-stories/{id}/like:
+  post:
+/api/growth-stories/{slug}:
+  get:
+/api/growth-stories/categories:
+  get:
+/api/growth-stories/featured:
+  get:
+/api/integrations:
+  get:
+/api/integrations/{id}/connect:
+  post:
+/api/integrations/{id}/disconnect:
+  post:
+/api/integrations/{id}/health:
+  get:
+/api/integrations/{id}/history:
+  get:
+/api/integrations/{id}/sync:
+  post:
+/api/integrations/health-summary:
+  get:
+/api/integrations/transactions_csv/import:
+  post:
+/api/internal/tools/catalog:
+  get:
+/api/internal/tools/execute:
+  post:
+/api/internal/tools/simulate:
+  post:
+/api/marketplace/catalog:
+  get:
+/api/marketplace/install:
+  post:
+/api/media/{fileId}:
+  get:
+/api/newsletter/history:
+  get:
+/api/newsletter/preferences:
+  get:
+  put:
+/api/newsletter/preview:
+  post:
+/api/newsletter/send-now:
+  post:
+/api/newsletter/unsubscribe/{token}:
+  get:
+/api/notifications:
+  get:
+/api/notifications/{id}/read:
+  post:
+/api/org-invites/accept:
+  post:
+/api/orgs:
+  post:
+/api/orgs/{orgId}/members:
+  post:
+/api/orgs/{orgId}/settings:
+  patch:
+/api/orgs/audit-log:
+  get:
+/api/orgs/me:
+  get:
+/api/plans:
+  get:
+/api/plugins:
+  get:
+/api/plugins/{id}/uninstall:
+  post:
+/api/plugins/{id}/update:
+  post:
+/api/plugins/validate-manifest:
+  post:
+/api/portfolio/summary:
+  get:
+/api/process-command:
+  post:
+/api/public/shares/financial-story/{token}:
+  get:
+/api/receipts:
+  get:
+/api/receipts/{id}:
+  get:
+  delete:
+/api/receipts/{id}/confirm:
+  post:
+/api/receipts/parse:
+  post:
+/api/referrals/me:
+  get:
+/api/referrals/redeem:
+  post:
+/api/scenarios/what-if:
+  post:
+/api/search:
+  get:
+/api/search/unified-context:
+  get:
+  post:
+/api/security/audit-log:
+  get:
+/api/shares/financial-story:
+  post:
+/api/tasks:
+  get:
+  post:
+/api/tasks/{id}:
+  get:
+  patch:
+/api/tasks/{id}/apply:
+  post:
+/api/tasks/dispatch-webhook:
+  post:
+/api/tasks/from-plan:
+  post:
+/api/tasks/webhook-token:
+  get:
+/api/tasks/webhook/{token}:
+  post:
+/api/tools/execute:
+  post:
+/api/tools/simulate:
+  post:
+/api/transactions:
+  get:
+  post:
+/api/transactions/{id}:
+  patch:
+  delete:
+/api/transactions/{id}/always-categorize:
+  post:
+/api/transactions/{id}/approve:
+  post:
+/api/transactions/bank-feed:
+  post:
+/api/transactions/bulk-approve:
+  post:
+/api/transactions/bulk-categorize:
+  post:
+/api/transactions/bulk-delete:
+  post:
+/api/transactions/import:
+  post:
+/api/transactions/merchant-clusters:
+  get:
+/api/transactions/merchant-clusters/apply:
+  post:
+/api/transactions/recent:
+  get:
+/api/transactions/summary:
+  get:
+/api/usage-events:
+  post:
+/api/usage/ledger:
+  get:
 /api/v1/activity-feed:
   get:
+/api/v1/admin/dead-letter-jobs:
+  get:
+/api/v1/admin/dead-letter-jobs/{id}/replay:
+  post:
 /api/v1/agent-outputs/{id}:
   get:
 /api/v1/agent-outputs/{id}/feedback:
   post:
+/api/v1/agent-outputs/{id}/review:
+  post:
 /api/v1/agent-outputs/recent:
+  get:
+/api/v1/agent-outputs/review-queue:
   get:
 /api/v1/agent-outputs/user/{userId}:
   get:
+/api/v1/ai-core/ai/models:
+  get:
+/api/v1/ai-core/ai/sessions:
+  get:
+/api/v1/ai-core/ai/sessions/{sessionId}:
+  get:
+/api/v1/ai-core/ai/sessions/{sessionId}/resume:
+  post:
+/api/v1/ai-core/ai/status:
+  get:
+/api/v1/ai-core/canary/number-safety:
+  get:
+/api/v1/ai-core/canary/run-probes:
+  post:
+/api/v1/ai-core/canary/validate:
+  post:
+/api/v1/ai-core/newsletter:
+  post:
 /api/v1/ai-core/providers:
   get:
 /api/v1/ai-core/status:
   get:
+/api/v1/ai/artifacts/{id}/promote:
+  post:
+/api/v1/ai/artifacts/{id}/rollback:
+  post:
+/api/v1/ai/canary/number-safety:
+  get:
+/api/v1/ai/canary/run-probes:
+  post:
+/api/v1/ai/canary/validate:
+  post:
 /api/v1/ai/command:
   post:
+/api/v1/ai/learning/artifacts:
+  get:
+/api/v1/ai/learning/optimize:
+  post:
+/api/v1/ai/learning/reports:
+  get:
+/api/v1/ai/learning/status:
+  get:
 /api/v1/ai/process/stream:
   post:
 /api/v1/ai/scenario:
@@ -29,6 +551,8 @@
 /api/v1/analytics/category-trends:
   get:
 /api/v1/analytics/income-expense:
+  get:
+/api/v1/analytics/multi-currency-summary:
   get:
 /api/v1/analytics/overview:
   get:
@@ -43,6 +567,8 @@
   post:
 /api/v1/audit/events:
   get:
+/api/v1/auth/2fa/complete:
+  post:
 /api/v1/auth/2fa/disable:
   post:
 /api/v1/auth/2fa/setup:
@@ -90,10 +616,35 @@
   post:
 /api/v1/billing/checkout:
   post:
+/api/v1/billing/credits:
+  post:
+/api/v1/billing/dunning:
+  get:
+/api/v1/billing/dunning/retry:
+  post:
+/api/v1/billing/dunning/simulate-failure:
+  post:
+/api/v1/billing/invoices:
+  get:
+/api/v1/billing/invoices/{id}/pdf:
+  get:
 /api/v1/billing/portal:
   get:
 /api/v1/billing/webhook:
   post:
+/api/v1/blogs:
+  get:
+  post:
+/api/v1/blogs/{id}/like:
+  post:
+/api/v1/blogs/{slug}:
+  get:
+/api/v1/blogs/categories:
+  get:
+/api/v1/blogs/featured:
+  get:
+/api/v1/budget-health:
+  get:
 /api/v1/calendar-reminders:
   get:
   post:
@@ -101,6 +652,10 @@
   delete:
 /api/v1/calendar-reminders/{id}/toggle:
   patch:
+/api/v1/calendar-reminders/batch-complete:
+  post:
+/api/v1/calendar-reminders/clear-completed:
+  post:
 /api/v1/category-rules:
   get:
   post:
@@ -119,6 +674,8 @@
 /api/v1/chat/sessions/{sessionId}/messages:
   get:
   post:
+/api/v1/command-center:
+  get:
 /api/v1/comments:
   get:
   post:
@@ -145,6 +702,14 @@
   get:
 /api/v1/exports/{id}/download:
   get:
+/api/v1/exports/schedules:
+  get:
+  post:
+/api/v1/exports/schedules/{id}:
+  patch:
+  delete:
+/api/v1/exports/schedules/{id}/run:
+  post:
 /api/v1/feature-flags:
   get:
 /api/v1/feature-flags/{key}:
@@ -158,6 +723,18 @@
   delete:
 /api/v1/files/{id}/analyze:
   post:
+/api/v1/files/{id}/render-pdf:
+  post:
+/api/v1/files/authored-document:
+  post:
+/api/v1/files/qa:
+  post:
+/api/v1/files/render-pdf:
+  post:
+/api/v1/files/rendered/{fileId}/download:
+  get:
+/api/v1/files/search:
+  post:
 /api/v1/finance/accounts:
   get:
   post:
@@ -166,9 +743,19 @@
 /api/v1/finance/budgets/{periodKey}/allocations:
   get:
   put:
+/api/v1/finance/budgets/{periodKey}/allocations/{id}:
+  delete:
 /api/v1/finance/budgets/{periodKey}/envelopes:
   get:
+/api/v1/finance/budgets/{periodKey}/rebalance:
+  post:
 /api/v1/finance/forecast:
+  get:
+/api/v1/finance/health-score:
+  post:
+/api/v1/finance/health-score/chart:
+  get:
+/api/v1/finance/health-score/trend:
   get:
 /api/v1/finance/merchants:
   get:
@@ -187,8 +774,12 @@
   patch:
 /api/v1/financial-journal/entries/{id}/insights:
   post:
+/api/v1/financial-journal/entries/batch-sync:
+  post:
 /api/v1/financial-journal/recognize-handwriting:
   post:
+/api/v1/financial-journal/semantic-search:
+  get:
 /api/v1/financial-profiles/{userId}:
   get:
   put:
@@ -197,11 +788,29 @@
 /api/v1/financial-profiles/me:
   get:
   put:
+/api/v1/follow-through/feedback:
+  post:
+/api/v1/follow-through/preferences:
+  get:
+  put:
+/api/v1/follow-through/recommendations:
+  get:
 /api/v1/goals:
   post:
 /api/v1/goals/{goalId}:
   patch:
   delete:
+/api/v1/growth-stories:
+  get:
+  post:
+/api/v1/growth-stories/{id}/like:
+  post:
+/api/v1/growth-stories/{slug}:
+  get:
+/api/v1/growth-stories/categories:
+  get:
+/api/v1/growth-stories/featured:
+  get:
 /api/v1/integrations:
   get:
 /api/v1/integrations/{id}/connect:
@@ -218,11 +827,28 @@
   get:
 /api/v1/integrations/transactions_csv/import:
   post:
+/api/v1/internal/tools/catalog:
+  get:
+/api/v1/internal/tools/execute:
+  post:
+/api/v1/internal/tools/simulate:
+  post:
 /api/v1/marketplace/catalog:
   get:
 /api/v1/marketplace/install:
   post:
 /api/v1/media/{fileId}:
+  get:
+/api/v1/newsletter/history:
+  get:
+/api/v1/newsletter/preferences:
+  get:
+  put:
+/api/v1/newsletter/preview:
+  post:
+/api/v1/newsletter/send-now:
+  post:
+/api/v1/newsletter/unsubscribe/{token}:
   get:
 /api/v1/notifications:
   get:
@@ -273,18 +899,28 @@
   post:
 /api/v1/search:
   get:
+/api/v1/search/unified-context:
+  get:
+  post:
 /api/v1/security/audit-log:
   get:
 /api/v1/shares/financial-story:
   post:
 /api/v1/tasks:
   get:
+  post:
 /api/v1/tasks/{id}:
   get:
   patch:
 /api/v1/tasks/{id}/apply:
   post:
+/api/v1/tasks/dispatch-webhook:
+  post:
 /api/v1/tasks/from-plan:
+  post:
+/api/v1/tasks/webhook-token:
+  get:
+/api/v1/tasks/webhook/{token}:
   post:
 /api/v1/tools/execute:
   post:
@@ -296,7 +932,23 @@
 /api/v1/transactions/{id}:
   patch:
   delete:
+/api/v1/transactions/{id}/always-categorize:
+  post:
+/api/v1/transactions/{id}/approve:
+  post:
+/api/v1/transactions/bank-feed:
+  post:
+/api/v1/transactions/bulk-approve:
+  post:
+/api/v1/transactions/bulk-categorize:
+  post:
+/api/v1/transactions/bulk-delete:
+  post:
 /api/v1/transactions/import:
+  post:
+/api/v1/transactions/merchant-clusters:
+  get:
+/api/v1/transactions/merchant-clusters/apply:
   post:
 /api/v1/transactions/recent:
   get:
@@ -306,6 +958,38 @@
   post:
 /api/v1/usage/ledger:
   get:
+/api/v1/voice/analytics:
+  post:
+/api/v1/voice/assist:
+  post:
+/api/v1/voice/billing:
+  post:
+/api/v1/voice/biometrics/verify:
+  post:
+/api/v1/voice/collections:
+  post:
+/api/v1/voice/dispute:
+  post:
+/api/v1/voice/expense-preview:
+  post:
+/api/v1/voice/languages:
+  get:
+/api/v1/voice/lead-qualification:
+  post:
+/api/v1/voice/log-expense:
+  post:
+/api/v1/voice/query:
+  post:
+/api/v1/voice/schemes:
+  post:
+/api/v1/voice/status:
+  get:
+/api/v1/voice/synthesize:
+  post:
+/api/v1/voice/tax-advisor:
+  post:
+/api/v1/voice/transcribe:
+  post:
 /api/v1/workflows:
   get:
   post:
@@ -313,3 +997,46 @@
   post:
 /api/v1/workflows/templates:
   get:
+/api/v1/workflows/webhook/{token}:
+  post:
+/api/voice/analytics:
+  post:
+/api/voice/assist:
+  post:
+/api/voice/billing:
+  post:
+/api/voice/biometrics/verify:
+  post:
+/api/voice/collections:
+  post:
+/api/voice/dispute:
+  post:
+/api/voice/expense-preview:
+  post:
+/api/voice/languages:
+  get:
+/api/voice/lead-qualification:
+  post:
+/api/voice/log-expense:
+  post:
+/api/voice/query:
+  post:
+/api/voice/schemes:
+  post:
+/api/voice/status:
+  get:
+/api/voice/synthesize:
+  post:
+/api/voice/tax-advisor:
+  post:
+/api/voice/transcribe:
+  post:
+/api/workflows:
+  get:
+  post:
+/api/workflows/{id}/run:
+  post:
+/api/workflows/templates:
+  get:
+/api/workflows/webhook/{token}:
+  post:

@@ -4,7 +4,16 @@ import DomainEventModel from "../../models/domainEventModel";
 import { getEnv } from "../../config/env";
 import { logger } from "../../config/logger";
 import { getEventBus } from "./eventBus";
+import { tryAcquireLeadership } from "../../services/leaderElection";
 
+// Lease expiration TTL for domain event fanout leadership acquisition.
+// Sets distributed lock duration to 15 seconds to prevent multiple replica fanout contention.
+// Ensures failover recovery if the active fanout leader replica crashes.
+const FANOUT_LEASE_MS = 15_000;
+
+// Initializes domain event tailing and broadcasts new domain events over the event bus.
+// Employs MongoDB change streams where available with polling fallback for resilience.
+// Coordinates leadership election when Redis bus is configured to prevent duplicate dispatches.
 export const startDomainEventFanout = () => {
   const env = getEnv();
 
@@ -20,6 +29,26 @@ export const startDomainEventFanout = () => {
   let changeStream: any | null = null;
   let usingChangeStream = false;
 
+  // With the Redis event bus every replica would publish every event (N duplicates); only the
+  // elected leader publishes. Followers still advance their cursor so a takeover does not replay
+  // old events. With the in-process bus each replica must publish to its own SSE clients.
+  const needsLeader = env.EVENT_BUS === "redis";
+  let leaderUntil = 0;
+  // Determines whether the current replica instance holds leadership for event broadcasting.
+  // Renews distributed lease via tryAcquireLeadership if lease TTL is approaching expiration.
+  // Defaults to true when running local event buses where each node must notify its own clients.
+  const isLeader = async (): Promise<boolean> => {
+    if (!needsLeader) return true;
+    const now = Date.now();
+    if (now < leaderUntil) return true;
+    const ok = await tryAcquireLeadership("domain-event-fanout", FANOUT_LEASE_MS);
+    if (ok) leaderUntil = now + FANOUT_LEASE_MS / 3;
+    return ok;
+  };
+
+  // Queries database for the most recent domain event ObjectId to initialize cursor position.
+  // Seeds lastSeenId so the fanout service only processes newly arrived events.
+  // Prevents re-broadcasting entire historical event collections on service startup.
   const hydrateCursor = async () => {
     const latest = await DomainEventModel.findOne({})
       .sort({ _id: -1 })
@@ -31,6 +60,9 @@ export const startDomainEventFanout = () => {
     }
   };
 
+  // Formats and dispatches a database domain event record through the realtime event bus.
+  // Standardizes event metadata fields, aggregate details, and payload dictionary.
+  // Routes message directly to subscribed clients of the event organization.
   const publishDoc = (doc: any) => {
     bus.publish({
       kind: "domain_event",
@@ -49,6 +81,9 @@ export const startDomainEventFanout = () => {
     });
   };
 
+  // Closes active MongoDB change stream listener and removes bound event handlers.
+  // Cleans up database driver change stream resources safely on shutdown or failover.
+  // Resets change stream status flags to allow fallback to timer polling.
   const stopChangeStream = () => {
     if (!changeStream) return;
     try {
@@ -61,11 +96,15 @@ export const startDomainEventFanout = () => {
     usingChangeStream = false;
   };
 
+  // Polling execution cycle fetching newly inserted domain events newer than lastSeenId.
+  // Fetches event batches in chronological order, updates local cursor, and dispatches events.
+  // Guards against overlapping concurrent executions with tickInFlight state latch.
   const tick = async () => {
     if (stopped || tickInFlight) return;
     tickInFlight = true;
 
     try {
+      const leader = await isLeader();
       const query: any = {};
       if (lastSeenId) {
         query._id = { $gt: lastSeenId };
@@ -91,7 +130,7 @@ export const startDomainEventFanout = () => {
         const id = String(doc?._id || "");
         if (!mongoose.Types.ObjectId.isValid(id)) continue;
         lastSeenId = new mongoose.Types.ObjectId(id);
-        publishDoc(doc);
+        if (leader) publishDoc(doc);
       }
     } catch (error) {
       logger.warn({ error, event: "domain_event_fanout_failed" }, "Domain event fanout tick failed");
@@ -100,6 +139,9 @@ export const startDomainEventFanout = () => {
     }
   };
 
+  // Starts interval polling timer to periodically trigger event ingestion cycles.
+  // Unrefs timer so it does not block node runtime shutdown when idle.
+  // Reads poll interval frequency from application environment configuration.
   const startPolling = () => {
     if (stopped) return;
     const intervalMs = env.DOMAIN_EVENT_FANOUT_POLL_INTERVAL_MS;
@@ -111,6 +153,9 @@ export const startDomainEventFanout = () => {
     );
   };
 
+  // Initializes MongoDB change stream watching insertion operations on DomainEvent collection.
+  // Immediately processes new event documents as soon as they commit to database oplog.
+  // Automatically falls back to interval polling if change stream initialization encounters errors.
   const startWatching = () => {
     if (stopped) return;
 
@@ -136,10 +181,14 @@ export const startDomainEventFanout = () => {
         if (mongoose.Types.ObjectId.isValid(id)) {
           lastSeenId = new mongoose.Types.ObjectId(id);
         }
-        publishDoc(doc);
       } catch {
-        // ignore publish errors
+        // ignore cursor errors
       }
+      void isLeader()
+        .then((leader) => {
+          if (leader && !stopped) publishDoc(doc);
+        })
+        .catch(() => undefined);
     });
 
     changeStream.on("error", (error: any) => {

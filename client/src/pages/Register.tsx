@@ -1,7 +1,31 @@
-import { useEffect } from "react";
+/**
+ * @fileoverview Registration page with name, email, phone, referral code, and password.
+ *
+ * Collects new user credentials through a validated form (react-hook-form
+ * + zod) and submits to POST /api/auth/register.  On success, stores
+ * the email (and dev OTP when present) in sessionStorage and navigates
+ * to /verify-email for the OTP confirmation step.
+ *
+ * Key data flows:
+ * - POST /api/auth/register creates the account; the server returns
+ *   a dev_otp in development mode for local testing.
+ * - ?next= query param is preserved across registration so the
+ *   post-verification redirect lands on the intended page.
+ *
+ * Password rules: min 8 chars, upper + lower + digit required.
+ * Phone is optional (regex-validated when provided).
+ * Referral code is optional (6-16 alphanumeric, uppercased).
+ *
+ * Feature highlights (multi-agent guidance, security, referral-ready)
+ * are shown on the left side of the split layout.
+ *
+ * Routed at /register; linked from Login page and public marketing.
+ */
+
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Brain, Gift, ShieldCheck, Sparkles } from "lucide-react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -19,13 +43,26 @@ import { Label } from "@/components/ui/Label";
 import { ApiError, apiClient } from "@/lib/apiClient";
 import { useToast } from "@/hooks/useToast";
 import { getSearchParam, sanitizeNextPath } from "@/lib/url";
+import { buildGoogleAuthUrl } from "@/lib/googleAuth";
 
+// SessionStorage key storing deep-link destinations for post-registration routing.
+// Preserves initial target page when users sign up via shared links or invites.
+// Cleared once post-verification redirect completes successfully.
 const POST_AUTH_REDIRECT_KEY = "finwise.post_auth_redirect";
 
+// Regular expression for validating optional international and domestic phone numbers.
+// Matches leading optional plus symbol followed by 10 to 15 digits.
+// Rejects malformed phone entries during registration form validation.
 const phoneRegex = /^[+]?[0-9]{10,15}$/;
+// Sanitizes empty string inputs by converting them into undefined values.
+// Ensures optional Zod schema fields are skipped when users leave inputs blank.
+// Prevents validation failures on empty non-required text inputs.
 const emptyStringToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim().length === 0 ? undefined : value;
 
+// Zod validation schema defining registration form inputs and constraints.
+// Validates name length, email format, phone format, and referral code rules.
+// Enforces minimum 8-character password security with upper, lower, and digit checks.
 const registerSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters" }),
   email: z.string().email({ message: "Please enter a valid email" }),
@@ -53,6 +90,9 @@ const registerSchema = z.object({
     }),
 });
 
+// Product marketing feature highlights displayed on registration page split layout.
+// Emphasizes multi-agent intelligence, local-first security, and referral rewards.
+// Provides informative visual cues alongside the sign-up form.
 const highlights = [
   {
     icon: Brain,
@@ -71,34 +111,67 @@ const highlights = [
   },
 ];
 
+// New user account registration page with form validation and Google OAuth.
+// Collects user profile details, handles referral codes, and starts verification flow.
+// Stores post-auth destination in session storage and redirects to email verification.
 export default function Register() {
   const { toast } = useToast();
-  const [location, navigate] = useLocation();
+  const [, navigate] = useLocation();
+  // wouter v3: useLocation() is pathname-only; the query string comes from useSearch().
+  const search = useSearch();
+  const [googleEnabled, setGoogleEnabled] = useState(false);
 
   useEffect(() => {
-    const next = sanitizeNextPath(getSearchParam(location, "next"));
+    const next = sanitizeNextPath(getSearchParam(`?${search}`, "next"));
     if (!next) return;
     try {
       sessionStorage.setItem(POST_AUTH_REDIRECT_KEY, next);
     } catch {
       // ignore
     }
-  }, [location]);
+  }, [search]);
 
+  // Check if Google OAuth is available on the server
+  useEffect(() => {
+    (async () => {
+      try {
+        const providers = await apiClient<{ email: boolean; google: boolean }>("/auth/providers", { method: "GET" });
+        setGoogleEnabled(Boolean(providers.google));
+      } catch {
+        setGoogleEnabled(false);
+      }
+    })();
+  }, []);
+
+  /** Redirect to Google OAuth flow (server-side Passport.js redirect) */
   const {
     register,
     handleSubmit,
     setValue,
+    getValues,
     formState: { errors, isSubmitting },
-  } = useForm<z.infer<typeof registerSchema>>({
+  } = useForm<z.input<typeof registerSchema>, unknown, z.output<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
   });
 
+  /** Redirect to the server-side Google flow, carrying the referral code and post-login path. */
+  const handleGoogleSignIn = () => {
+    let stored: string | null = null;
+    try {
+      stored = sessionStorage.getItem(POST_AUTH_REDIRECT_KEY);
+    } catch {
+      // ignore
+    }
+    const next = sanitizeNextPath(getSearchParam(`?${search}`, "next")) ?? sanitizeNextPath(stored);
+    const ref = getValues("referralCode") ?? getSearchParam(`?${search}`, "ref");
+    window.location.href = buildGoogleAuthUrl({ next, ref: typeof ref === "string" ? ref : null });
+  };
+
   useEffect(() => {
-    const ref = getSearchParam(location, "ref");
+    const ref = getSearchParam(`?${search}`, "ref");
     if (!ref) return;
     setValue("referralCode", ref.trim().toUpperCase());
-  }, [location, setValue]);
+  }, [search, setValue]);
 
   const onSubmit = async (data: z.infer<typeof registerSchema>) => {
     try {
@@ -252,6 +325,23 @@ export default function Register() {
                 <Button type="submit" className="mt-2 w-full" disabled={isSubmitting}>
                   {isSubmitting ? "Creating account..." : "Create account"}
                 </Button>
+
+                {/* Google OAuth sign-up button — only shown when Google provider is enabled */}
+                {googleEnabled ? (
+                  <>
+                    <div className="relative my-2">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+                      </div>
+                    </div>
+                    <Button variant="outline" className="w-full" type="button" onClick={handleGoogleSignIn}>
+                      Continue with Google
+                    </Button>
+                  </>
+                ) : null}
               </form>
 
               <div className="mt-4 rounded-2xl border border-border/70 bg-background/65 p-3 text-xs leading-5 text-muted-foreground">

@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Single growth story detail view with transformation metrics.
+ *
+ * Fetches a growth story by slug and renders the full narrative with
+ * challenge, journey, and outcome sections in markdown.  A sidebar
+ * displays financial metrics (income change, debt reduction, savings
+ * growth) and the strategies list.  The FinancialTransformationChart
+ * component visualizes before/after financial data.
+ *
+ * Key data flows:
+ * - getGrowthStoryBySlug(slug) loads the story, metrics, and metadata.
+ * - toggleGrowthStoryLike(slug) increments the like count with
+ *   optimistic React Query cache update.
+ *
+ * Cover images are resolved via resolveGrowthStoryCoverImage for
+ * CDN-aware URLs.  Monetary values use INR formatting.
+ *
+ * Routed at /growth-stories/:slug; linked from the GrowthStories
+ * listing page.  Shows a skeleton while loading and an error alert
+ * if the story is not found.
+ */
+
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -31,6 +53,9 @@ import { getGrowthStoryBySlug, toggleGrowthStoryLike } from "@/lib/apiClient";
 import { resolveGrowthStoryCoverImage } from "@/lib/media";
 import { useToast } from "@/hooks/useToast";
 
+// Formats numerical currency amounts in Indian Rupees (INR) with localized separators.
+// Suppresses fractional decimal digits for clean readability in milestone metrics.
+// Used for displaying financial transformation figures like net worth and debt cleared.
 const formatINR = (value: number) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -38,6 +63,9 @@ const formatINR = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
+// Detailed view page for an individual financial growth and transformation story.
+// Renders rich story content, before-and-after financial metrics, and interactive charts.
+// Provides like interactions, social sharing, reading progress indicators, and comment threads.
 export default function GrowthStoryDetail() {
   const [, params] = useRoute("/growth-stories/:slug");
   const slug = params?.slug;

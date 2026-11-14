@@ -4,6 +4,10 @@ Welcome to the ultimate guide for the Personal Finance Platform. This vast docum
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## TABLE OF CONTENTS
 
 1. [Platform Overview](#1-platform-overview)
@@ -203,3 +207,189 @@ For absolute peace of mind, Administrators can view the unmodifiable Audit Log. 
 ---
 
 _End of User Manual. For technical architecture or API endpoints, please see ARCHITECTURE.md and API.md._
+
+## User & Admin Experience Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0284c7', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0369a1', 'lineColor': '#8b5cf6', 'secondaryColor': '#ec4899', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((📱 FinWise User Experience))
+    🖥️ FinanceOS Operating Space
+      Command Center (Quick Action Launcher)
+      Budget Health Dial (Composite 0-100 Score)
+      Net Worth & Spending Trends
+      Live Notifications & Activity Feed
+    💳 Daily Transaction Management
+      Instant Transaction Review Queue
+      Batch Approval & "Always Categorize" Rules
+      Multi-Receipt OCR Camera Scanning
+      CSV / Bank Statement Bulk Import
+    🧠 AI Copilot & Planning
+      Context-Aware Financial Assistant
+      Debt Avalanche vs Snowball Visualizer
+      50/30/20 & Zero-Based Budget Generators
+      Inspectable Evidence & Source Grounding
+    🏢 Collaboration & Workspace Admin
+      Household & Team Org Switching
+      Granular Role Permissions (Owner / Member)
+      Weekly Digest Financial Newsletter
+      Tamper-Evident Security Audit Logs
+```
+
+## User Daily Operating Lifecycle & Review ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 1: MORNING BRIEFING & COMMAND CENTER                           │
+│    User opens FinanceOS dashboard ──► Inspects Budget Health Score     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 💳 STEP 2: TRANSACTION REVIEW QUEUE                                    │
+│    ├─► Review 5 new uncategorized transactions imported from bank/CSV  │
+│    ├─► Click "Categorize with AI" ──► Auto-assigned: Food & Groceries  │
+│    ├─► Click "Always Categorize 'Trader Joe' as Groceries"             │
+│    └─► Click "Approve All"; transactions merge into confirmed ledger 🟢│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧠 STEP 3: FINANCIAL COPILOT CONSULTATION                              │
+│    ├─► User asks: "Can I afford a $2,000 summer vacation?"            │
+│    ├─► AI analyzes savings rate, current debt, and emergency buffer    │
+│    └─► Generates 3-month savings plan with milestone checkpoints 🟢    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📊 STEP 4: GOAL PROGRESS & NEWSLETTER PREVIEW                          │
+│    ├─► View vacation goal updated to 65% complete                      │
+│    └─► Download PDF executive summary report for weekly review 🟢      │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+## Production Implementation Blueprint: Client CSV Importer (`client/src/lib/csvImporter.ts`)
+
+```typescript
+import Papa from "papaparse";
+
+export interface ParsedCsvTransaction {
+  date: string;
+  description: string;
+  amount: number;
+  type: "income" | "expense";
+  category?: string;
+}
+
+export function parseTransactionCsv(csvText: string): Promise<ParsedCsvTransaction[]> {
+  return new Promise((resolve, reject) => {
+    Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.trim().toLowerCase(),
+      complete: (results) => {
+        try {
+          const transactions: ParsedCsvTransaction[] = results.data.map((row: any) => {
+            const rawAmount = parseFloat(row.amount || row.price || "0");
+            const isNegative = rawAmount < 0;
+            const amount = Math.abs(rawAmount);
+
+            return {
+              date: new Date(row.date || row.timestamp || Date.now()).toISOString(),
+              description: String(row.description || row.payee || "Uncategorized Item").trim(),
+              amount,
+              type: isNegative || row.type === "expense" ? "expense" : "income",
+              category: row.category ? String(row.category).trim() : undefined,
+            };
+          });
+          resolve(transactions);
+        } catch (err) {
+          reject(new Error("FAILED_CSV_TRANSFORM: Malformed data rows detected"));
+        }
+      },
+      error: (err) => reject(err),
+    });
+  });
+}
+```
+---
+
+# Chapter 7: 2026 Advanced Autonomous Intelligence & Financial Cockpit User Manual
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0891b2', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0e7490', 'lineColor': '#06b6d4', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((User Manual 2026))
+    Command Center
+      Liquid Runway Days
+      Urgency Priority Chips
+      7-Day Forward Outflows
+    Review Queue
+      ML Merchant Clustering
+      Confidence Score Gating
+      Split Transaction Editor
+    Budget Health
+      Circular SVG Health Gauge
+      Burn-Rate Alerts
+      Zero-Sum Shift Modal
+    Financial Calendar
+      Monthly Deadlines & Reminders
+      One-Click Status Toggle
+      Live .ics Calendar Sync
+    Financial Journal
+      Offline Draft Persistence
+      Batch Sync Reconnect
+      64-D Semantic Vector Search
+    Automation Workflows
+      Visual Node Graph Canvas
+      Configurable Delay Timers
+      Live Step Execution Logs
+```
+
+## 7.1 Daily Command Center ("Today in FinWise")
+The Command Center serves as your primary daily financial cockpit:
+- **Cash Runway in Days**: Displays exactly how many days your liquid accounts can sustain current burn rates without additional income.
+- **Urgency Priority Chips**:
+  - `Act now`: High-urgency action items (e.g. bills due within 48 hours).
+  - `Review this week`: Items requiring triage (e.g. unreviewed transaction clusters).
+  - `Safe to ignore`: Low-priority notifications.
+- **7-Day Bill Projection**: Calendar timeline listing every confirmed scheduled debit and payroll deposit.
+
+---
+
+## 7.2 Transaction Review Queue & ML Merchant Clusters
+- **Confidence Triage**: Automatically categorizes transactions. Items with model confidence $< 0.70$ are routed to your review queue.
+- **Merchant Clusters**: Similar transactions (e.g., "SQ *BLUE BOTTLE", "BLUE BOTTLE COFFEE SF") are automatically grouped into a single centroid. Approving one categorizes all matching transactions and creates an automatic matching rule for future receipts.
+- **Split Transactions**: Click the "Split" button on any transaction to divide a single merchant receipt across multiple categories (e.g., splitting a \$150 Walmart charge into \$100 Groceries and \$50 Household Goods).
+
+---
+
+## 7.3 Budget Health Gauge & Zero-Sum Rebalancing
+- **0–100 Circular Health Gauge**: Visual SVG indicator displaying overall financial health based on 4 pillars: Budget Adherence (40%), Review Cleanliness (20%), Goal Progress (20%), and Debt Amortization (20%).
+- **Burn-Rate Alerts**: Identifies categories whose pacing projects an overspend before the end of the month.
+- **Zero-Sum Auto-Rebalancing**: If a category is overspent, clicking "Review Rebalancing" presents an automated proposal to transfer funds exclusively from underutilized discretionary budgets. The system mathematically guarantees zero budget expansion ($\sum \Delta B_i = 0$).
+
+---
+
+## 7.4 Financial Calendar & Live iCal Sync
+- **Interactive Calendar Grid**: Displays all recurring bills, debt payment deadlines, and quarterly tax dates.
+- **Mark as Completed**: Click any reminder to toggle its status between `pending` and `completed`. Completed items display with an instantaneous visual strike-through.
+- **Live iCal (.ics) Feed**: Click "Subscribe to Calendar" to copy the live RFC 5545 `.ics` feed URL into Google Calendar, Apple Calendar, or Outlook for automatic synchronization with your mobile devices.
+
+---
+
+## 7.5 Personal Financial Journal & Offline Sync
+- **Offline-First Editing**: Take notes, log cash expenses, or record financial thoughts anywhere—even on an airplane or subway without internet. All edits are instantly saved to your browser's local storage.
+- **Automatic Cloud Synchronization**: As soon as your device reconnects to Wi-Fi or cellular data, all queued drafts are seamlessly synced to the cloud with full duplicate protection.
+- **Semantic Vector Search**: Use the natural language search bar (e.g., "How much did I spend on souvenirs in Tokyo?") to search your notes using 64-dimensional semantic embedding similarity.
+
+---
+
+## 7.6 Visual Automation Workflows
+- **Node Graph Canvas**: Create custom financial workflows by dragging and connecting Trigger, Condition, Delay, and Action nodes.
+- **Delay Cooldown Timers**: Add a Delay node (e.g., "Wait 60 minutes after any purchase over \$500 before sending an impulse purchase alert") to establish mindful spending habits.
+- **Execution Run Timeline**: Inspect the step-by-step audit logs of every automated workflow run to verify condition checks and delivery status.

@@ -1,3 +1,29 @@
+"""
+main.py - CLI Entry Point for FinWise AI Financial Assistant
+=============================================================
+
+This module provides an **interactive command-line interface** for the FinWise
+AI Financial Assistant.  It is intended for local development, demos, and
+manual testing -- the production entry point is ``api_service.py`` (FastAPI).
+
+What it does
+------------
+1. Loads environment variables from ``.env`` files.
+2. Optionally initialises a Gemini-based **query router** that classifies
+   user questions as "user_specific" or "general".
+3. Creates a sample ``UserProfile`` with realistic financial data.
+4. Initialises the LangGraph multi-agent ``FinancialWorkflow``.
+5. Enters a REPL loop where the user can type financial questions and
+   receive analysis from the multi-agent system.
+
+Design notes
+------------
+- The query router is optional: if ``GEMINI_API_KEY`` is not set, all
+  queries default to "user_specific" analysis (personal profile required).
+- The sample profile is hardcoded for demonstration purposes.  In
+  production, the profile comes from the HTTP request body.
+"""
+
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -10,7 +36,8 @@ from graph.state import FinancialGoal, UserProfile
 from graph.workflow import create_financial_workflow
 from utils import ColorFormatter, setup_logging
 
-# Load environment variables first
+# Load environment variables from .env files into os.environ.
+# Must happen before any code that reads os.getenv().
 load_dotenv()
 
 # Initialize Windows-compatible color output if available
@@ -22,7 +49,14 @@ except Exception:
     pass
 
 
+# Validates whether upstream AI provider API credentials are configured.
+# Checks environment keys and falls back to deterministic execution if missing.
+# Returns a boolean status indicating whether Gemini features are active.
 def _validate_provider_config() -> bool:
+    """Check whether at least one LLM API key is configured.
+
+    Returns True if valid, False if running in degraded (deterministic-only) mode.
+    """
     try:
         settings.validate_api_key()
         return True
@@ -33,7 +67,16 @@ def _validate_provider_config() -> bool:
         return False
 
 
+# Constructs a LangChain classification chain using Google Gemini models.
+# Distinguishes between personalized financial requests and general queries.
+# Returns an executable classification chain or None if credentials fail.
 def _build_router_chain(gemini_available: bool, logger) -> Optional[object]:
+    """Build a Gemini-based query classifier (user_specific vs general).
+
+    Returns a LangChain chain that classifies queries, or None if Gemini
+    is unavailable.  The chain is used to decide whether to pass the
+    user profile to the workflow or treat the query as general education.
+    """
     if not gemini_available:
         return None
 
@@ -60,6 +103,9 @@ Question: {question}"""
         return None
 
 
+# Instantiates a mock user financial profile with transactions and goals.
+# Supplies sample incomes, expenses, debts, and risk tolerance attributes.
+# Returns a populated UserProfile dataclass instance for demo execution.
 def create_sample_user_profile() -> UserProfile:
     goals = [
         FinancialGoal(name="Emergency Fund", target=15000, timeline_months=12, priority=1),
@@ -95,6 +141,9 @@ def create_sample_user_profile() -> UserProfile:
     )
 
 
+# Serves as the interactive CLI application entry point and REPL loop.
+# Initializes multi-agent workflows, parses terminal inputs, and prints plans.
+# Dispatches prompts to LangGraph workflows and formats agent output responses.
 def main():
     logger = setup_logging()
     gemini_available = _validate_provider_config()
@@ -171,5 +220,8 @@ def main():
         logger.error(f"Initialization error: {exc}")
 
 
+# Executes the command-line interface when invoked directly as a script.
+# Initiates logging, environment configurations, and the main interaction loop.
+# Serves as the primary local terminal entry point for the AI Core engine.
 if __name__ == "__main__":
     main()

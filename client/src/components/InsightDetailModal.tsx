@@ -1,3 +1,25 @@
+/**
+ * @fileoverview InsightDetailModal — full-screen dialog for viewing a single AI-generated
+ * insight with markdown-rendered analysis, task creation, thumbs-up/down feedback, and
+ * a contextual action button.
+ *
+ * WHAT IT DOES
+ *  - Fetches an `IAgentOutput` by `insightId` from `/api/agent-outputs/:id`.
+ *  - Renders the insight's `response` field as rich Markdown (headings, lists, code blocks).
+ *  - Offers "Add to tasks" to convert an embedded plan into trackable tasks via the API.
+ *  - Collects user feedback (thumbs up/down) on the insight via `submitAgentOutputFeedback`.
+ *  - Maps `actionType` to an in-app route for the "Take Action" button.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `insightId` (string | null) — the ID to fetch; null hides the dialog.
+ *  - `isOpen` / `onClose` — controlled dialog visibility.
+ *  - Mutations: `createTasksFromPlan`, `submitAgentOutputFeedback`.
+ *
+ * ARCHITECTURE NOTES
+ *  - Opened from `ActionableInsights` when a user clicks on an insight card.
+ *  - Uses the same markdown component map as `AiCommandBar` for visual consistency.
+ *  - All API errors are formatted with request IDs for support traceability.
+ */
 import {
   Dialog,
   DialogContent,
@@ -8,7 +30,7 @@ import {
   DialogClose
 } from "@/components/ui/Dialog";
 import { Button } from "@/components/ui/Button";
-import { Badge } from "@/components/ui/Badge"; 
+import { Badge } from "@/components/ui/Badge";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IAgentOutput } from "@/types";
@@ -20,6 +42,9 @@ import { ApiError, createTasksFromPlan, submitAgentOutputFeedback } from "@/lib/
 import { useToast } from "@/hooks/useToast";
 
 // Re-using the markdown styles from AICommandBar for consistency
+// Custom React Markdown element styling configuration for insight detail modal text.
+// Defines accessible typography classes for headings, paragraphs, lists, and code blocks.
+// Ensures uniform prose presentation across AI recommendations and analytical deep-dives.
 const markdownComponents = {
   h1: ({children}: any) => <h1 className="text-xl font-bold text-foreground mb-3 mt-4">{children}</h1>,
   h2: ({children}: any) => <h2 className="text-lg font-semibold text-foreground mb-2 mt-3">{children}</h2>,
@@ -32,12 +57,18 @@ const markdownComponents = {
   pre: ({children}: any) => <pre className="bg-muted p-3 rounded overflow-x-auto my-3">{children}</pre>,
 };
 
+// Property structure definition for the individual AI insight detail dialog.
+// Captures the target insight output identifier alongside visibility toggles.
+// Provides callback dispatchers for modal dismissal and route redirection.
 interface InsightDetailModalProps {
   insightId: string | null;
   isOpen: boolean;
   onClose: () => void;
 }
 
+// Comprehensive modal dialog presenting detailed AI financial recommendations.
+// Formats analytical insights with full Markdown styling, task creators, and ratings.
+// Provides direct deep-linking action dispatchers to resolve identified friction points.
 export function InsightDetailModal({ insightId, isOpen, onClose }: InsightDetailModalProps) {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();

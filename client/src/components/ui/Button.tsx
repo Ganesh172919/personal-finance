@@ -4,6 +4,9 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
+// Defines styling variants for interactive action buttons using CVA.
+// Sets baseline animations, hover micro-interactions, focus rings, and sizing.
+// Supports diverse variants (default, destructive, outline, secondary, ghost, link).
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
@@ -33,12 +36,18 @@ const buttonVariants = cva(
   }
 );
 
+// Props interface for the standard Button component.
+// Extends native HTML button attributes and class-variance-authority variants.
+// Supports asChild flag for polymorphic rendering via Radix UI Slot.
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
 }
 
+// Primary interactive button component supporting polymorphic slot rendering.
+// Applies designated size and variant styles with active click animations.
+// Forwards DOM references to the underlying button or custom child element.
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";

@@ -1,3 +1,25 @@
+/**
+ * @fileoverview Finance Recurring Controller (v1)
+ *
+ * Manages recurring transaction rules (subscriptions, bills, regular income).
+ * Rules define a cron schedule and optional amount/category constraints.
+ *
+ * Routes served:
+ *   GET    /api/v1/finance/recurring       - listRecurringRules
+ *   POST   /api/v1/finance/recurring       - createRecurringRule (admin)
+ *   PUT    /api/v1/finance/recurring/:id   - updateRecurringRule (admin)
+ *
+ * Key patterns:
+ *   - Cron expressions define when the rule should fire
+ *   - Optional merchant_id links rule to a specific merchant
+ *   - Amount range filters (min/max) for matching transactions
+ *   - Status can be "active" or "disabled"
+ *   - next_run_at stored as Date for scheduler queries
+ *   - List readable by any org member; create/update require admin role
+ *
+ * @module controllers/v1/financeRecurringController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -5,12 +27,18 @@ import RecurringRuleModel from "../../models/recurringRuleModel";
 import type { IUserDocument } from "../../models/userModel";
 import { HttpError } from "../../middleware/httpError";
 
+// Maps organization role identifiers to numeric rank values.
+// Supports hierarchical permission checks between member, admin, and owner tiers.
+// Leveraged by admin guard functions to verify execution authority.
 const roleRank: Record<"member" | "admin" | "owner", number> = {
   member: 1,
   admin: 2,
   owner: 3,
 };
 
+// Checks for valid organization context on the incoming HTTP request.
+// Throws a 401 unauthorized error if the organization context is omitted.
+// Returns the active organization ID transformed into a MongoDB ObjectId.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -18,6 +46,9 @@ const requireOrgContext = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Enforces that the requesting actor has administrator-level organizational privileges.
+// Verifies presence of organization state and validates role rank against threshold.
+// Throws a 403 access denied exception if the role is lower than admin.
 const requireOrgAdmin = (req: Request) => {
   const orgId = requireOrgContext(req);
   if (roleRank[req.org!.role] < roleRank.admin) {
@@ -26,6 +57,9 @@ const requireOrgAdmin = (req: Request) => {
   return orgId;
 };
 
+// Serializes a raw recurring rule database document into an external API payload.
+// Formats schedule cron expressions, merchant details, category limits, and next run date.
+// Ensures uniform property names and fallback representations for null fields.
 const mapRule = (rule: any) => ({
   id: String(rule._id),
   status: String(rule.status || "active"),
@@ -42,6 +76,9 @@ const mapRule = (rule: any) => ({
   updated_at: rule.updatedAt || null,
 });
 
+// Lists all recurring transaction rules configured for the organization.
+// Supports pagination limiting and sorts rules by latest update timestamp.
+// Returns the transformed list of recurring rules along with the request identifier.
 export const listRecurringRules = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const limitRaw = Number((req.query as any)?.limit);
@@ -56,6 +93,9 @@ export const listRecurringRules = async (req: Request, res: Response) => {
   });
 };
 
+// Creates a new recurring transaction rule governing scheduled bills or subscriptions.
+// Validates administrator authorization, cron syntax, and optional merchant linkage.
+// Persists the rule in the database and returns the serialized entity with HTTP 201.
 export const createRecurringRule = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;
@@ -94,6 +134,9 @@ export const createRecurringRule = async (req: Request, res: Response) => {
   });
 };
 
+// Updates an existing recurring transaction rule identified by its MongoDB ObjectId.
+// Validates admin credentials, sanitizes mutable fields, and handles schedule changes.
+// Executes an atomic update in the database and returns the updated rule representation.
 export const updateRecurringRule = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;

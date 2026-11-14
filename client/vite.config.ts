@@ -18,13 +18,13 @@ export default defineConfig(({ mode }) => {
       react(),
       VitePWA({
         registerType: "autoUpdate",
-        includeAssets: ["favicon.ico", "apple-touch-icon.png"],
+        includeAssets: ["favicon.svg", "apple-touch-icon.png"],
         manifest: {
           name: "Personal Finance — AI Financial Strategist",
           short_name: "Personal Finance",
           description: "Your AI-powered finance co-pilot for budgeting, insights, and automation",
-          theme_color: "#34d399",
-          background_color: "#000000",
+          theme_color: "#2563eb",
+          background_color: "#ffffff",
           display: "standalone",
           scope: "/",
           start_url: "/",
@@ -36,18 +36,16 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+          // PDF/media/download navigations must reach the authenticated API.
+          // Otherwise Workbox serves index.html and displays a false 404 page.
+          navigateFallbackDenylist: [/^\/api(?:\/|$)/],
           runtimeCaching: [
             {
-              urlPattern: /^\/api\/v1\/.*/i,
-              handler: "NetworkFirst",
-              options: {
-                cacheName: "api-cache",
-                expiration: { maxEntries: 50, maxAgeSeconds: 300 },
-                networkTimeoutSeconds: 10,
-              },
-            },
-            {
-              urlPattern: /\.(png|jpg|jpeg|svg|gif|webp)$/i,
+              // Keep authenticated API responses and uploaded documents out of
+              // persistent service-worker caches, including receipt images.
+              urlPattern: ({ url, sameOrigin }) => sameOrigin &&
+                !url.pathname.startsWith("/api/") &&
+                /\.(png|jpg|jpeg|svg|gif|webp)$/i.test(url.pathname),
               handler: "CacheFirst",
               options: {
                 cacheName: "image-cache",
@@ -65,6 +63,11 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       proxy: {
+        "/api/voice/live": {
+          target: apiProxyTarget,
+          changeOrigin: true,
+          ws: true,
+        },
         "/api": {
           target: apiProxyTarget,
           changeOrigin: true,
@@ -76,6 +79,9 @@ export default defineConfig(({ mode }) => {
       setupFiles: ["./src/test/setup.ts"],
       css: true,
       include: ["src/**/*.{test,spec}.{ts,tsx}"],
+      testTimeout: 30_000,
+      hookTimeout: 60_000,
+      fileParallelism: false,
     },
   };
 });

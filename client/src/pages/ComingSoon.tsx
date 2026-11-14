@@ -1,11 +1,28 @@
+/**
+ * @fileoverview Placeholder page for features under development.
+ *
+ * A reusable component rendered for routes whose features are not yet
+ * built. Accepts a title and description prop so the router can show
+ * contextual text while keeping navigation links stable.
+ *
+ * No API calls or complex state; purely presentational.
+ * Used as the default export for incomplete feature routes in the app.
+ */
+
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/Card";
 
+// Property specifications for the ComingSoon placeholder route component.
+// Requires feature title heading and explanatory description string.
+// Passed by the application router to identify features currently in active development.
 interface ComingSoonProps {
   title: string;
   description: string;
 }
 
+// Presentational placeholder component rendered for unreleased application routes.
+// Maintains stable navigation links across the application shell while features build.
+// Displays contextual feature titles, descriptions, and animated entrance cards.
 export default function ComingSoon({ title, description }: ComingSoonProps) {
   return (
     <div className="flex-1 p-6 overflow-auto" data-testid={`${title.toLowerCase().replace(/\s/g, "-")}-page`}>

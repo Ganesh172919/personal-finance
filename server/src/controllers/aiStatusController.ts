@@ -1,9 +1,31 @@
+/**
+ * @fileoverview AI Status Controller
+ *
+ * Health-check endpoint for the Python AI Core service. Probes three
+ * upstream endpoints in parallel (health, rate-limit, providers) and
+ * returns a consolidated status report.
+ *
+ * Routes served:
+ *   GET /api/ai/status - getAiCoreStatus
+ *
+ * Key patterns:
+ *   - Uses Promise.allSettled so one failing probe does not block others
+ *   - Upstream errors summarized into human-readable strings (not raw Axios errors)
+ *   - Also reports the Node-side AI Core client connection state
+ *
+ * @module controllers/aiStatusController
+ */
+
 import { Request, Response } from "express";
 import axios from "axios";
 
 import { getEnv } from "../config/env";
 import { getAiCoreClientStatus } from "../services/aiCoreClient";
+import { aiCoreHeaders } from "../services/aiCoreTransport";
 
+// Formats upstream Axios or generic errors into human-readable diagnostic messages.
+// Extracts nested response detail messages, HTTP status codes, and error identifiers.
+// Avoids leaking raw internal stack traces while providing actionable error context.
 const summarizeUpstreamError = (error: unknown) => {
   if (axios.isAxiosError(error)) {
     const status = error.response?.status;
@@ -30,6 +52,9 @@ const summarizeUpstreamError = (error: unknown) => {
   return String(error);
 };
 
+// Health-check endpoint probing Python AI Core service endpoints concurrently.
+// Uses Promise.allSettled to probe health, rate limits, and provider availability.
+// Combines microservice responses with Node client connectivity status into a single report.
 export const getAiCoreStatus = async (req: Request, res: Response) => {
   const env = getEnv();
   const AI_CORE_BASE_URL = env.PYTHON_API_URL;
@@ -39,15 +64,15 @@ export const getAiCoreStatus = async (req: Request, res: Response) => {
   const [healthResult, rateLimitResult, providersResult] = await Promise.allSettled([
     axios.get(`${AI_CORE_BASE_URL}/health`, {
       timeout: STATUS_TIMEOUT_MS,
-      headers: { "X-Request-Id": requestId },
+      headers: aiCoreHeaders({ requestId }),
     }),
     axios.get(`${AI_CORE_BASE_URL}/api/rate-limit/status`, {
       timeout: STATUS_TIMEOUT_MS,
-      headers: { "X-Request-Id": requestId },
+      headers: aiCoreHeaders({ requestId }),
     }),
     axios.get(`${AI_CORE_BASE_URL}/api/providers`, {
       timeout: STATUS_TIMEOUT_MS,
-      headers: { "X-Request-Id": requestId },
+      headers: aiCoreHeaders({ requestId }),
     }),
   ]);
 

@@ -8,8 +8,14 @@ import { enforceToolRole, getToolHandler } from "./tools/registry";
 import { enforceFeatureLimit } from "./entitlements";
 import { evaluateToolPolicy } from "./toolPolicy";
 
+// Trims and constrains an idempotency key string within maximum bounds.
+// Prevents oversized cache keys from degrading database index lookups.
+// Normalizes unique request identifiers for safe replay deduplication.
 const clampIdempotencyKey = (value: string) => value.trim().slice(0, 128);
 
+// Constructs a standardized data mutation provenance record for audit trails.
+// Encapsulates request identifiers, action link references, and origin details.
+// Links downstream state changes directly to the invoking AI tool action.
 const buildMutationSource = (params: {
   requestId?: string;
   actionLinkId?: string;
@@ -24,6 +30,9 @@ const buildMutationSource = (params: {
   note: params.note,
 });
 
+// Represents the dry-run simulation outcome of an AI tool invocation.
+// Indicates whether confirmation is mandated and reflects assessed risk levels.
+// Supplies preview payload details without persisting state mutations.
 export type ToolSimulationResult = {
   ok: true;
   tool_call_id: string;
@@ -34,6 +43,9 @@ export type ToolSimulationResult = {
   request_id?: string;
 };
 
+// Simulates an AI tool invocation in a dry-run environment without applying mutations.
+// Verifies caller roles, evaluates security policy constraints, and checks quotas.
+// Returns a preview payload detailing anticipated system side effects.
 export const simulateToolCall = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -75,6 +87,9 @@ export const simulateToolCall = async (params: {
   };
 };
 
+// Represents the completed execution outcome of a dispatched AI tool call.
+// Reports tool execution identifiers, idempotency indicators, and result payloads.
+// Flags whether the execution represented an idempotent replay from cache.
 export type ToolExecuteResult = {
   ok: true;
   tool_execution_id: string;
@@ -86,6 +101,9 @@ export type ToolExecuteResult = {
   request_id?: string;
 };
 
+// Executes a validated AI tool call with strict idempotency and policy enforcement.
+// Verifies user confirmations, checks entitlement quotas, and runs tool handlers.
+// Records execution lifecycle states and caches successful results for deduplication.
 export const executeToolCall = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;

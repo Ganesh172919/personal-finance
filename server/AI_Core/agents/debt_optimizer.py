@@ -1,15 +1,139 @@
+"""
+debt_optimizer.py - Debt Optimizer Agent
+==========================================
+
+The ``DebtOptimizerAgent`` analyses a user's outstanding debts and
+produces an optimised repayment plan.  It compares two classic
+strategies -- **snowball** (smallest balance first) and **avalanche**
+(highest interest first) -- and recommends the one that best fits
+the user's psychology and financial situation.
+
+Key responsibilities
+--------------------
+- Compute weighted interest rate, debt-to-income ratio, and total debt.
+- Simulate month-by-month payoff for both snowball and avalanche methods.
+- Evaluate consolidation options (personal loan, balance transfer card).
+- Recommend the optimal strategy with rationale.
+- Produce deterministic markdown reports and payoff timelines.
+
+MINDMAP FLOW
+------------
+::
+
+    DebtOptimizerAgent
+    ├── 1. Ingestion of Debt Portfolio & Profile
+    │   ├── Debt Account Normalization (balance, APR, min_payment)
+    │   ├── Monthly Income & Cashflow Available for Repayment
+    │   └── Currency Setting Resolution (INR / USD / EUR)
+    ├── 2. Portfolio-Level Metrics Engine
+    │   ├── Total Debt Balance Summation
+    │   ├── Weighted Average APR Calculation
+    │   ├── Aggregate Minimum Monthly Payment
+    │   └── Debt-to-Income (DTI) Ratio Evaluation
+    ├── 3. Payoff Strategy Simulations
+    │   ├── Avalanche Simulation (_simulate_avalanche)
+    │   │   ├── Sort Debts Descending by APR
+    │   │   ├── Direct Extra Cashflow to Highest APR Debt
+    │   │   └── Quantify Total Interest Paid & Months to Debt-Free
+    │   └── Snowball Simulation (_simulate_snowball)
+    │       ├── Sort Debts Ascending by Outstanding Balance
+    │       ├── Direct Extra Cashflow to Smallest Balance Debt
+    │       └── Quantify Behavioral Milestones & Interest Delta
+    ├── 4. Consolidation & Refinance Assessment
+    │   ├── Evaluate Eligibility for Personal Loan or Balance Transfer
+    │   └── Quantify Potential Interest Savings from Refinancing
+    └── 5. Deterministic Synthesis & Action Plan
+        ├── Select Best Strategy (Psychological vs Mathematical Fit)
+        ├── Action Plan Schedule Generation (Month-by-month steps)
+        └── Output Dictionary Packaging for Aggregator / Master Agent
+
+ASCII FLOW
+----------
+::
+
+    +---------------------------------------------------------------+
+    |             Input: List of Debts + User Profile               |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                  Validate & Normalize Debts                   |
+    |  - If debts empty -> Return clean zero-debt congratulation    |
+    |  - Extract: balance, interest_rate, minimum_payment           |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |               Calculate Aggregate Portfolio Stats             |
+    |  - Total Balance, Weighted APR, Total Minimums, DTI Ratio     |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                   Dual Strategy Simulations                   |
+    +-------------------------------+-------------------------------+
+            |                                               |
+            v                                               v
+    [Simulate Avalanche]                            [Simulate Snowball]
+    - Priority: Highest APR                         - Priority: Smallest Balance
+    - Calculate: Total Interest,                    - Calculate: Total Interest,
+      Debt-free Date                                  Debt-free Date
+            |                                               |
+            +-----------------------+-----------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |               Evaluate Debt Consolidation Options             |
+    |  - Compare current weighted APR against typical loan rates    |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    |                  Strategy Recommendation                      |
+    |  - If >3 debts & risk is conservative -> Recommend Snowball   |
+    |  - Else -> Recommend Avalanche for interest savings           |
+    +-------------------------------+-------------------------------+
+                                    |
+                                    v
+    +---------------------------------------------------------------+
+    | Assemble Output: { metrics, avalanche_plan, snowball_plan,    |
+    |   recommended_strategy, consolidation, detailed_report }      |
+    +---------------------------------------------------------------+
+
+Design decisions
+----------------
+- All calculations are deterministic (no LLM calls).
+- The snowball method is preferred when the user has >3 debts and a
+  conservative risk tolerance (psychological momentum matters).
+- Extra payment capacity is capped at 15% of monthly income to ensure
+  the plan is realistic.
+"""
+
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
+from config import settings
 from utils import format_currency
+from utils.agent_helpers import get_currency_code
 
 logger = logging.getLogger(__name__)
 
 
+# Specialist agent evaluating liability payoffs, consolidation, and interest minimization.
+# Compares snowball psychological momentum against mathematical avalanche savings.
+# Recommends optimal amortization schedules and personal loan refinance options.
 class DebtOptimizerAgent:
-    """Optimizes debt repayment strategies and minimizes interest costs."""
+    """Optimizes debt repayment strategies and minimizes interest costs.
 
+    This agent is part of the multi-agent financial advisory system.
+    It receives a list of debt dicts and a user profile, and returns
+    a structured optimisation plan with snowball/avalanche comparisons.
+    """
+
+    # Creates an optimized debt reduction plan analyzing snowball and avalanche methods.
+    # Evaluates debt-to-income metrics, weighted APR, and potential refinancing savings.
+    # Returns structured payoff schedules, optimal method selection, and markdown advice.
     def optimize_repayment(self, debts: List[Dict[str, Any]], user_profile: Dict[str, Any]) -> Dict[str, Any]:
         """Create optimized debt repayment plan."""
         logger.info("Optimizing repayment for %s debts", len(debts))
@@ -43,6 +167,9 @@ class DebtOptimizerAgent:
             logger.error("Error optimizing debt repayment: %s", exc)
             return {"error": str(exc), "detailed_recommendations": "Unable to create debt optimization plan."}
 
+    # Evaluates aggregate liability risk including total balance and debt-to-income ratio.
+    # Computes weighted average interest rate across all active liabilities.
+    # Flags presence of high-interest credit lines exceeding 10 percent APR.
     def _analyze_debt_situation(self, debts: List[Dict[str, Any]], user_profile: Dict[str, Any]) -> Dict[str, Any]:
         total_debt = sum(debt.get("balance", 0) for debt in debts)
         total_minimum_payments = sum(debt.get("minimum_payment", 0) for debt in debts)
@@ -64,6 +191,9 @@ class DebtOptimizerAgent:
             "high_interest_debts": len([debt for debt in debts if debt.get("interest_rate", 0) > 10]),
         }
 
+    # Simulates the debt snowball payoff strategy prioritizing smallest balances first.
+    # Rolls over cleared minimum payments into subsequent target account payments.
+    # Computes total interest paid, payoff month timeline, and estimated completion date.
     def _calculate_snowball_method(self, debts: List[Dict[str, Any]], user_profile: Dict[str, Any]) -> Dict[str, Any]:
         sorted_debts = sorted(debts, key=lambda item: item["balance"])
 
@@ -111,6 +241,9 @@ class DebtOptimizerAgent:
             "completion_date": self._calculate_completion_date(current_month),
         }
 
+    # Simulates the debt avalanche payoff strategy targeting highest interest rates first.
+    # Maximizes long-term interest savings by focusing extra payments on costliest loans.
+    # Outlines debt clearance order, timeline in months, and cumulative interest costs.
     def _calculate_avalanche_method(self, debts: List[Dict[str, Any]], user_profile: Dict[str, Any]) -> Dict[str, Any]:
         sorted_debts = sorted(debts, key=lambda item: item.get("interest_rate", 0), reverse=True)
 
@@ -163,6 +296,9 @@ class DebtOptimizerAgent:
             "completion_date": self._calculate_completion_date(current_month),
         }
 
+    # Compares snowball and avalanche outcomes to recommend the optimal strategy.
+    # Weighs absolute interest savings against behavioral motivation for conservative users.
+    # Returns recommended approach, net interest savings, and explanatory rationale.
     def _determine_optimal_strategy(
         self,
         snowball: Dict[str, Any],
@@ -191,9 +327,12 @@ class DebtOptimizerAgent:
             "recommended_method": optimal,
             "interest_savings": round(savings, 2),
             "time_savings_months": abs(snowball_time - avalanche_time),
-            "rationale": self._get_strategy_rationale(optimal, savings),
+            "rationale": self._get_strategy_rationale(optimal, savings, get_currency_code(user_profile)),
         }
 
+    # Analyzes potential interest reduction through debt consolidation mechanisms.
+    # Evaluates fixed-rate personal loans and 0% APR promotional balance transfer cards.
+    # Returns estimated interest savings and borrower eligibility considerations.
     def _analyze_consolidation_options(self, debts: List[Dict[str, Any]], _user_profile: Dict[str, Any]) -> Dict[str, Any]:
         total_debt = sum(debt.get("balance", 0) for debt in debts)
         weighted_rate = (
@@ -233,29 +372,45 @@ class DebtOptimizerAgent:
             "recommended": len(consolidation_options) > 0 and weighted_rate > 8.0,
         }
 
+    # Estimates surplus monthly cashflow that can safely accelerate debt payoffs.
+    # Factors income surplus, emergency liquidity buffers, and minimum extra constants.
+    # Prevents aggressive debt repayment from exhausting essential liquid savings.
     def _calculate_extra_payment_capacity(self, user_profile: Dict[str, Any]) -> float:
         income = user_profile.get("annual_income", 0) / 12
         expenses = user_profile.get("monthly_expenses", 0)
         savings = user_profile.get("savings", 0)
 
         savings_goal = savings * 0.1
-        return max(100, min(income * 0.15, (income - expenses) * 0.5, savings_goal))
+        min_extra_payment = getattr(settings, "MIN_EXTRA_DEBT_PAYMENT", 100)
+        return max(min_extra_payment, min(income * 0.15, (income - expenses) * 0.5, savings_goal))
 
+    # Projects calendar month and year when all debts will reach zero balance.
+    # Adds simulated payoff duration to the current system date.
+    # Returns formatted string such as August 2027 for goal tracking.
     def _calculate_completion_date(self, months: int) -> str:
         return (datetime.now() + timedelta(days=months * 30)).strftime("%B %Y")
 
+    # Computes annual interest saved by refinancing debt under a lower target APR.
+    # Compares current weighted annual interest expense against new consolidated terms.
+    # Enforces non-negative savings bound in case target rate exceeds current rates.
     def _calculate_consolidation_savings(self, debts: List[Dict[str, Any]], new_rate: float) -> float:
         current_interest = sum(debt.get("balance", 0) * debt.get("interest_rate", 0) / 100 for debt in debts)
         new_interest = sum(debt.get("balance", 0) for debt in debts) * new_rate / 100
         return max(0, current_interest - new_interest)
 
-    def _get_strategy_rationale(self, method: str, savings: float) -> str:
+    # Generates human-readable strategic rationale for recommended repayment method.
+    # Emphasizes psychological momentum for snowball or interest savings for avalanche.
+    # Formats currency amounts according to user profile currency code.
+    def _get_strategy_rationale(self, method: str, savings: float, currency_code: str = "INR") -> str:
         rationales = {
-            "snowball": f"Psychological momentum from quick wins outweighs {format_currency(savings)} in potential savings.",
-            "avalanche": f"Mathematically optimal strategy saving approximately {format_currency(savings)} in interest.",
+            "snowball": f"Psychological momentum from quick wins outweighs {format_currency(savings, currency_code)} in potential savings.",
+            "avalanche": f"Mathematically optimal strategy saving approximately {format_currency(savings, currency_code)} in interest.",
         }
         return rationales.get(method, "Balanced approach considering both math and motivation.")
 
+    # Generates zero-liability response payload for debt-free user profiles.
+    # Sets empty debt metrics and advises directing surplus cash to investments.
+    # Bypasses unnecessary payoff schedule simulations.
     def _get_no_debt_response(self) -> Dict[str, Any]:
         return {
             "current_debt_situation": {"total_debt": 0, "debt_to_income_ratio": 0},
@@ -263,6 +418,9 @@ class DebtOptimizerAgent:
             "detailed_recommendations": "No outstanding debts. Focus on emergency savings and investing.",
         }
 
+    # Constructs deterministic markdown report summarizing the complete debt strategy.
+    # Formats current situation, repayment schedules, interest savings, and consolidation.
+    # Incorporates localized currency formatting matching user profile specifications.
     def _generate_debt_recommendations(
         self,
         debts: List[Dict[str, Any]],
@@ -274,6 +432,7 @@ class DebtOptimizerAgent:
         """Generate deterministic debt recommendations without specialist LLM calls."""
 
         monthly_income = user_profile.get("annual_income", 0) / 12
+        currency_code = get_currency_code(user_profile)
         method = strategy.get("recommended_method", "avalanche")
         interest_savings = strategy.get("interest_savings", 0)
         consolidation_options = consolidation.get("options", [])
@@ -282,13 +441,13 @@ class DebtOptimizerAgent:
         sorted_debts = sorted(debts, key=lambda item: item.get("interest_rate", 0), reverse=True)
         for debt in sorted_debts:
             debt_lines.append(
-                f"- {debt.get('name', 'Debt')}: {format_currency(debt.get('balance', 0))} at {debt.get('interest_rate', 0)}% "
-                f"(minimum {format_currency(debt.get('minimum_payment', 0))})"
+                f"- {debt.get('name', 'Debt')}: {format_currency(debt.get('balance', 0), currency_code)} at {debt.get('interest_rate', 0)}% "
+                f"(minimum {format_currency(debt.get('minimum_payment', 0), currency_code)})"
             )
 
         consolidation_lines = [
             f"- {option.get('type', 'Option')}: est. rate {option.get('estimated_rate', 0)}%, "
-            f"potential savings {format_currency(option.get('potential_savings', 0))}"
+            f"potential savings {format_currency(option.get('potential_savings', 0), currency_code)}"
             for option in consolidation_options[:3]
         ] or ["- No consolidation option is clearly beneficial right now."]
 
@@ -298,11 +457,11 @@ class DebtOptimizerAgent:
             [
                 "Debt Optimization Plan (Deterministic)",
                 "",
-                f"Total debt: {format_currency(analysis.get('total_debt', 0))}",
+                f"Total debt: {format_currency(analysis.get('total_debt', 0), currency_code)}",
                 f"Debt-to-income ratio: {analysis.get('debt_to_income_ratio', 0)}%",
                 f"Weighted rate: {analysis.get('weighted_interest_rate', 0)}%",
                 f"Recommended method: {method.upper()}",
-                f"Estimated interest savings vs alternative: {format_currency(interest_savings)}",
+                f"Estimated interest savings vs alternative: {format_currency(interest_savings, currency_code)}",
                 "",
                 "Debt inventory:",
                 *debt_lines,
@@ -314,7 +473,7 @@ class DebtOptimizerAgent:
                 "4) Recalculate plan every month and after income changes.",
                 "",
                 "Cashflow and risk controls:",
-                f"- Monthly income baseline: {format_currency(monthly_income)}",
+                f"- Monthly income baseline: {format_currency(monthly_income, currency_code)}",
                 "- Keep a basic emergency buffer while accelerating repayment.",
                 "- Avoid new high-interest debt while payoff plan is active.",
                 "",

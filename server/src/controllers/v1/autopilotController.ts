@@ -1,3 +1,29 @@
+/**
+ * @fileoverview Autopilot Controller (v1)
+ *
+ * AI-driven autopilot system that plans, simulates, approves, and executes
+ * multi-step financial actions. Users describe a goal; the AI generates tool
+ * calls that are simulated, approved, and then executed atomically.
+ *
+ * Routes served:
+ *   POST /api/v1/autopilot/plan      - createAutopilotPlan
+ *   POST /api/v1/autopilot/simulate  - simulateAutopilotRun
+ *   POST /api/v1/autopilot/approve   - approveAutopilotRun
+ *   POST /api/v1/autopilot/execute   - executeAutopilotRun
+ *   GET  /api/v1/autopilot/runs/:id  - getAutopilotRun
+ *
+ * Key patterns:
+ *   - Lifecycle: plan -> simulate -> approve -> execute
+ *   - Tool calls validated against Zod schemas; invalid ones are dropped with reasons
+ *   - Simulation previews side-effects without committing changes
+ *   - High-risk tool calls require explicit user approval before execution
+ *   - Execution is idempotent (uses idempotency keys per tool call)
+ *   - Every state transition publishes domain events and audit records
+ *   - Feature limits enforced on AI calls and autopilot actions separately
+ *
+ * @module controllers/v1/autopilotController
+ */
+
 import type { Request, Response } from "express";
 import crypto from "crypto";
 import mongoose from "mongoose";
@@ -8,7 +34,7 @@ import OrganizationModel from "../../models/organizationModel";
 import { HttpError } from "../../middleware/httpError";
 import { processAiCoreRequest } from "../../services/aiCoreClient";
 import { buildProcessRequest } from "../../services/aiRequestBuilder";
-import { enforceFeatureLimit, recordFeatureUsage } from "../../services/entitlements";
+import { enforceFeatureLimit, recordFeatureUsage, releaseReservationOnResponseEnd, reserveFeatureUsage } from "../../services/entitlements";
 import { ensureProfileWithMigration } from "../../services/profileService";
 import { fetchTransactionsForAi } from "../../services/transactionService";
 import { getJournalContextForAi } from "../../services/journalContext";
@@ -20,6 +46,9 @@ import { publishDomainEvent } from "../../services/domainEvents";
 import { getToolHandler } from "../../services/tools/registry";
 import { evaluateToolPolicy } from "../../services/toolPolicy";
 
+// Validates tenant organization context and parses a MongoDB ObjectId instance.
+// Checks whether the organization ID parameter conforms to hexadecimal standards.
+// Throws an unauthorized HTTP exception if organization scope is missing or invalid.
 const requireOrgId = (req: Request) => {
   const orgIdRaw = String((req as any).org?.orgId || "");
   if (!orgIdRaw || !mongoose.Types.ObjectId.isValid(orgIdRaw)) {
@@ -28,6 +57,9 @@ const requireOrgId = (req: Request) => {
   return new mongoose.Types.ObjectId(orgIdRaw);
 };
 
+// Resolves the authorization role assigned to the authenticated user within the tenant.
+// Confirms whether the member holds member, admin, or organization owner status.
+// Defaults safely to member privileges when unassigned or unexpected role tags appear.
 const requireOrgRole = (req: Request) => {
   const role = String((req as any).org?.role || "member") as "member" | "admin" | "owner";
   if (role !== "member" && role !== "admin" && role !== "owner") {
@@ -36,6 +68,9 @@ const requireOrgRole = (req: Request) => {
   return role;
 };
 
+// Loads regional formatting preferences and currency designations for an organization.
+// Retrieves the organization currency, localization locale, and operational timezone.
+// Supplies fallback defaults to maintain predictable behavior across AI prompt builders.
 const getOrgAiSettings = async (orgId: mongoose.Types.ObjectId) => {
   const org = await OrganizationModel.findById(orgId).select({ currency: 1, locale: 1, timezone: 1 }).lean();
   return {
@@ -45,6 +80,9 @@ const getOrgAiSettings = async (orgId: mongoose.Types.ObjectId) => {
   };
 };
 
+// Formats internal autopilot execution documents into standardized client structures.
+// Extracts goal strings, status values, tool calls, simulations, and execution runs.
+// Sanitizes error messages and normalizes timestamps for clean UI presentation.
 const mapRun = (run: any) => ({
   id: String(run._id),
   goal: String(run.goal || ""),
@@ -59,6 +97,11 @@ const mapRun = (run: any) => ({
   updated_at: run.updatedAt || null,
 });
 
+// Evaluates whether a tool call needs explicit user approval before execution.
+// Invalid schemas and unknown tools default to requiring approval (safety-first).
+// Assesses whether a proposed tool call demands interactive user confirmation.
+// Validates tool call schema specifications and evaluates policy risk classifications.
+// Enforces a safety-first policy requiring approval on invalid schemas or high-risk tools.
 const requiresExplicitApproval = (raw: unknown): boolean => {
   const parsed = toolCallSchema.safeParse(raw);
   if (!parsed.success) {
@@ -74,6 +117,9 @@ const requiresExplicitApproval = (raw: unknown): boolean => {
   }
 };
 
+// Dispatches an AI planning invocation to construct actionable financial tool calls.
+// Validates proposed tool invocations against Zod schemas and drops invalid calls.
+// Persists the initial planned autopilot execution document and emits audit events.
 export const createAutopilotPlan = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -84,13 +130,14 @@ export const createAutopilotPlan = async (req: Request, res: Response) => {
   const { requestId } = req;
   const body = req.body as { goal: string; options?: { narrative?: boolean } };
 
-  await enforceFeatureLimit({
+  const reservation = await reserveFeatureUsage({
     orgId,
     userId: user._id,
     feature: "monthly_ai_calls",
     units: 1,
     requestId,
   });
+  releaseReservationOnResponseEnd(res, reservation);
 
   const financialProfile = await ensureProfileWithMigration({ orgId, userId: user._id });
   const txResult = await fetchTransactionsForAi({ orgId, userId: user._id });
@@ -110,7 +157,7 @@ export const createAutopilotPlan = async (req: Request, res: Response) => {
     narrative: typeof body.options?.narrative === "boolean" ? body.options.narrative : false,
   });
 
-  const ai = await processAiCoreRequest(aiRequest, requestId, { userId: user._id.toString() });
+  const ai = await processAiCoreRequest(aiRequest, requestId, { userId: user._id.toString(), priority: "autopilot" });
   const { plan, valid: planValid } = normalizeAiPlan(ai.plan);
 
   const validatedToolCalls: ToolCallInput[] = [];
@@ -183,6 +230,7 @@ export const createAutopilotPlan = async (req: Request, res: Response) => {
   }).catch(() => null);
 
   await recordFeatureUsage({
+    reservation,
     orgId,
     userId: user._id,
     feature: "monthly_ai_calls",
@@ -207,6 +255,9 @@ export const createAutopilotPlan = async (req: Request, res: Response) => {
   });
 };
 
+// Simulates proposed autopilot tool executions without committing persistent mutations.
+// Previews anticipated side-effects, balance deltas, and risk assessments for the user.
+// Updates the autopilot run document with simulation findings to facilitate user review.
 export const simulateAutopilotRun = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -283,6 +334,9 @@ export const simulateAutopilotRun = async (req: Request, res: Response) => {
   });
 };
 
+// Records explicit user authorization for proposed autopilot tool execution plans.
+// Validates that the targeted autopilot run has completed prior simulation stages.
+// Transitions the autopilot run status to approved and emits audit tracking events.
 export const approveAutopilotRun = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -351,6 +405,9 @@ export const approveAutopilotRun = async (req: Request, res: Response) => {
   });
 };
 
+// Executes the sequence of approved autopilot tool invocations against live state.
+// Enforces action entitlements, applies idempotency controls, and captures execution logs.
+// Transitions run status to completed or failed while publishing domain events.
 export const executeAutopilotRun = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -413,6 +470,8 @@ export const executeAutopilotRun = async (req: Request, res: Response) => {
     return;
   }
 
+  // Advisory batch pre-check: each tool call is individually checked by executeToolCall
+  // and billed with its own idempotent usage record (a batch reservation would double-count).
   await enforceFeatureLimit({
     orgId,
     userId: user._id,
@@ -536,6 +595,9 @@ export const executeAutopilotRun = async (req: Request, res: Response) => {
   });
 };
 
+// Retrieves detailed execution status and tool outcomes for an autopilot run.
+// Asserts caller ownership and tenant isolation constraints on the targeted entity.
+// Responds with comprehensive run timelines, simulation previews, and tool results.
 export const getAutopilotRun = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {

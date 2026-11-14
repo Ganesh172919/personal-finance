@@ -1,19 +1,48 @@
-import { motion } from "framer-motion";
-import { Card } from "@/components/ui/Card";
-import { useQuery } from "@tanstack/react-query";
-import { getRecentTransactions } from "@/lib/apiClient";
-import { ArrowUpRight, ArrowDownLeft, RefreshCcw } from "lucide-react";
+/**
+ * @fileoverview RecentActivity — dashboard card showing the five most recent transactions
+ * with type-specific icons, colour coding, and a "View All" link to the transactions page.
+ *
+ * WHAT IT DOES
+ *  - Fetches the last 5 transactions from `/api/transactions/recent` via React Query.
+ *  - Renders each transaction with an icon indicating type (income = green down-left arrow,
+ *    expense = red up-right arrow, investment = blue refresh icon), description, category,
+ *    date, and signed amount.
+ *  - Clicking "View All" navigates to `/transactions`.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — data is fully server-fetched.
+ *  - Uses `useOrgFormatters` for locale-aware money and date formatting.
+ *
+ * ARCHITECTURE NOTES
+ *  - One of the main dashboard grid cards alongside GoalProgress, InvestmentPortfolio, etc.
+ *  - Framer Motion stagger (0.1 s per row) for a polished entry animation.
+ *  - Purely presentational; transaction mutations are handled in the Transactions page.
+ */
+import { getRecentTransactions, TransactionsResponse } from "@/lib/apiClient";
+import { ArrowUpRight, ArrowDownLeft, RefreshCcw, Plus } from "lucide-react";
 import { useLocation } from "wouter";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
+import { useQuery } from "@tanstack/react-query";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { RecentActivitySkeleton } from "@/components/ui/CardSkeleton";
+import { motion } from "framer-motion";
 
+// Dashboard activity widget displaying the five most recent financial ledger records.
+// Visualizes categorized cash inflows, expenses, and investment transfers with icons.
+// Formats timestamps and currency values according to active organization locales.
 export function RecentActivity() {
   const [, navigate] = useLocation();
   const { formatMoney, formatDate } = useOrgFormatters();
 
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["/api/transactions/recent"],
     queryFn: () => getRecentTransactions(5),
   });
+
+  if (isLoading) {
+    return <RecentActivitySkeleton />;
+  }
 
   const recentTransactions = data?.transactions || [];
 
@@ -32,11 +61,19 @@ export function RecentActivity() {
 
       <div className="flex-1 space-y-4">
         {recentTransactions.length === 0 ? (
-           <div className="text-center py-8 text-muted-foreground">
-             No recent transactions found.
-           </div>
+          <div className="text-center py-6 text-muted-foreground flex flex-col items-center gap-3">
+            <p>No recent transactions found.</p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="cursor-pointer"
+              onClick={() => navigate("/transactions")}
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" /> Add Transaction
+            </Button>
+          </div>
         ) : (
-          recentTransactions.map((t, i) => (
+          recentTransactions.map((t: TransactionsResponse["transactions"][number], i: number) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, x: -10 }}

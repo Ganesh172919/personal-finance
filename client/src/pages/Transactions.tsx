@@ -1,15 +1,46 @@
+/**
+ * @fileoverview Transactions Page (Transactions)
+ *
+ * The primary transaction management interface. Supports:
+ * - Viewing paginated transaction list with filters
+ * - Creating/editing/deleting transactions via inline form
+ * - CSV import with column mapping, preview, and duplicate detection
+ * - Receipt OCR scanning (via ReceiptOcrDialog)
+ * - Review queue filtering (uncategorized, duplicates, merchant matches)
+ *
+ * CSV IMPORT FLOW:
+ * 1. User uploads CSV file → PapaParse parses headers and rows
+ * 2. User maps CSV columns to transaction fields (amount, date, etc.)
+ * 3. "Preview" → server validates rows and detects duplicates (dry_run=true)
+ * 4. "Commit" → server imports valid rows and returns results
+ *
+ * STATE MANAGEMENT:
+ * - React Query for server state (transactions, accounts)
+ * - Local useState for form state, filters, and CSV import wizard
+ * - Mutations with onSuccess/onError for create/update/delete/import
+ *
+ * REVIEW SYSTEM:
+ * Transactions can have review flags (uncategorized, duplicate, etc.).
+ * The review filter allows users to focus on items needing attention.
+ *
+ * @module pages/Transactions
+ */
+
 import { motion } from "framer-motion";
 import Papa from "papaparse";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, ReceiptText, ScanLine, Upload } from "lucide-react";
+import { Plus, ReceiptText, ScanLine, Upload, Split, Repeat, Trash2, ChevronDown, ChevronUp, Globe, Building2, Radio, CheckCircle2 } from "lucide-react";
 
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { InlineLoader } from "@/components/feedback/InlineLoader";
 import { PageIntro } from "@/components/layout/PageIntro";
+import TransactionReviewQueue from "@/components/TransactionReviewQueue";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ReceiptOcrDialog } from "@/components/ReceiptOcrDialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import {
   Dialog,
   DialogContent,
@@ -20,8 +51,12 @@ import {
 } from "@/components/ui/Dialog";
 import { useToast } from "@/hooks/useToast";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
+import { useVirtualList } from "@/hooks/useVirtualList";
 import {
   ApiError,
+  bulkCategorizeTransactions,
+  bulkDeleteTransactions,
+  createRecurringRule,
   createTransaction,
   deleteTransaction,
   getTransactions,
@@ -29,9 +64,36 @@ import {
   listAccounts,
   TransactionType,
   updateTransaction,
+  getMerchantClusters,
+  applyMerchantCluster,
+  ingestBankFeed,
 } from "@/lib/apiClient";
+import {
+  SUPPORTED_CURRENCIES,
+  convertUsdToCurrency,
+  CURRENCY_SYMBOLS,
+  FX_RATES_TO_USD,
+  type SupportedCurrency,
+} from "@/lib/currencyFx";
 import { ITransaction } from "@/types";
 
+// Recovers original USD transaction amount from converted display amounts.
+// Prevents currency conversion drift when submitting transaction edits.
+// Throws descriptive error if original amount cannot be reliably resolved.
+const ledgerAmount = (amount: number, rawAmount?: number, displayCurrency?: string) => {
+  const original = rawAmount ?? (!displayCurrency || displayCurrency === "USD" ? amount : Number.NaN);
+  if (!Number.isFinite(original)) throw new Error("Reload transactions to recover the original USD amount before editing.");
+  return original;
+};
+// Formats monetary values as standard US Dollar currency strings.
+// Employs Intl.NumberFormat for standard decimal and comma presentation.
+// Used for displaying ledger balances and batch transaction totals.
+const formatLedgerMoney = (amount: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
+
+// Controlled form input state for creating or editing individual transactions.
+// Holds string amount for input manipulation before conversion to numeric ledger values.
+// Tracks category, description, transaction date, and cash movement direction.
+/** Transaction form state (amount is string for input control) */
 type TransactionForm = {
   amount: string;
   category: string;
@@ -40,6 +102,9 @@ type TransactionForm = {
   type: TransactionType;
 };
 
+// State structure managing transaction CSV file uploads and column associations.
+// Holds raw parsed CSV file rows, detected column headers, and target account ID.
+// Maps external bank statement columns to internal transaction fields.
 type CsvState = {
   file: File | null;
   fileName: string;
@@ -56,6 +121,60 @@ type CsvState = {
   };
 };
 
+// Filter criteria for filtering transaction review queues.
+// Categorizes transactions needing attention, duplicates, missing merchants, and splits.
+// Used in triage tabs to systematically clean up imported transaction feeds.
+type ReviewFilter =
+  | "all"
+  | "needs_attention"
+  | "uncategorized"
+  | "suspected_duplicate"
+  | "needs_merchant_match"
+  | "split_candidate"
+  | "recurring_candidate";
+
+
+// Simulated mock bank feed presets for testing transaction import workflows.
+// Emulates payroll deposits, retail purchases, rideshares, and grocery receipts.
+// Useful for demonstration and integration testing of the bank sync engine.
+const BANK_FEED_PRESETS = [
+  {
+    id: "payroll",
+    label: "Direct Deposit Payroll ($2,500.00)",
+    name: "Acme Corp Direct Deposit Payroll",
+    amount: -2500.0,
+    category: ["Income", "Salary"],
+    pending: false,
+  },
+  {
+    id: "amazon",
+    label: "Amazon Retail Order ($84.99)",
+    name: "AMZN Mktp US*3B982 Seattle WA",
+    amount: 84.99,
+    category: ["Shopping", "General Merchandise"],
+    pending: false,
+  },
+  {
+    id: "uber",
+    label: "Uber Transportation ($26.50)",
+    name: "Uber *Trip 9821 San Francisco CA",
+    amount: 26.50,
+    category: ["Transportation", "Ride Share"],
+    pending: false,
+  },
+  {
+    id: "wholefoods",
+    label: "Whole Foods Market ($112.40)",
+    name: "Whole Foods Market #10244 Austin TX",
+    amount: 112.40,
+    category: ["Groceries", "Food"],
+    pending: false,
+  },
+];
+
+// Initial blank state for the transaction creation and editing form.
+// Resets input controls with empty strings and default expense movement type.
+// Clears modal state between consecutive transaction entries.
 const EMPTY_FORM: TransactionForm = {
   amount: "",
   category: "",
@@ -64,6 +183,9 @@ const EMPTY_FORM: TransactionForm = {
   type: "expense",
 };
 
+// Default unpopulated state for CSV statement import dialog.
+// Initializes empty file references, raw rows, and blank column mappings.
+// Restores clean upload state when users dismiss or reset the import dialog.
 const EMPTY_CSV: CsvState = {
   file: null,
   fileName: "",
@@ -73,6 +195,9 @@ const EMPTY_CSV: CsvState = {
   mapping: { amount: "", category: "", description: "", date: "", type: "", merchant: "" },
 };
 
+// Matches CSV headers against candidate aliases using case-insensitive comparison.
+// Inspects file header lists to automatically detect amount, date, and vendor columns.
+// Returns the first matched raw column label or empty string if no candidate matches.
 const pickFirstMatchingColumn = (columns: string[], candidates: string[]) => {
   const normalized = columns.map(col => ({ col, key: col.trim().toLowerCase() }));
   for (const candidate of candidates) {
@@ -83,16 +208,51 @@ const pickFirstMatchingColumn = (columns: string[], candidates: string[]) => {
   return "";
 };
 
+// Maps review filter enum keys to user-friendly badge labels.
+// Clarifies why specific transactions were flagged during automated audit checks.
+// Used in triage queue table badges and filter dropdown selections.
+const reviewFlagLabel: Record<Exclude<ReviewFilter, "all" | "needs_attention">, string> = {
+  uncategorized: "Uncategorized",
+  suspected_duplicate: "Suspected duplicate",
+  needs_merchant_match: "Needs merchant match",
+  split_candidate: "Split candidate",
+  recurring_candidate: "Recurring candidate",
+};
+
+// Standard preset financial spending and income categories for quick selection.
+// Covers essential living categories, discretionary expenses, and revenue streams.
+// Populates category dropdown options during manual transaction entry and editing.
+const COMMON_CATEGORIES = [
+  "Food & Dining",
+  "Groceries",
+  "Housing & Rent",
+  "Utilities",
+  "Transportation",
+  "Shopping",
+  "Healthcare",
+  "Entertainment",
+  "Personal Care",
+  "Education",
+  "Investments",
+  "Income",
+];
+
+// Converts transaction query and mutation errors into informative display strings.
+// Appends server request identifiers when ApiError structures are present.
+// Provides a fallback message if the incoming error object contains no description.
 const formatError = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
+// Primary financial ledger page for managing transactions and review queues.
+// Supports multi-currency display, CSV statement uploads, and duplicate detection.
+// Coordinates batch category tagging, merchant matching, and transaction split workflows.
 export default function Transactions() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { formatMoney, formatDate, currency } = useOrgFormatters();
+  const { formatDate, currency } = useOrgFormatters();
 
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
@@ -100,6 +260,16 @@ export default function Transactions() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [fromFilter, setFromFilter] = useState("");
   const [toFilter, setToFilter] = useState("");
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("all");
+
+  // Multi-Currency Normalization State (Batch 30)
+  const [selectedCurrency, setSelectedCurrency] = useState<SupportedCurrency>("USD");
+  const activeSymbol = CURRENCY_SYMBOLS[selectedCurrency] || "$";
+  const activeFxRate = FX_RATES_TO_USD[selectedCurrency] ?? 1.0;
+
+  // Bank Feed Simulator State
+  const [bankFeedOpen, setBankFeedOpen] = useState(false);
+  const [selectedPresetId, setSelectedPresetId] = useState("payroll");
 
   const accountsQuery = useQuery({
     queryKey: ["v1/finance/accounts"],
@@ -107,7 +277,7 @@ export default function Transactions() {
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["/api/transactions", page, limit, typeFilter, categoryFilter, fromFilter, toFilter],
+    queryKey: ["/api/transactions", page, limit, typeFilter, categoryFilter, fromFilter, toFilter, reviewFilter, selectedCurrency],
     queryFn: () =>
       getTransactions({
         page,
@@ -116,12 +286,76 @@ export default function Transactions() {
         category: categoryFilter.trim() || undefined,
         from: fromFilter || undefined,
         to: toFilter || undefined,
+        // Review state is filtered server-side so pagination totals match the filtered list.
+        needs_review: reviewFilter === "needs_attention" ? true : undefined,
+        review_flag: reviewFilter !== "all" && reviewFilter !== "needs_attention" ? reviewFilter : undefined,
+        currency: selectedCurrency !== "USD" ? selectedCurrency : undefined,
       }),
+  });
+
+  // Merchant Clusters Query (Batch 30)
+  const merchantClustersQuery = useQuery({
+    queryKey: ["merchant-clusters", selectedCurrency],
+    queryFn: () => getMerchantClusters({ currency: selectedCurrency !== "USD" ? selectedCurrency : undefined }),
+  });
+
+  const applyClusterMutation = useMutation({
+    mutationFn: applyMerchantCluster,
+    onSuccess: async (res) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["merchant-clusters"] }),
+      ]);
+      toast({
+        title: "Merchant normalized",
+        description: `Normalized ${res.updated_count} transaction(s) to ${res.normalized_name} (${res.category}).`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Normalization failed",
+        description: formatError(error, "Failed to apply merchant cluster."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const bankFeedMutation = useMutation({
+    mutationFn: ingestBankFeed,
+    onSuccess: async (res) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["merchant-clusters"] }),
+      ]);
+      setBankFeedOpen(false);
+      toast({
+        title: "Bank feed ingested",
+        description: `Processed ${res.processed} transaction(s): ${res.inserted} inserted, ${res.duplicates_skipped} duplicates skipped.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Bank feed ingestion failed",
+        description: formatError(error, "Failed to ingest the bank-feed simulation."),
+        variant: "destructive",
+      });
+    },
   });
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<TransactionForm>(EMPTY_FORM);
+  const formCardRef = useRef<HTMLDivElement | null>(null);
+
+  // The form renders below the currency/filter panels, so opening it from the header
+  // (or from Edit on a row far down the list) left it off-screen, especially on mobile.
+  useEffect(() => {
+    if (!isFormOpen) return;
+    const card = formCardRef.current;
+    if (!card) return;
+    card.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    card.querySelector<HTMLInputElement>("#transaction-amount")?.focus({ preventScroll: true });
+  }, [isFormOpen, editingId]);
 
   const createMutation = useMutation({
     mutationFn: createTransaction,
@@ -140,13 +374,15 @@ export default function Transactions() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: Partial<TransactionForm> }) =>
+    mutationFn: ({ id, payload }: { id: string; payload: Partial<TransactionForm> & { splits?: Array<{ category: string; amount: number }> } }) =>
       updateTransaction(id, {
         ...payload,
         amount: payload.amount ? Number(payload.amount) : undefined,
+        splits: payload.splits,
       }),
-    onSuccess: async () => {
+    onSuccess: async (_result, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      if (variables.payload.splits !== undefined) return;
       setForm(EMPTY_FORM);
       setEditingId(null);
       setIsFormOpen(false);
@@ -174,22 +410,504 @@ export default function Transactions() {
     },
   });
 
+  // Split transaction state
+  const [splitTargetTransaction, setSplitTargetTransaction] = useState<ITransaction | null>(null);
+  const [splitRows, setSplitRows] = useState<Array<{ id: string; category: string; amount: string }>>([]);
+  const [splitSaveError, setSplitSaveError] = useState<string | null>(null);
+  const [expandedSplitIds, setExpandedSplitIds] = useState<Set<string>>(new Set());
+
+  // Recurring rule state
+  const [recurringTargetTransaction, setRecurringTargetTransaction] = useState<ITransaction | null>(null);
+  const [ruleName, setRuleName] = useState("");
+  const [ruleCategory, setRuleCategory] = useState("");
+  const [ruleAmount, setRuleAmount] = useState("");
+  const [ruleFrequency, setRuleFrequency] = useState<"monthly" | "biweekly" | "weekly" | "quarterly" | "annual">("monthly");
+
+  const originalTransaction = (tx: ITransaction, includeSplits = false): ITransaction | null => {
+    try {
+      const displayCurrency = tx.currency || data?.currency;
+      return { ...tx, amount: ledgerAmount(tx.amount, tx.raw_amount, displayCurrency),
+        splits: includeSplits ? tx.splits?.map(split => ({ ...split,
+          amount: ledgerAmount(split.amount, split.raw_amount, displayCurrency),
+        })) : tx.splits };
+    } catch (error) {
+      toast({ title: "Original amount unavailable", description: formatError(error, "Reload before editing this transaction."), variant: "destructive" });
+      return null;
+    }
+  };
+
+  const openSplitDialog = (tx: ITransaction) => {
+    const original = originalTransaction(tx, true);
+    if (!original) return;
+    tx = original;
+    setSplitSaveError(null);
+    setSplitTargetTransaction(tx);
+    const total = Math.abs(tx.amount);
+    if (tx.splits && tx.splits.length >= 2) {
+      setSplitRows(
+        tx.splits.map((s, idx) => ({
+          id: `split-${idx}-${Date.now()}`,
+          category: s.category,
+          amount: String(s.amount),
+        }))
+      );
+    } else {
+      const half = (total / 2).toFixed(2);
+      const remainingHalf = (total - Number(half)).toFixed(2);
+      setSplitRows([
+        { id: `split-1-${Date.now()}`, category: tx.category || "", amount: half },
+        { id: `split-2-${Date.now()}`, category: "", amount: remainingHalf },
+      ]);
+    }
+  };
+
+  const addSplitRow = () => {
+    const total = Math.abs(splitTargetTransaction?.amount || 0);
+    const allocated = splitRows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+    const remainder = Math.max(0, Number((total - allocated).toFixed(2)));
+    setSplitRows((prev) => [
+      ...prev,
+      {
+        id: `split-${prev.length + 1}-${Date.now()}`,
+        category: "",
+        amount: remainder > 0 ? String(remainder) : "",
+      },
+    ]);
+  };
+
+  const removeSplitRow = (id: string) => {
+    if (splitRows.length <= 2) return;
+    setSplitRows((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  const autoFillRemainder = (index: number) => {
+    const total = Math.abs(splitTargetTransaction?.amount || 0);
+    const otherAllocated = splitRows.reduce((sum, r, idx) => (idx === index ? sum : sum + (Number(r.amount) || 0)), 0);
+    const remainder = Math.max(0, Number((total - otherAllocated).toFixed(2)));
+    setSplitRows((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], amount: String(remainder) };
+      return next;
+    });
+  };
+
+  const toggleSplitExpand = (id: string) => {
+    setExpandedSplitIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSaveSplits = async () => {
+    if (!splitTargetTransaction || updateMutation.isPending) return;
+    const txId = splitTargetTransaction.id || splitTargetTransaction._id;
+    if (!txId) return;
+
+    const payloadSplits = splitRows.map((r) => ({
+      category: r.category.trim(),
+      amount: Number(r.amount),
+    }));
+
+    setSplitSaveError(null);
+    try {
+      await updateMutation.mutateAsync({ id: txId, payload: { splits: payloadSplits } });
+      toast({ title: "Transaction Split Saved", description: `Split across ${payloadSplits.length} categories successfully.` });
+      setSplitTargetTransaction(null);
+    } catch (error) {
+      setSplitSaveError(formatError(error, "Could not save the split. Your entries are kept; try again."));
+    }
+  };
+
+  const handleClearSplits = async (tx: ITransaction) => {
+    const txId = tx.id || tx._id;
+    if (!txId || updateMutation.isPending) return;
+    try {
+      await updateMutation.mutateAsync({ id: txId, payload: { splits: [] } });
+      toast({ title: "Splits Cleared", description: "Restored to single unified category." });
+    } catch {
+      // The shared update error handler reports the failure; retain the breakdown.
+    }
+  };
+
+  const openRecurringRuleDialog = (tx: ITransaction) => {
+    const original = originalTransaction(tx);
+    if (!original) return;
+    tx = original;
+    setRecurringTargetTransaction(tx);
+    setRuleName(tx.description || "Recurring Transaction");
+    setRuleCategory(tx.category || "Uncategorized");
+    setRuleAmount(String(Math.abs(tx.amount)));
+    setRuleFrequency("monthly");
+  };
+
+  const createRecurringRuleMutation = useMutation({
+    mutationFn: (body: any) => createRecurringRule(body),
+    onSuccess: async (res) => {
+      await queryClient.invalidateQueries({ queryKey: ["v1/finance/recurring"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/v1/finance/recurring"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/finance/recurring/candidates"] });
+      toast({
+        title: "Recurring Rule Created",
+        description: `"${res.rule.name || ruleName}" will be tracked automatically.`,
+      });
+      setRecurringTargetTransaction(null);
+    },
+    onError: (error) => {
+      toast({
+        title: "Rule Creation Failed",
+        description: formatError(error, "Failed to create recurring rule."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSubmitRecurringRule = () => {
+    if (!recurringTargetTransaction) return;
+    const numericAmount = Number(ruleAmount);
+    const cronMap: Record<string, string> = {
+      monthly: "0 0 1 * *",
+      biweekly: "0 0 1,15 * *",
+      weekly: "0 0 * * 1",
+      quarterly: "0 0 1 1,4,7,10 *",
+      annual: "0 0 1 1 *",
+    };
+
+    createRecurringRuleMutation.mutate({
+      name: ruleName.trim(),
+      category: ruleCategory.trim() || undefined,
+      cron: cronMap[ruleFrequency] || "0 0 1 * *",
+      amount_min: Number.isFinite(numericAmount) ? numericAmount : undefined,
+      amount_max: Number.isFinite(numericAmount) ? numericAmount : undefined,
+      status: "active",
+    });
+  };
+
+  const splitTargetTotal = Math.abs(splitTargetTransaction?.amount || 0);
+  const splitAllocatedSum = splitRows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const splitRemaining = Number((splitTargetTotal - splitAllocatedSum).toFixed(2));
+  const isSplitBalanced = Math.abs(splitRemaining) < 0.01;
+  const isSplitValid =
+    splitRows.length >= 2 &&
+    isSplitBalanced &&
+    splitRows.every((r) => r.category.trim() && (Number(r.amount) || 0) > 0);
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchCategory, setBatchCategory] = useState<string>("");
+  const [customCategory, setCustomCategory] = useState<string>("");
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => bulkDeleteTransactions(ids),
+    onSuccess: async (result) => {
+      setSelectedIds(new Set());
+      await queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/financial-profiles/me"] });
+      toast({
+        title: "Deleted",
+        description: `Successfully deleted ${result.deleted_count} transaction${result.deleted_count !== 1 ? "s" : ""}.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Delete failed",
+        description: formatError(error, "Failed to bulk delete transactions."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const bulkCategorizeMutation = useMutation({
+    mutationFn: (payload: { transactionIds: string[]; category: string }) =>
+      bulkCategorizeTransactions(payload.transactionIds, payload.category),
+    onSuccess: async (result) => {
+      setSelectedIds(new Set());
+      setBatchCategory("");
+      setCustomCategory("");
+      await queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/dashboard/summary"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/financial-profiles/me"] });
+      toast({
+        title: "Categorized",
+        description: `Categorized ${result.modified_count} transaction${result.modified_count !== 1 ? "s" : ""} as ${result.category}.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Categorize failed",
+        description: formatError(error, "Failed to bulk categorize transactions."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`Delete ${selectedIds.size} selected transaction${selectedIds.size !== 1 ? "s" : ""}?`)) return;
+    await bulkDeleteMutation.mutateAsync(Array.from(selectedIds));
+  };
+
+  const handleBatchCategorize = async () => {
+    if (selectedIds.size === 0) return;
+    const cat = batchCategory === "__custom__" ? customCategory.trim() : batchCategory.trim();
+    if (!cat) return;
+    await bulkCategorizeMutation.mutateAsync({
+      transactionIds: Array.from(selectedIds),
+      category: cat,
+    });
+  };
+
   const transactions = useMemo(() => {
     const allTransactions = (data?.transactions || []) as ITransaction[];
     return [...allTransactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [data?.transactions]);
 
-  const visibleIncome = transactions
+  const visibleTransactions = useMemo(() => {
+    if (reviewFilter === "all") return transactions;
+    if (reviewFilter === "needs_attention") {
+      return transactions.filter((transaction) => Boolean(transaction.review?.needs_attention));
+    }
+    return transactions.filter((transaction) => transaction.review?.flags?.includes(reviewFilter));
+  }, [reviewFilter, transactions]);
+
+  const allVisibleSelected = useMemo(() => {
+    if (visibleTransactions.length === 0) return false;
+    return visibleTransactions.every((tx) => {
+      const id = tx.id || tx._id;
+      return id ? selectedIds.has(id) : false;
+    });
+  }, [visibleTransactions, selectedIds]);
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelectedIds(new Set());
+    } else {
+      const next = new Set<string>();
+      visibleTransactions.forEach((tx) => {
+        const id = tx.id || tx._id;
+        if (id) next.add(id);
+      });
+      setSelectedIds(next);
+    }
+  };
+
+  const visibleIncome = visibleTransactions
     .filter((transaction) => transaction.type === "income")
     .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
-  const visibleOutflow = transactions
+  const visibleOutflow = visibleTransactions
     .filter((transaction) => transaction.type !== "income")
     .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
-  const activeFiltersCount = [typeFilter !== "all", Boolean(categoryFilter), Boolean(fromFilter), Boolean(toFilter)].filter(Boolean).length;
+  const activeFiltersCount = [
+    typeFilter !== "all",
+    Boolean(categoryFilter),
+    Boolean(fromFilter),
+    Boolean(toFilter),
+    reviewFilter !== "all",
+  ].filter(Boolean).length;
 
-  const formatAmount = (amount: number, type: TransactionType) => {
-    const prefix = type === "income" ? "+" : "-";
-    return `${prefix}${formatMoney(Math.abs(amount), { maximumFractionDigits: 0 })}`;
+  const isDataPreConverted = Boolean(data?.currency && data.currency === selectedCurrency);
+
+  const formatAmount = useCallback(
+    (amount: number, type?: TransactionType, isPreConverted = false) => {
+      const prefix = type ? (type === "income" ? "+" : "-") : amount < 0 ? "-" : amount > 0 ? "+" : "";
+      const absVal = Math.abs(amount);
+      const val = isPreConverted || isDataPreConverted || selectedCurrency === "USD" ? absVal : convertUsdToCurrency(absVal, selectedCurrency);
+      if (selectedCurrency === "JPY") {
+        return `${prefix}${activeSymbol}${Math.round(val).toLocaleString("en-US")}`;
+      }
+      return `${prefix}${activeSymbol}${val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    },
+    [selectedCurrency, activeSymbol, isDataPreConverted]
+  );
+
+  const isLargeBatch = visibleTransactions.length > 30;
+  const { visibleItems, totalHeight, containerRef } = useVirtualList<ITransaction>({
+    items: visibleTransactions,
+    itemHeight: 96,
+    overscan: 4,
+    containerHeight: 600,
+  });
+
+  const renderTransactionCard = (
+    transaction: ITransaction,
+    index: number,
+    isVirtual = false,
+    offsetTop = 0
+  ) => {
+    const id = transaction.id || transaction._id;
+    const isSelected = Boolean(id && selectedIds.has(id));
+
+    const body = (
+      <div
+        className={`flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-3 rounded-lg border transition-colors ${
+          isSelected
+            ? "border-primary/50 bg-primary/10 shadow-sm"
+            : "border-border/40 bg-accent/50 hover:bg-accent/70"
+        }`}
+        data-testid={`transaction-row-${id || index}`}
+      >
+        <div className="flex items-start sm:items-center gap-3">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => id && toggleSelect(id)}
+            aria-label={`Select transaction ${transaction.description}`}
+            className="mt-1 sm:mt-0 h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer shrink-0"
+          />
+          <div>
+            <p className="font-medium text-foreground">{transaction.description}</p>
+            <p className="text-xs text-muted-foreground">
+              {transaction.category} - {formatDate(transaction.date)}
+              {transaction.source?.origin ? ` • ${transaction.source.origin.replace("_", " ")}` : ""}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {transaction.splits && transaction.splits.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => id && toggleSplitExpand(id)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30 hover:bg-purple-500/25 transition-colors cursor-pointer"
+                  data-testid="badge-split-transaction"
+                  title="Click to view category split breakdown"
+                >
+                  <Split className="h-3 w-3" />
+                  Split ({transaction.splits.length})
+                  {expandedSplitIds.has(id || "") ? (
+                    <ChevronUp className="h-3 w-3 ml-0.5" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3 ml-0.5" />
+                  )}
+                </button>
+              )}
+              {transaction.review?.flags?.map((flag) => (
+                <Badge key={flag} variant="outline">
+                  {reviewFlagLabel[flag]}
+                </Badge>
+              ))}
+              {transaction.reconciliation?.status && transaction.reconciliation.status !== "unreconciled" ? (
+                <Badge variant="outline">Reconciliation: {transaction.reconciliation.status}</Badge>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="text-right min-w-[120px]">
+            <p
+              className={`font-semibold ${
+                transaction.type === "income"
+                  ? "text-green-600 dark:text-green-400"
+                  : "text-foreground"
+              }`}
+            >
+              {formatAmount(transaction.amount, transaction.type)}
+            </p>
+            <p className="text-xs text-muted-foreground capitalize">{transaction.type}</p>
+          </div>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => openSplitDialog(transaction)}
+            className="h-8 text-xs"
+            data-testid={`btn-split-transaction-${id || index}`}
+            title="Split transaction across multiple categories"
+          >
+            <Split className="h-3.5 w-3.5 mr-1 text-purple-600 dark:text-purple-400" />
+            Split
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => openRecurringRuleDialog(transaction)}
+            className="h-8 text-xs"
+            data-testid={`btn-make-recurring-${id || index}`}
+            title="Create recurring schedule rule"
+          >
+            <Repeat className="h-3.5 w-3.5 mr-1 text-primary" />
+            Recurring
+          </Button>
+
+          <Button size="sm" variant="outline" onClick={() => startEdit(transaction)} className="h-8 text-xs">
+            Edit
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => handleDelete(id)}
+            disabled={deleteMutation.isPending || bulkDeleteMutation.isPending}
+            className="h-8 text-xs"
+          >
+            Delete
+          </Button>
+        </div>
+
+        {/* Expanded Split Breakdown */}
+        {transaction.splits && transaction.splits.length > 0 && expandedSplitIds.has(id || "") && (
+          <div
+            className="w-full mt-3 pt-2.5 border-t border-border/50 text-xs"
+            data-testid={`split-breakdown-${id || index}`}
+          >
+            <div className="flex items-center justify-between mb-1.5 text-muted-foreground font-medium text-[11px]">
+              <span>Category Allocation Breakdown:</span>
+              <button
+                type="button"
+                onClick={() => handleClearSplits(transaction)}
+                className="text-destructive hover:underline text-[10px]"
+                data-testid={`btn-clear-splits-${id || index}`}
+              >
+                Clear Splits
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              {transaction.splits.map((s, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between p-2 rounded bg-card/60 border border-border/50 text-xs"
+                >
+                  <span className="font-medium text-foreground truncate mr-2">{s.category}</span>
+                  <span className="font-bold text-purple-600 dark:text-purple-400">
+                    {formatAmount(s.amount).replace(/^\+/, "")}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+
+    if (isVirtual) {
+      return (
+        <div
+          key={id || `${transaction.description}-${index}`}
+          style={{ position: "absolute", top: offsetTop, left: 0, right: 0, height: 90 }}
+        >
+          {body}
+        </div>
+      );
+    }
+
+    return (
+      <motion.div
+        key={id || `${transaction.description}-${index}`}
+        initial={{ opacity: 0, x: -10 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: Math.min(index * 0.02, 0.4) }}
+      >
+        {body}
+      </motion.div>
+    );
   };
 
   const startCreate = () => {
@@ -199,6 +917,9 @@ export default function Transactions() {
   };
 
   const startEdit = (transaction: ITransaction) => {
+    const original = originalTransaction(transaction);
+    if (!original) return;
+    transaction = original;
     setEditingId(transaction.id || transaction._id || null);
     setForm({
       amount: String(Math.abs(transaction.amount)),
@@ -241,6 +962,21 @@ export default function Transactions() {
 
   const [importOpen, setImportOpen] = useState(false);
   const [csv, setCsv] = useState<CsvState>(EMPTY_CSV);
+  const [previewReady, setPreviewReady] = useState(false);
+
+  const previewMutation = useMutation({
+    mutationFn: importTransactionsCsv,
+    onSuccess: () => {
+      setPreviewReady(true);
+    },
+    onError: (error) => {
+      toast({
+        title: "Preview failed",
+        description: formatError(error, "Failed to preview transactions."),
+        variant: "destructive",
+      });
+    },
+  });
 
   const importMutation = useMutation({
     mutationFn: importTransactionsCsv,
@@ -248,10 +984,12 @@ export default function Transactions() {
       await queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       toast({
         title: "Imported",
-        description: `Inserted ${result.inserted} transactions (${result.duplicates} duplicates). Merchants touched: ${result.merchants_touched}.`,
+        description: `Inserted ${result.inserted} transactions (${result.duplicates} duplicates, ${result.invalid_rows || 0} invalid). Merchants touched: ${result.merchants_touched}.`,
       });
       setImportOpen(false);
       setCsv(EMPTY_CSV);
+      setPreviewReady(false);
+      previewMutation.reset();
     },
     onError: (error) => {
       toast({
@@ -290,6 +1028,8 @@ export default function Transactions() {
       accountId: "",
       mapping,
     });
+    setPreviewReady(false);
+    previewMutation.reset();
   };
 
   const previewRows = useMemo(() => {
@@ -306,6 +1046,37 @@ export default function Transactions() {
       type: mapping.type ? String(row[mapping.type] || "").trim().toLowerCase() : "",
     }));
   }, [csv]);
+
+  const runPreview = async () => {
+    const { mapping } = csv;
+    if (!csv.file || !csv.rawRows.length) return;
+
+    if (!mapping.amount || !mapping.date) {
+      toast({
+        title: "Mapping required",
+        description: "Map at least Amount and Date columns before previewing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const mappingPayload: any = {
+      amount: mapping.amount,
+      date: mapping.date,
+      description: mapping.description || undefined,
+      category: mapping.category || undefined,
+      type: mapping.type || undefined,
+      merchant: mapping.merchant || undefined,
+    };
+
+    await previewMutation.mutateAsync({
+      file: csv.file,
+      mapping: mappingPayload,
+      account_id: csv.accountId || undefined,
+      dry_run: true,
+      remember_mapping: true,
+    });
+  };
 
   const runImport = async () => {
     const { mapping } = csv;
@@ -333,25 +1104,39 @@ export default function Transactions() {
       file: csv.file,
       mapping: mappingPayload,
       account_id: csv.accountId || undefined,
+      remember_mapping: true,
     });
   };
+
+  const importPreviewRows = previewMutation.data?.preview_rows || [];
+  const importDuplicateGroups = previewMutation.data?.duplicate_groups || [];
 
   return (
     <div className="page-grid flex-1 overflow-auto" data-testid="transactions-page">
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <PageIntro
           icon={ReceiptText}
-          eyebrow="Cash Flow Ledger"
-          title="Transactions that are easier to review, filter, and clean up"
-          description="Keep income, expenses, and investments in one working ledger. Import in bulk, scan receipts, and tighten filters when you need to isolate a pattern quickly."
+          eyebrow="Transactions"
+          title="Transactions"
+          description="Add income and expenses, import a CSV, or filter your transaction history."
           stats={[
-            { label: "Visible entries", value: String(transactions.length) },
-            { label: "Visible income", value: formatMoney(visibleIncome, { maximumFractionDigits: 0 }) },
-            { label: "Visible outflow", value: formatMoney(visibleOutflow, { maximumFractionDigits: 0 }) },
+            { label: "Visible entries", value: String(visibleTransactions.length) },
+            { label: "Visible income", value: formatAmount(visibleIncome).replace(/^\+/, "") },
+            { label: "Visible outflow", value: formatAmount(visibleOutflow).replace(/^\+/, "") },
           ]}
           actions={
             <>
-              <ReceiptOcrDialog currencyHint={currency} />
+              <Button
+                variant="outline"
+                className="rounded-full"
+                onClick={() => setBankFeedOpen(true)}
+                data-testid="btn-open-bank-feed-modal"
+                title="Simulate incoming real-time bank connector webhook feed"
+              >
+                <Radio className="mr-2 h-4 w-4 text-emerald-500 animate-pulse" />
+                Bank Feed
+              </Button>
+              <ReceiptOcrDialog currencyHint={selectedCurrency !== "USD" ? selectedCurrency : currency} />
               <Dialog open={importOpen} onOpenChange={setImportOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline" className="rounded-full">
@@ -370,6 +1155,8 @@ export default function Transactions() {
                 <div className="space-y-4">
                   <input
                     type="file"
+                    aria-label="Transactions CSV"
+                    className="block w-full min-w-0 max-w-full text-sm"
                     accept=".csv,text/csv"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
@@ -396,7 +1183,21 @@ export default function Transactions() {
                         <label className="text-sm font-medium">Account (optional)</label>
                         <select
                           value={csv.accountId}
-                          onChange={(e) => setCsv((prev) => ({ ...prev, accountId: e.target.value }))}
+                          onChange={(e) => {
+                            const accountId = e.target.value;
+                            const selectedAccount = (accountsQuery.data?.accounts || []).find((account) => account.id === accountId);
+                            const rememberedMapping = (selectedAccount?.metadata as any)?.import_preferences?.transactions_csv?.last_mapping;
+                            setCsv((prev) => ({
+                              ...prev,
+                              accountId,
+                              mapping:
+                                rememberedMapping && typeof rememberedMapping === "object"
+                                  ? { ...prev.mapping, ...rememberedMapping }
+                                  : prev.mapping,
+                            }));
+                            setPreviewReady(false);
+                            previewMutation.reset();
+                          }}
                           disabled={accountsQuery.isLoading}
                           className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
                         >
@@ -414,6 +1215,11 @@ export default function Transactions() {
                               ? "Helps segment imports and power account-level insights."
                               : "No accounts yet. Create one in Finance OS."}
                         </div>
+                        {csv.accountId && ((accountsQuery.data?.accounts || []).find((account) => account.id === csv.accountId)?.metadata as any)?.import_preferences?.transactions_csv?.last_mapping ? (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Reused the last saved mapping for this account. You can adjust it before previewing.
+                          </div>
+                        ) : null}
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -431,11 +1237,14 @@ export default function Transactions() {
                             <label className="text-sm font-medium">{label}</label>
                             <select
                               value={(csv.mapping as any)[key]}
-                              onChange={e =>
+                              onChange={e => {
                                 setCsv(prev => ({
                                   ...prev,
                                   mapping: { ...prev.mapping, [key]: e.target.value },
-                                }))}
+                                }));
+                                setPreviewReady(false);
+                                previewMutation.reset();
+                              }}
                               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
                             >
                               <option value="">Select column</option>
@@ -451,7 +1260,41 @@ export default function Transactions() {
                     </div>
                   )}
 
-                  {previewRows.length > 0 && (
+                  {previewMutation.data ? (
+                    <div className="space-y-3">
+                      <div className="grid gap-3 sm:grid-cols-4">
+                        <Card className="p-3">
+                          <div className="text-xs text-muted-foreground">Parsed rows</div>
+                          <div className="text-lg font-semibold">{previewMutation.data.parsed_rows}</div>
+                        </Card>
+                        <Card className="p-3">
+                          <div className="text-xs text-muted-foreground">Valid rows</div>
+                          <div className="text-lg font-semibold">{previewMutation.data.valid_rows}</div>
+                        </Card>
+                        <Card className="p-3">
+                          <div className="text-xs text-muted-foreground">Invalid rows</div>
+                          <div className="text-lg font-semibold">{previewMutation.data.invalid_rows || 0}</div>
+                        </Card>
+                        <Card className="p-3">
+                          <div className="text-xs text-muted-foreground">Duplicates</div>
+                          <div className="text-lg font-semibold">{previewMutation.data.duplicates}</div>
+                        </Card>
+                      </div>
+
+                      {importDuplicateGroups.length ? (
+                        <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+                          <div className="font-medium text-foreground">Duplicate review</div>
+                          <div className="mt-2 space-y-1">
+                            {importDuplicateGroups.slice(0, 4).map((group) => (
+                              <div key={group.duplicate_key}>
+                                Rows {group.row_indexes.join(", ")}: {group.reason}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : previewRows.length > 0 && (
                     <div className="overflow-x-auto rounded-md border border-border">
                       <table className="min-w-full text-sm">
                         <thead className="bg-muted">
@@ -480,18 +1323,72 @@ export default function Transactions() {
                     </div>
                   )}
 
-                  <div className="flex justify-end gap-2">
+                  {importPreviewRows.length > 0 ? (
+                    <div className="overflow-x-auto rounded-md border border-border">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-muted">
+                          <tr>
+                            <th className="px-3 py-2 text-left">Row</th>
+                            <th className="px-3 py-2 text-left">Status</th>
+                            <th className="px-3 py-2 text-left">Description</th>
+                            <th className="px-3 py-2 text-left">Category</th>
+                            <th className="px-3 py-2 text-left">Amount</th>
+                            <th className="px-3 py-2 text-left">Review</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {importPreviewRows.map((row) => (
+                            <tr key={row.row_index} className="border-t border-border align-top">
+                              <td className="px-3 py-2">{row.row_index}</td>
+                              <td className="px-3 py-2">
+                                <Badge variant={row.status === "ready" ? "default" : row.status === "duplicate" ? "secondary" : "outline"}>
+                                  {row.status}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="font-medium">{row.description || row.merchant_name || "—"}</div>
+                                {row.issues.length ? <div className="text-xs text-muted-foreground">{row.issues.join(" ")}</div> : null}
+                              </td>
+                              <td className="px-3 py-2">
+                                <div>{row.category || "—"}</div>
+                                {row.suggestions?.category && row.suggestions.category !== row.category ? (
+                                  <div className="text-xs text-muted-foreground">
+                                    Suggested: {row.suggestions.category} via {row.suggestions.category_source?.replace("_", " ")}
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-2">{row.amount_raw}</td>
+                              <td className="px-3 py-2">
+                                <div className="flex flex-wrap gap-1">
+                                  {row.review.flags.length ? row.review.flags.map((flag) => (
+                                    <Badge key={flag} variant="outline">{reviewFlagLabel[flag]}</Badge>
+                                  )) : <span className="text-muted-foreground">Clean</span>}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                     <Button
                       variant="outline"
                       onClick={() => {
                         setImportOpen(false);
                         setCsv(EMPTY_CSV);
+                        setPreviewReady(false);
+                        previewMutation.reset();
                       }}
                     >
                       Cancel
                     </Button>
-                    <Button onClick={runImport} disabled={importMutation.isPending}>
-                      {importMutation.isPending ? "Importing..." : "Import"}
+                    <Button variant="outline" onClick={runPreview} disabled={!csv.file || !csv.rawRows.length || previewMutation.isPending || importMutation.isPending}>
+                      {previewMutation.isPending ? "Previewing..." : "Preview import"}
+                    </Button>
+                    <Button onClick={runImport} disabled={importMutation.isPending || !previewReady}>
+                      {importMutation.isPending ? "Importing..." : "Commit import"}
                     </Button>
                   </div>
                 </div>
@@ -506,10 +1403,181 @@ export default function Transactions() {
           }
         />
 
+        <Tabs defaultValue={new URLSearchParams(window.location.search).get("tab") === "review" ? "review" : "ledger"} className="w-full">
+          <TabsList className="mb-4">
+            <TabsTrigger value="ledger">Ledger</TabsTrigger>
+            <TabsTrigger value="review">Review Queue</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="review">
+            <Card className="surface-panel p-6">
+              <div className="mb-4">
+                <h2 className="text-lg font-semibold text-foreground">Transaction Review Queue</h2>
+                <p className="text-sm text-muted-foreground">
+                  Approve, categorize, or dismiss flagged transactions. Bulk actions are available for batch workflows.
+                </p>
+              </div>
+              <TransactionReviewQueue />
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="ledger" className="space-y-6">
+
+        {/* ================================================================= */}
+        {/* MULTI-CURRENCY FX NORMALIZATION COCKPIT (Batch 30)                 */}
+        {/* ================================================================= */}
+        <Card className="surface-panel p-4 sm:p-5" data-testid="card-transactions-currency-normalization">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Globe className="h-5 w-5 text-primary" />
+                <h3 className="text-sm font-semibold tracking-wide uppercase text-foreground">
+                  Display currency
+                </h3>
+                <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/30" data-testid="badge-transactions-fx-status">
+                  Fixed reference rates
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Use fixed reference rates for estimates. Transactions, edits and recurring rules use original USD ledger amounts.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-lg border border-border/60 bg-muted/40 p-1">
+                {SUPPORTED_CURRENCIES.map((curr) => (
+                  <button
+                    key={curr}
+                    type="button"
+                    onClick={() => setSelectedCurrency(curr)}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
+                      selectedCurrency === curr
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground hover:bg-background/60"
+                    }`}
+                    data-testid={`btn-transactions-currency-${curr}`}
+                  >
+                    {curr}
+                  </button>
+                ))}
+              </div>
+
+              <select
+                aria-label="Select reporting currency"
+                value={selectedCurrency}
+                onChange={(e) => setSelectedCurrency(e.target.value as SupportedCurrency)}
+                className="h-8 rounded-md border border-input bg-background px-2 py-1 text-xs font-medium focus:ring-1 focus:ring-primary"
+                data-testid="select-transactions-currency"
+              >
+                {SUPPORTED_CURRENCIES.map((curr) => (
+                  <option key={curr} value={curr}>
+                    {curr} ({CURRENCY_SYMBOLS[curr]})
+                  </option>
+                ))}
+              </select>
+
+              <Badge variant="outline" className="text-xs font-medium bg-accent/40" data-testid="badge-transactions-reporting-currency">
+                Active: {selectedCurrency} ({activeSymbol})
+              </Badge>
+
+              <Badge variant="outline" className="text-xs font-medium text-muted-foreground" data-testid="badge-transactions-fx-rate">
+                1 USD = {activeFxRate} {selectedCurrency}
+              </Badge>
+            </div>
+          </div>
+        </Card>
+
+        {/* ================================================================= */}
+        {/* AUTOMATED MERCHANT NORMALIZATION & CLUSTERING ENGINE (Batch 30)    */}
+        {/* ================================================================= */}
+        {merchantClustersQuery.data?.clusters && merchantClustersQuery.data.clusters.length > 0 && (
+          <Card className="surface-panel p-4 sm:p-5 border-amber-500/20 bg-amber-500/5 dark:bg-amber-950/10" data-testid="card-merchant-clustering-engine">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Building2 className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Review merchant names
+                  </h3>
+                  <Badge variant="outline" className="text-xs bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30" data-testid="badge-merchant-cluster-confidence">
+                    Suggested matches
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Check suggested names and categories before applying them to your transactions.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="text-xs bg-background/80" data-testid="badge-merchant-cluster-count">
+                  {merchantClustersQuery.data.clusters.length} Merchant Cluster{merchantClustersQuery.data.clusters.length === 1 ? "" : "s"}
+                </Badge>
+                <Badge variant="outline" className="text-xs bg-background/80" data-testid="badge-merchant-cluster-spend">
+                  Volume: {formatAmount(merchantClustersQuery.data.clusters.reduce((acc, c) => acc + c.total_spend, 0), undefined, true)}
+                </Badge>
+              </div>
+            </div>
+
+            <details>
+              <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                Review {merchantClustersQuery.data.clusters.length} suggested match{merchantClustersQuery.data.clusters.length === 1 ? "" : "es"}
+              </summary>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {merchantClustersQuery.data.clusters.map((cluster) => (
+                <div
+                  key={cluster.cluster_key}
+                  className="p-3 rounded-lg border border-border/60 bg-card/60 flex flex-col justify-between gap-2.5 hover:border-amber-500/30 transition-colors"
+                  data-testid={`merchant-cluster-${cluster.cluster_key}`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="font-semibold text-sm text-foreground">{cluster.normalized_name}</span>
+                      <Badge variant="outline" className="text-[11px] bg-primary/10 text-primary border-primary/20">
+                        {cluster.suggested_category}
+                      </Badge>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground mb-1.5" data-testid="text-merchant-variants">
+                      Variants: <span className="italic">{cluster.raw_descriptions.slice(0, 2).join(", ")}{cluster.raw_descriptions.length > 2 ? ` +${cluster.raw_descriptions.length - 2} more` : ""}</span>
+                    </p>
+
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{cluster.count} transaction{cluster.count === 1 ? "" : "s"}</span>
+                      <span>•</span>
+                      <span className="font-medium text-foreground">{formatAmount(cluster.total_spend, undefined, true)}</span>
+                    </div>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full text-xs h-7 border-amber-500/40 hover:bg-amber-500/10 text-foreground"
+                    onClick={() =>
+                      applyClusterMutation.mutate({
+                        cluster_key: cluster.cluster_key,
+                        normalized_name: cluster.normalized_name,
+                        category: cluster.suggested_category,
+                        transaction_ids: cluster.transaction_ids,
+                      })
+                    }
+                    disabled={applyClusterMutation.isPending}
+                    data-testid={`btn-apply-merchant-cluster-${cluster.cluster_key}`}
+                    title="Apply clean merchant name and suggested category to all matching transactions"
+                  >
+                    <CheckCircle2 className="h-3 w-3 mr-1 text-amber-600 dark:text-amber-400" />
+                    {applyClusterMutation.isPending ? "Normalizing..." : "Apply Normalization"}
+                  </Button>
+                </div>
+              ))}
+              </div>
+            </details>
+          </Card>
+        )}
+
         <Card className="surface-panel p-4">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-foreground">Refine the ledger view</h2>
+              <h2 className="text-lg font-semibold text-foreground">Filter transactions</h2>
               <p className="text-sm text-muted-foreground">
                 Narrow the list by type, category, and date range.
               </p>
@@ -521,10 +1589,10 @@ export default function Transactions() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-3 items-end">
             <div>
-              <label className="text-sm font-medium">Type</label>
-              <select
+              <label htmlFor="filter-type" className="text-sm font-medium">Type</label>
+              <select id="filter-type"
                 value={typeFilter}
                 onChange={(e) => {
                   setTypeFilter(e.target.value as any);
@@ -540,8 +1608,8 @@ export default function Transactions() {
             </div>
 
             <div className="md:col-span-2">
-              <label className="text-sm font-medium">Category</label>
-              <input
+              <label htmlFor="filter-category" className="text-sm font-medium">Category</label>
+              <input id="filter-category"
                 value={categoryFilter}
                 onChange={(e) => {
                   setCategoryFilter(e.target.value);
@@ -553,8 +1621,8 @@ export default function Transactions() {
             </div>
 
             <div>
-              <label className="text-sm font-medium">From</label>
-              <input
+              <label htmlFor="filter-from" className="text-sm font-medium">From</label>
+              <input id="filter-from"
                 type="date"
                 value={fromFilter}
                 onChange={(e) => {
@@ -566,8 +1634,8 @@ export default function Transactions() {
             </div>
 
             <div>
-              <label className="text-sm font-medium">To</label>
-              <input
+              <label htmlFor="filter-to" className="text-sm font-medium">To</label>
+              <input id="filter-to"
                 type="date"
                 value={toFilter}
                 onChange={(e) => {
@@ -579,8 +1647,28 @@ export default function Transactions() {
             </div>
 
             <div>
-              <label className="text-sm font-medium">Page size</label>
-              <select
+              <label htmlFor="filter-review" className="text-sm font-medium">Review</label>
+              <select id="filter-review"
+                value={reviewFilter}
+                onChange={(e) => {
+                  setReviewFilter(e.target.value as ReviewFilter);
+                  setPage(1);
+                }}
+                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
+              >
+                <option value="all">All</option>
+                <option value="needs_attention">Needs attention</option>
+                <option value="uncategorized">Uncategorized</option>
+                <option value="suspected_duplicate">Suspected duplicate</option>
+                <option value="needs_merchant_match">Needs merchant match</option>
+                <option value="split_candidate">Split candidate</option>
+                <option value="recurring_candidate">Recurring candidate</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="filter-limit" className="text-sm font-medium">Page size</label>
+              <select id="filter-limit"
                 value={limit}
                 onChange={(e) => {
                   setLimit(Number(e.target.value) || 20);
@@ -605,6 +1693,7 @@ export default function Transactions() {
                 setCategoryFilter("");
                 setFromFilter("");
                 setToFilter("");
+                setReviewFilter("all");
                 setPage(1);
               }}
             >
@@ -614,11 +1703,11 @@ export default function Transactions() {
         </Card>
 
         {isFormOpen && (
-          <Card className="surface-panel p-6">
+          <Card ref={formCardRef} className="surface-panel p-6 scroll-mt-4" data-testid="transaction-form-card">
             <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={handleSubmit}>
               <div>
-                <label className="text-sm font-medium">Type</label>
-                <select
+                <label htmlFor="transaction-type" className="text-sm font-medium">Type</label>
+                <select id="transaction-type"
                   value={form.type}
                   onChange={(event) => setForm((prev) => ({ ...prev, type: event.target.value as TransactionType }))}
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
@@ -630,11 +1719,11 @@ export default function Transactions() {
               </div>
 
               <div>
-                <label className="text-sm font-medium">Amount</label>
-                <input
+                <label htmlFor="transaction-amount" className="text-sm font-medium">Amount (USD)</label>
+                <input id="transaction-amount"
                   type="number"
-                  min="0"
-                  step="0.01"
+                  min={editingId ? 0 : 0.01}
+                  step={editingId ? "any" : "0.01"}
                   value={form.amount}
                   onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))}
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2"
@@ -643,8 +1732,8 @@ export default function Transactions() {
               </div>
 
               <div>
-                <label className="text-sm font-medium">Category</label>
-                <input
+                <label htmlFor="transaction-category" className="text-sm font-medium">Category</label>
+                <input id="transaction-category"
                   type="text"
                   value={form.category}
                   onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))}
@@ -654,8 +1743,8 @@ export default function Transactions() {
               </div>
 
               <div>
-                <label className="text-sm font-medium">Date</label>
-                <input
+                <label htmlFor="transaction-date" className="text-sm font-medium">Date</label>
+                <input id="transaction-date"
                   type="date"
                   value={form.date}
                   onChange={(event) => setForm((prev) => ({ ...prev, date: event.target.value }))}
@@ -664,8 +1753,8 @@ export default function Transactions() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="text-sm font-medium">Description</label>
-                <input
+                <label htmlFor="transaction-description" className="text-sm font-medium">Description</label>
+                <input id="transaction-description"
                   type="text"
                   value={form.description}
                   onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
@@ -697,7 +1786,7 @@ export default function Transactions() {
         <Card className="surface-panel p-6">
           {isLoading ? (
             <InlineLoader label="Loading transactions..." />
-          ) : transactions.length === 0 ? (
+          ) : visibleTransactions.length === 0 ? (
             <EmptyState
               title="No transactions found"
               description={
@@ -716,54 +1805,127 @@ export default function Transactions() {
               }
             />
           ) : (
-            <div className="space-y-3">
-              {transactions.map((transaction, index) => {
-                const id = transaction.id || transaction._id;
-                return (
-                  <motion.div
-                    key={id || `${transaction.description}-${index}`}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.02 }}
-                    className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-3 rounded-lg bg-accent/50"
-                  >
-                    <div>
-                      <p className="font-medium text-foreground">{transaction.description}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {transaction.category} - {formatDate(transaction.date)}
-                        {transaction.source?.origin ? ` • ${transaction.source.origin.replace("_", " ")}` : ""}
-                      </p>
-                    </div>
+            <div className="space-y-4">
+              {/* Batch Actions Toolbar */}
+              {selectedIds.size > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-3 rounded-lg border border-primary/30 bg-primary/5 flex flex-wrap items-center justify-between gap-3 text-xs"
+                  data-testid="batch-actions-bar"
+                >
+                  <div className="flex items-center gap-2">
+                    <Badge variant="default" className="text-xs px-2 py-0.5">
+                      {selectedIds.size} selected
+                    </Badge>
+                    <span className="text-muted-foreground">
+                      of {visibleTransactions.length} visible
+                    </span>
+                  </div>
 
-                    <div className="flex items-center gap-3">
-                      <div className="text-right min-w-[140px]">
-                        <p
-                          className={`font-semibold ${
-                            transaction.type === "income"
-                              ? "text-green-600 dark:text-green-400"
-                              : "text-foreground"
-                          }`}
-                        >
-                          {formatAmount(transaction.amount, transaction.type)}
-                        </p>
-                        <p className="text-xs text-muted-foreground capitalize">{transaction.type}</p>
-                      </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Quick Category Selector */}
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={batchCategory}
+                        onChange={(e) => setBatchCategory(e.target.value)}
+                        className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                        data-testid="batch-category-select"
+                      >
+                        <option value="">Select category...</option>
+                        {COMMON_CATEGORIES.map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
+                        <option value="__custom__">Custom category...</option>
+                      </select>
 
-                      <Button size="sm" variant="outline" onClick={() => startEdit(transaction)}>
-                        Edit
-                      </Button>
+                      {batchCategory === "__custom__" && (
+                        <input
+                          type="text"
+                          placeholder="Category name"
+                          value={customCategory}
+                          onChange={(e) => setCustomCategory(e.target.value)}
+                          className="h-8 w-28 rounded-md border border-border bg-background px-2 text-xs"
+                          data-testid="batch-custom-category-input"
+                        />
+                      )}
+
                       <Button
                         size="sm"
-                        variant="destructive"
-                        onClick={() => handleDelete(id)}
-                        disabled={deleteMutation.isPending}
+                        variant="secondary"
+                        className="h-8 text-xs"
+                        onClick={handleBatchCategorize}
+                        disabled={
+                          (!batchCategory || (batchCategory === "__custom__" && !customCategory.trim())) ||
+                          bulkCategorizeMutation.isPending
+                        }
                       >
-                        Delete
+                        {bulkCategorizeMutation.isPending ? "Applying..." : "Apply Category"}
                       </Button>
                     </div>
-                  </motion.div>
-                );
-              })}
+
+                    {/* Batch Delete Button */}
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-8 text-xs"
+                      onClick={handleBatchDelete}
+                      disabled={bulkDeleteMutation.isPending}
+                    >
+                      {bulkDeleteMutation.isPending ? "Deleting..." : `Delete (${selectedIds.size})`}
+                    </Button>
+
+                    {/* Deselect All */}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 text-xs"
+                      onClick={() => setSelectedIds(new Set())}
+                    >
+                      Deselect
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Select All Toggle Header */}
+              <div className="flex items-center justify-between pb-2 border-b border-border/50 text-xs text-muted-foreground px-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all visible transactions"
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+                  />
+                  <span className="font-medium text-foreground">Select all visible ({visibleTransactions.length})</span>
+                </label>
+                {selectedIds.size > 0 && (
+                  <span className="text-primary font-medium">{selectedIds.size} selected</span>
+                )}
+              </div>
+
+              {isLargeBatch ? (
+                <div
+                  ref={containerRef}
+                  className="overflow-y-auto max-h-[600px] relative pr-1"
+                  style={{ height: Math.min(600, totalHeight) }}
+                >
+                  <div style={{ height: totalHeight, position: "relative" }}>
+                    {visibleItems.map(({ item, index, offsetTop }) =>
+                      renderTransactionCard(item, index, true, offsetTop)
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {visibleTransactions.map((transaction, index) =>
+                    renderTransactionCard(transaction, index)
+                  )}
+                </div>
+              )}
             </div>
           )}
         </Card>
@@ -785,7 +1947,388 @@ export default function Transactions() {
             </Button>
           </div>
         ) : null}
+
+          </TabsContent>
+        </Tabs>
+
+        {/* Split Transaction Modal Dialog */}
+        {splitTargetTransaction && (
+          <Dialog open={Boolean(splitTargetTransaction)} onOpenChange={(open) => { if (!open && !updateMutation.isPending) setSplitTargetTransaction(null); }}>
+            <DialogContent className="max-w-md" data-testid="dialog-split-transaction">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Split className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                  Split Transaction
+                </DialogTitle>
+                <DialogDescription>
+                  Allocate <span className="font-semibold text-foreground">{splitTargetTransaction.description}</span> ({formatLedgerMoney(splitTargetTotal)}) across multiple expense categories. Split amounts are in USD, the ledger currency.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 pt-2">
+                {/* Allocation Balance Status Meter */}
+                <div className="p-3 rounded-lg border border-border/60 bg-accent/40 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Total: <strong className="text-foreground">{formatLedgerMoney(splitTargetTotal)}</strong></span>
+                    <span className="text-muted-foreground">Allocated: <strong className="text-foreground">{formatLedgerMoney(splitAllocatedSum)}</strong></span>
+                    <Badge
+                      variant={isSplitBalanced ? "default" : splitRemaining > 0 ? "outline" : "destructive"}
+                      className="text-[10px]"
+                      data-testid="badge-split-status"
+                    >
+                      {isSplitBalanced
+                        ? "Balanced"
+                        : splitRemaining > 0
+                        ? `${formatLedgerMoney(splitRemaining)} Left`
+                        : `${formatLedgerMoney(Math.abs(splitRemaining))} Over`}
+                    </Badge>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                    <div
+                      className={`h-full transition-all ${
+                        isSplitBalanced ? "bg-emerald-500" : splitRemaining > 0 ? "bg-amber-500" : "bg-destructive"
+                      }`}
+                      style={{ width: `${Math.min(100, (splitAllocatedSum / (splitTargetTotal || 1)) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Split Category Rows */}
+                <fieldset disabled={updateMutation.isPending} className="space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
+                  {splitRows.map((row, idx) => (
+                    <div key={row.id} className="flex items-center gap-2" data-testid={`split-row-${idx}`}>
+                      <div className="flex-1">
+                        <select
+                          value={row.category}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSplitRows((prev) => {
+                              const next = [...prev];
+                              next[idx] = { ...next[idx], category: val };
+                              return next;
+                            });
+                          }}
+                          className="w-full h-8 rounded-md border border-border bg-background px-2 text-xs"
+                          data-testid={`select-split-category-${idx}`}
+                          aria-label={`Split ${idx + 1} category`}
+                        >
+                          <option value="">Select category...</option>
+                          {row.category && !COMMON_CATEGORIES.includes(row.category) ? <option value={row.category}>{row.category}</option> : null}
+                          {COMMON_CATEGORIES.map((cat) => (
+                            <option key={cat} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="w-28 relative">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0.00"
+                          value={row.amount}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSplitRows((prev) => {
+                              const next = [...prev];
+                              next[idx] = { ...next[idx], amount: val };
+                              return next;
+                            });
+                          }}
+                          className="w-full h-8 rounded-md border border-border bg-background px-2 text-xs text-right font-medium"
+                          data-testid={`input-split-amount-${idx}`}
+                          aria-label={`Split ${idx + 1} amount`}
+                        />
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => autoFillRemainder(idx)}
+                        className="h-8 px-1.5 text-[10px] text-muted-foreground hover:text-primary"
+                        title="Fill remainder here"
+                        data-testid={`btn-autofill-remainder-${idx}`}
+                      >
+                        Fill
+                      </Button>
+
+                      {splitRows.length > 2 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeSplitRow(row.id)}
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                          data-testid={`btn-remove-split-row-${idx}`}
+                          aria-label={`Remove split ${idx + 1}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </fieldset>
+
+                <div className="flex items-center justify-between pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addSplitRow}
+                    disabled={updateMutation.isPending}
+                    className="text-xs h-7"
+                    data-testid="btn-add-split-row"
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Add Category
+                  </Button>
+                  <span className="text-[11px] text-muted-foreground">
+                    Min 2 categories required
+                  </span>
+                </div>
+
+                {splitSaveError ? <p role="alert" className="text-sm text-destructive">{splitSaveError}</p> : null}
+                <div className="flex justify-end gap-2 pt-3 border-t border-border/50">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setSplitTargetTransaction(null)}
+                    disabled={updateMutation.isPending}
+                    className="text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleSaveSplits}
+                    disabled={!isSplitValid || updateMutation.isPending}
+                    className="text-xs"
+                    data-testid="btn-submit-split"
+                  >
+                    {updateMutation.isPending ? "Saving..." : "Apply Splits"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Create Recurring Rule Modal Dialog */}
+        {recurringTargetTransaction && (
+          <Dialog open={Boolean(recurringTargetTransaction)} onOpenChange={(open) => !open && setRecurringTargetTransaction(null)}>
+            <DialogContent className="max-w-md" data-testid="dialog-create-recurring-rule">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Repeat className="h-5 w-5 text-primary" />
+                  Create Recurring Rule
+                </DialogTitle>
+                <DialogDescription>
+                  Automate schedule and forecast cashflow for <span className="font-semibold text-foreground">{recurringTargetTransaction.description}</span>.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 pt-2">
+                <div>
+                  <label htmlFor="recurring-rule-name" className="text-xs font-semibold text-foreground block mb-1">
+                    Rule Name
+                  </label>
+                  <input
+                    id="recurring-rule-name"
+                    type="text"
+                    value={ruleName}
+                    onChange={(e) => setRuleName(e.target.value)}
+                    className="w-full h-8 rounded-md border border-border bg-background px-3 text-xs"
+                    data-testid="input-recurring-rule-name"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="recurring-rule-category" className="text-xs font-semibold text-foreground block mb-1">
+                      Category
+                    </label>
+                    <select
+                      id="recurring-rule-category"
+                      value={ruleCategory}
+                      onChange={(e) => setRuleCategory(e.target.value)}
+                      className="w-full h-8 rounded-md border border-border bg-background px-2 text-xs"
+                      data-testid="select-recurring-rule-category"
+                    >
+                      <option value="">Select category...</option>
+                      {ruleCategory && !COMMON_CATEGORIES.includes(ruleCategory) ? <option value={ruleCategory}>{ruleCategory}</option> : null}
+                      {COMMON_CATEGORIES.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="recurring-rule-amount" className="text-xs font-semibold text-foreground block mb-1">
+                      Expected Amount (USD)
+                    </label>
+                    <input
+                      id="recurring-rule-amount"
+                      type="number"
+                      step="any"
+                      value={ruleAmount}
+                      onChange={(e) => setRuleAmount(e.target.value)}
+                      className="w-full h-8 rounded-md border border-border bg-background px-3 text-xs text-right font-medium"
+                      data-testid="input-recurring-rule-amount"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="recurring-rule-frequency" className="text-xs font-semibold text-foreground block mb-1">
+                    Billing Frequency
+                  </label>
+                  <select
+                    id="recurring-rule-frequency"
+                    value={ruleFrequency}
+                    onChange={(e) => setRuleFrequency(e.target.value as any)}
+                    className="w-full h-8 rounded-md border border-border bg-background px-2 text-xs"
+                    data-testid="select-recurring-rule-frequency"
+                  >
+                    <option value="monthly">Monthly (1st of month)</option>
+                    <option value="biweekly">Bi-Weekly (1st & 15th)</option>
+                    <option value="weekly">Weekly (Every Monday)</option>
+                    <option value="quarterly">Quarterly (Every 3 months)</option>
+                    <option value="annual">Annual (Once a year)</option>
+                  </select>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-border/50">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setRecurringTargetTransaction(null)}
+                    className="text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleSubmitRecurringRule}
+                    disabled={!ruleName.trim() || !Number(ruleAmount) || createRecurringRuleMutation.isPending}
+                    className="text-xs"
+                    data-testid="btn-submit-recurring-rule"
+                  >
+                    {createRecurringRuleMutation.isPending ? "Creating..." : "Create Rule"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </motion.div>
-    </div>
+
+      {/* ================================================================= */}
+      {/* AUTHENTICATED BANK-FEED SIMULATOR MODAL (Batch 30) */}
+      {/* ================================================================= */}
+      <Dialog open={bankFeedOpen} onOpenChange={setBankFeedOpen}>
+        <DialogContent className="max-w-xl" data-testid="dialog-bank-feed-simulation">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Radio className="h-5 w-5 text-emerald-500 animate-pulse" />
+              Bank Feed Import Simulator
+            </DialogTitle>
+            <DialogDescription>
+              Test the authenticated import format using Plaid/Teller-style payloads. A production provider connector still needs its own signed callback endpoint and credential setup.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5 block">
+                Select Bank Ingestion Event Preset
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {BANK_FEED_PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSelectedPresetId(p.id)}
+                    className={`p-2.5 rounded-lg border text-left text-xs font-medium transition-all ${
+                      selectedPresetId === p.id
+                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold shadow-sm"
+                        : "border-border/60 hover:bg-accent/60 text-muted-foreground"
+                    }`}
+                    data-testid={`preset-bank-feed-${p.id}`}
+                  >
+                    <div>{p.label}</div>
+                    <div className="text-[11px] opacity-75 truncate">{p.name}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 block">
+                Simulated Import Payload Preview (JSON)
+              </label>
+              <pre className="p-3 rounded-md bg-muted/60 text-foreground border border-border/50 text-[11px] font-mono overflow-x-auto max-h-40">
+                {JSON.stringify(
+                  {
+                    webhook_type: "TRANSACTIONS",
+                    webhook_code: "SYNC_UPDATES_AVAILABLE",
+                    transactions: [
+                      {
+                        transaction_id: `bank-feed-${selectedPresetId}-9982`,
+                        amount: BANK_FEED_PRESETS.find((p) => p.id === selectedPresetId)?.amount,
+                        name: BANK_FEED_PRESETS.find((p) => p.id === selectedPresetId)?.name,
+                        category: BANK_FEED_PRESETS.find((p) => p.id === selectedPresetId)?.category,
+                        pending: false,
+                        date: new Date().toISOString(),
+                      },
+                    ],
+                  },
+                  null,
+                  2
+                )}
+              </pre>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setBankFeedOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                onClick={() => {
+                  const preset = BANK_FEED_PRESETS.find((p) => p.id === selectedPresetId);
+                  if (!preset) return;
+                  bankFeedMutation.mutate({
+                    webhook_type: "TRANSACTIONS",
+                    webhook_code: "SYNC_UPDATES_AVAILABLE",
+                    transactions: [
+                      {
+                        transaction_id: `bank-feed-${preset.id}-${Date.now()}`,
+                        amount: preset.amount,
+                        date: new Date().toISOString(),
+                        name: preset.name,
+                        category: preset.category,
+                        pending: preset.pending,
+                      },
+                    ],
+                  });
+                }}
+                disabled={bankFeedMutation.isPending}
+                data-testid="btn-simulate-bank-feed"
+              >
+                {bankFeedMutation.isPending ? "Ingesting..." : "Simulate Bank Feed Ingestion"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+</div>
   );
 }

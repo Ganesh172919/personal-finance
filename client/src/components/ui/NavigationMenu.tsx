@@ -5,6 +5,9 @@ import { ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// Accessible website navigation header bar built on Radix UI NavigationMenu.
+// Manages viewport positioning, hover delays, and smooth slide transitions.
+// Houses navigation lists, triggers, dropdown contents, and animated indicators.
 const NavigationMenu = React.forwardRef<
   React.ElementRef<typeof NavigationMenuPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof NavigationMenuPrimitive.Root>
@@ -23,6 +26,9 @@ const NavigationMenu = React.forwardRef<
 ));
 NavigationMenu.displayName = NavigationMenuPrimitive.Root.displayName;
 
+// Unordered list container organizing top-level navigation bar links and triggers.
+// Applies flexbox layout aligning items horizontally with consistent spacing.
+// Forwards DOM references to the underlying Radix List primitive.
 const NavigationMenuList = React.forwardRef<
   React.ElementRef<typeof NavigationMenuPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof NavigationMenuPrimitive.List>
@@ -38,12 +44,21 @@ const NavigationMenuList = React.forwardRef<
 ));
 NavigationMenuList.displayName = NavigationMenuPrimitive.List.displayName;
 
+// List item element encapsulating a single navigation link or dropdown trigger.
+// Re-exports Radix UI NavigationMenuPrimitive Item for hierarchical structure.
+// Coordinates open state and active focus within its specific navigation branch.
 const NavigationMenuItem = NavigationMenuPrimitive.Item;
 
+// Defines button trigger styling variants for navigation menu items using CVA.
+// Sets typography, hover colors, open state background, and focus outlines.
+// Reused across standalone navigation links and interactive dropdown triggers.
 const navigationMenuTriggerStyle = cva(
   "group inline-flex h-10 w-max items-center justify-center rounded-md bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=open]:text-accent-foreground data-[state=open]:bg-accent/50 data-[state=open]:hover:bg-accent data-[state=open]:focus:bg-accent"
 );
 
+// Interactive button trigger toggling associated navigation content panels.
+// Renders an animated ChevronDown icon rotating 180 degrees when open.
+// Forwards DOM references to the underlying Radix Trigger primitive.
 const NavigationMenuTrigger = React.forwardRef<
   React.ElementRef<typeof NavigationMenuPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof NavigationMenuPrimitive.Trigger>
@@ -62,6 +77,9 @@ const NavigationMenuTrigger = React.forwardRef<
 ));
 NavigationMenuTrigger.displayName = NavigationMenuPrimitive.Trigger.displayName;
 
+// Floating content card revealed when activating a NavigationMenuTrigger.
+// Features directional slide and fade animations between adjacent navigation items.
+// Formats rich navigation mega-menus and secondary link collections.
 const NavigationMenuContent = React.forwardRef<
   React.ElementRef<typeof NavigationMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof NavigationMenuPrimitive.Content>
@@ -77,8 +95,14 @@ const NavigationMenuContent = React.forwardRef<
 ));
 NavigationMenuContent.displayName = NavigationMenuPrimitive.Content.displayName;
 
+// Direct navigation link component for non-dropdown items in the menu bar.
+// Re-exports Radix UI NavigationMenuPrimitive Link with keyboard navigation.
+// Integrates with client-side routing while maintaining WAI-ARIA states.
 const NavigationMenuLink = NavigationMenuPrimitive.Link;
 
+// Shared floating viewport container animating size changes between menu panels.
+// Centers below the navigation bar with rounded popover borders and shadow depth.
+// Forwards DOM references to the underlying Radix Viewport primitive.
 const NavigationMenuViewport = React.forwardRef<
   React.ElementRef<typeof NavigationMenuPrimitive.Viewport>,
   React.ComponentPropsWithoutRef<typeof NavigationMenuPrimitive.Viewport>
@@ -97,6 +121,9 @@ const NavigationMenuViewport = React.forwardRef<
 NavigationMenuViewport.displayName =
   NavigationMenuPrimitive.Viewport.displayName;
 
+// Visual arrow indicator pointing to the currently active navigation menu item.
+// Smoothly animates horizontal position along the navigation bar track.
+// Forwards DOM references to the underlying Radix Indicator primitive.
 const NavigationMenuIndicator = React.forwardRef<
   React.ElementRef<typeof NavigationMenuPrimitive.Indicator>,
   React.ComponentPropsWithoutRef<typeof NavigationMenuPrimitive.Indicator>

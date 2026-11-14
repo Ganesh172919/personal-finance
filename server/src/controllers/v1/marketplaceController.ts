@@ -1,3 +1,26 @@
+/**
+ * @fileoverview Marketplace Controller (v1)
+ *
+ * Plugin marketplace: browse available plugins, install/uninstall, and manage versions.
+ * Includes a fallback catalog for development when no DB plugins exist.
+ *
+ * Routes served:
+ *   GET    /api/v1/marketplace/catalog             - listMarketplaceCatalog
+ *   POST   /api/v1/marketplace/install             - installMarketplacePlugin (admin)
+ *   GET    /api/v1/marketplace/installed            - listInstalledPlugins
+ *   DELETE /api/v1/marketplace/installed/:id        - uninstallPlugin (admin)
+ *   PUT    /api/v1/marketplace/installed/:id/version - updateInstalledPluginVersion (admin)
+ *
+ * Key patterns:
+ *   - Catalog loaded from DB first; falls back to hardcoded FALLBACK_MARKETPLACE_CATALOG
+ *   - Install uses upsert (reinstall updates version/status)
+ *   - Uninstall sets status to "disabled" (soft-delete, preserves config)
+ *   - Feature limit enforced on marketplace_installs
+ *   - Plugin versions validated against available_versions in catalog
+ *
+ * @module controllers/v1/marketplaceController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -5,14 +28,20 @@ import type { IUserDocument } from "../../models/userModel";
 import MarketplacePluginModel from "../../models/marketplacePluginModel";
 import PluginInstallModel from "../../models/pluginInstallModel";
 import { HttpError } from "../../middleware/httpError";
-import { enforceFeatureLimit, recordFeatureUsage } from "../../services/entitlements";
+import { recordFeatureUsage, releaseReservationOnResponseEnd, reserveFeatureUsage } from "../../services/entitlements";
 
+// Defines authority hierarchy scores for organization member roles.
+// Establishes comparative ordering between member, admin, and owner permissions.
+// Evaluated by role guards to control access to marketplace management endpoints.
 const roleRank: Record<"member" | "admin" | "owner", number> = {
   member: 1,
   admin: 2,
   owner: 3,
 };
 
+// Defines structural schema for marketplace plugin catalog listings.
+// Encompasses plugin metadata, version lists, required permissions, and pricing.
+// Guarantees strongly-typed handling across database retrieval and fallback entries.
 type CatalogPlugin = {
   plugin_key: string;
   name: string;
@@ -26,6 +55,10 @@ type CatalogPlugin = {
   price_monthly_usd: number | null;
 };
 
+// Provides a static backup array of available plugins for testing and seed workflows.
+// Guarantees valid marketplace offerings even when database records are absent.
+// Contains initial definitions for connectors, digest templates, and developer tools.
+// Hardcoded fallback catalog used when no plugins exist in the database (dev/seed scenarios)
 const FALLBACK_MARKETPLACE_CATALOG: CatalogPlugin[] = [
   {
     plugin_key: "finwise.connector.bank_stub",
@@ -65,6 +98,9 @@ const FALLBACK_MARKETPLACE_CATALOG: CatalogPlugin[] = [
   },
 ];
 
+// Validates that organization context is properly attached to the request object.
+// Throws an unauthorized error if the organization session cannot be confirmed.
+// Returns the resolved organization ID cast as a typed MongoDB ObjectId.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -72,6 +108,9 @@ const requireOrgContext = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Enforces administrator role requirements for modifying marketplace configurations.
+// Assesses role rank hierarchy against administrative privilege benchmarks.
+// Throws a 403 access denied exception if the actor does not meet admin level.
 const requireOrgAdmin = (req: Request) => {
   const orgId = requireOrgContext(req);
   if (roleRank[req.org!.role] < roleRank.admin) {
@@ -80,8 +119,14 @@ const requireOrgAdmin = (req: Request) => {
   return orgId;
 };
 
+// Escapes special regex characters in user search strings to ensure safe matching.
+// Prevents regular expression injection errors during catalog searches.
+// Returns a sanitized string suitable for dynamic RegExp pattern generation.
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// Maps raw marketplace plugin database documents into standardized catalog objects.
+// Normalizes fields such as versions, permissions, pricing models, and publisher details.
+// Ensures consistent null-safety and type conformity for all catalog outputs.
 const toCatalogPlugin = (plugin: any): CatalogPlugin => ({
   plugin_key: String(plugin.pluginKey),
   name: String(plugin.name),
@@ -100,6 +145,9 @@ const toCatalogPlugin = (plugin: any): CatalogPlugin => ({
       : null,
 });
 
+// Loads catalog plugins from the database with support for text queries and status filtering.
+// Reverts to the static fallback catalog if the database yields zero plugin records.
+// Returns an array of matching catalog plugin definitions ready for consumption.
 const loadCatalogPlugins = async (params: { q?: string; status?: CatalogPlugin["status"] }) => {
   const filters: Record<string, unknown> = {};
   if (params.status) {
@@ -152,6 +200,9 @@ const loadCatalogPlugins = async (params: { q?: string; status?: CatalogPlugin["
   });
 };
 
+// Finds a specific catalog plugin by its unique string key in the database or fallback list.
+// Queries the database first and defaults to the static backup catalog if not found.
+// Returns the resolved catalog plugin entity or null if no matching key exists.
 const findCatalogPluginByKey = async (pluginKey: string) => {
   const dbRow = await MarketplacePluginModel.findOne({ pluginKey })
     .select({
@@ -173,6 +224,9 @@ const findCatalogPluginByKey = async (pluginKey: string) => {
   return FALLBACK_MARKETPLACE_CATALOG.find((plugin) => plugin.plugin_key === pluginKey) || null;
 };
 
+// Lists the full marketplace catalog combined with current organization install statuses.
+// Maps catalog items against organization plugin records to indicate installed versions.
+// Returns enriched plugin listings with installation metadata and request tracking IDs.
 export const listMarketplaceCatalog = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const query = req.query as { q?: string; status?: CatalogPlugin["status"] };
@@ -199,6 +253,9 @@ export const listMarketplaceCatalog = async (req: Request, res: Response) => {
   });
 };
 
+// Installs or upgrades a marketplace plugin for the organization with version validation.
+// Verifies plan entitlements, manages usage reservations, and saves granted permissions.
+// Persists installation state to the database and records feature consumption metrics.
 export const installMarketplacePlugin = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;
@@ -206,13 +263,14 @@ export const installMarketplacePlugin = async (req: Request, res: Response) => {
     throw new HttpError(401, "UNAUTHORIZED", "Missing user context");
   }
 
-  await enforceFeatureLimit({
+  const reservation = await reserveFeatureUsage({
     orgId,
     userId: user._id,
     feature: "marketplace_installs",
     units: 1,
     requestId: req.requestId,
   });
+  releaseReservationOnResponseEnd(res, reservation);
 
   const body = req.body as {
     plugin_key: string;
@@ -258,6 +316,7 @@ export const installMarketplacePlugin = async (req: Request, res: Response) => {
     .lean();
 
   await recordFeatureUsage({
+    reservation,
     orgId,
     userId: user._id,
     feature: "marketplace_installs",
@@ -282,6 +341,9 @@ export const installMarketplacePlugin = async (req: Request, res: Response) => {
   });
 };
 
+// Retrieves all plugins currently installed in the caller's organization.
+// Enriches installation records with metadata and publisher information from catalog.
+// Returns the list of installed plugins with active versions and granted permissions.
 export const listInstalledPlugins = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
 
@@ -321,6 +383,9 @@ export const listInstalledPlugins = async (req: Request, res: Response) => {
   });
 };
 
+// Disables an installed organization plugin without erasing historical configuration.
+// Updates installation record status to disabled and logs user audit identifiers.
+// Rejects uninstallation requests for plugins that are not currently installed.
 export const uninstallPlugin = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;
@@ -355,6 +420,9 @@ export const uninstallPlugin = async (req: Request, res: Response) => {
   });
 };
 
+// Updates the installed version of an active marketplace plugin for the organization.
+// Verifies version compatibility against allowed catalog releases before updating.
+// Sets the target version atomically in the database and returns updated state.
 export const updateInstalledPluginVersion = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;

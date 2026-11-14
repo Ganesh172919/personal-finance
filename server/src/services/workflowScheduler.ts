@@ -9,17 +9,29 @@ import { enqueueWorkflowRun } from "./workflows";
 import { publishDomainEvent } from "./domainEvents";
 import { HttpError } from "../middleware/httpError";
 
+// Safely parses and bounds an integer value within minimum and maximum limits.
+// Returns a fallback integer if the provided value cannot be parsed.
+// Constrains numeric query limits and timer parameters across scheduler runs.
 const clampInt = (value: unknown, fallback: number, min: number, max: number) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(parsed)));
 };
 
+// Truncates an idempotency key string to a maximum of 128 characters.
+// Ensures generated scheduler keys comply with schema length constraints.
+// Prevents storage issues during repeated automated workflow dispatching.
 const truncateIdempotencyKey = (value: string) => value.slice(0, 128);
 
+// Derives a deterministic idempotency key for scheduled cron workflow runs.
+// Combines the workflow identifier and targeted execution timestamp.
+// Guarantees at-most-once execution for any given scheduled time slot.
 const buildCronRunIdempotencyKey = (workflowId: string, scheduledAt: Date) =>
   truncateIdempotencyKey(`cron:${workflowId}:${scheduledAt.toISOString()}`);
 
+// Delivers in-app notification alerts regarding automated workflow events.
+// Dispatches unread notices for disabled schedules or reached plan quotas.
+// Swallows unexpected errors gracefully to avoid blocking the scheduler loop.
 const createWorkflowNotification = async (params: {
   orgId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
@@ -41,6 +53,9 @@ const createWorkflowNotification = async (params: {
   }
 };
 
+// Backfills missing nextRunAt and scheduleTimezone attributes for active workflows.
+// Resolves tenant organization timezones and validates cron expressions.
+// Disables workflows and delivers notifications when cron expressions are invalid.
 export const backfillCronWorkflowScheduleFields = async (params: { now?: Date; limit?: number } = {}) => {
   const now = params.now ? new Date(params.now) : new Date();
   const limit = clampInt(params.limit, 50, 1, 500);
@@ -125,6 +140,9 @@ export const backfillCronWorkflowScheduleFields = async (params: { now?: Date; l
   return { ok: true as const, scanned: workflows.length, updated };
 };
 
+// Evaluates and triggers all enabled cron workflows whose next run time has arrived.
+// Enqueues runs using deterministic idempotency keys and advances next run dates.
+// Handles plan quota limits gracefully by logging warnings and alerting owners.
 export const tickCronWorkflows = async (params: { now?: Date; limit?: number } = {}) => {
   const now = params.now ? new Date(params.now) : new Date();
   const limit = clampInt(params.limit, 50, 1, 500);
@@ -260,6 +278,9 @@ export const tickCronWorkflows = async (params: { now?: Date; limit?: number } =
   return { ok: true as const, scanned: due.length, triggered, errors };
 };
 
+// Initiates the background periodic timer polling and triggering cron workflows.
+// Runs backfill checks and executes overdue cron tasks on each timer interval.
+// Returns control handles allowing clean timer unref and teardown on shutdown.
 export const startWorkflowScheduler = (params: { intervalMs?: number; label?: string } = {}) => {
   const intervalMs = clampInt(params.intervalMs, 15_000, 5_000, 60_000);
   const label = params.label || "workflow_scheduler";

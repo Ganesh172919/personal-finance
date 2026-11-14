@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Single blog post detail view with markdown rendering.
+ *
+ * Fetches a blog post by slug (from the URL route) and renders it with
+ * full markdown support (remark-gfm), a reading progress bar, like
+ * button with optimistic cache update, share/copy link, and related
+ * posts at the bottom.
+ *
+ * Key data flows:
+ * - getBlogBySlug(slug) loads the post, author info, and metadata.
+ * - toggleBlogLike(slug) increments the like count; the React Query
+ *   cache is updated optimistically via setQueryData.
+ *
+ * Cover images and author avatars are resolved through resolveBlogCoverImage
+ * and resolveAuthorAvatar helpers for CDN-aware URLs.
+ *
+ * Routed at /blogs/:slug; linked from the Blogs listing page.  Shows
+ * a skeleton while loading and an error alert if the post is not found.
+ */
+
 import { useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +38,9 @@ import { ReadingProgressBar } from "@/components/ReadingProgressBar";
 import { LazyImage } from "@/components/LazyImage";
 import { resolveAuthorAvatar, resolveBlogCoverImage } from "@/lib/media";
 
+// Color styling map assigning distinct chart theme badges to blog categories.
+// Associates investing, budgeting, taxes, debts, and retirement with palette tokens.
+// Powers visual category pill tags on blog detail and summary cards.
 const CATEGORY_COLORS: Record<string, string> = {
   'investing': 'bg-chart-1 text-chart-1-foreground',
   'budgeting': 'bg-chart-2 text-chart-2-foreground',
@@ -26,10 +49,16 @@ const CATEGORY_COLORS: Record<string, string> = {
   'retirement': 'bg-chart-5 text-chart-5-foreground',
 };
 
+// Formats a hyphenated category slug into capitalized human-readable text.
+// Splits slug segments and transforms them into title-cased words.
+// Generates clear category headers for blog article navigation.
 const getCategoryLabel = (cat: string) => {
     return cat.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
+// Blog article detail page rendering full markdown content with GFM formatting.
+// Features reading progress indicator, like count mutation, and link sharing.
+// Resolves responsive cover images and links to related financial articles.
 export default function BlogDetail() {
   const [, params] = useRoute("/blogs/:slug");
   const slug = params?.slug;

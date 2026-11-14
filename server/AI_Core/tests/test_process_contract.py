@@ -1,9 +1,22 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
+from agents.financial_educator import FinancialEducatorAgent
 from api_service import app
 from contracts import ProcessResponse
+
+
+@pytest.fixture(autouse=True)
+def isolate_education_provider(monkeypatch):
+    # These tests cover the response contract. Live provider checks run separately.
+    monkeypatch.setattr(
+        FinancialEducatorAgent,
+        "explain_concept",
+        lambda *_args: {"explanation": "A concept explanation.", "fallback_used": False},
+    )
+
 
 MINIMAL_PROFILE = {
     "age": 30,
@@ -105,7 +118,8 @@ def test_process_contract_no_profile_education_path():
         parsed = ProcessResponse.model_validate(data)
         assert parsed.success is True
         assert parsed.final_output.strip()
-        assert parsed.plan.executive_summary.strip()
+        assert parsed.analysis_type == "financial_education"
+        assert not parsed.plan.executive_summary
 
 
 GOLDEN_PROMPTS = [
@@ -162,5 +176,8 @@ def test_process_contract_golden_prompts_validate_schema():
                 },
             )
             parsed = ProcessResponse.model_validate(data)
-            assert parsed.final_output.strip()
-            assert parsed.plan.executive_summary.strip()
+            assert parsed.final_output.strip(), prompt
+            if parsed.analysis_type == "financial_education":
+                assert not parsed.plan.executive_summary, prompt
+            else:
+                assert parsed.plan.executive_summary.strip(), prompt

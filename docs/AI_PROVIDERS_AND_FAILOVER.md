@@ -1,136 +1,290 @@
-# FinWise — AI Providers and Failover
+# FinWise — AI Providers, KeyPool & Multi-Tier Failover
 
-This document explains how the AI runtime selects providers, exposes health information, and falls back across multiple model vendors.
+> **Comprehensive Engineering Guide to AI Vendor Selection, Key Pools, Circuit Breakers, and Failover Architecture**  
+> *Gemini, OpenRouter, Groq, xAI, Together, Mistral, Local vLLM, and Deterministic Pure Python Calculators*  
+> **Runtime Target:** Python `3.11+` · FastAPI `0.115` · LangGraph `0.2.53` · Pydantic V2 `2.10`
 
-## Overview
+---
 
-The AI Core can route requests through several providers:
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
 
-- Gemini
-- OpenRouter
-- Groq
-- Grok (xAI)
-- Together
-- Mistral
+## 1. AI Provider Ecosystem Mindmap
 
-Provider definitions live in `server/AI_Core/utils/provider_registry.py`. Runtime invocation and failover logic live in `server/AI_Core/utils/llm_wrapper.py`.
-
-## How provider selection works
-
-The runtime resolves a preferred provider in this order:
-
-1. `LLM_PROVIDER` if explicitly set
-2. The first configured provider in the default priority list
-3. `gemini` as the final default when no provider key is configured
-
-Default priority:
-
-```text
-gemini -> openrouter -> groq -> grok -> together -> mistral
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#0284c7', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#0369a1', 'lineColor': '#8b5cf6', 'secondaryColor': '#ec4899', 'tertiaryColor': '#10b981'}}}%%
+mindmap
+  root((FinWise AI Provider Ecosystem))
+    Cloud LLM Providers
+      Groq (LLaMA 3.3 70B Versatile - Ultra Low Latency)
+      Google Gemini (Gemini 2.5 Flash / Pro)
+      OpenRouter (Claude 3.5 Sonnet, DeepSeek-R1)
+      Mistral AI (Mistral Large / Small)
+      xAI (Grok 2.0)
+    Local Offline Fallback
+      Ollama (Local LLaMA 3.2 / Qwen / Mistral)
+      Zero Cost & Zero API Key Requirement
+    KeyPool & Cooldown Engine
+      Multi-Key Rotation per Provider
+      Automatic 429 RateLimit Cooldown (60s Backoff)
+      Round-Robin & Usage Balancing
+    Resilience & Circuit Breakers
+      Provider Error Threshold Tracking
+      Circuit State: Closed -> Open -> Half-Open
+      Exponential Retry with Jitter
+      Deterministic Rule-Based Response Fallback
 ```
 
-You can override the order with `LLM_PROVIDER_PRIORITY`, using a comma-separated list of provider names.
+---
 
-Example:
+## 2. Dynamic Provider Resolution & Failover ASCII Flow
 
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🟢 INCOMING INFERENCE REQUEST (LangGraph Node Execution)                                        │
+│    Target Task: Budget Analysis / Debt Modeling / Recommendation                                │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔍 STEP 1: RESOLVE CANDIDATE PROVIDERS (Ranked Priority Order)                                  │
+│    Priority: [1] Gemini ──► [2] OpenRouter ──► [3] Groq ──► [4] xAI ──► [5] Local Ollama        │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STEP 2: CHECK CIRCUIT BREAKER & KEY POOL HEALTH                                              │
+│    ├─► Is Provider Circuit OPEN?                                                                │
+│    │   ├── YES ──► Skip to next provider in chain ⏩                                            │
+│    │   └── NO ──► Check KeyPool for available healthy API Key                                   │
+│    └─► Any keys outside cooldown period?                                                        │
+│        ├── NO ──► Trip circuit temporarily; try next provider                                   │
+│        └── YES ──► Borrow active key with Lease Token                                           │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🚀 STEP 3: DISPATCH CALL WITH TIMEOUT (e.g. 10s budget)                                         │
+│    ├── HTTP 200 SUCCESS ──► Validate Pydantic JSON Schema                                       │
+│    │   ├── Schema Valid? ──► Return Output & Update Metrics 🟢                                  │
+│    │   └── Schema Error? ──► Treat as parse failure 🔴                                          │
+│    └── HTTP 429 / 5xx / TIMEOUT ──► Mark Key in Cooldown                                        │
+│        ├── Record provider error count in Prometheus                                            │
+│        └── Fall through to NEXT PROVIDER in Priority Chain 🟡                                   │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                │ (All Cloud Providers Exhausted)
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🟣 STEP 4: OFFLINE OLLAMA OR DETERMINISTIC RULE ENGINE                                          │
+│    ├─► Invoke local Ollama endpoint (http://localhost:11434)                                    │
+│    └─► Fallback: Calculate deterministic financial formulas (Python)                            │
+│        └── Return structured safety-guaranteed advice payload 🟢                                │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. How Provider Selection Works
+
+The AI Core resolves the active provider through an adaptive priority hierarchy (`server/AI_Core/utils/provider_registry.py` and `llm_wrapper.py`):
+
+1. **Explicit Override**: `LLM_PROVIDER` environment variable if explicitly configured.
+2. **Configured Priority**: The first healthy provider in `LLM_PROVIDER_PRIORITY`.
+3. **Canonical Default Order**:
+   $$\text{gemini} \longrightarrow \text{openrouter} \longrightarrow \text{groq} \longrightarrow \text{grok} \longrightarrow \text{together} \longrightarrow \text{mistral}$$
+
+Example configuration in `server/AI_Core/.env`:
 ```env
 LLM_PROVIDER=openrouter
 LLM_PROVIDER_PRIORITY=openrouter,gemini,groq,grok,together,mistral
 ```
 
-## Provider chain behavior
+---
 
-The provider chain is built by `resolve_provider_chain(...)`.
+## 4. Multi-Key KeyPools & Rate-Limit Cooldowns
 
-- The preferred provider is always attempted first.
-- Configured fallback providers are appended after it.
-- Providers without API keys are skipped during invocation.
-- If no provider key exists, the preferred provider is still returned so the system can emit a clear configuration error.
+The AI Core supports multiple API keys per provider to handle high-concurrency workloads and free-tier quotas.
 
-## Model fallback behavior
+### Key Pool Specification
+- **Single Key**: `GEMINI_API_KEY=AIzaSy...`
+- **Indexed Keys**: `GEMINI_API_KEY_1=...`, `GEMINI_API_KEY_2=...`, `GEMINI_API_KEY_3=...`
+- **Array / Comma Form**: `GEMINI_API_KEYS="key_alpha,key_beta,key_gamma"`
 
-Each provider also has a model candidate list.
+### Automatic Cooldown & Failover Strategy
+- When an API key receives an `HTTP 429 (Too Many Requests)`, the key is quarantined with a cooldown timestamp ($t_{\text{cooldown}} = 60\text{s}$).
+- The KeyPool immediately leases the next available healthy key.
+- If all keys for a provider are exhausted, the provider trips its **Circuit Breaker** and fails over to the next vendor.
 
-Runtime behavior:
+---
 
-1. Try the active provider with its preferred/default model.
-2. If the upstream model returns a 404-style error, move to the next model for that provider.
-3. If the provider fails more broadly, move to the next provider in the chain.
+## 5. Concrete Implementation Blueprints
 
-This gives the system two layers of resilience:
+### Blueprint 1: KeyPool Lease & Health Tracker (`server/AI_Core/utils/key_pool.py`)
 
-- Model failover within a provider
-- Provider failover across vendors
+```python
+import time
+import threading
+from enum import Enum
+from typing import List, Optional
 
-## API keys
+class CircuitState(str, Enum):
+    CLOSED = "closed"        # Healthy, taking traffic
+    OPEN = "open"            # Failing, in cooldown quarantine
+    HALF_OPEN = "half_open"  # Trial request to verify recovery
 
-Each provider reads its own API key environment variable:
+class KeyPool:
+    def __init__(self, provider: str, keys: List[str], cooldown_seconds: float = 60.0):
+        self.provider = provider
+        self.keys = keys
+        self.cooldown_seconds = cooldown_seconds
+        self.key_cooldowns = {k: 0.0 for k in keys}
+        self.circuit_state = CircuitState.CLOSED
+        self.consecutive_failures = 0
+        self.last_state_change = time.time()
+        self._lock = threading.Lock()
+        self._index = 0
 
-| Provider | Environment variable |
-| --- | --- |
-| Gemini | `GEMINI_API_KEY` |
-| OpenRouter | `OPENROUTER_API_KEY` |
-| Groq | `GROQ_API_KEY` |
-| Grok | `XAI_API_KEY` |
-| Together | `TOGETHER_API_KEY` |
-| Mistral | `MISTRAL_API_KEY` |
+    def get_key(self) -> Optional[str]:
+        now = time.time()
+        with self._lock:
+            # Check circuit breaker recovery
+            if self.circuit_state == CircuitState.OPEN:
+                if (now - self.last_state_change) > self.cooldown_seconds:
+                    self.circuit_state = CircuitState.HALF_OPEN
+                else:
+                    return None
 
-## Health and status endpoints
+            # Find healthy keys not in cooldown
+            healthy_keys = [k for k in self.keys if self.key_cooldowns[k] <= now]
+            if not healthy_keys:
+                return None
 
-The AI Core exposes:
+            # Round-robin selection
+            selected = healthy_keys[self._index % len(healthy_keys)]
+            self._index += 1
+            return selected
 
-- `GET /health`
-- `GET /api/providers`
+    def mark_rate_limited(self, key: str):
+        with self._lock:
+            self.key_cooldowns[key] = time.time() + self.cooldown_seconds
+            self.consecutive_failures += 1
+            if self.consecutive_failures >= len(self.keys):
+                self.circuit_state = CircuitState.OPEN
+                self.last_state_change = time.time()
 
-`/health` includes:
+    def mark_success(self, key: str):
+        with self._lock:
+            self.consecutive_failures = 0
+            if self.circuit_state == CircuitState.HALF_OPEN:
+                self.circuit_state = CircuitState.CLOSED
+```
 
-- service status
-- active provider display name
-- default model
-- resolved `provider_chain`
-- request id
+---
 
-`/api/providers` includes:
+### Blueprint 2: Deterministic Python Fallback (`server/AI_Core/tools/financial_calculators.py`)
 
-- provider name
-- display name
-- whether it is configured
-- whether it is active
-- whether it is currently in the failover chain
-- default model
-- model candidates
+```python
+from decimal import Decimal, ROUND_HALF_UP
 
-The Express server aggregates those upstream endpoints in `server/src/controllers/aiStatusController.ts` and returns them through the app-facing AI status endpoint.
+def calculate_amortization_schedule(principal: float, annual_rate: float, months: int) -> dict:
+    """Calculates pure mathematical closed-form debt amortization."""
+    P = Decimal(str(principal))
+    r = Decimal(str(annual_rate)) / Decimal("12")
+    n = Decimal(str(months))
 
-## UI visibility
+    if r == Decimal("0"):
+        monthly_payment = (P / n).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    else:
+        # Standard annuity formula: M = P * [r(1+r)^n] / [(1+r)^n - 1]
+        factor = (Decimal("1") + r) ** n
+        monthly_payment = (P * (r * factor) / (factor - Decimal("1"))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-The client dialog in `client/src/components/AiStatusDialog.tsx` shows:
+    total_payment = monthly_payment * n
+    total_interest = total_payment - P
 
-- last AI response metadata
-- AI Core health
-- provider failover chain
-- provider list and standby status
-- server circuit-breaker state
+    return {
+        "monthly_payment": float(monthly_payment),
+        "total_payment": float(total_payment),
+        "total_interest": float(total_interest),
+        "months": months
+    }
+```
 
-This is the quickest place to confirm whether the runtime is using the provider you expect.
+---
 
-## Testing
+## 6. Testing KeyPool & Failover
 
-Targeted provider-chain tests live in:
-
-- `server/AI_Core/tests/test_provider_env.py`
-
-Run them with:
+Execute the dedicated test suites to verify resilience and failover behavior:
 
 ```bash
 cd server/AI_Core
-pytest tests/test_provider_env.py
+pytest tests/test_key_pool.py -v
+pytest tests/test_llm_wrapper.py -v
+pytest tests/test_provider_usage.py -v
 ```
 
-## Related files
+---
 
-- `server/AI_Core/utils/provider_registry.py`
-- `server/AI_Core/utils/llm_wrapper.py`
-- `server/AI_Core/api_service.py`
-- `server/src/controllers/aiStatusController.ts`
-- `client/src/components/AiStatusDialog.tsx`
+## 7. SubAgentManager Parallel Scheduling, SHA-256 TTL Caching & Canary Invariants
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#dc2626', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#b91c1c', 'lineColor': '#ef4444', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((AI Core SubAgentManager))
+    Parallel Task Execution
+      Kahn's Topological Sort
+      ThreadPoolExecutor Concurrency
+      10 Domain Specialists
+    Response Caching
+      SHA-256 State Hashing
+      120-Second TTL Window
+      Zero-Latency Cache Hits (0ms)
+    Resiliency & Failover
+      5 Failure Threshold
+      300s Circuit Breaker OPEN State
+      Deterministic Heuristic Secondary Fallback
+    Invariant Canary Gates
+      Zero-Sum Envelopes Sum dB = 0
+      Candidate Number Safety Check
+      PII Sanitization Regex Audit
+```
+
+### 7.1 High-Throughput Sub-Agent Execution Lifecycle
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Incoming Complex User Query: Enters AI Core LangGraph Router           │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 1: Kahn's Algorithm Orders Dependent Sub-Agents                   │
+│  ├─ Identify independent agents (e.g. Debt Specialist & Cashflow)      │
+│  └─ Dispatch concurrently via Python `ThreadPoolExecutor(max_workers=4)`│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 2: SHA-256 State Hashing & 120-Second TTL Response Cache          │
+│  ├─ Key = sha256(agent_name + sorted_user_state_json)                  │
+│  ├─ Hit: Return cached output immediately (0ms LLM latency)            │
+│  └─ Miss: Forward request to primary foundation model via KeyPool      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 3: Circuit Breaker State Machine & Secondary Fallback             │
+│  ├─ If primary model fails >= 5 times (HTTP 429, 503, timeout):       │
+│  │     Trip Circuit Breaker to OPEN for 300 seconds                    │
+│  └─ Route request to local deterministic heuristic fallback agent      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Step 4: Canary Mathematical Invariant Gate (`canary_validator.py`)     │
+│  ├─ Invariant 1: sum(Delta B_i) == 0 (Zero-Sum Budget Rebalancing)     │
+│  ├─ Invariant 2: CandidateDigits in ReferenceDigits (No hallucinations)│
+│  └─ Synthesize output and stream verified response to client 🟢        │
+└────────────────────────────────────────────────────────────────────────┘
+```

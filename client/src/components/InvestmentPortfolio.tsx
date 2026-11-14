@@ -1,11 +1,35 @@
-import { motion } from "framer-motion";
+/**
+ * @fileoverview InvestmentPortfolio — dashboard card displaying total invested capital,
+ * month-over-month change, SIP estimate, asset allocation breakdown, and top holdings.
+ *
+ * WHAT IT DOES
+ *  - Fetches `/api/portfolio/summary` (last 12 months) via React Query.
+ *  - Renders a summary header (total value + MoM % change), allocation colour chips
+ *    for equity/debt/gold categories, and a list of top holdings with weight percentages.
+ *  - Uses Framer Motion stagger for animated entry of allocation and holding rows.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — all data is server-fetched.
+ *  - Uses `useOrgFormatters` for locale-aware currency display.
+ *  - `allocationColor()` maps asset-class names to HSL theme colours.
+ *
+ * ARCHITECTURE NOTES
+ *  - One of the main dashboard cards; pairs with `SpendingAnalysis` and `GoalProgress`.
+ *  - Purely read-only; portfolio mutations live in dedicated portfolio management pages.
+ */
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
+import { Link } from "wouter";
 
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { InvestmentPortfolioSkeleton } from "@/components/ui/CardSkeleton";
 import { getPortfolioSummary, PortfolioSummaryResponse } from "@/lib/apiClient";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
+// Maps asset class category names to corresponding theme HSL color strings.
+// Differentiates equities, fixed-income debt, commodities, and alternative assets.
+// Powers visual allocation progress bars and diversified holding charts.
 const allocationColor = (name: string) => {
   const lower = name.toLowerCase();
   if (lower.includes("equity")) return "hsl(158 64% 52%)";
@@ -14,12 +38,19 @@ const allocationColor = (name: string) => {
   return "hsl(0 84% 60%)";
 };
 
+// Dashboard portfolio widget summarizing total invested capital and asset mix.
+// Renders percentage breakdowns across asset classes alongside top holding weights.
+// Displays month-over-month return deltas and estimated monthly SIP commitments.
 export function InvestmentPortfolio() {
   const { formatMoney } = useOrgFormatters();
-  const { data } = useQuery<PortfolioSummaryResponse>({
+  const { data, isLoading } = useQuery<PortfolioSummaryResponse>({
     queryKey: ["/api/portfolio/summary", 12],
     queryFn: () => getPortfolioSummary({ months: 12 }),
   });
+
+  if (isLoading) {
+    return <InvestmentPortfolioSkeleton />;
+  }
 
   const totalValue = Number(data?.summary?.total_invested || 0);
   const monthlySip = Number(data?.summary?.monthly_sip_estimate || 0);
@@ -42,12 +73,14 @@ export function InvestmentPortfolio() {
     <Card className="p-6" data-testid="investment-portfolio">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-foreground">Investment Portfolio</h3>
-        <Button
-          variant="ghost"
-          className="text-primary hover:text-primary/80 text-sm font-medium"
-        >
-          Manage
-        </Button>
+        <Link href="/portfolio">
+          <Button
+            variant="ghost"
+            className="text-primary hover:text-primary/80 text-sm font-medium"
+          >
+            Manage →
+          </Button>
+        </Link>
       </div>
 
       <div className="chart-container rounded-lg p-4 mb-6 relative overflow-hidden">

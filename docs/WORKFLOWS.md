@@ -251,7 +251,7 @@ Content-Type: application/json
 
 1. `startWorkflowScheduler()` runs every 15s
 2. `backfillCronWorkflowScheduleFields()` fills missing `nextRunAt`
-3. `tickCronWorkflows()` queries due workflows (enabled=true, nextRunAt≤now)
+3. `tickCronWorkflows()` queries due workflows (enabled=true, nextRunAtâ‰¤now)
 4. For each due workflow:
    - Computes next run time
    - Calls `enqueueWorkflowRun()` with idempotency key
@@ -298,7 +298,7 @@ GET /api/v1/workflows/templates
 | `ASYNC_JOBS_ENABLED` | `false` | Enable async queue processing |
 | `WORKER_CONCURRENCY` | `4` | Max concurrent jobs (1-64) |
 | `WORKER_POLL_INTERVAL_MS` | `1000` | Database poll interval |
-| `REDIS_URL` | - | Optional Redis for BullMQ |
+| `REDIS_URL` | - | Optional Redis cache URL; it is not the workflow queue |
 
 ### Processing Modes
 
@@ -311,7 +311,7 @@ GET /api/v1/workflows/templates
 - WorkflowRun created with status="queued"
 - Worker polls database every `WORKER_POLL_INTERVAL_MS`
 - Concurrent execution limited by `WORKER_CONCURRENCY`
-- Uses BullMQ if `REDIS_URL` configured
+- Uses the MongoDB polling worker; Redis is not used for workflow execution
 
 ## Best Practices
 
@@ -381,3 +381,234 @@ See [EXAMPLES.md](./EXAMPLES.md) for practical code examples including:
 - Creating a custom workflow
 - Implementing a new action type
 - Creating workflow templates in plugins
+
+## Workflow Orchestration Architecture Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#8b5cf6', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#7c3aed', 'lineColor': '#06b6d4', 'secondaryColor': '#10b981', 'tertiaryColor': '#f59e0b'}}}%%
+mindmap
+  root((🔄 FinWise Workflow Engine))
+    ⚡ Triggers
+      Event-Driven (transaction.created, budget.threshold)
+      Scheduled Cron (daily digest, weekly rebalance)
+      Webhook & API Ingress (/api/v1/workflows/:id/run)
+      Manual User Action (Command Center)
+    📋 Execution Graph
+      DAG Step Dependencies
+      Condition Evaluators (JSONSchema filter)
+      Context Hydration & Variable Injection
+    🎯 Actions & Side-Effects
+      Financial Rules (Auto-Categorize, Rebalance)
+      AI Analysis (Generate Copilot Recommendation)
+      Notification Delivery (Email, In-App, Push)
+      Export Generation (PDF Statement, CSV)
+    🛡️ Reliability & Tracking
+      WorkflowRun Execution History
+      Idempotency Key Verification
+      Dead Letter Queue (DLQ) with Exponential Retry
+      Metering via UsageLedgerModel
+```
+
+## Workflow Execution Pipeline & State Transition ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 WORKFLOW TRIGGER INITIATION                                         │
+│    Trigger: Event (transaction.created) OR Scheduled Cron (0 8 * * 1)  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛡️ STAGE 1: QUOTA & TENANT VALIDATION                                  │
+│    ├─► Verify tenant has remaining workflow execution quota            │
+│    ├─► Load Workflow definition filtered by orgId                      │
+│    └─► Check if Workflow is active (enabled: true)                     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📝 STAGE 2: WORKFLOW RUN RECORD CREATION                               │
+│    ├─► Insert WorkflowRun { workflowId, orgId, status: "pending" }     │
+│    ├─► Compile Step DAG into sequential execution steps                │
+│    └─► Persist queued run for the MongoDB polling worker               │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ ⚙️ STAGE 3: WORKER STEP EXECUTION & CONDITION EVALUATION               │
+│    ├─► Step 1: Evaluate condition (e.g., amount > 500)                 │
+│    │   ├── False? ──► Skip to next step ⏩                             │
+│    │   └── True? ──► Execute Action: AI Categorize & Flag Risk         │
+│    ├─► Step 2: Invoke Notification Service (Email alert to owner)      │
+│    └── Failure? ──► Retry with backoff; escalate to DLQ if max retries │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟣 STAGE 4: RUN COMPLETION & TELEMETRY                                 │
+│    ├─► Update WorkflowRun status: "completed" with output artifacts    │
+│    ├─► Increment usage ledger event counter                            │
+│    └─► Emit realtime domain event for UI progress bar update 🟢        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+
+---
+
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
+## Production Implementation Blueprints
+
+### 1. Workflow Execution Engine (`server/src/services/workflows.ts`)
+
+```typescript
+// Core workflow step execution with condition evaluation and action dispatch
+export async function executeWorkflow(workflowId: string, orgId: string, triggerContext: Record<string, unknown>) {
+  const workflow = await WorkflowModel.findOne({ _id: workflowId, orgId, enabled: true });
+  if (!workflow) throw new Error("Workflow not found or disabled");
+
+  const run = await WorkflowRunModel.create({
+    workflowId: workflow._id,
+    orgId,
+    status: "running",
+    startedAt: new Date(),
+    idempotencyKey: `${workflowId}-${Date.now()}`
+  });
+
+  try {
+    for (const action of workflow.actions) {
+      if (action.type === "ai_evaluate") {
+        await invokeAiCoreProcess({ prompt: action.prompt, orgId });
+      } else if (action.type === "notification") {
+        await sendEmail({ to: action.recipient, subject: action.subject, body: action.body });
+      }
+    }
+    run.status = "succeeded";
+    run.finishedAt = new Date();
+    await run.save();
+  } catch (err: any) {
+    run.status = "failed";
+    run.error = err.message;
+    run.finishedAt = new Date();
+    await run.save();
+    throw err;
+  }
+}
+```
+
+### 2. Timezone-Aware Scheduled Cron Scheduler (`server/src/services/workflowScheduler.ts`)
+
+```typescript
+// Cron polling loop evaluating active scheduled workflows every 60 seconds
+export async function pollScheduledWorkflows() {
+  const now = new Date();
+  const dueWorkflows = await WorkflowModel.find({
+    enabled: true,
+    "trigger.type": "cron",
+    nextRunAt: { $lte: now }
+  });
+
+  for (const workflow of dueWorkflows) {
+    await workflowQueue.add("run-workflow", {
+      workflowId: workflow._id.toString(),
+      orgId: workflow.orgId
+    }, { attempts: 3, backoff: { type: "exponential", delay: 5000 } });
+
+    // Compute next execution timestamp
+    workflow.lastRunAt = now;
+    workflow.nextRunAt = computeNextCronDate(workflow.trigger.cronExpression, workflow.scheduleTimezone);
+    await workflow.save();
+  }
+}
+```
+
+---
+
+## 7) 2026 Visual Node Graph Engine & Delayed Execution Pipeline
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ea580c', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#c2410c', 'lineColor': '#f97316', 'secondaryColor': '#059669', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((Visual Node Workflows))
+    Trigger Nodes
+      Schedule Cron
+      Inbound Webhook
+      Transaction Event
+      Budget Breach Event
+    Condition Nodes
+      Numeric Thresholds
+      Category Matching
+      Merchant Regex Filters
+    Delay Nodes
+      Persisted Delay Timers
+      Status Transition DELAYED
+      Resume Sweep Loop 60s
+    Action Nodes
+      Multi-Channel Email / Push
+      Outbound Webhook Dispatch
+      Budget Auto-Adjustment
+      Task Generation
+```
+
+### 7.1 Visual Workflow Node Graph Canvas
+
+The workflow system enables users to construct autonomous automation pipelines via an interactive drag-and-drop node graph in `client/src/pages/Workflows.tsx`:
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ [TRIGGER NODE]: Transaction Created (e.g. Amount > $500)               │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ [CONDITION NODE]: Category == "Dining & Entertainment"                 │
+│  ├─ TRUE ➔ Route to Delay Node                                         │
+│  └─ FALSE ➔ Route to Ignore / Audit Log                                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ [DELAY NODE]: Wait 60 Minutes (Cooldown Period)                        │
+│  ├─ WorkflowRun transitions to status: "DELAYED"                       │
+│  ├─ Sets resumeAt = Date.now() + 60 * 60 * 1000                        │
+│  └─ Background sweep resumes execution at resumeAt ⏱️                  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ [ACTION NODE]: Send High-Spend Alert & Trigger Zero-Sum Rebalancer     │
+│  ├─ Dispatches personalized email and SMS push notification            │
+│  └─ Rebalances $500 from Vacation Fund to Dining Budget 🟢             │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 7.2 Delay Worker Sweeper (`server/src/services/workflows.ts`)
+
+To ensure reliability even across server restarts, delayed workflows are persisted in MongoDB with `status: "DELAYED"` and monitored by a cron worker polling every 60 seconds:
+
+```typescript
+export async function sweepDelayedWorkflowRuns(): Promise<number> {
+  const now = new Date();
+  const delayedRuns = await WorkflowRunModel.find({
+    status: 'DELAYED',
+    resumeAt: { $lte: now }
+  }).limit(50);
+
+  for (const run of delayedRuns) {
+    run.status = 'RUNNING';
+    await run.save();
+
+    if (run.nextNodeId) {
+      executeWorkflowStep(run._id.toString(), run.nextNodeId).catch(err => {
+        console.error(`Failed to resume delayed workflow ${run._id}:`, err);
+      });
+    }
+  }
+
+  return delayedRuns.length;
+}
+```

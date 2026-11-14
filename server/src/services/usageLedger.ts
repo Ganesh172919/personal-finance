@@ -3,6 +3,9 @@ import mongoose from "mongoose";
 import UsageEventModel from "../models/usageEventModel";
 import UsageLedgerModel from "../models/usageLedgerModel";
 
+// Aggregates raw metered usage events into monthly ledger summaries per feature.
+// Executes MongoDB aggregation grouping by organization, feature, and billing period.
+// Performs bulk upserts into the usage ledger collection to update units and costs.
 export const aggregateUsageLedger = async (params: {
   orgId?: mongoose.Types.ObjectId;
   periodKey: string;

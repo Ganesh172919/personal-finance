@@ -2,6 +2,9 @@ import type mongoose from "mongoose";
 
 import PluginInstallModel from "../models/pluginInstallModel";
 
+// Defines the structural shape of a workflow creation request payload.
+// Encapsulates workflow title, enabled status, trigger configuration, and actions.
+// Used by pre-configured workflow templates to instantiate automation recipes.
 type CreateWorkflowRequestLike = {
   name: string;
   enabled?: boolean;
@@ -9,6 +12,9 @@ type CreateWorkflowRequestLike = {
   actions: unknown[];
 };
 
+// Specification defining a reusable workflow template bundled with a plugin.
+// Maps unique template identifiers to parent plugin keys and descriptions.
+// Houses the pre-configured creation payload for 1-click workflow deployment.
 export type WorkflowTemplate = {
   template_key: string;
   plugin_key: string;
@@ -17,6 +23,9 @@ export type WorkflowTemplate = {
   request: CreateWorkflowRequestLike;
 };
 
+// Static registry mapping plugin keys to their bundled workflow recipe templates.
+// Supplies out-of-the-box cron and event triggers tailored to each plugin.
+// Helps organizations deploy tested automations immediately upon installing plugins.
 const PLUGIN_WORKFLOW_TEMPLATES: Record<string, Omit<WorkflowTemplate, "plugin_key">[]> = {
   "finwise.connector.bank_stub": [
     {
@@ -72,6 +81,9 @@ const PLUGIN_WORKFLOW_TEMPLATES: Record<string, Omit<WorkflowTemplate, "plugin_k
   ],
 };
 
+// Discovers available workflow automation templates for installed organization plugins.
+// Queries active plugin installations and matches against the template registry.
+// Returns ready-to-deploy workflow recipes annotated with installed plugin versions.
 export const listWorkflowTemplatesForOrg = async (params: { orgId: mongoose.Types.ObjectId }) => {
   const installs = await PluginInstallModel.find({ orgId: params.orgId, status: "installed" })
     .select({ pluginKey: 1, version: 1, status: 1 })

@@ -1,3 +1,27 @@
+/**
+ * @fileoverview Integration Controller (v1)
+ *
+ * Manages third-party integrations (connectors) for the organization.
+ * Handles connection lifecycle, sync operations, and sync history.
+ *
+ * Routes served:
+ *   GET    /api/v1/integrations                    - listIntegrations
+ *   GET    /api/v1/integrations/:id/health         - getIntegrationHealth
+ *   POST   /api/v1/integrations/:id/connect        - connectIntegration (admin)
+ *   POST   /api/v1/integrations/:id/disconnect     - disconnectIntegration (admin)
+ *   POST   /api/v1/integrations/:id/sync           - syncIntegration (admin)
+ *   GET    /api/v1/integrations/:id/history         - getIntegrationHistory
+ *
+ * Key patterns:
+ *   - Connector keys validated against a registry (getConnectorOrThrow)
+ *   - Connect/disconnect/sync require admin role; health/history are member-readable
+ *   - Sync supports simulate_error flag for testing error handling
+ *   - Sync runs recorded in IntegrationSyncRunModel for history
+ *   - Connection status tracked: connected, disconnected, error
+ *
+ * @module controllers/v1/integrationController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -7,13 +31,20 @@ import IntegrationSyncRunModel from "../../models/integrationSyncRunModel";
 import { HttpError } from "../../middleware/httpError";
 import { enqueueIntegrationSync, listIntegrationsForOrg } from "../../services/integrations";
 import { getConnectorOrThrow } from "../../connectors/registry";
+import { getConnectorHealthSummary } from "../../services/connectorHealth";
 
+// Defines numeric authorization ranks for organization membership levels.
+// Facilitates role permission comparisons across member, admin, and owner tiers.
+// Used by access control helpers to protect connector administration endpoints.
 const roleRank: Record<"member" | "admin" | "owner", number> = {
   member: 1,
   admin: 2,
   owner: 3,
 };
 
+// Checks whether organization context is bound to the current HTTP request.
+// Throws a 401 unauthorized error if the organization context is omitted.
+// Returns the active organization ID parsed as a MongoDB ObjectId instance.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -21,6 +52,9 @@ const requireOrgContext = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Enforces that the current authenticated user holds organization admin privileges.
+// Verifies organization presence and checks role rank against admin criteria.
+// Throws a 403 access denied error if organizational rights are insufficient.
 const requireOrgAdmin = (req: Request) => {
   const orgId = requireOrgContext(req);
   if (roleRank[req.org!.role] < roleRank.admin) {
@@ -29,12 +63,18 @@ const requireOrgAdmin = (req: Request) => {
   return orgId;
 };
 
+// Lists all available and configured third-party connectors for the organization.
+// Retrieves registered connectors merged with organization connection records.
+// Returns connector metadata, connection statuses, and request tracing identifiers.
 export const listIntegrations = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const connectors = await listIntegrationsForOrg({ orgId });
   return res.json({ org_id: orgId.toString(), connectors, request_id: req.requestId });
 };
 
+// Retrieves current health and connectivity status for a specific integration connector.
+// Looks up connection status, last synchronization timestamp, and historical errors.
+// Returns formatted connection telemetry scoped to the organization workspace.
 export const getIntegrationHealth = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const connectorKey = String((req.params as any).id || "").trim().toLowerCase();
@@ -56,6 +96,9 @@ export const getIntegrationHealth = async (req: Request, res: Response) => {
   });
 };
 
+// Establishes or activates a third-party integration connector for the organization.
+// Validates connector registration, saves connection metadata, and marks status connected.
+// Requires organization admin permissions and logs connecting user audit context.
 export const connectIntegration = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;
@@ -103,6 +146,9 @@ export const connectIntegration = async (req: Request, res: Response) => {
   });
 };
 
+// Disconnects an active third-party integration connector and clears its metadata.
+// Enforces administrator authorization and verifies connector key registration.
+// Updates the connection status to disconnected and returns updated status details.
 export const disconnectIntegration = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const connectorKey = String((req.params as any).id || "").trim().toLowerCase();
@@ -136,6 +182,9 @@ export const disconnectIntegration = async (req: Request, res: Response) => {
   });
 };
 
+// Initiates an asynchronous data synchronization job for an integration connector.
+// Supports error simulation for test environments and enqueues sync tasks via service.
+// Records sync run execution entries and responds with HTTP 202 Accepted status.
 export const syncIntegration = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;
@@ -226,6 +275,9 @@ export const syncIntegration = async (req: Request, res: Response) => {
   });
 };
 
+// Retrieves execution history records for sync operations of a given connector.
+// Validates connector identifier and applies pagination limits to sync run results.
+// Returns chronological list of historical synchronization runs with statuses.
 export const getIntegrationHistory = async (req: Request, res: Response) => {
   const orgId = requireOrgContext(req);
   const connectorKey = String((req.params as any).id || "").trim().toLowerCase();
@@ -255,4 +307,18 @@ export const getIntegrationHistory = async (req: Request, res: Response) => {
     })),
     request_id: req.requestId,
   });
+};
+
+// Aggregates operational health status across all active connectors in the organization.
+// Queries connector configurations, recent sync errors, and connection heartbeats.
+// Returns an overall connector health summary payload for monitoring dashboards.
+/**
+ * GET /api/v1/integrations/health-summary
+ * Returns health summary for all integration connectors in the organization.
+ */
+export const getConnectorHealthSummaryEndpoint = async (req: Request, res: Response) => {
+  const orgId = requireOrgContext(req);
+
+  const summary = await getConnectorHealthSummary(orgId);
+  return res.json({ connectors: summary, request_id: req.requestId });
 };

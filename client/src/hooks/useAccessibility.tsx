@@ -12,6 +12,9 @@ import { useEffect } from "react";
 
 let announceEl: HTMLElement | null = null;
 
+// Lazily instantiates and attaches a hidden live-region DOM node for screen reader output.
+// Configures aria-live, aria-atomic, and off-screen screen-reader-only styling.
+// Returns the persistent announcer element container shared across announcements.
 function ensureAnnouncer(): HTMLElement {
   if (announceEl) return announceEl;
 
@@ -26,6 +29,9 @@ function ensureAnnouncer(): HTMLElement {
   return announceEl;
 }
 
+// Broadcasts an audible status notification to assistive technologies and screen readers.
+// Temporarily resets and populates the live region DOM node on the next animation frame.
+// Supports polite queuing or assertive immediate interruption priority levels.
 export function announce(message: string, priority: "polite" | "assertive" = "polite") {
   const el = ensureAnnouncer();
   el.setAttribute("aria-live", priority);
@@ -38,6 +44,9 @@ export function announce(message: string, priority: "polite" | "assertive" = "po
 
 // ─── Reduced Motion Detection ───────────────────────────
 
+// Custom React hook detecting whether the operating system prefers reduced animations.
+// Evaluates the 'prefers-reduced-motion: reduce' CSS media query condition.
+// Returns a boolean flag allowing components to disable vestibular motion triggers.
 export function useReducedMotion(): boolean {
   if (typeof window === "undefined") return false;
   const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -46,9 +55,15 @@ export function useReducedMotion(): boolean {
 
 // ─── Focus Trap ─────────────────────────────────────────
 
+// CSS selector query matching all interactive and keyboard-focusable DOM elements.
+// Identifies links, enabled buttons, inputs, selects, textareas, and tabindex tags.
+// Powers modal keyboard focus entrapment logic to prevent accessibility leaks.
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// Traps keyboard tab navigation strictly inside an active modal or drawer container.
+// Cycles focus from the last interactive element back to the first and vice versa.
+// Automatically restores focus to the previously active element upon unmounting.
 export function useFocusTrap(
   containerRef: React.RefObject<HTMLElement | null>,
   active: boolean
@@ -99,6 +114,9 @@ export function useFocusTrap(
 
 // ─── Skip to Content Link ───────────────────────────────
 
+// Accessible bypass navigation anchor allowing keyboard users to skip navigation bars.
+// Remains visually hidden until focused via keyboard tab navigation at page load.
+// Immediately moves keyboard focus directly to the primary main-content region.
 export function SkipToContent() {
   return (
     <a

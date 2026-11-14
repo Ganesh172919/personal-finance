@@ -3,6 +3,9 @@ import * as SeparatorPrimitive from "@radix-ui/react-separator";
 
 import { cn } from "@/lib/utils";
 
+// Visual and semantic divider separating content sections or list items.
+// Built on Radix UI SeparatorPrimitive Root with horizontal and vertical orientations.
+// Applies 1px border styling with decorative accessibility defaults.
 const Separator = React.forwardRef<
   React.ElementRef<typeof SeparatorPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SeparatorPrimitive.Root>

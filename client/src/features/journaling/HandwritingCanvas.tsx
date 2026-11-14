@@ -1,8 +1,17 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 
+// Normalized coordinate point representing a single sample in a pen stroke.
+// Stores dimensionless unit coordinates scaled between zero and one.
+// Records millisecond timestamps enabling stroke playback and velocity analysis.
 export type StrokePoint = { x: number; y: number; t: number };
+// Ordered sequence of normalized sample points defining a continuous drawing stroke.
+// Encapsulates pen movement from pointer down until release or cancellation.
+// Forms the fundamental discrete drawing element recorded on the handwriting canvas.
 export type Stroke = StrokePoint[];
 
+// Imperative ref handle exposed by the handwriting canvas component.
+// Provides operations for clearing lines, undoing the last stroke, and extracting raw vectors.
+// Exposes an asynchronous exporter producing an image PNG blob for uploads.
 export type HandwritingCanvasHandle = {
   clear: () => void;
   undo: () => void;
@@ -10,8 +19,14 @@ export type HandwritingCanvasHandle = {
   getStrokes: () => Stroke[];
 };
 
+// Mathematical helper constraining numerical inputs to the unit range between 0 and 1.
+// Prevents out-of-bounds coordinate calculations during pointer drag outside canvas bounds.
+// Guarantees consistent relative positioning across diverse display resolutions.
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
+// Translates native browser pointer events into normalized canvas stroke coordinates.
+// Computes fractional offsets relative to the bounding client rectangle dimensions.
+// Returns a timestamped point object bounded strictly within unit intervals.
 const getCanvasPoint = (canvas: HTMLCanvasElement, event: PointerEvent): StrokePoint => {
   const rect = canvas.getBoundingClientRect();
   const x = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
@@ -19,6 +34,9 @@ const getCanvasPoint = (canvas: HTMLCanvasElement, event: PointerEvent): StrokeP
   return { x: clamp01(x), y: clamp01(y), t: Date.now() };
 };
 
+// Asynchronously extracts the current canvas raster graphics into a PNG binary blob.
+// Wraps HTMLCanvasElement.toBlob in a promise for seamless async/await workflows.
+// Rejects cleanly if the browser fails to allocate or serialize the bitmap image.
 const exportPng = (canvas: HTMLCanvasElement) =>
   new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
@@ -30,6 +48,9 @@ const exportPng = (canvas: HTMLCanvasElement) =>
     }, "image/png");
   });
 
+// Interactive stylus and touch drawing canvas component for financial journaling.
+// Renders responsive vector strokes with device-pixel-ratio scaling and theme awareness.
+// Exposes imperative methods via ref for canvas clearing, undo, and PNG serialization.
 export const HandwritingCanvas = forwardRef<
   HandwritingCanvasHandle,
   { className?: string; height?: number }

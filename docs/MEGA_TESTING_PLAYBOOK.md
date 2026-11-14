@@ -21,6 +21,10 @@ If you’re debugging a production issue, also read:
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## 1) Testing Goals (What We Optimize For)
 
 Primary goals:
@@ -689,3 +693,473 @@ Coverage reminders:
 - Every controller should have at least one test.
 - Every middleware should have at least one test for its reject path.
 - Every new domain event should have at least one test for emission.
+
+## Documentation mind map
+
+```text
+FinWise Testing Playbook (Mega)
+|
++-- Scope
+|   +-- Purpose: explain the subject covered by this file
+|   +-- Source: docs/MEGA_TESTING_PLAYBOOK.md
+|   +-- Inputs: prerequisites, linked references, and implementation facts
+|   +-- Audience: readers who need to understand, use, or maintain this area
+|
++-- Main path
+|   +-- Establish constraints and entry points
+|   +-- Trace components, decisions, and dependencies
+|   +-- Check outputs, risks, and verification evidence
+|
++-- Maintenance
+    +-- Recheck links and examples after changes
+    +-- Record assumptions, limits, and known drift
+    +-- Keep this map aligned with documented behavior
+```
+
+## Documentation ASCII flow
+
+```text
+[Open FinWise Testing Playbook (Mega)]
+        |
+        v
+[Define the scope and required inputs]
+        |
+        v
+[Follow the documented sequence and decision points]
+        |
+        +--> [Missing context or exception?] --yes--> [Read linked reference]
+        |                                               |
+        +---------------------------no-----------------+
+                                                        v
+[Check outputs, risks, and verification evidence]
+        |
+        v
+[Record the change and refresh this document]
+```
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#047857', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#065f46', 'lineColor': '#10b981', 'secondaryColor': '#8b5cf6', 'tertiaryColor': '#f59e0b'}}}%%
+mindmap
+  root((🧪 FinWise Testing Framework))
+    🔬 Unit Testing Tier
+      Vitest Client (React Testing Library, Zustand mocks)
+      Vitest Server (Domain services, pure math invariants)
+      Pytest AI Core (Task decomposition, prompt templates)
+    🔗 Integration Testing Tier
+      Supertest API Suites (Multi-tenant org boundaries)
+      MongoDB Memory Server (Isolated replica sets)
+      Redis Mock (Queue & rate limiter verification)
+    🧠 AI & Mathematical Invariants
+      Number Safety: sum(Delta B_i) = 0 assertions
+      Grounding Score: G >= 0.70 threshold checks
+      Deterministic Fallback Trigger Evals
+    🚦 CI/CD Quality Gates
+      GitHub Actions Pipeline
+      Linting & Formatting (ESLint, Prettier, Ruff)
+      Type Checking (tsc --noEmit)
+      Coverage Thresholds: >= 80% Service Logic
+```
+
+## System Architecture & Component ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🚀 GIT PUSH / PR CREATED: CI/CD Pipeline Initiated                     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔍 GATE 1: STATIC ANALYSIS & TYPE CHECKING                             │
+│    ├─► Server: npm run typecheck (tsc --noEmit)                        │
+│    ├─► Client: npm run lint (ESLint + accessibility rules)             │
+│    └─► AI Core: ruff check .                                           │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ (Passed)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔬 GATE 2: UNIT & INVARIANT EVALUATION                                 │
+│    ├─► Math Invariants: Verify sum(Delta B_i) = 0 across 500 cases    │
+│    ├─► Client: Vitest DOM render tests (52 suites)                     │
+│    └─► AI Core: Pytest LangGraph DAG decomposition & grounding         │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ (Passed)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔗 GATE 3: SUPERTEST API INTEGRATION SUITES                            │
+│    ├─► Spin up isolated MongoMemoryServer and Redis test instance      │
+│    ├─► Execute authenticated multi-tenant test requests                │
+│    └─► Verify OrgScope isolation across all 52 collections 🟢          │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## Authenticated Supertest Integration Test Suite (`server/src/__tests__/integration/transactions.test.ts`)
+
+```typescript
+import request from "supertest";
+import { createApp } from "../../app";
+import { connectDB, closeDB } from "../../config/database";
+import { generateAuthToken } from "../../services/authService";
+
+describe("Transactions API Multi-Tenant Integration Tests", () => {
+  let app: any;
+  const testOrgId = "org_test_123";
+  const foreignOrgId = "org_foreign_456";
+  let authToken: string;
+
+  beforeAll(async () => {
+    await connectDB(process.env.TEST_DATABASE_URL!);
+    app = createApp();
+    authToken = generateAuthToken({ userId: "user_test_1", orgId: testOrgId, role: "admin" });
+  });
+
+  afterAll(async () => {
+    await closeDB();
+  });
+
+  it("should create and retrieve transactions strictly within tenant boundary", async () => {
+    // 1. Create transaction in testOrgId
+    const resCreate = await request(app)
+      .post("/api/v1/transactions")
+      .set("Authorization", `Bearer ${authToken}`)
+      .set("X-Org-Id", testOrgId)
+      .send({
+        description: "Cloud Hosting Subscription",
+        amount: 45.0,
+        type: "expense",
+        category: "Technology",
+        date: new Date().toISOString(),
+      });
+
+    expect(resCreate.status).toBe(201);
+    expect(resCreate.body.data.orgId).toBe(testOrgId);
+
+    // 2. Querying with foreignOrgId must return empty array (no leakage)
+    const resForeign = await request(app)
+      .get("/api/v1/transactions")
+      .set("Authorization", `Bearer ${authToken}`)
+      .set("X-Org-Id", foreignOrgId);
+
+    expect(resForeign.status).toBe(200);
+    expect(resForeign.body.data).toHaveLength(0);
+  });
+});
+```
+
+
+---
+
+## 23) Latest Test Suites Playbook (Command Center & AI Core Invariant Evals)
+
+### 23.1 Financial Command Center Integration Test
+Verifies multi-source data aggregation, cash runway calculation, and priority triage signals.
+
+```typescript
+import { describe, it, expect, beforeAll } from 'vitest';
+import request from 'supertest';
+import app from '../server';
+
+describe('Financial Command Center Ingress & Triage', () => {
+  const orgId = 'test_org_cc';
+  let token: string;
+
+  beforeAll(async () => {
+    token = await getTestAuthToken(orgId);
+  });
+
+  it('GET /api/v1/command-center aggregates 9 sources without cross-tenant leakage', async () => {
+    const res = await request(app)
+      .get('/api/v1/command-center')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Org-Id', orgId);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    
+    // Core KPI Assertions
+    expect(res.body.data).toHaveProperty('cashRunwayDays');
+    expect(res.body.data).toHaveProperty('liquidBalance');
+    expect(res.body.data).toHaveProperty('kpis');
+    expect(res.body.data.kpis).toHaveProperty('budgetHealthScore');
+    
+    // Urgency Signals Structure
+    expect(Array.isArray(res.body.data.prioritySignals)).toBe(true);
+  });
+});
+```
+
+---
+
+### 23.2 AI Core Number Safety & Invariant Evaluation Harness
+Enforces zero-hallucination arithmetic in multi-agent financial recommendations.
+
+$$\sum_{i} \Delta B_i = 0, \quad \forall i: B_i \ge 0, \quad \text{Candidate Digits} \subseteq \text{Reference Digits}$$
+
+```python
+# server/AI_Core/evals/test_number_safety.py
+import pytest
+from evals.metrics import assert_number_safety
+from agents.aggregator import verify_budget_invariants
+
+def test_number_safety_zero_sum_invariant():
+    """Validates that proposed budget reallocations strictly sum to zero."""
+    original_budgets = {"dining": 500.0, "groceries": 400.0, "entertainment": 200.0}
+    proposed_deltas = {"dining": -100.0, "groceries": +100.0, "entertainment": 0.0}
+
+    # Verify zero-sum invariant
+    assert verify_budget_invariants(original_budgets, proposed_deltas) is True
+
+def test_digit_subset_hallucination_guard():
+    """Asserts that candidate narrative contains no fabricated dollar digits."""
+    reference_data = "Income: $5000. Rent: $1500. Utilities: $200."
+    valid_candidate = "Your rent is $1500 and utilities are $200."
+    hallucinated_candidate = "Your rent is $1500 and cable is $95." # 95 is fabricated
+
+    assert_number_safety(candidate=valid_candidate, reference=reference_data) # Passes
+    with pytest.raises(AssertionError):
+        assert_number_safety(candidate=hallucinated_candidate, reference=reference_data) # Caught!
+```
+
+---
+
+### 23.3 Retrieval Lifecycle & Lexical Grounding Tests (`server/src/test/retrievalLifecycle.test.ts`)
+
+Verifies bounded chunking, form-feed page retention, and BM25 relevance scoring:
+
+```typescript
+// server/src/test/retrievalLifecycle.test.ts
+import { describe, it, expect, beforeAll } from 'vitest';
+import { retrievalService } from '../services/retrievalService';
+import { WorkspaceKnowledgeChunk } from '../models/workspaceKnowledgeChunkModel';
+
+describe('RAG Phase 2 Retrieval Lifecycle', () => {
+  const orgId = 'org_rag_test';
+  const fileId = 'file_statement_01';
+
+  it('preserves form-feed page boundaries when chunking documents', async () => {
+    const rawText = 'Page 1 text content.\fPage 2 text content.';
+    const chunks = await retrievalService.chunkAndIndexDocument({
+      workspaceFileId: fileId,
+      orgId,
+      userId: 'user_01',
+      text: rawText
+    });
+
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+    expect(chunks[0].pageNumber).toBe(1);
+    expect(chunks[1].pageNumber).toBe(2);
+  });
+
+  it('retrieves relevant chunks with BM25 score above threshold', async () => {
+    const results = await retrievalService.queryRelevantChunks({
+      orgId,
+      query: 'statement content',
+      limit: 5
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].score).toBeGreaterThan(0.5);
+    expect(results[0].chunk.orgId).toBe(orgId);
+  });
+});
+```
+
+---
+
+### 23.4 Dead Letter Queue Quarantine & Recovery Tests (`server/src/test/deadLetterQueue.test.ts`)
+
+Validates job quarantining, secret scrubbing, and manual replay functionality:
+
+```typescript
+// server/src/test/deadLetterQueue.test.ts
+import { describe, it, expect } from 'vitest';
+import { deadLetterQueue, scrubPayloadForDLQ } from '../services/deadLetterQueue';
+
+describe('Dead Letter Queue (DLQ) Resilience', () => {
+  it('scrubs sensitive authentication tokens and card numbers from job payload', () => {
+    const rawPayload = {
+      userId: 'u_123',
+      apiKey: 'sec_live_999888777',
+      authorization: 'Bearer eyJhbGciOi...',
+      account: { cardNumber: '4111222233334444', balance: 500.0 }
+    };
+
+    const scrubbed: any = scrubPayloadForDLQ(rawPayload);
+
+    expect(scrubbed.userId).toBe('u_123');
+    expect(scrubbed.apiKey).toBe('[REDACTED_BY_DLQ_POLICY]');
+    expect(scrubbed.authorization).toBe('[REDACTED_BY_DLQ_POLICY]');
+    expect(scrubbed.account.cardNumber).toBe('[REDACTED_BY_DLQ_POLICY]');
+    expect(scrubbed.account.balance).toBe(500.0);
+  });
+});
+```
+
+---
+
+## 11) 2026 Enterprise Quality Gates, Invariant Testing & Distributed Evals
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#059669', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#047857', 'lineColor': '#10b981', 'secondaryColor': '#0284c7', 'tertiaryColor': '#d97706'}}}%%
+mindmap
+  root((2026 Testing Pyramid))
+    Client Verification
+      51 Test Suites / 408 Tests
+      BudgetHealthCard SVG Gauge RTL Tests
+      TransactionReviewQueue Split Mock Tests
+      FinancialCalendar iCal Stream Tests
+      Offline Journal LocalStorage Mock Tests
+    Server Gateway Verification
+      67 Test Suites / 271 Tests
+      merchantEmbeddingClustering.test.ts
+      retrievalMultiModal.test.ts
+      journalOfflineSyncAndSemanticSearch.test.ts
+      portfolioMultiCurrencyWht.test.ts
+      calendarReminders.test.ts
+      workflows.test.ts
+    AI Core Verification
+      316 Pytest Unit Tests
+      test_sub_agent_manager.py (TTL Caching)
+      test_canary_validator.py (Math Invariants)
+      KeyPool Circuit Breaker Mock Tests
+    Continuous Invariant Evals
+      175 Evals Harness Runner (100% Pass)
+      Zero-Sum Shift Invariant Sum dB = 0
+      Number Hallucination Safety Cand in Ref
+      PII Sanitization Regex Audit
+```
+
+### 11.1 Recipe: 64-D Merchant Vector Embedding & Agglomerative Clustering Tests
+
+```typescript
+// server/src/test/merchantEmbeddingClustering.test.ts
+import { describe, it, expect } from 'vitest';
+import {
+  generateMerchantEmbedding,
+  cosineSimilarity,
+  clusterMerchantTransactions
+} from '../services/merchantEmbeddingClustering';
+
+describe('64-D Merchant Vector Embedding & Clustering', () => {
+  it('generates normalized 64-dimensional unit vectors (||v||2 == 1.0)', () => {
+    const vec = generateMerchantEmbedding('Blue Bottle Coffee San Francisco');
+    expect(vec).toHaveLength(64);
+
+    const norm = Math.sqrt(vec.reduce((sum, v) => sum + v * v, 0));
+    expect(norm).toBeCloseTo(1.0, 4);
+  });
+
+  it('clusters semantically similar merchant variations together', () => {
+    const rawTxns = [
+      { id: 'tx_1', merchant: 'Blue Bottle Coffee #12' },
+      { id: 'tx_2', merchant: 'BLUE BOTTLE COFFEE SF' },
+      { id: 'tx_3', merchant: 'Delta Air Lines Flight 402' },
+      { id: 'tx_4', merchant: 'DELTA AIR' }
+    ];
+
+    const clusters = clusterMerchantTransactions(rawTxns, 0.70);
+
+    expect(clusters.length).toBe(2);
+    const coffeeCluster = clusters.find(c => c.canonicalName.toLowerCase().includes('blue bottle'));
+    const airlineCluster = clusters.find(c => c.canonicalName.toLowerCase().includes('delta'));
+
+    expect(coffeeCluster?.transactionIds).toEqual(['tx_1', 'tx_2']);
+    expect(airlineCluster?.transactionIds).toEqual(['tx_3', 'tx_4']);
+  });
+});
+```
+
+---
+
+### 11.2 Recipe: Multi-Modal RAG Hybrid Grounding ($G \ge 0.70$) & Page Extraction Tests
+
+```typescript
+// server/src/test/retrievalMultiModal.test.ts
+import { describe, it, expect } from 'vitest';
+import { ingestDocumentForRAG, retrieveGroundedKnowledge } from '../services/retrievalService';
+
+describe('Multi-Modal Grounded RAG Pipeline', () => {
+  it('extracts physical page numbers separated by form feeds (\\f)', async () => {
+    const docText = 'Page 1: Annual Operating Revenue $4.2M\fPage 2: Total Debt Obligations $1.1M';
+    const chunkCount = await ingestDocumentForRAG('org_test', '10K_Report.pdf', docText);
+
+    expect(chunkCount).toBeGreaterThanOrEqual(2);
+
+    const results = await retrieveGroundedKnowledge('org_test', 'Operating Revenue');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].pageNumber).toBe(1);
+    expect(results[0].groundingScore).toBeGreaterThanOrEqual(0.70);
+  });
+});
+```
+
+---
+
+### 11.3 Recipe: SubAgentManager Concurrency & SHA-256 TTL Caching Tests
+
+```python
+# server/AI_Core/tests/test_sub_agent_manager.py
+import pytest
+import time
+from agents.sub_agent_manager import SubAgentManager
+
+def test_sha256_ttl_response_caching():
+    manager = SubAgentManager(ttl_seconds=2)
+    state = {"user_id": "u_99", "monthly_income": 8500.0}
+
+    call_count = 0
+    def mock_primary(s):
+        nonlocal call_count
+        call_count += 1
+        return {"plan": "50/30/20 standard"}
+
+    def mock_fallback(s):
+        return {"plan": "fallback rule"}
+
+    # First call: cache miss
+    res1 = manager.execute_subagent_with_fallback("BudgetAgent", state, mock_primary, mock_fallback)
+    assert res1["cached"] is False
+    assert call_count == 1
+
+    # Second call within TTL: cache hit (zero additional LLM invocations)
+    res2 = manager.execute_subagent_with_fallback("BudgetAgent", state, mock_primary, mock_fallback)
+    assert res2["cached"] is True
+    assert call_count == 1
+
+    # Expire TTL
+    time.sleep(2.1)
+    res3 = manager.execute_subagent_with_fallback("BudgetAgent", state, mock_primary, mock_fallback)
+    assert res3["cached"] is False
+    assert call_count == 2
+```
+
+---
+
+### 11.4 Recipe: Canary Invariant Mathematical Verification Tests
+
+```python
+# server/AI_Core/tests/test_canary_validator.py
+import pytest
+from evals.canary_validator import CanaryValidator
+
+def test_zero_sum_budget_rebalancing_invariant():
+    valid_shifts = [
+        {"category": "Dining Out", "delta": -150.0},
+        {"category": "Groceries", "delta": 100.0},
+        {"category": "Emergency Savings", "delta": 50.0}
+    ]
+    assert CanaryValidator.validate_budget_zero_sum(valid_shifts) is True
+
+    invalid_shifts = [
+        {"category": "Dining Out", "delta": -150.0},
+        {"category": "Groceries", "delta": 200.0} # Leaks $50 into budget!
+    ]
+    assert CanaryValidator.validate_budget_zero_sum(invalid_shifts) is False
+
+def test_number_safety_hallucination_gate():
+    ref_numbers = [4200.0, 150.0, 50.0]
+    safe_text = "We reclaimed $150.00 from dining and added $50.00 to savings, keeping $4200.00 base intact."
+    assert CanaryValidator.validate_number_safety(safe_text, ref_numbers) is True
+
+    hallucinated_text = "You will earn an extra $899.99 in high-yield returns."
+    assert CanaryValidator.validate_number_safety(hallucinated_text, ref_numbers) is False
+```

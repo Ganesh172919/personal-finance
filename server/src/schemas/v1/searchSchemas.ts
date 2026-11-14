@@ -1,5 +1,22 @@
+/**
+ * @fileoverview Zod validation schemas for global search queries.
+ *
+ * Exported schemas:
+ *   globalSearchQuerySchema - Validates global search query parameters
+ *
+ * Used by: v1Routes (GET /search)
+ *
+ * Key validation rules:
+ *   - q: required search query string, 1-200 characters
+ *   - types: optional comma-separated list of entity types to search, transformed into an array
+ *   - limit: optional integer 1-100 for result count
+ *   - cursor: optional cursor string for pagination (opaque token)
+ */
 import { z } from "zod";
 
+// Validates query parameters for global omni-search across domain entities.
+// Accepts search string, comma-delimited type filters, and pagination cursor tokens.
+// Transforms raw type filter strings into trimmed arrays for unified search indexers.
 export const globalSearchQuerySchema = z.object({
   q: z.string().trim().min(1).max(200),
   types: z

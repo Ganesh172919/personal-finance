@@ -1,3 +1,24 @@
+/**
+ * @fileoverview Browse and search real financial transformation stories.
+ *
+ * Lists community-submitted growth stories with a featured hero card,
+ * category pill filters, and debounced text search.  Users can also
+ * open a modal to submit their own story via CreateGrowthStoryForm.
+ *
+ * Key data flows:
+ * - getFeaturedGrowthStories(1) fetches the pinned hero story.
+ * - getGrowthStoryCategories() populates the filter pills.
+ * - getGrowthStories({ category, search, limit }) loads the story grid;
+ *   query keys include category and debounced search so React Query
+ *   caches each combination independently.
+ *
+ * The featured section hides when a search or non-"all" category is
+ * active so result density stays high.
+ *
+ * Accessible from the sidebar under "Growth Stories" and linked from
+ * the blog and documentation surfaces.
+ */
+
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
@@ -11,6 +32,9 @@ import { CreateGrowthStoryForm } from "@/components/forms/CreateGrowthStoryForm"
 import { getGrowthStories, getFeaturedGrowthStories, getGrowthStoryCategories } from "@/lib/apiClient";
 import { useDebounce } from "@/hooks/useDebounce";
 
+// Framer Motion animation configuration for the parent story cards container.
+// Implements sequential stagger delays across child card appearances.
+// Provides smooth opacity fading as the growth stories grid renders.
 const containerVariants = {
   hidden: { opacity: 0 },
   show: {
@@ -21,11 +45,17 @@ const containerVariants = {
   },
 };
 
+// Animation transition variants for individual growth story card items.
+// Controls scale expansion from 0.95 to full size alongside opacity fade.
+// Delivers polished entry transitions for each displayed story.
 const itemVariants = {
   hidden: { opacity: 0, scale: 0.95 },
   show: { opacity: 1, scale: 1 },
 };
 
+// Growth stories community page showcasing financial transformation journeys.
+// Supports keyword search, category filtering, and modal story submission.
+// Displays featured stories alongside paginated community member narratives.
 export default function GrowthStories() {
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");

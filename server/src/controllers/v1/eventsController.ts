@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Events Controller (v1) - Server-Sent Events (SSE)
+ *
+ * Real-time event stream for domain events. Clients connect via SSE and
+ * receive live updates as transactions, goals, workflows, etc. change.
+ *
+ * Routes served:
+ *   GET /api/v1/events/stream - streamEvents
+ *
+ * Key patterns:
+ *   - SSE connection kept alive with 15-second heartbeat comments
+ *   - On connect with last-event-id: replays missed events from DB (up to 1000)
+ *   - On connect without last-event-id: subscribes to live in-memory event bus
+ *   - Event bus pauses during DB replay to prevent duplicates, then flushes buffer
+ *   - Write backpressure handled with drain events
+ *   - Cleanup on client disconnect: clears heartbeat, closes subscription, ends response
+ *
+ * @module controllers/v1/eventsController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -5,7 +25,11 @@ import type { IUserDocument } from "../../models/userModel";
 import DomainEventModel from "../../models/domainEventModel";
 import { HttpError } from "../../middleware/httpError";
 import { getEventBus, type EventBusEvent, type EventBusSubscription } from "../../modules/realtime/eventBus";
+import { trackSseConnection } from "../../observability/metrics";
 
+// Enforces tenant organization context presence on realtime event stream connections.
+// Parses and validates the organization ID into a strongly-typed MongoDB ObjectId.
+// Raises an unauthorized HTTP exception if organization scoping is missing.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -13,6 +37,9 @@ const requireOrgContext = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Extracts and validates the historical resume point from headers or query params.
+// Checks last-event-id headers or after parameters against ObjectId specifications.
+// Delivers the parsed resume ObjectId or null when client requests a fresh stream.
 const parseAfterId = (req: Request): mongoose.Types.ObjectId | null => {
   const header = String(req.header("last-event-id") || "").trim();
   const query = String((req.query as any)?.after || "").trim();
@@ -24,6 +51,9 @@ const parseAfterId = (req: Request): mongoose.Types.ObjectId | null => {
   return new mongoose.Types.ObjectId(candidate);
 };
 
+// Establishes a persistent Server-Sent Events channel streaming real-time domain events.
+// Replays missed events upon reconnection and maintains connections via heartbeats.
+// Coordinates stream backpressure, in-memory event bus piping, and socket teardown.
 export const streamEvents = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument | undefined;
   if (!user?._id) {
@@ -42,6 +72,7 @@ export const streamEvents = async (req: Request, res: Response) => {
   // Initial message (lets clients confirm the stream is live).
   res.write(`event: ready\ndata: ${JSON.stringify({ ok: true, request_id: req.requestId })}\n\n`);
 
+  // SSE comment heartbeat keeps the connection alive through proxies/load balancers
   const heartbeat = setInterval(() => {
     try {
       if (!res.writableEnded && !res.destroyed) {
@@ -67,11 +98,13 @@ export const streamEvents = async (req: Request, res: Response) => {
 
   let stopped = false;
   let subscription: EventBusSubscription | null = null;
+  const endSseMetric = trackSseConnection("events");
 
   const cleanup = () => {
     if (stopped) return;
     stopped = true;
     clearInterval(heartbeat);
+    endSseMetric();
     if (subscription) {
       subscription.close();
       subscription = null;
@@ -190,6 +223,8 @@ export const streamEvents = async (req: Request, res: Response) => {
     }
   };
 
+  // New connection (no lastId): subscribe to live events immediately.
+  // Reconnection (has lastId): replay missed events from DB first, then switch to live.
   if (!lastId) {
     unpauseAndFlush();
   } else {

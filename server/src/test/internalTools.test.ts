@@ -102,7 +102,7 @@ describe("internal tools API", () => {
     expect(exec.body.result?.workflow?.id).toMatch(/^[a-f\d]{24}$/i);
 
     const list = await request(app)
-      .get("/api/v1/workflows")
+      .get("/api/workflows")
       .set("Cookie", cookie)
       .set("X-Org-Id", orgId)
       .expect(200);

@@ -1,5 +1,9 @@
 import { Schema, model, Document, Types } from "mongoose";
+import { orgScopePlugin } from "../utils/orgScopePlugin";
 
+// Defines billable metering feature keys and derived union types for platform consumption.
+// Enumerates metered capabilities including AI inference, OCR quotas, exports, and workflows.
+// Serves as the constant foundation for rate limiting and billing ledger debit calculations.
 export const USAGE_FEATURES = [
   "monthly_ai_calls",
   "scenario_depth",
@@ -14,6 +18,9 @@ export const USAGE_FEATURES = [
 
 export type UsageFeature = (typeof USAGE_FEATURES)[number];
 
+// Defines the domain attributes capturing a discrete metered consumption event.
+// Records consumed units, LLM token counts, estimated dollar costs, and execution periods.
+// Provides granular audit tracking for pay-per-use and subscription tier quotas.
 export interface IUsageEvent {
   orgId?: Types.ObjectId;
   userId: Types.ObjectId;
@@ -31,10 +38,16 @@ export interface IUsageEvent {
   updatedAt: Date;
 }
 
+// Merges usage event domain attributes with standard Mongoose Document methods.
+// Exposes database primary keys, lifecycle management methods, and timestamp fields.
+// Represents a persistent usage event record returned by telemetry metering queries.
 export interface IUsageEventDocument extends IUsageEvent, Document {
   _id: Types.ObjectId;
 }
 
+// Configures the Mongoose schema mapping for the platform usage event collection.
+// Enforces validation rules on feature names, non-negative unit counts, and period keys.
+// Automatically records document creation and modification timestamps on all writes.
 const usageEventSchema = new Schema<IUsageEventDocument>(
   {
     orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: false, index: true },
@@ -58,7 +71,11 @@ const usageEventSchema = new Schema<IUsageEventDocument>(
   { timestamps: true }
 );
 
+// Configures compound database indexes for usage aggregation and idempotency protection.
+// Accelerates billing period summary rollups grouped by organization, user, and feature.
+// Establishes a partial unique index on idempotency keys to prevent duplicate billing events.
 usageEventSchema.index({ userId: 1, feature: 1, periodKey: 1, createdAt: -1 });
+usageEventSchema.index({ orgId: 1, createdAt: -1 });
 usageEventSchema.index({ orgId: 1, feature: 1, periodKey: 1, createdAt: -1 });
 usageEventSchema.index(
   { userId: 1, idempotencyKey: 1 },
@@ -70,5 +87,14 @@ usageEventSchema.index(
   }
 );
 
+// Enforces multi-tenant organizational isolation on all usage metering database queries.
+// Prevents cross-tenant consumption leakage by enforcing explicit organization scoping.
+// Guarantees strict isolation during high-throughput asynchronous usage writes.
+// Tenant guard: unscoped reads/writes throw when ORG_SCOPE_ENFORCE / production (see utils/orgScopePlugin).
+usageEventSchema.plugin(orgScopePlugin, { guardWrites: true });
+
+// Compiles and exports the Mongoose model for metered feature usage events.
+// Exposes data access methods to log, query, aggregate, and reconcile consumption data.
+// Powers billing quota checks, customer usage dashboards, and plan overage calculations.
 const UsageEventModel = model<IUsageEventDocument>("UsageEvent", usageEventSchema);
 export default UsageEventModel;

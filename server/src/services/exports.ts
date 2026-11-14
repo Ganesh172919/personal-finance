@@ -9,6 +9,9 @@ import UserModel from "../models/userModel";
 import { HttpError } from "../middleware/httpError";
 import { deleteGridFsFile, openGridFsUploadStream } from "./gridfs";
 
+// Represents the persisted binary file output of a completed export job.
+// Captures GridFS file identifier, target filename, MIME content type, and byte size.
+// Returned by artifact generation helpers to update export job records.
 type ExportArtifact = {
   fileId: mongoose.Types.ObjectId;
   filename: string;
@@ -16,8 +19,14 @@ type ExportArtifact = {
   bytes: number;
 };
 
+// Coerces an arbitrary unknown value safely into a standard string representation.
+// Translates null and undefined values cleanly into empty string literals.
+// Avoids runtime TypeError exceptions when handling unvalidated input fields.
 const safeString = (value: unknown) => (typeof value === "string" ? value : value == null ? "" : String(value));
 
+// Formats an arbitrary string or value into a compliant CSV cell string.
+// Encapsulates cells containing commas, quotes, or line breaks in double quotes.
+// Escapes nested quotation marks by doubling them per RFC 4180 standards.
 const toCsvCell = (value: unknown) => {
   const raw = safeString(value);
   if (raw === "") return "";
@@ -27,8 +36,14 @@ const toCsvCell = (value: unknown) => {
   return raw;
 };
 
+// Extracts the YYYY-MM-DD calendar date string from a Date instance.
+// Formats timestamps consistently for inclusion in export artifact file names.
+// Facilitates clean date sorting and standardized filename generation.
 const toDayKey = (value: Date) => value.toISOString().slice(0, 10);
 
+// Safely parses an unknown string representation into a valid JavaScript Date.
+// Validates time value finiteness to ensure parsed dates are completely valid.
+// Returns undefined when input is missing, empty, or non-parseable.
 const parseDateOrUndefined = (value: unknown) => {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -38,6 +53,9 @@ const parseDateOrUndefined = (value: unknown) => {
   return date;
 };
 
+// Parses a YYYY-MM period key string into UTC start and end Date boundaries.
+// Validates numeric month ranges and throws HTTP 400 errors on invalid formats.
+// Delivers exact date range boundaries for monthly aggregation queries.
 const parsePeriodKey = (value: string) => {
   const match = /^(\d{4})-(\d{2})$/.exec(value);
   if (!match) {
@@ -53,6 +71,9 @@ const parsePeriodKey = (value: string) => {
   return { start, end };
 };
 
+// Writes a buffer or string chunk to a stream while honoring backpressure.
+// Awaits drain events when internal stream buffers are saturated before continuing.
+// Guards against memory spikes when generating large streamed export files.
 const writeToStream = async (stream: NodeJS.WritableStream, chunk: string | Buffer) => {
   if (stream.write(chunk)) {
     return;
@@ -69,6 +90,9 @@ const writeToStream = async (stream: NodeJS.WritableStream, chunk: string | Buff
   ]);
 };
 
+// Normalizes and validates an unknown value against allowed transaction types.
+// Validates income, expense, and investment transaction classifications.
+// Returns undefined when the input value does not match known transaction types.
 const coerceTransactionType = (value: unknown): TransactionType | undefined => {
   const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
   if (raw === "income" || raw === "expense" || raw === "investment") {
@@ -77,6 +101,9 @@ const coerceTransactionType = (value: unknown): TransactionType | undefined => {
   return undefined;
 };
 
+// Validates and extracts the export job type enum from user parameters.
+// Ensures requested format matches supported CSV or PDF export varieties.
+// Throws an HTTP 400 error when encountering unrecognized export formats.
 const resolveExportType = (value: unknown): ExportJobType => {
   const raw = typeof value === "string" ? value.trim() : "";
   if (raw === "transactions_csv" || raw === "monthly_summary_pdf") {
@@ -85,6 +112,9 @@ const resolveExportType = (value: unknown): ExportJobType => {
   throw new HttpError(400, "INVALID_EXPORT_TYPE", "Invalid export type");
 };
 
+// Streams transaction history into a formatted CSV file stored in MongoDB GridFS.
+// Applies date range, category, and transaction type query filters.
+// Supports custom column projection selections while tracking total written bytes.
 const buildTransactionsCsv = async (params: {
   exportJobId: mongoose.Types.ObjectId;
   orgId: mongoose.Types.ObjectId;
@@ -132,26 +162,38 @@ const buildTransactionsCsv = async (params: {
 
   let bytes = 0;
 
-  const header = [
-    "id",
-    "date",
-    "type",
-    "amount",
-    "category",
-    "description",
-    "source_origin",
-    "source_request_id",
-    "source_task_id",
-    "source_agent_output_id",
-    "source_receipt_id",
-    "source_journal_entry_id",
-    "source_action_link_id",
-    "source_actor_type",
-    "source_source_ref",
-    "source_note",
-    "created_at",
-    "updated_at",
-  ].join(",");
+  const ALL_COLUMNS: Array<{ key: string; extract: (tx: any, source: any) => string }> = [
+    { key: "id", extract: (tx) => toCsvCell(tx._id) },
+    { key: "date", extract: (tx) => toCsvCell(tx.date ? toDayKey(new Date(tx.date)) : "") },
+    { key: "type", extract: (tx) => toCsvCell(tx.type) },
+    { key: "amount", extract: (tx) => toCsvCell(tx.amount) },
+    { key: "category", extract: (tx) => toCsvCell(tx.category) },
+    { key: "description", extract: (tx) => toCsvCell(tx.description) },
+    { key: "source_origin", extract: (_tx, source) => toCsvCell(source.origin) },
+    { key: "source_request_id", extract: (_tx, source) => toCsvCell(source.request_id) },
+    { key: "source_task_id", extract: (_tx, source) => toCsvCell(source.task_id) },
+    { key: "source_agent_output_id", extract: (_tx, source) => toCsvCell(source.agent_output_id) },
+    { key: "source_receipt_id", extract: (_tx, source) => toCsvCell(source.receipt_id) },
+    { key: "source_journal_entry_id", extract: (_tx, source) => toCsvCell(source.journal_entry_id) },
+    { key: "source_action_link_id", extract: (_tx, source) => toCsvCell(source.action_link_id) },
+    { key: "source_actor_type", extract: (_tx, source) => toCsvCell(source.actor_type) },
+    { key: "source_source_ref", extract: (_tx, source) => toCsvCell(source.source_ref) },
+    { key: "source_note", extract: (_tx, source) => toCsvCell(source.note) },
+    { key: "created_at", extract: (tx) => toCsvCell(tx.createdAt ? new Date(tx.createdAt).toISOString() : "") },
+    { key: "updated_at", extract: (tx) => toCsvCell(tx.updatedAt ? new Date(tx.updatedAt).toISOString() : "") },
+  ];
+
+  const requestedColumns = Array.isArray(params.jobParams.columns)
+    ? (params.jobParams.columns as string[]).map((c) => String(c).trim().toLowerCase())
+    : [];
+
+  const columnMap = new Map(ALL_COLUMNS.map((c) => [c.key, c]));
+  const activeColumns = requestedColumns.length > 0
+    ? requestedColumns.map((colKey) => columnMap.get(colKey)).filter((c): c is (typeof ALL_COLUMNS)[0] => Boolean(c))
+    : ALL_COLUMNS;
+
+  const colsToRender = activeColumns.length > 0 ? activeColumns : ALL_COLUMNS;
+  const header = colsToRender.map((c) => c.key).join(",");
 
   const writeLine = async (line: string) => {
     bytes += Buffer.byteLength(line, "utf8");
@@ -169,26 +211,7 @@ const buildTransactionsCsv = async (params: {
 
     for await (const tx of cursor) {
       const source: any = (tx as any).source || {};
-      const row = [
-        toCsvCell((tx as any)._id),
-        toCsvCell((tx as any).date ? toDayKey(new Date((tx as any).date)) : ""),
-        toCsvCell((tx as any).type),
-        toCsvCell((tx as any).amount),
-        toCsvCell((tx as any).category),
-        toCsvCell((tx as any).description),
-        toCsvCell(source.origin),
-        toCsvCell(source.request_id),
-        toCsvCell(source.task_id),
-        toCsvCell(source.agent_output_id),
-        toCsvCell(source.receipt_id),
-        toCsvCell(source.journal_entry_id),
-        toCsvCell(source.action_link_id),
-        toCsvCell(source.actor_type),
-        toCsvCell(source.source_ref),
-        toCsvCell(source.note),
-        toCsvCell((tx as any).createdAt ? new Date((tx as any).createdAt).toISOString() : ""),
-        toCsvCell((tx as any).updatedAt ? new Date((tx as any).updatedAt).toISOString() : ""),
-      ].join(",");
+      const row = colsToRender.map((c) => c.extract(tx, source)).join(",");
       await writeLine(`${row}\n`);
     }
 
@@ -212,6 +235,9 @@ const buildTransactionsCsv = async (params: {
   return { fileId, filename, contentType, bytes };
 };
 
+// Generates a comprehensive monthly financial summary report formatted as a PDF.
+// Aggregates net income, category expense rankings, and transaction volume.
+// Pipes rendered PDF binary streams directly into GridFS storage buckets.
 const buildMonthlySummaryPdf = async (params: {
   exportJobId: mongoose.Types.ObjectId;
   orgId: mongoose.Types.ObjectId;
@@ -311,9 +337,12 @@ const buildMonthlySummaryPdf = async (params: {
     pdf.fontSize(20).text("Personal Finance Monthly Summary", { align: "left" });
     pdf.moveDown(0.5);
 
+    const currencyCode = safeString((org as any)?.currency || "USD").toUpperCase();
+
     pdf.fontSize(11).fillColor("#333");
     pdf.text(`Period: ${periodKey} (UTC)`);
     pdf.text(`Organization: ${safeString((org as any)?.name || "Unknown")}`);
+    pdf.text(`Currency: ${currencyCode}`);
     pdf.text(`User: ${safeString((user as any)?.name || (user as any)?.email || "Unknown")}`);
     pdf.moveDown(1);
 
@@ -321,9 +350,9 @@ const buildMonthlySummaryPdf = async (params: {
     pdf.moveDown(0.25);
     pdf.fontSize(11).fillColor("#333");
     pdf.text(`Transactions: ${txCount}`);
-    pdf.text(`Income: ${incomeTotal.toFixed(2)}`);
-    pdf.text(`Expenses: ${expenseTotal.toFixed(2)}`);
-    pdf.text(`Net: ${netTotal.toFixed(2)}`);
+    pdf.text(`Income: ${currencyCode} ${incomeTotal.toFixed(2)}`);
+    pdf.text(`Expenses: ${currencyCode} ${expenseTotal.toFixed(2)}`);
+    pdf.text(`Net: ${currencyCode} ${netTotal.toFixed(2)}`);
     pdf.moveDown(1);
 
     pdf.fontSize(14).fillColor("#000").text("Top Expense Categories");
@@ -337,7 +366,7 @@ const buildMonthlySummaryPdf = async (params: {
         const category = safeString(row?._id || "Other");
         const total = Number(row?.total || 0);
         const count = Number(row?.count || 0);
-        pdf.text(`${category}: ${total.toFixed(2)} (${count} tx)`);
+        pdf.text(`${category}: ${currencyCode} ${total.toFixed(2)} (${count} tx)`);
       }
     }
 
@@ -363,6 +392,9 @@ const buildMonthlySummaryPdf = async (params: {
   return { fileId, filename, contentType, bytes };
 };
 
+// Executes an asynchronous export job to generate requested CSV or PDF artifacts.
+// Updates execution progress statuses, timestamps, and error messages in the database.
+// Links successfully generated GridFS file artifacts to the completed export job record.
 export const processExportJob = async (exportJobId: string) => {
   if (!mongoose.Types.ObjectId.isValid(exportJobId)) {
     throw new HttpError(400, "INVALID_EXPORT_JOB_ID", "Invalid export job id");

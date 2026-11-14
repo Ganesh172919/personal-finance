@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Transactions CSV Import Controller (v1)
+ *
+ * Handles bulk transaction import from CSV files. Supports dry-run mode,
+ * custom column mapping, optional account association, and mapping persistence.
+ *
+ * Routes served:
+ *   POST /api/v1/integrations/transactions_csv/import - importTransactionsCsvEndpoint
+ *
+ * Key patterns:
+ *   - Requires admin role for the organization
+ *   - Dry-run mode validates and previews without persisting
+ *   - Column mapping provided in request body; optionally saved to account metadata
+ *   - Feature limit enforced on the number of valid rows (not total rows)
+ *   - Domain event published on successful import for downstream consumers
+ *   - Idempotency key derived from import_id to prevent double-counting usage
+ *
+ * @module controllers/v1/transactionsCsvImportController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -5,17 +25,24 @@ import type { IUserDocument } from "../../models/userModel";
 import AccountModel from "../../models/accountModel";
 import { HttpError } from "../../middleware/httpError";
 import type { MutationSource } from "../../types/provenance";
-import { enforceFeatureLimit, recordFeatureUsage } from "../../services/entitlements";
+import { recordFeatureUsage, releaseReservationOnResponseEnd, reserveFeatureUsage, type FeatureReservation } from "../../services/entitlements";
 import { ensureProfileWithMigration, bumpTransactionMetadata, setProfileMutationSource } from "../../services/profileService";
 import { publishDomainEvent } from "../../services/domainEvents";
 import { importTransactionsCsv } from "../../services/transactionsCsvImport";
+import { fireAndForget } from "../../services/deadLetterQueue";
 
+// Defines numerical authority weights across organization membership tiers.
+// Enables evaluation of user privileges against required administrative thresholds.
+// Utilized by organization access guards to restrict bulk import actions.
 const roleRank: Record<"member" | "admin" | "owner", number> = {
   member: 1,
   admin: 2,
   owner: 3,
 };
 
+// Checks whether valid organization context is present on the incoming request.
+// Throws a 401 unauthorized error when organization context is absent.
+// Returns the resolved organization ID cast to a typed MongoDB ObjectId.
 const requireOrgContext = (req: Request) => {
   if (!req.org) {
     throw new HttpError(401, "ORG_REQUIRED", "Organization context required");
@@ -23,6 +50,9 @@ const requireOrgContext = (req: Request) => {
   return new mongoose.Types.ObjectId(req.org.orgId);
 };
 
+// Enforces that the requesting actor has administrator-level authority in the org.
+// Evaluates organization context and compares user role rank against the admin limit.
+// Throws a 403 access denied exception when user authorization is inadequate.
 const requireOrgAdmin = (req: Request) => {
   const orgId = requireOrgContext(req);
   if (roleRank[req.org!.role] < roleRank.admin) {
@@ -31,6 +61,9 @@ const requireOrgAdmin = (req: Request) => {
   return orgId;
 };
 
+// Constructs a standardized provenance record describing the origin of data changes.
+// Annotates mutated records with file names, actor categories, and unique link IDs.
+// Supports auditing, change provenance, and event tracing across the application.
 const buildMutationSource = (params: {
   requestId?: string;
   note?: string;
@@ -44,6 +77,9 @@ const buildMutationSource = (params: {
   note: params.note,
 });
 
+// Handles CSV file upload and ingestion for bulk financial transaction importing.
+// Supports column mapping, dry-run simulation, deduplication, and entitlement limits.
+// Records audit provenance, emits domain events, and updates user transaction tallies.
 export const importTransactionsCsvEndpoint = async (req: Request, res: Response) => {
   const orgId = requireOrgAdmin(req);
   const user = req.user as IUserDocument | undefined;
@@ -63,6 +99,7 @@ export const importTransactionsCsvEndpoint = async (req: Request, res: Response)
   }
 
   const dryRun = Boolean(body.dry_run);
+  const rememberMapping = body.remember_mapping !== false;
 
   const accountIdRaw = typeof body.account_id === "string" ? body.account_id.trim() : "";
   let accountId: mongoose.Types.ObjectId | undefined = undefined;
@@ -83,6 +120,7 @@ export const importTransactionsCsvEndpoint = async (req: Request, res: Response)
     actionLinkId: `csv_import:${req.requestId || Date.now()}`.slice(0, 128),
   });
 
+  let reservation: FeatureReservation | undefined;
   const result = await importTransactionsCsv({
     orgId,
     userId: user._id,
@@ -94,13 +132,14 @@ export const importTransactionsCsvEndpoint = async (req: Request, res: Response)
     dryRun,
     source,
     enforceLimit: async (validRows) => {
-      await enforceFeatureLimit({
+      reservation = await reserveFeatureUsage({
         orgId,
         userId: user._id,
         feature: "connector_sync_records",
         units: validRows,
         requestId: req.requestId,
       });
+      releaseReservationOnResponseEnd(res, reservation);
     },
   });
 
@@ -111,42 +150,74 @@ export const importTransactionsCsvEndpoint = async (req: Request, res: Response)
     await profile.save();
 
     if (result.inserted > 0) {
-      await publishDomainEvent({
+      fireAndForget(
+        publishDomainEvent({
+          orgId,
+          userId: user._id,
+          eventType: "TransactionImported",
+          aggregateType: "csv_import",
+          aggregateId: result.import_id || `csv_import:${Date.now()}`,
+          actionLinkId: source.action_link_id,
+          requestId: req.requestId,
+          payload: {
+            source,
+            import_id: result.import_id,
+            file_name: result.file_name,
+            parsed_rows: result.parsed_rows,
+            valid_rows: result.valid_rows,
+            inserted: result.inserted,
+            duplicates: result.duplicates,
+            account_id: accountId ? accountId.toString() : null,
+          },
+        }),
+        "publish TransactionImported domain event",
+        { orgId: String(orgId), importId: result.import_id }
+      );
+    }
+
+    fireAndForget(
+      recordFeatureUsage({
         orgId,
         userId: user._id,
-        eventType: "TransactionImported",
-        aggregateType: "csv_import",
-        aggregateId: result.import_id || `csv_import:${Date.now()}`,
-        actionLinkId: source.action_link_id,
+        feature: "connector_sync_records",
+        units: result.inserted,
+        reservation,
         requestId: req.requestId,
-        payload: {
-          source,
-          import_id: result.import_id,
+        idempotencyKey: `csv_import:${result.import_id || req.requestId || ""}`.slice(0, 128),
+        context: {
+          endpoint: "integrations/transactions_csv/import",
           file_name: result.file_name,
           parsed_rows: result.parsed_rows,
           valid_rows: result.valid_rows,
-          inserted: result.inserted,
           duplicates: result.duplicates,
-          account_id: accountId ? accountId.toString() : null,
         },
-      }).catch(() => null);
-    }
+      }),
+      "record feature usage for csv import",
+      { orgId: String(orgId), importId: result.import_id, inserted: result.inserted }
+    );
+  }
 
-    await recordFeatureUsage({
-      orgId,
-      userId: user._id,
-      feature: "connector_sync_records",
-      units: result.inserted,
-      requestId: req.requestId,
-      idempotencyKey: `csv_import:${result.import_id || req.requestId || ""}`.slice(0, 128),
-      context: {
-        endpoint: "integrations/transactions_csv/import",
-        file_name: result.file_name,
-        parsed_rows: result.parsed_rows,
-        valid_rows: result.valid_rows,
-        duplicates: result.duplicates,
-      },
-    }).catch(() => null);
+  if (accountId && rememberMapping) {
+    const account = await AccountModel.findOne({ _id: accountId, orgId });
+    if (account) {
+      const nextMetadata =
+        account.metadata && typeof account.metadata === "object" && !Array.isArray(account.metadata)
+          ? { ...(account.metadata as Record<string, unknown>) }
+          : {};
+      const importPreferences =
+        nextMetadata.import_preferences && typeof nextMetadata.import_preferences === "object" && !Array.isArray(nextMetadata.import_preferences)
+          ? { ...(nextMetadata.import_preferences as Record<string, unknown>) }
+          : {};
+
+      importPreferences.transactions_csv = {
+        last_mapping: mapping,
+        last_file_name: file.originalname,
+        updated_at: new Date().toISOString(),
+      };
+      nextMetadata.import_preferences = importPreferences;
+      account.metadata = nextMetadata;
+      await account.save();
+    }
   }
 
   res.status(dryRun ? 200 : 201).json({
@@ -155,4 +226,3 @@ export const importTransactionsCsvEndpoint = async (req: Request, res: Response)
     request_id: req.requestId,
   });
 };
-

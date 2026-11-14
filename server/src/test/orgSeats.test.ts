@@ -43,7 +43,7 @@ describe("org team plan and seat enforcement", () => {
 
   it("blocks team org creation on non-team plans", async () => {
     const response = await request(app)
-      .post("/api/v1/orgs")
+      .post("/api/orgs")
       .set("Cookie", [ownerCookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({ name: "Blocked Team Org" })
@@ -69,7 +69,7 @@ describe("org team plan and seat enforcement", () => {
     });
 
     const response = await request(app)
-      .post(`/api/v1/orgs/${teamOrg._id.toString()}/members`)
+      .post(`/api/orgs/${teamOrg._id.toString()}/members`)
       .set("Cookie", [ownerCookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", teamOrg._id.toString())
@@ -104,7 +104,7 @@ describe("org team plan and seat enforcement", () => {
     });
 
     const inviteResponse = await request(app)
-      .post(`/api/v1/orgs/${teamOrg._id.toString()}/members`)
+      .post(`/api/orgs/${teamOrg._id.toString()}/members`)
       .set("Cookie", [ownerCookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", teamOrg._id.toString())
@@ -130,7 +130,7 @@ describe("org team plan and seat enforcement", () => {
     });
 
     const seatFullAdd = await request(app)
-      .post(`/api/v1/orgs/${teamOrg._id.toString()}/members`)
+      .post(`/api/orgs/${teamOrg._id.toString()}/members`)
       .set("Cookie", [ownerCookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .set("X-Org-Id", teamOrg._id.toString())
@@ -155,7 +155,7 @@ describe("org team plan and seat enforcement", () => {
     const inviteeCookie = `jwt=${inviteeJwt}`;
 
     const accept = await request(app)
-      .post("/api/v1/org-invites/accept")
+      .post("/api/org-invites/accept")
       .set("Cookie", [inviteeCookie, csrfCookie])
       .set("X-CSRF-Token", csrfToken)
       .send({ token: inviteToken })

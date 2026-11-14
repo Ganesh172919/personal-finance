@@ -1,5 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+/**
+ * @fileoverview Organization invite acceptance page.
+ *
+ * Handles the end-to-end flow of accepting an org invite token passed
+ * as a URL query parameter. Supports three states:
+ * 1. Unauthenticated -- prompts the user to log in or register, storing
+ *    the invite URL for post-auth redirect.
+ * 2. Authenticated + idle -- auto-fires the accept mutation.
+ * 3. Accepted -- shows a success message and a "Go to organization" button.
+ *
+ * Key data flows:
+ * - Reads ?token= from the URL via getSearchParam.
+ * - Calls acceptOrgInvite(token) which hits POST /api/v1/orgs/invite/accept.
+ * - On success, sets the active org context and invalidates config/org queries.
+ * - Handles INVITE_EMAIL_MISMATCH errors with a dedicated message.
+ *
+ * Part of the multi-tenant organization flow; linked from invite emails.
+ */
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useSearch } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/Button";
@@ -10,24 +29,35 @@ import { ApiError, acceptOrgInvite } from "@/lib/apiClient";
 import { setActiveOrgId } from "@/lib/orgContext";
 import { getSearchParam } from "@/lib/url";
 
+// Session storage key used to store the invite URL during authentication redirects.
+// Allows unauthenticated invitees to log in or register before completing acceptance.
+// Restored post-authentication to seamlessly route back to the invite verification page.
 const POST_AUTH_REDIRECT_KEY = "finwise.post_auth_redirect";
 
+// Formats user-facing error messages from unknown error instances or API errors.
+// Appends the server-issued request identifier when present for diagnostic tracing.
+// Returns the provided fallback string when error does not have a message string.
 const formatError = (error: unknown, fallback: string) => {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
   const message = error instanceof Error ? error.message : fallback;
   return requestId ? `${message} (Request ID: ${requestId})` : message;
 };
 
+// Page component handling end-to-end acceptance of team organization invites.
+// Reads invite token from URL search params and validates user session credentials.
+// Updates active organization context and invalidates tenant queries on success.
 export default function AcceptInvite() {
   const { user, loading } = useAuth();
-  const [location, navigate] = useLocation();
+  const [, navigate] = useLocation();
+  // wouter v3: useLocation() is pathname-only; the query string comes from useSearch().
+  const search = useSearch();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const token = useMemo(() => {
-    const raw = getSearchParam(location, "token");
+    const raw = getSearchParam(`?${search}`, "token");
     return typeof raw === "string" ? raw.trim() : "";
-  }, [location]);
+  }, [search]);
 
   const selfPath = useMemo(() => {
     if (!token) return "/accept-invite";
@@ -68,11 +98,18 @@ export default function AcceptInvite() {
     },
   });
 
+  // Invite tokens are single-use: the mutation's isPending flag is not updated
+  // synchronously, so a second effect run (StrictMode, re-render before commit)
+  // would re-submit the token and surface a spurious "no longer valid" error.
+  const attemptedTokenRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!token) return;
     if (loading) return;
     if (!user) return;
+    if (attemptedTokenRef.current === token) return;
     if (acceptMutation.isPending || acceptMutation.isSuccess) return;
+    attemptedTokenRef.current = token;
     acceptMutation.mutate();
   }, [acceptMutation, loading, token, user]);
 

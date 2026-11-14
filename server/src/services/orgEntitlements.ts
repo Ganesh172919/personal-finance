@@ -8,11 +8,17 @@ import { HttpError } from "../middleware/httpError";
 
 const DEFAULT_TEAM_SEATS = 1;
 
+// Resolution payload capturing the active tier and seat allotment for an organization.
+// Pairs recognized subscription plan tiers with configured seat quotas.
+// Used for internal licensing evaluations and team access gatekeeping.
 type ResolvedOrgPlan = {
   plan: PlanTier;
   seats: number;
 };
 
+// Sanitizes numerical seat count inputs to positive integer values.
+// Falls back to standard baseline team seat capacities when inputs are invalid.
+// Ensures that team seat quotas never drop below a minimum of one seat.
 const normalizeSeats = (value: unknown) => {
   const seats = Number(value);
   if (!Number.isFinite(seats) || seats <= 0) {
@@ -21,6 +27,9 @@ const normalizeSeats = (value: unknown) => {
   return Math.max(1, Math.floor(seats));
 };
 
+// Determines the effective plan tier and seat ceiling for an organization.
+// Inspects active subscription models, falling back to stored entitlements.
+// Defaults to the free plan tier with baseline single-seat capacity.
 const resolveOrgPlan = async (params: { orgId: Types.ObjectId; userId?: Types.ObjectId }): Promise<ResolvedOrgPlan> => {
   const subscription = await SubscriptionModel.findOne({ orgId: params.orgId })
     .select({ planTier: 1, seats: 1 })
@@ -47,6 +56,9 @@ const resolveOrgPlan = async (params: { orgId: Types.ObjectId; userId?: Types.Ob
   };
 };
 
+// Verifies that an organization maintains an active team or enterprise plan.
+// Resolves active tier entitlements and throws payment required errors on failure.
+// Guards team collaboration, member invitations, and seat management APIs.
 export const requireTeamPlan = async (params: { orgId: Types.ObjectId; userId?: Types.ObjectId }) => {
   const resolved = await resolveOrgPlan(params);
   if (resolved.plan !== "team" && resolved.plan !== "enterprise") {
@@ -58,6 +70,9 @@ export const requireTeamPlan = async (params: { orgId: Types.ObjectId; userId?: 
   return resolved;
 };
 
+// Validates whether an organization possesses available seat capacity for additions.
+// Sums active team members and optional pending unexpired invitations.
+// Rejects requests with feature limit errors if seat capacity is exhausted.
 export const assertSeatAvailable = async (params: {
   orgId: Types.ObjectId;
   userId?: Types.ObjectId;

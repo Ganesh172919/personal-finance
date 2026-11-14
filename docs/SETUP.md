@@ -4,6 +4,10 @@
 
 ---
 
+> [!TIP]
+> **Developer Guide: Building & Extending on This Project**  
+> For complete step-by-step blueprints, Mongoose models, Zod schemas, Express controllers, React hooks, and LangGraph subagents, see the [**Master Developer Handbook: Building on This Project**](./BUILDING_ON_THIS_PROJECT.md).
+
 ## 🏗️ 1. Architecture & Prerequisites
 
 The application employs a decoupled architecture requiring several runtime environments. Before initiating any installation, ensure your system meets the strict minimum requirements outlined below.
@@ -12,10 +16,10 @@ The application employs a decoupled architecture requiring several runtime envir
 
 | Tool / Service | Minimum Version | Hard Requirement | Description & Purpose                                                                                    |
 | -------------- | --------------- | ---------------- | -------------------------------------------------------------------------------------------------------- |
-| **Node.js**    | `v18.x LTS`     | **Yes**          | The core runtime for both the Express Server and the Vite React Client. Check via `node -v`              |
-| **npm**        | `v9.x`          | **Yes**          | Ships automatically with Node.js. Used for deterministic dependency resolution.                          |
-| **MongoDB**    | `v6.0+`         | **Yes**          | The primary NoSQL datastore managing 48 independent domain schemas. Local or Atlas (Cloud) supported.    |
-| **Redis**      | `v7.0+`         | **Yes**          | In-memory data structure store required for rate-limiting (token buckets) and BullMQ background workers. |
+| **Node.js**    | `>=24.14.1 <25` (Node 24 LTS)     | **Yes**          | The core runtime for both the Express Server and the Vite React Client. Check via `node -v`              |
+| **npm**        | `>=11.0.0` (npm 11)          | **Yes**          | Ships automatically with Node.js. Used for deterministic dependency resolution.                          |
+| **MongoDB**    | `v7.0+` (MongoDB 7)         | **Yes**          | The primary NoSQL datastore managing 52 independent domain schemas. Local or Atlas (Cloud) supported.    |
+| **Redis**      | `v7.0+`         | No               | Optional cache and rate-limit backing store. The background worker uses MongoDB job records. |
 | **Python**     | `v3.11+`        | No\*             | Required exclusively if you intend to run the **AI Core Service** (Financial Copilot, OCR, Autopilot).   |
 | **Git**        | `v2.30+`        | **Yes**          | Version control system to fetch and manage the repository branches.                                      |
 
@@ -64,13 +68,13 @@ cp .env.example .env
 Open `.env` in your preferred editor. You **must** define the following critical keys to boot the server:
 
 - `MONGO_URI`: E.g., `mongodb://localhost:27017/finwise`. Ensure the database exists; Mongoose will create collections automatically.
-- `REDIS_URL`: E.g., `redis://localhost:6379`. Essential for the server to bind queues to worker pools.
+- `REDIS_URL`: E.g., `redis://localhost:6379`. Optional cache and distributed rate-limit backing store.
 - `JWT_SECRET`: A secure randomly-generated hash used for signing stateless authentication tokens.
 
 **Extended Integrations (Optional but recommended):**
 
 - **Stripe**: Define `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` internally for billing features.
-- **Google OAuth2**: Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Make sure to add `http://localhost:3000/auth/google/callback` to your authorized redirect URIs in Google Cloud Console.
+- **Google OAuth2**: Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `server/.env` (see [Set up Google sign-in](#set-up-google-sign-in) below). No client-side variable is needed.
 - **Security Framework**: Set `CSRF_ENABLED=true` to force Double-Submit cookie validation on mutating requests (Auto enabled in `production`).
 
 ### 3.3 Bootstrapping the Backend
@@ -84,7 +88,7 @@ The backend utilizes concurrency for REST APIs and background workers. We recomm
 npm run dev
 ```
 
-**Terminal B (The BullMQ Distributed Worker):**
+**Terminal B (The MongoDB Worker):**
 
 ```bash
 # Boot the background consumer for email, webhooks, and heavy exports
@@ -113,7 +117,7 @@ The client utilizes scoped environment variables mapped by Vite.
 cp .env.example .env
 ```
 
-Ensure `VITE_API_BASE_URL` is pointing directly to where your Express server is hosted (e.g., `http://localhost:3000`). If using Google OAuth, `VITE_GOOGLE_CLIENT_ID` must match the server counterpart.
+Ensure `VITE_API_BASE_URL` is pointing directly to where your Express server is hosted (e.g., `http://localhost:3000`).
 
 ### 4.3 Bootstrapping the Client
 
@@ -125,6 +129,27 @@ npm run dev
 Navigate your browser to `http://localhost:5173`. You should see the Personal Finance login portal.
 
 ---
+
+### Set up Google sign-in
+
+Google sign-in is optional and entirely server-side (authorization-code flow with state + PKCE); nothing is configured in `client/.env`.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/) open **APIs & Services > OAuth consent screen** and configure it (External; add yourself as a test user while in Testing mode).
+2. **APIs & Services > Credentials > Create credentials > OAuth client ID**, type **Web application**.
+3. Under **Authorized redirect URIs** add the callback for every origin the browser uses to reach the app:
+   - local dev: `http://localhost:5173/api/auth/google/callback` (Vite proxies `/api` to the server). If you call the API directly, also add `http://localhost:3000/api/auth/google/callback` and set `GOOGLE_CALLBACK_URL` to it.
+   - production: `https://<your-domain>/api/auth/google/callback`
+
+   The default callback is `<CLIENT_URL origin>/api/auth/google/callback`; it must match exactly (scheme, host, port, no trailing slash).
+4. Put the credentials in `server/.env` (never commit them) and restart the server:
+   ```bash
+   GOOGLE_CLIENT_ID=<id>.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=<secret>
+   # GOOGLE_CALLBACK_URL=...   # optional override
+   ```
+5. Verify: `curl http://localhost:3000/api/auth/providers` returns `"google": true`, and the Login/Register pages show **Continue with Google**.
+
+Behaviour: the Google email must be verified. A new Google user gets an account plus a personal workspace; an existing email+password account is linked (and keeps its password) only when Google confirms the same verified email. Google-only accounts cannot use password login. Docker Compose: set the same variables in the root `.env` (see `compose.env.example`). AWS: see `deploy/aws/README.md` (`ENABLE_GOOGLE_AUTH`).
 
 ## 🤖 5. Python AI Core Initialization (Copilot & OCR)
 
@@ -179,14 +204,14 @@ python main.py
 
 ## 🌱 6. Database Hydration & Migrations
 
-If this is a fresh installation, you will want populated data to test features like charts and budgets.
+For local sample-content testing, point the seed at a separate `finwise-fixtures` database. The seed replaces blog and growth-story fixtures there.
 
 ```bash
 # Run from the /server directory
 cd server
 
-# Seed static content for testing (Blogs, Growth Stories)
-npm run seed:content
+# Seed sample blogs and growth stories in the isolated local database
+MOCK_CONTENT_MONGO_URI=mongodb://127.0.0.1:27017/finwise-fixtures npm run seed:content
 
 # Run necessary migrations for schema standardization
 npm run migrate:transactions
@@ -225,14 +250,14 @@ npm run lint       # Asserts formatting, accessibility rules, and valid hooks
 
 ---
 
-## 🚑 8. Advanced Troubleshooting Matrix
+## 🚨 8. Advanced Troubleshooting Matrix
 
 If things go wrong, cross-reference your specific issues here before opening a GitHub Issue.
 
 | Symptom / Error                                  | Root Cause Analysis                           | Remediation Strategy                                                                                                 |
 | ------------------------------------------------ | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | **`ECONNREFUSED` (Port 27017)**                  | The API cannot dial the MongoDB host.         | Verify `mongod` is active. If using Docker: `docker run -d -p 27017:27017 mongo`. If using Atlas, whitelist your IP. |
-| **`ECONNREFUSED` (Port 6379)**                   | BullMQ/Rate Limiter cannot dial Redis.        | Verify `redis-server` is active. Check `REDIS_URL` formatting in `.env`.                                             |
+| **`ECONNREFUSED` (Port 6379)**                   | Optional cache/rate limiter cannot dial Redis. | Verify `redis-server` is active. Check `REDIS_URL` formatting in `.env`.                                             |
 | **Vite: `Port 5173 is in use`**                  | Another Vite instance is bound to the port.   | Terminate rogue node processes or configure Vite binding explicitly via the `vite.config.ts`.                        |
 | **AI Copilot HTTP 500 Failures**                 | Agent orchestration failure via Gemini.       | Check `/server/AI_Core/personal-finance.log` for stack traces. Verify your `GEMINI_API_KEY` has not exceeded quota.  |
 | **OAuth Redirect `URI_MISMATCH`**                | Google rejected the callback destination.     | Log into GCP Console and add the exact URL (including specific port) to "Authorized redirect URIs".                  |
@@ -243,3 +268,108 @@ If things go wrong, cross-reference your specific issues here before opening a G
 
 **Next Steps**
 Familiarize yourself with the business domain by reading the [System Architecture Guide](./ARCHITECTURE.md) and exploring the comprehensive [REST API definitions](./API.md).
+
+## Environment Setup & Configuration Mindmap
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#2563eb', 'primaryTextColor': '#ffffff', 'primaryBorderColor': '#1d4ed8', 'lineColor': '#8b5cf6', 'secondaryColor': '#059669', 'tertiaryColor': '#f59e0b'}}}%%
+mindmap
+  root((⚙️ FinWise Environment Setup))
+    🖥️ Prerequisites
+      Node.js >=24.14.1 (Engine lock)
+      npm 11+
+      Python 3.11+
+      Docker Desktop (Linux Containers)
+    📦 Environment Files (.env)
+      server/.env (JWT, MongoDB, Redis, PYTHON_API_URL)
+      client/.env (VITE_API_URL=/api/v1)
+      server/AI_Core/.env (GROQ_API_KEY, OLLAMA_HOST)
+    🗄️ Database & Services
+      docker-compose up -d mongodb redis
+      Mongo Replica Set Initialization
+      Compound Index Auto-Sync
+    🧪 Health & Verification
+      npm test --workspace=server
+      pytest server/AI_Core
+      GET /health ➔ Status 200 OK
+```
+
+## Developer Environment Provisioning ASCII Flow
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟢 STEP 1: HOST ENVIRONMENT AUDIT                                      │
+│    $ node --version (>= 24.14.1 required) • $ python --version (3.11+) │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟡 STEP 2: DOCKER CONTAINER ORCHESTRATION                              │
+│    $ docker-compose up -d mongodb redis                               │
+│    ├─► MongoDB 7.0 listening on localhost:27017                       │
+│    └─► Redis 7.0 listening on localhost:6379                          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🟣 STEP 3: CONFIGURE SECRET TOKENS & ENVIRONMENT VARIABLES             │
+│    ├─► Generate cryptographically secure JWT_SECRET (openssl rand -hex)│
+│    ├─► Configure server/.env: MONGO_URI, REDIS_URL, PYTHON_API_URL     │
+│    └─► Configure server/AI_Core/.env: GROQ_API_KEY, MODEL_CATALOG      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔷 STEP 4: INSTALL DEPENDENCIES & LAUNCH DEV SERVERS                   │
+│    ├─► Server: cd server && npm install && npm run dev (Port 3000)     │
+│    ├─► AI Core: cd server/AI_Core && pip install -r requirements.txt   │
+│    │            uvicorn api_service:app (Port 8001)                    │
+│    └─► Client: cd client && npm install && npm run dev (Port 5173) 🟢  │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 8. 2026 Enterprise Features Setup & Verification
+
+### 8.1 Automated RAG Phase 2 Chunking Backfill
+If you are initializing an existing database with uploaded PDF/TXT statement files, run the automated chunking backfill:
+
+```bash
+cd server
+npm run backfill:chunks
+```
+
+### 8.2 Inspecting Dead Letter Queue (DLQ)
+Verify Redis connection and DLQ capacity:
+
+```bash
+redis-cli ping # Expect: PONG
+redis-cli LLEN bull:finwise-dlq:failed # Expect: 0 (clean state)
+```
+
+### 8.3 Verifying Full-Stack Connectivity
+Run the diagnostic probe script to verify all four layers (API, MongoDB, Redis, AI Core) simultaneously:
+
+```bash
+cd server
+npx ts-node src/scripts/diagnoseSystem.ts
+```
+
+### 8.4 Verifying Continuous AI Canary Invariants (175 Evals)
+Verify that mathematical invariant enforcement and AI Core sub-agent tools are functioning:
+
+```bash
+cd server/AI_Core
+python -m evals.runner
+# Expect: 175/175 evaluations passed (100% pass rate)
+```
+
+### 8.5 Testing ML Merchant Vector Clustering
+Verify 64-D subword embedding projection and agglomerative centroid clustering:
+
+```bash
+cd server
+npm run test:unit src/test/merchantEmbeddingClustering.test.ts
+# Expect: All vector tests and clustering scenarios passing
+```

@@ -1,5 +1,8 @@
 import { Schema, model, Document, Types } from "mongoose";
 
+// Defines TypeScript contract for monthly category budget allocations.
+// Encapsulates assigned budget limits, fiscal month period key, and currency.
+// Used across envelope calculations and financial intelligence projections.
 export interface IBudgetAllocation {
   orgId: Types.ObjectId;
   periodKey: string; // YYYY-MM
@@ -13,10 +16,16 @@ export interface IBudgetAllocation {
   updatedAt: Date;
 }
 
+// Extends IBudgetAllocation with Mongoose Document methods and primary key.
+// Enables runtime database querying, persistence, and typed document methods.
+// Represents individual budget allocation records inside MongoDB collection.
 export interface IBudgetAllocationDocument extends IBudgetAllocation, Document {
   _id: Types.ObjectId;
 }
 
+// Mongoose schema definition governing category budget allocations.
+// Enforces positive amount values, 3-character currency codes, and period keys.
+// Automatically manages createdAt and updatedAt timestamps for budget tracking.
 const budgetAllocationSchema = new Schema<IBudgetAllocationDocument>(
   {
     orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
@@ -39,9 +48,17 @@ const budgetAllocationSchema = new Schema<IBudgetAllocationDocument>(
   { timestamps: true }
 );
 
+// Compound indexes ensuring category uniqueness and fast period lookups.
+// Enforces unique constraint preventing duplicate category allocations per period.
+// Speeds up budget retrieval by organization identifier and period key.
 budgetAllocationSchema.index({ orgId: 1, periodKey: 1, category: 1 }, { unique: true });
 budgetAllocationSchema.index({ orgId: 1, periodKey: 1, updatedAt: -1 });
 
+// Instantiates Mongoose model bound to MongoDB "BudgetAllocation" collection.
+// Provides strongly typed querying, allocation upserts, and budget analytics.
+// Consumed by finance controllers, budget rebalancing, and envelope calculators.
 const BudgetAllocationModel = model<IBudgetAllocationDocument>("BudgetAllocation", budgetAllocationSchema);
+// Exports compiled BudgetAllocationModel instance as default module export.
+// Imported by budget routers, financial services, and reporting tools.
+// Serves as central database access gateway for category budget quotas.
 export default BudgetAllocationModel;
-

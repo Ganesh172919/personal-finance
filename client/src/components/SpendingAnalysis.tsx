@@ -1,5 +1,25 @@
-﻿import { motion } from "framer-motion";
+/**
+ * @fileoverview SpendingAnalysis — dashboard card showing total monthly spending,
+ * month-over-month change, and a breakdown of top expense categories with progress bars.
+ *
+ * WHAT IT DOES
+ *  - Fetches `/api/transactions/summary` for the current month grouped by month with top 6 categories.
+ *  - Calculates current vs. previous month total and computes a percentage change indicator.
+ *  - Renders each category with a contextual icon (food→Utensils, transport→Car, etc.),
+ *    amount, percentage, and an animated progress bar.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - No props — data is fully server-fetched.
+ *  - `getCategoryIcon()` maps category names to lucide-react icons.
+ *  - `CATEGORY_COLORS` provides a rotating palette of six HSL accent colours.
+ *
+ * ARCHITECTURE NOTES
+ *  - Paired with InvestmentPortfolio on the dashboard; together they give income vs. expense visibility.
+ *  - The "This Month" dropdown is currently a static selector but is structured for future range options.
+ *  - Framer Motion stagger animation (0.1 s per category + 1 s progress bar fill).
+ */
 import { Card } from "@/components/ui/Card";
+import { SpendingAnalysisSkeleton } from "@/components/ui/CardSkeleton";
 import {
   Select,
   SelectContent,
@@ -8,10 +28,14 @@ import {
   SelectValue,
 } from "@/components/ui/Select";
 import { Utensils, Car, Film, ShoppingBag } from "lucide-react";
+import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { getTransactionsSummary, TransactionsSummaryResponse } from "@/lib/apiClient";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
+// Property structure definition for individual spending category metrics.
+// Encapsulates category names, aggregated expense totals, and budget proportions.
+// Specifies corresponding Lucide icons, theme colors, and progress ratios.
 interface SpendingCategory {
   name: string;
   amount: number;
@@ -21,6 +45,9 @@ interface SpendingCategory {
   budgetUsed: number;
 }
 
+// Palette array of distinct theme HSL color tokens for spending categories.
+// Assigns high-contrast hues across dining, travel, utilities, and entertainment.
+// Distinguishes expense segments across visual distribution progress bars.
 const CATEGORY_COLORS = [
   "hsl(158 64% 52%)",
   "hsl(221 83% 53%)",
@@ -30,6 +57,9 @@ const CATEGORY_COLORS = [
   "hsl(24 95% 53%)",
 ];
 
+// Derives a contextual Lucide icon component based on expense category titles.
+// Maps terms like groceries, dining, transit, and entertainment to icons.
+// Falls back to a standard shopping bag icon when matches are not identified.
 const getCategoryIcon = (categoryName: string) => {
   const lower = categoryName.toLowerCase();
 
@@ -48,6 +78,9 @@ const getCategoryIcon = (categoryName: string) => {
   return ShoppingBag;
 };
 
+// Dashboard expense breakdown widget tracking monthly category distributions.
+// Calculates month-over-month expenditure deltas and top category proportions.
+// Employs Framer Motion animations to reveal category progress bars sequentially.
 export function SpendingAnalysis() {
   const { formatMoney } = useOrgFormatters();
   const now = new Date();
@@ -58,7 +91,7 @@ export function SpendingAnalysis() {
   const fromYmd = toYmd(fromDate);
   const toYmdValue = toYmd(toDate);
 
-  const { data } = useQuery<TransactionsSummaryResponse>({
+  const { data, isLoading } = useQuery<TransactionsSummaryResponse>({
     queryKey: ["/api/transactions/summary", fromYmd, toYmdValue],
     queryFn: () =>
       getTransactionsSummary({
@@ -68,6 +101,10 @@ export function SpendingAnalysis() {
         topCategories: 6,
       }),
   });
+
+  if (isLoading) {
+    return <SpendingAnalysisSkeleton />;
+  }
 
   const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);

@@ -1,21 +1,65 @@
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+/**
+ * @fileoverview ConversationInsightsPanel — displays cross-conversation AI intelligence
+ * including a markdown summary, session count, agent badges, and recommended next moves.
+ *
+ * WHAT IT DOES
+ *  - Fetches `/api/chat/insights/conversation` which synthesises patterns across the
+ *    user's recent AI chat sessions.
+ *  - Renders: session count badge, fallback indicator, agent involvement badges,
+ *    a markdown-rendered summary, and up to N action items ("Recommended next moves")
+ *    extracted from the plan's 7-day, 30-day, and 12-month action buckets.
+ *  - Supports a `compact` mode (smaller padding, fewer items, smaller typography) for
+ *    embedding in constrained spaces like the chat sidebar.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `compact` (boolean) — toggles between full and compact rendering.
+ *  - `className` (string) — additional classes for the outer Card.
+ *  - `collectActionItems` helper flattens and slices the plan's action buckets.
+ *
+ * ARCHITECTURE NOTES
+ *  - Used in the AI Chat page sidebar and potentially in the dashboard copilot panel.
+ *  - `staleTime: 60_000` prevents excessive re-fetching since insights change slowly.
+ *  - Refresh button triggers manual `refetch` for on-demand updates.
+ */
+import { useMemo, useSyncExternalStore } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BrainCircuit, RefreshCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Link } from "wouter";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/utils";
+import { splitAnswerAndPlan } from "@/lib/chatResponse";
+import { useAuth } from "@/hooks/useAuth";
+import { getActiveOrgId, subscribeActiveOrgId } from "@/lib/orgContext";
+import { ApiError } from "@/lib/apiError";
 import { fetchConversationInsights } from "@/services/chatApi";
 import type { ActionItem } from "@/types/ai.types";
 
+// Property structure definition for the cross-conversation insights card.
+// Configures condensed presentation layouts via the compact boolean flag.
+// Accommodates supplemental CSS class names for responsive container styling.
 type ConversationInsightsPanelProps = {
   compact?: boolean;
   className?: string;
 };
 
+// Specialized Markdown renderer formatting conversational synthesis responses.
+// Maps heading elements down to consistent header ranks to preserve page hierarchy.
+// Supports GitHub-Flavored Markdown tables, checklists, and bulleted lists.
+function InsightMarkdown({ children }: { children: string }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+    h1: ({ children }) => <h3>{children}</h3>,
+    h2: ({ children }) => <h3>{children}</h3>,
+  }}>{children}</ReactMarkdown>;
+}
+
+// Flattens and filters structured action items across 7-day, 30-day, and 12-month buckets.
+// Combines short-term tactical steps and long-term milestones into a unified sequence.
+// Bounds the extracted recommendation collection to a specified maximum item count.
 const collectActionItems = (plan?: {
   actions?: {
     next_7_days?: ActionItem[];
@@ -32,40 +76,64 @@ const collectActionItems = (plan?: {
   ].slice(0, limit);
 };
 
+// Displays synthesized intelligence and recommendations derived across all user chats.
+// Renders active agent badges, conversation counts, and formatted action lists.
+// Provides manual refresh triggers to request up-to-date financial synthesis.
 export function ConversationInsightsPanel({
   compact = false,
   className,
 }: ConversationInsightsPanelProps) {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const orgId = useSyncExternalStore(subscribeActiveOrgId, getActiveOrgId, () => null);
+  const queryKey = ["/api/chat/insights/conversation", user?.id || "", orgId || ""];
   const insightsQuery = useQuery({
-    queryKey: ["/api/chat/insights/conversation"],
-    queryFn: fetchConversationInsights,
-    staleTime: 60_000,
+    queryKey,
+    queryFn: () => fetchConversationInsights({ orgId: orgId || undefined }),
+    // Recheck current context when returning from a chat or finance edit. The
+    // server reuses unchanged snapshots, so this does not repeat model work.
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+    enabled: Boolean(user?.id && orgId),
   });
+  const refreshMutation = useMutation({
+    mutationFn: (submittedKey: string[]) => fetchConversationInsights({ refresh: true, orgId: submittedKey[2] }),
+    onSuccess: (data, submittedKey) => queryClient.setQueryData(submittedKey, data),
+  });
+  const refreshIsCurrent = refreshMutation.variables?.join("|") === queryKey.join("|");
+  const isRefreshing = insightsQuery.isFetching || (refreshIsCurrent && refreshMutation.isPending);
+  const currentError = refreshIsCurrent && refreshMutation.isError ? refreshMutation.error : insightsQuery.error;
+  const atLimit = currentError instanceof ApiError && currentError.status === 402;
 
   const actionItems = useMemo(
-    () => collectActionItems(insightsQuery.data?.plan, compact ? 2 : 3),
+    () => collectActionItems(insightsQuery.data?.plan, compact ? 1 : 3),
     [compact, insightsQuery.data?.plan]
   );
+  const responseParts = splitAnswerAndPlan(insightsQuery.data?.response || "");
 
   return (
     <Card className={className}>
-      <div className={cn("flex flex-col", compact ? "gap-3 p-4" : "gap-4 p-5")}>
-        <div className="flex items-start justify-between gap-3">
+      <div className={cn("flex flex-col", compact ? "gap-2 p-2.5" : "gap-4 p-5")}>
+        <div className="flex items-start justify-between gap-2">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <div
                 className={cn(
                   "flex items-center justify-center rounded-2xl bg-primary text-primary-foreground",
-                  compact ? "h-9 w-9" : "h-10 w-10"
+                  compact ? "h-7 w-7" : "h-10 w-10"
                 )}
               >
-                <BrainCircuit className="h-4 w-4" />
+                <BrainCircuit className={compact ? "h-3 w-3" : "h-4 w-4"} />
               </div>
               <div>
-                <div className="text-sm font-semibold text-foreground">Conversation intelligence</div>
-                <div className="text-xs text-muted-foreground">
-                  Patterns pulled from your recent AI conversations
+                <div className={cn("font-semibold text-foreground", compact ? "text-[11px] leading-4" : "text-sm")}>
+                  Conversation intelligence
                 </div>
+                {!compact ? (
+                  <div className="text-xs text-muted-foreground">
+                    Patterns pulled from your recent AI conversations
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -73,14 +141,21 @@ export function ConversationInsightsPanel({
           <Button
             variant="ghost"
             size="icon"
-            className={cn("rounded-2xl", compact ? "h-8 w-8" : "")}
-            onClick={() => insightsQuery.refetch()}
-            disabled={insightsQuery.isFetching}
+            className={cn("rounded-2xl", compact ? "h-6 w-6" : "")}
+            onClick={() => refreshMutation.mutate(queryKey)}
+            disabled={isRefreshing}
             aria-label="Refresh conversation insights"
           >
-            <RefreshCcw className={`h-4 w-4 ${insightsQuery.isFetching ? "animate-spin" : ""}`} />
+            <RefreshCcw className={`${compact ? "h-3 w-3" : "h-4 w-4"} ${isRefreshing ? "animate-spin" : ""}`} />
           </Button>
         </div>
+
+        {refreshIsCurrent && refreshMutation.isError && (
+          <p role="alert" className="text-sm text-destructive">
+            {atLimit ? <>Your monthly AI limit has been reached. <Link href="/billing" className="underline">View plan limits</Link>. The previous summary is still shown.</>
+              : "Refresh failed. The previous summary is still shown. Try again."}
+          </p>
+        )}
 
         {insightsQuery.isLoading ? (
           <div className="rounded-[calc(var(--radius)-8px)] border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
@@ -88,43 +163,53 @@ export function ConversationInsightsPanel({
           </div>
         ) : insightsQuery.isError ? (
           <div className="rounded-[calc(var(--radius)-8px)] border border-destructive/20 bg-destructive/5 p-4 text-sm text-muted-foreground">
-            Conversation insights are temporarily unavailable.
+            {atLimit ? <>Your monthly AI limit has been reached. <Link href="/billing" className="underline">View plan limits</Link>. Your existing chats are still available.</>
+              : "Conversation insights are temporarily unavailable."}
           </div>
         ) : insightsQuery.data ? (
           <>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">
+            <div className="flex flex-wrap items-center gap-1">
+              <Badge variant="outline" className={compact ? "px-1.5 py-0 text-[9px]" : undefined}>
                 {insightsQuery.data.sessions_considered} session
                 {insightsQuery.data.sessions_considered === 1 ? "" : "s"}
               </Badge>
+              {insightsQuery.data.cache_hit && (
+                <Badge variant="outline" title={`Reused summary from ${insightsQuery.data.generated_at || "the current context"}. Refresh checks again.`}>
+                  Saved summary
+                </Badge>
+              )}
               {insightsQuery.data.fallback_used ? (
-                <Badge variant="outline">Fallback response</Badge>
+                <Badge variant="outline" title="AI narration was unavailable or did not pass the summary checks. This recap uses your saved conversation context." className={compact ? "px-1.5 py-0 text-[9px]" : undefined}>Basic summary</Badge>
               ) : null}
-              {(insightsQuery.data.agents_involved || []).slice(0, compact ? 2 : 4).map((agent) => (
-                <Badge key={agent} className="bg-primary/10 text-primary">
+              {(insightsQuery.data.agents_involved || []).filter(agent => agent !== "conversation_summarizer").slice(0, compact ? 2 : 4).map((agent) => (
+                <Badge key={agent} className={cn("bg-primary/10 text-primary", compact ? "px-1.5 py-0 text-[9px]" : "")}>
                   {agent}
                 </Badge>
               ))}
             </div>
 
-            <div className="prose prose-sm max-w-none text-foreground dark:prose-invert">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {insightsQuery.data.response}
-              </ReactMarkdown>
+            <div className={cn("max-w-none text-foreground dark:prose-invert", compact ? "prose prose-xs" : "prose prose-sm")}>
+              <InsightMarkdown>{responseParts.answer}</InsightMarkdown>
+              {responseParts.plan && (
+                <details className="mt-3">
+                  <summary className="cursor-pointer font-medium">View full financial plan</summary>
+                  <InsightMarkdown>{responseParts.plan}</InsightMarkdown>
+                </details>
+              )}
             </div>
 
             {actionItems.length ? (
               <div className="space-y-2">
-                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                <div className={cn("font-semibold uppercase text-muted-foreground", compact ? "text-[10px] tracking-[0.18em]" : "text-xs tracking-[0.22em]")}>
                   Recommended next moves
                 </div>
                 <div className="grid gap-2">
                   {actionItems.map((action, index) => (
                     <div
                       key={`${action.title}-${index}`}
-                      className="rounded-[calc(var(--radius)-10px)] border border-border/70 bg-muted/20 p-3"
+                      className={cn("rounded-[calc(var(--radius)-10px)] border border-border/70 bg-muted/20", compact ? "p-2.5" : "p-3")}
                     >
-                      <div className="text-sm font-semibold text-foreground">{action.title}</div>
+                      <div className={cn("font-semibold text-foreground", compact ? "text-xs leading-4" : "text-sm")}>{action.title}</div>
                       {!compact ? (
                         <div className="mt-1 text-xs leading-5 text-muted-foreground">{action.why}</div>
                       ) : null}

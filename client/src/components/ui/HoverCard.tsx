@@ -5,10 +5,19 @@ import * as HoverCardPrimitive from "@radix-ui/react-hover-card";
 
 import { cn } from "@/lib/utils";
 
+// Root hover card container coordinating hover interaction states and timers.
+// Wraps Radix UI HoverCardPrimitive Root for accessible peek previews.
+// Enables users to preview contextual content behind links or avatars on hover.
 const HoverCard = HoverCardPrimitive.Root;
 
+// Interactive trigger element opening the hover card on pointer mouse enter.
+// Re-exports Radix UI HoverCardPrimitive Trigger with focus and hover handlers.
+// Manages delay timers to prevent accidental activations during quick pointer passes.
 const HoverCardTrigger = HoverCardPrimitive.Trigger;
 
+// Floating content card revealed when hovering the associated trigger element.
+// Implements popover borders, shadows, and smooth directional animations.
+// Forwards DOM references to the underlying Radix HoverCard Content primitive.
 const HoverCardContent = React.forwardRef<
   React.ElementRef<typeof HoverCardPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof HoverCardPrimitive.Content>

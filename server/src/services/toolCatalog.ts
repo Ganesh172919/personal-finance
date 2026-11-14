@@ -1,12 +1,21 @@
 import type { UsageFeature } from "../models/usageEventModel";
 
+// Defines organizational access roles authorized to invoke catalog tools.
+// Controls role-based permission tiers across low and privileged actions.
+// Enforces principle of least privilege for agentic automation operations.
 export type ToolCatalogRole = "member" | "admin" | "owner";
 
+// Defines required billing entitlements or quota limits for a catalog tool.
+// Specifies the target metered usage feature and required consumption units.
+// Gates tool execution behind active organization subscription capabilities.
 export type ToolCatalogEntitlement = {
   feature: UsageFeature;
   units?: number;
 };
 
+// Specification metadata for a registered agentic automation tool.
+// Outlines parameters schema, default confirmation policies, and risk levels.
+// Supplies argument examples and role constraints for tool dispatch validation.
 export type ToolCatalogEntry = {
   tool: string;
   title: string;
@@ -19,8 +28,14 @@ export type ToolCatalogEntry = {
   args_example: Record<string, unknown>;
 };
 
+// JSON schema pattern defining valid 24-character hexadecimal MongoDB ObjectIds.
+// Used as a reusable validator across tool argument schemas.
+// Rejects malformed identifier strings prior to downstream execution.
 const objectIdSchema = { type: "string", pattern: "^[a-f\\d]{24}$" };
 
+// Declarative JSON Schema definitions for validating inputs to catalog tools.
+// Enforces strict types, required fields, and boundary constraints per tool.
+// Prevents malformed or malicious payloads from reaching underlying services.
 const toolArgsSchemas = {
   transactions_create: {
     type: "object",
@@ -315,6 +330,9 @@ const toolArgsSchemas = {
   },
 } as const;
 
+// Comprehensive catalog registering all system tools available to AI agents.
+// Configures authorization tiers, risk ratings, and usage entitlement criteria.
+// Supplies comprehensive tool definitions for prompt builders and UI displays.
 export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     tool: "transactions.create",
@@ -545,10 +563,16 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   },
 ];
 
+// Inverted lookup map indexing tool catalog entries by canonical tool key.
+// Enables O(1) retrieval during permission checking and dispatch operations.
+// Initialized from the authoritative array of registered tool specifications.
 export const TOOL_CATALOG_BY_TOOL: Record<string, ToolCatalogEntry> = Object.fromEntries(
   TOOL_CATALOG.map((entry) => [entry.tool, entry])
 );
 
+// Retrieves the catalog entry definition associated with a given tool name.
+// Returns undefined if the requested tool identifier is not recognized.
+// Used by policy evaluators to verify required roles and argument schemas.
 export const getToolCatalogEntry = (tool: string): ToolCatalogEntry | undefined => {
   return TOOL_CATALOG_BY_TOOL[tool];
 };

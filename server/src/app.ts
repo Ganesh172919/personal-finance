@@ -1,62 +1,216 @@
-import express from "express";
-import cors from "cors";
-import cookieParser from "cookie-parser";
-import helmet from "helmet";
-import rateLimit from "express-rate-limit";
-import type { Request, Response, NextFunction } from "express";
-import passport from "./config/passport";
-import axios from "axios";
-import { requestContext } from "./middleware/requestContext";
-import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
-import { getEnv } from "./config/env";
-import { httpLogger, logger } from "./config/logger";
-import { metricsHandler, metricsMiddleware } from "./observability/metrics";
-import { csrfProtection } from "./middleware/csrfProtection";
-import { optionalJwtAuth } from "./middleware/optionalJwtAuth";
-import { orgContext } from "./middleware/orgContext";
-import { legacyApiDeprecation } from "./middleware/legacyApiDeprecation";
-import { responseContext } from "./middleware/responseContext";
-import { securityHeaders } from "./middleware/securityHeaders";
-import { mountCanonicalApiRoutes, mountLegacyApiRoutes } from "./routes/routeRegistry";
-import { sendErrorResponse } from "./utils/apiResponse";
+/**
+ * @fileoverview Main Application Entry Point
+ *
+ * This file is the core of the Express.js server application for the Personal Finance platform.
+ * It configures and exports a factory function `createApp()` that creates a fully configured
+ * Express application instance with all middleware, routes, security features, and error handling.
+ *
+ * KEY RESPONSIBILITIES:
+ * - Express application initialization and configuration
+ * - CORS (Cross-Origin Resource Sharing) configuration
+ * - Security headers and helmet middleware setup
+ * - Rate limiting for API endpoints and authentication
+ * - Request body parsing and sanitization (NoSQL injection prevention)
+ * - Authentication middleware (Passport.js, JWT, API keys)
+ * - Request/response context and logging
+ * - Route mounting (v1 API and legacy routes)
+ * - Health check endpoints
+ * - Error handling middleware
+ *
+ * ARCHITECTURE NOTES:
+ * - Uses factory pattern (createApp) for testability
+ * - Middleware stack is ordered for optimal security and performance
+ * - Supports both canonical (/api/v1) and legacy (/api) route structures
+ * - Integrates with Python AI service for AI-related features
+ *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * Express App Middleware & Routing Pipeline (app.ts)
+ * ├── 1. Foundation & Request Context
+ * │   ├── requestContext (Assign UUID request_id, trace_id)
+ * │   └── metricsMiddleware (Prometheus HTTP request counters & histograms)
+ * ├── 2. Security Shield
+ * │   ├── securityHeaders & helmet (CSP, HSTS, frameguard, XSS filter)
+ * │   ├── cors (Allow trusted client origins with credentials)
+ * │   ├── cookieParser & express.json / express.urlencoded
+ * │   └── csrfProtection (Validates double-submit cookie / header on mutations)
+ * ├── 3. Identity & Tenant Scoping
+ * │   ├── optionalJwtAuth (Extracts Bearer token and loads req.user)
+ * │   ├── apiKeyAuth (Alternative machine-to-machine authentication)
+ * │   └── orgContext (Extracts active X-Org-ID and resolves user permissions)
+ * ├── 4. Route Dispatcher (mountApiRoutes via routeRegistry)
+ * │   ├── /api/auth (Login, register, refresh, logout, OAuth)
+ * │   ├── /api/v1/finance (Accounts, budgets, transactions, envelopes)
+ * │   ├── /api/v1/newsletter (Preferences, preview, immediate dispatch)
+ * │   ├── /api/workspace-files (GridFS file uploads, RAG chunking, PDF generation)
+ * │   ├── /api/chat (Conversational sessions, message history, streaming)
+ * │   └── /api/ai (Direct AI Core agent gateway)
+ * └── 5. Error & Fallback Termination
+ *     ├── notFoundHandler (404 catch-all)
+ *     └── errorHandler (Centralized exception formatting & HttpError translation)
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +---------------------------------------------------------------+
+ *   |                    Incoming HTTP Request                      |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |   [1] requestContext: attach request_id & start timer         |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |   [2] securityHeaders + helmet + cors + cookieParser          |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |   [3] csrfProtection (validates non-GET mutations)            |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |   [4] optionalJwtAuth / apiKeyAuth + orgContext (Tenant Scope)|
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *   +---------------------------------------------------------------+
+ *   |   [5] mountApiRoutes(app): route matching & controller exec   |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                     [Did route match & succeed?]
+ *                                /     \
+ *                              YES      NO
+ *                              /         \
+ *                             v           v
+ *                    +-------------+   +----------------------------+
+ *                    | Response 2xx|   | notFoundHandler (404) OR   |
+ *                    | Delivered   |   | errorHandler (HttpError)   |
+ *                    +-------------+   +----------------------------+
+ * ```
+ *
+ * @module app
+ */
 
+import express from "express"; // Express web framework for building REST APIs
+import mongoose from "mongoose";
+import cors from "cors"; // Cross-Origin Resource Sharing middleware
+import cookieParser from "cookie-parser"; // Parse cookies from request headers
+import helmet from "helmet"; // Security middleware that sets various HTTP headers
+import rateLimit from "express-rate-limit"; // Rate limiting middleware to prevent abuse
+import type { Request, Response, NextFunction } from "express"; // TypeScript types for Express
+import passport from "./config/passport"; // Passport.js authentication configuration
+import axios from "axios"; // HTTP client for making requests to Python AI service
+import { requestContext } from "./middleware/requestContext"; // Middleware to attach request ID and context
+import { errorHandler, notFoundHandler } from "./middleware/errorHandler"; // Error handling middleware
+import { getEnv } from "./config/env"; // Environment configuration loader
+import { httpLogger, logger } from "./config/logger"; // HTTP and application logging
+import { metricsHandler, metricsMiddleware } from "./observability/metrics"; // Prometheus metrics
+import { csrfProtection } from "./middleware/csrfProtection"; // CSRF token validation
+import { optionalJwtAuth } from "./middleware/optionalJwtAuth"; // Optional JWT authentication
+import { orgContext } from "./middleware/orgContext"; // Organization context middleware
+import { responseContext } from "./middleware/responseContext"; // Response context middleware
+import { securityHeaders } from "./middleware/securityHeaders"; // Additional security headers
+import { requestLogger } from "./middleware/requestLogger"; // Structured request logging
+import { mountApiRoutes } from "./routes/routeRegistry"; // Route mounting (single /api/* namespace)
+import { sendErrorResponse } from "./utils/apiResponse"; // Standardized error response utility
+import { getDeadLetterStats } from "./services/deadLetterQueue"; // Dead-letter queue stats
+import { getRedis } from "./config/redis"; // Redis cache client
+import { createRateLimitStore } from "./config/rateLimitStore"; // Redis-backed rate-limit store with in-memory fallback
+
+// POST endpoints that spend AI capacity; the per-user AI limiter applies to these only (path is relative to /api).
+// Regular expression matching computationally intensive AI endpoints requiring per-user throttling.
+// Covers natural language command processing, streaming AI completions, what-if scenarios, and autopilot.
+// Restricts abuse on costly generative AI workflows without throttling lighter REST routes.
+const AI_RATE_LIMITED_PATH =
+  /^\/(?:v1\/)?(?:process-command|ai\/process\/stream|scenarios\/what-if|autopilot(?:\/.*)?|chat\/sessions\/[^/]+\/messages)\/?$/;
+import { isShuttingDown } from "./lifecycle"; // Drain state for /readyz
+
+/**
+ * Creates and configures a new Express application instance.
+ *
+ * This factory function sets up the complete Express application with:
+ * 1. Security middleware (CORS, Helmet, CSRF, rate limiting)
+ * 2. Request parsing (JSON, URL-encoded, cookies)
+ * 3. Authentication (Passport.js, JWT, API keys)
+ * 4. Request/response context and logging
+ * 5. Route mounting (v1 API and legacy routes)
+ * 6. Error handling
+ *
+ * @returns {express.Application} Configured Express application instance
+ *
+ * @example
+ * // Create and start the server
+ * const app = createApp();
+ * app.listen(3000, () => console.log('Server running on port 3000'));
+ */
+// Application factory function assembling and configuring the core Express server instance.
+// Injects security headers, CORS policies, rate limiters, session parsers, and routing trees.
+// Returns an isolated Express application instance suitable for production execution and test harnesses.
 export const createApp = () => {
+  // Initialize Express application
   const app = express();
 
+  // Load environment configuration
   const env = getEnv();
-  const PYTHON_API_URL = env.PYTHON_API_URL;
-  const REQUEST_SIZE_LIMIT = env.REQUEST_SIZE_LIMIT;
-  const CORS_ORIGINS = env.CORS_ORIGINS;
-  const allowAllCorsOrigins = CORS_ORIGINS.includes("*");
+  const PYTHON_API_URL = env.PYTHON_API_URL; // URL for Python AI service
+  const REQUEST_SIZE_LIMIT = env.REQUEST_SIZE_LIMIT; // Maximum request body size
+  const CORS_ORIGINS = env.CORS_ORIGINS; // Allowed CORS origins
 
+  // Trust proxy headers (for load balancers, reverse proxies)
   app.set("trust proxy", env.TRUST_PROXY);
+  // Disable X-Powered-By header for security
   app.disable("x-powered-by");
 
+  /**
+   * Rate Limiter Configuration
+   *
+   * Limits the number of requests per time window to prevent abuse.
+   * Uses different key strategies:
+   * - API key org ID (for API key authenticated requests)
+   * - Organization ID (for org-contextual requests)
+   * - User ID (for authenticated user requests)
+   * - IP address (fallback for unauthenticated requests)
+   */
+  // Rate limiter middleware bounding general API request throughput per tenant organization.
+  // Dynamically resolves keys from API key org IDs, session organization IDs, user IDs, or IPs.
+  // Employs shared Redis backing store across clustered nodes with in-memory fallback.
   const apiRateLimiter = rateLimit({
-    windowMs: env.RATE_LIMIT_WINDOW_MS,
-    max: env.RATE_LIMIT_MAX,
-    standardHeaders: true,
-    legacyHeaders: false,
-    passOnStoreError: true,
+    windowMs: env.RATE_LIMIT_WINDOW_MS, // Time window in milliseconds
+    max: env.RATE_LIMIT_MAX, // Maximum requests per window
+    standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
+    legacyHeaders: false, // Disable `X-RateLimit-*` headers
+    passOnStoreError: true, // Continue if rate limit store fails
+    store: createRateLimitStore("rl:api:"), // Redis-shared across replicas; in-memory when Redis is absent
     keyGenerator: (req, _res) => {
+      // Use API key org ID if available
       const apiKeyOrgId = (req as any).apiKey?.orgId;
       if (apiKeyOrgId) {
         return `api_key_org:${String(apiKeyOrgId)}`;
       }
 
+      // Use organization ID if available
       const orgId = (req as any).org?.orgId;
       if (orgId) {
         return `org:${String(orgId)}`;
       }
 
+      // Use user ID if available
       const userIdRaw = (req as any).user?._id;
       if (userIdRaw) {
         return `user:${String(userIdRaw)}`;
       }
 
+      // Fallback to IP address
       return String(req.ip || "unknown");
     },
     handler: (req, res) => {
+      // Custom rate limit exceeded response
       sendErrorResponse(res, 429, {
         message: "Too many requests, please try again shortly.",
         code: "RATE_LIMITED",
@@ -65,71 +219,137 @@ export const createApp = () => {
     },
   });
 
+  /**
+   * Per-user AI rate limiter
+   *
+   * The general limiter above keys by organization, so a single user hammering an AI endpoint could
+   * exhaust the org's whole budget. This limiter keys by `org:user` on the expensive AI endpoints only
+   * (command processing, streaming, what-if, chat send, autopilot) and uses the same shared store.
+   */
+  // Per-user rate limiter applied specifically to expensive AI generation and streaming endpoints.
+  // Combines organization and user identity to prevent single users from depleting tenant quotas.
+  // Skips non-POST requests and endpoints outside the AI rate limited route pattern.
+  const aiUserRateLimiter = rateLimit({
+    windowMs: env.AI_USER_RATE_LIMIT_WINDOW_MS,
+    max: env.AI_USER_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    passOnStoreError: true,
+    store: createRateLimitStore("rl:ai-user:"),
+    skip: (req) => req.method !== "POST" || !(req as any).user?._id || !AI_RATE_LIMITED_PATH.test(req.path),
+    keyGenerator: (req) => `ai_user:${String((req as any).org?.orgId || "-")}:${String((req as any).user?._id)}`,
+    handler: (req, res) => {
+      sendErrorResponse(res, 429, {
+        message: "Too many AI requests, please slow down.",
+        code: "AI_USER_RATE_LIMITED",
+        requestId: req.requestId,
+      });
+    },
+  });
+
+  /**
+   * CORS Configuration
+   *
+   * Allows cross-origin requests from specified origins.
+   * Supports credentials (cookies, authorization headers).
+   */
   app.use(
     cors({
       origin: (origin, callback) => {
-        if (!origin || allowAllCorsOrigins || CORS_ORIGINS.includes(origin)) {
+        // Allow requests with no origin (mobile apps, curl, etc.)
+        if (!origin || CORS_ORIGINS.includes(origin)) {
           callback(null, true);
           return;
         }
+        // Reject requests from unauthorized origins
         callback(new Error("Origin not allowed by CORS"));
       },
-      credentials: true,
+      credentials: true, // Allow cookies to be sent
     }),
   );
 
+  /**
+   * Helmet Security Configuration
+   *
+   * Sets various HTTP headers to secure the application:
+   * - Content Security Policy (CSP)
+   * - X-Content-Type-Options
+   * - X-Frame-Options
+   * - X-XSS-Protection
+   * - And more...
+   */
   app.use(
     helmet({
-      crossOriginResourcePolicy: false,
+      crossOriginResourcePolicy: false, // Disable CORP for cross-origin requests
       contentSecurityPolicy: {
         directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'"],
+          defaultSrc: ["'self'"], // Only allow resources from same origin
+          scriptSrc: ["'self'", "'unsafe-inline'"], // Allow inline scripts (needed for some UI frameworks)
           styleSrc: [
             "'self'",
-            "'unsafe-inline'",
-            "https://fonts.googleapis.com",
+            "'unsafe-inline'", // Allow inline styles
+            "https://fonts.googleapis.com", // Allow Google Fonts
           ],
-          fontSrc: ["'self'", "https://fonts.gstatic.com"],
-          imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
-          connectSrc: ["'self'", ...CORS_ORIGINS.filter((o) => o !== "*")],
+          fontSrc: ["'self'", "https://fonts.gstatic.com"], // Allow Google Fonts
+          imgSrc: ["'self'", "data:", "blob:", "https:", "http:"], // Allow images from various sources
+          connectSrc: ["'self'", ...CORS_ORIGINS.filter((o) => o !== "*")], // Allow API calls to specified origins
         },
       },
     }),
   );
 
-  // Extra security headers (Permissions-Policy, cache‑control, HSTS)
+  // Extra security headers (Permissions-Policy, cache-control, HSTS)
   app.use(
     securityHeaders({
-      hsts: env.NODE_ENV === "production",
+      hsts: env.NODE_ENV === "production", // Enable HSTS only in production
       contentSecurityPolicy: "", // helmet already sets CSP above
     }),
   );
 
+  /**
+   * Request Body Parsing Configuration
+   *
+   * - JSON parser with size limit
+   * - URL-encoded parser for form data
+   * - Special handling for billing webhooks (raw body preservation)
+   */
   app.use(
     express.json({
-      limit: REQUEST_SIZE_LIMIT,
+      limit: REQUEST_SIZE_LIMIT, // Maximum JSON body size
       verify: (req, _res, buf) => {
+        // Preserve raw body for billing webhook signature verification
         const path = String((req as any).originalUrl || (req as any).url || "");
-        if (path.startsWith("/api/v1/billing/webhook")) {
+        if (path.startsWith("/api/billing/webhook") || path.startsWith("/api/v1/billing/webhook")) {
           (req as any).rawBody = buf;
         }
       },
     }),
   );
-  app.use(express.urlencoded({ extended: true, limit: REQUEST_SIZE_LIMIT }));
-  // Custom NoSQL-injection sanitizer (Express 5 compatible).
-  // express-mongo-sanitize v2 crashes on Express 5 because req.query is read-only.
+  app.use(express.urlencoded({ extended: true, limit: REQUEST_SIZE_LIMIT })); // Parse URL-encoded bodies
+
+  /**
+   * NoSQL Injection Prevention
+   *
+   * Custom sanitizer that strips MongoDB operators ($gt, $ne, etc.) and
+   * dot-notation keys from request body and params.
+   * This is Express 5 compatible (unlike express-mongo-sanitize v2).
+   */
+  // Recursive sanitization utility stripping NoSQL injection payloads from request inputs.
+  // Removes object keys prefixed with dollar signs ($) or containing period characters (.).
+  // Protects MongoDB query execution layers from query selector and projection tampering.
   const stripDollarDot = (obj: any): any => {
     if (obj === null || typeof obj !== "object") return obj;
     if (Array.isArray(obj)) return obj.map(stripDollarDot);
     const clean: Record<string, any> = {};
     for (const key of Object.keys(obj)) {
+      // Skip keys starting with $ (MongoDB operators) or containing dots
       if (key.startsWith("$") || key.includes(".")) continue;
       clean[key] = stripDollarDot(obj[key]);
     }
     return clean;
   };
+
+  // Apply NoSQL injection sanitization to request body and params
   app.use((req: Request, _res: Response, next: NextFunction) => {
     if (req.body && typeof req.body === "object")
       req.body = stripDollarDot(req.body);
@@ -139,26 +359,109 @@ export const createApp = () => {
     }
     next();
   });
+
+  /**
+   * Cookie Parser Configuration
+   *
+   * Parses cookies from request headers with secret for signed cookies.
+   */
   app.use(cookieParser(env.COOKIE_SECRET));
+
+  /**
+   * Passport.js Initialization
+   *
+   * Initializes Passport authentication strategies (JWT, Google OAuth, etc.)
+   */
   app.use(passport.initialize());
+
+  /**
+   * Request Context Middleware
+   *
+   * Attaches a unique request ID to each request for tracing and logging.
+   */
   app.use(requestContext);
+
+  /**
+   * Response Context Middleware
+   *
+   * Adds response context and headers to responses.
+   */
   app.use(responseContext);
-  app.use(legacyApiDeprecation);
+
+  /**
+   * HTTP Logger Middleware
+   *
+   * Logs HTTP requests and responses for monitoring and debugging.
+   */
   app.use(httpLogger);
+
+  /**
+   * Request Logger Middleware
+   *
+   * Enriches req.log with structured context and logs request lifecycle events.
+   * Logs slow requests (>2s) at warn level and 5xx errors at error level.
+   */
+  app.use(requestLogger);
+
+  /**
+   * Metrics Middleware
+   *
+   * Collects and exposes Prometheus metrics for monitoring.
+   */
   app.use(metricsMiddleware);
+
+  /**
+   * Optional JWT Authentication Middleware
+   *
+   * Attempts to authenticate requests using JWT tokens.
+   * Does not reject unauthenticated requests (optional).
+   */
   app.use(optionalJwtAuth);
+
+  /**
+   * Organization Context Middleware
+   *
+   * Extracts and attaches organization context from request headers or user context.
+   */
   app.use(orgContext);
+
+  /**
+   * Apply Rate Limiting to API Routes
+   *
+   * Rate limiter is applied to all /api routes.
+   */
   app.use("/api", apiRateLimiter);
+
+  // Per-user AI cap beneath the org-level key above, so one heavy user cannot spend the whole org's budget.
+  app.use("/api", aiUserRateLimiter);
+
+  /**
+   * CSRF Protection for API Routes
+   *
+   * Validates CSRF tokens for state-changing operations (POST, PUT, DELETE).
+   */
   app.use("/api", csrfProtection);
 
-  // Tighter rate limit on auth endpoints (brute-force protection)
+  /**
+   * Authentication Rate Limiter
+   *
+   * Tighter rate limit specifically for authentication endpoints to prevent brute-force attacks.
+   */
+  // Stricter rate limiter specifically dedicated to authentication and credential endpoints.
+  // Throttles login and registration attempts per client IP to mitigate brute force credential attacks.
+  // Whitelists benign idempotent GET requests such as profile and CSRF token retrievals.
   const authRateLimiter = rateLimit({
-    windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
-    max: env.AUTH_RATE_LIMIT_MAX,
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: (req) => String(req.ip || "unknown"),
+    windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS, // Time window for auth rate limiting
+    max: env.AUTH_RATE_LIMIT_MAX, // Maximum auth attempts per window
+    standardHeaders: true, // Return rate limit info in headers
+    legacyHeaders: false, // Disable legacy headers
+    store: createRateLimitStore("rl:auth:"), // Shared brute-force counter across replicas
+    // Workspace reloads read these endpoints; they are not credential attempts.
+    // They retain the general API limit applied above.
+    skip: (req) => req.method === "GET" && ["/profile", "/csrf", "/providers"].includes(req.path),
+    keyGenerator: (req) => String(req.ip || "unknown"), // Use IP address as key
     handler: (req, res) => {
+      // Custom auth rate limit exceeded response
       sendErrorResponse(res, 429, {
         message: "Too many authentication attempts, please try again later.",
         code: "AUTH_RATE_LIMITED",
@@ -166,51 +469,204 @@ export const createApp = () => {
       });
     },
   });
-  app.use("/api/v1/auth", authRateLimiter);
-  app.use("/api/auth", authRateLimiter);
 
-  // Health checks (must stay before authenticated /api routers)
+  // Apply auth rate limiter to authentication endpoints
+  app.use(["/api/auth", "/api/v1/auth"], authRateLimiter);
+
+  /**
+   * Health Check Endpoints
+   *
+   * These endpoints must be mounted before authenticated routes to ensure
+   * they are accessible without authentication.
+   */
+  // Basic health check endpoint
+  // Basic verification endpoint confirming Express server response delivery.
+  // Returns static greeting payload for sanity checks and development smoke tests.
+  // Accessible without authentication checks or session requirements.
   app.get("/api/test", (_req, res) => {
     res.json({ message: "Hello from the Personal Finance Server!" });
   });
+
+  // Kubernetes-style health check endpoint
+  // Kubernetes-style liveness probe endpoint confirming process responsiveness.
+  // Returns HTTP 200 plain text status without evaluating downstream service dependencies.
+  // Used by container orchestrators to detect process lockups and trigger restarts.
   app.get("/healthz", (_req, res) => {
     res.status(200).send("ok");
   });
 
+  // Kubernetes readiness probe endpoint reporting traffic readiness status.
+  // Emits 503 during graceful shutdown to allow load balancers to drain connections safely.
+  // Verifies active MongoDB connection status before signaling readiness to accept traffic.
+  app.get("/readyz", (_req, res) => {
+    // During graceful shutdown report 503 first so the load balancer drains this
+    // instance before connections are closed.
+    if (isShuttingDown()) {
+      res.status(503).json({ status: "draining" });
+      return;
+    }
+    const ready = mongoose.connection.readyState === 1;
+    res.status(ready ? 200 : 503).json({ status: ready ? "ready" : "unavailable" });
+  });
+
+  // Diagnostic health endpoint exposing system timestamp and dead-letter queue metrics.
+  // Returns JSON object summarizing failed job counts and dead-letter statistics.
+  // Provides lightweight operational diagnostic telemetry for monitoring systems.
+  app.get("/healthz/diagnostics", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      deadLetters: getDeadLetterStats(),
+    });
+  });
+
+  /**
+   * Deep Health Check Endpoint
+   *
+   * Probes all core external dependencies:
+   * - MongoDB connection state and ping latency
+   * - Redis connection state and ping latency (when enabled)
+   * - Python AI Core /health endpoint
+   * - Dead-letter queue statistics
+   *
+   * Returns 200 with { status: "ok" | "degraded" } or 503 with { status: "error" } if database is unreachable.
+   */
+  // Comprehensive deep health check evaluating operational health across all infrastructure dependencies.
+  // Pings MongoDB database, tests Redis cache readiness, and queries Python AI Core service.
+  // Returns HTTP 200 with ok/degraded status, or 503 if primary database connection is lost.
+  app.get("/healthz/deep", async (_req, res) => {
+    const started = Date.now();
+    const checks: Record<string, any> = {};
+
+    // 1. MongoDB check
+    const mongoReady = mongoose.connection.readyState === 1;
+    if (mongoReady && mongoose.connection.db) {
+      const mongoStart = Date.now();
+      try {
+        await mongoose.connection.db.admin().ping();
+        checks.database = { status: "connected", latencyMs: Date.now() - mongoStart };
+      } catch (err: any) {
+        checks.database = { status: "error", error: err?.message };
+      }
+    } else {
+      checks.database = { status: "disconnected" };
+    }
+
+    // 2. Redis check
+    const redis = getRedis();
+    if (redis) {
+      const redisStart = Date.now();
+      try {
+        await redis.ping();
+        checks.redis = { status: "connected", latencyMs: Date.now() - redisStart };
+      } catch (err: any) {
+        checks.redis = { status: "unavailable", error: err?.message };
+      }
+    } else {
+      checks.redis = { status: "disabled" };
+    }
+
+    // 3. AI Core check
+    const aiStart = Date.now();
+    try {
+      await axios.get(`${PYTHON_API_URL}/health`, { timeout: 2000 });
+      checks.ai_core = { status: "healthy", latencyMs: Date.now() - aiStart };
+    } catch {
+      checks.ai_core = { status: "unavailable" };
+    }
+
+    // 4. Dead letter stats
+    const deadLetterCounts = getDeadLetterStats();
+    checks.deadLetters = {
+      total: Object.values(deadLetterCounts).reduce((sum, count) => sum + count, 0),
+      byOperation: deadLetterCounts,
+    };
+
+    const isHealthy = checks.database?.status === "connected";
+    const status = !isHealthy
+      ? "error"
+      : checks.ai_core?.status === "healthy" && (checks.redis?.status === "connected" || checks.redis?.status === "disabled")
+      ? "ok"
+      : "degraded";
+
+    res.status(isHealthy ? 200 : 503).json({
+      status,
+      totalLatencyMs: Date.now() - started,
+      timestamp: new Date().toISOString(),
+      services: checks,
+    });
+  });
+
+  /**
+   * Python AI Service Health Check
+   *
+   * Checks the health of the Python AI service by making a request to its /health endpoint.
+   * Returns 503 if the service is unavailable.
+   */
+  // Health inspection proxy probing status of the upstream Python AI microservice.
+  // Forwards request ID to Python /health endpoint and captures response payload.
+  // Returns HTTP 503 if the Python service fails to respond within 4 seconds.
   app.get("/api/python-health", async (req, res) => {
     try {
       const response = await axios.get(`${PYTHON_API_URL}/health`, {
         headers: {
-          "X-Request-Id": req.requestId,
+          "X-Request-Id": req.requestId, // Pass request ID for tracing
         },
-        timeout: 4000,
+        timeout: 4000, // 4 second timeout
       });
 
       res.json({ python_service: response.data, request_id: req.requestId });
     } catch (_error) {
+      // Return 503 if Python service is unavailable
       res
         .status(503)
         .json({ python_service: "unavailable", request_id: req.requestId });
     }
   });
 
-  // Canonical /api/v1 surface:
-  // mount v1 before /api because `/api` prefix also matches `/api/v1/*` in Express.
-  mountCanonicalApiRoutes(app, env);
+  /**
+   * Route Mounting
+   *
+   * Canonical /api/v1 routes and compatible /api aliases share the same
+   * middleware, authentication limits and route implementations.
+   */
+  mountApiRoutes(app, env);
 
-  // Legacy /api routes (kept during deprecation window)
-  mountLegacyApiRoutes(app, env);
-
-  // Prometheus metrics (guarded by METRICS_TOKEN)
+  /**
+   * Prometheus Metrics Endpoint
+   *
+   * Exposes Prometheus metrics for monitoring.
+   * Guarded by METRICS_TOKEN for security.
+   */
   app.get("/api/metrics", metricsHandler);
 
+  /**
+   * Error Handling Middleware
+   *
+   * - notFoundHandler: Catches 404 errors for undefined routes
+   * - errorHandler: Global error handler for all other errors
+   */
   app.use(notFoundHandler);
   app.use(errorHandler);
 
+  // Log server configuration (except in test environment)
   if (env.NODE_ENV !== "test") {
-    logger.info(`Server configured on PORT=${env.PORT}`);
-    logger.info(`Expecting Python AI service at ${PYTHON_API_URL}`);
+    logger.info("═══════════════════════════════════════════════════════════");
+    logger.info(`  FinWise Server Configuration`);
+    logger.info(`  Environment : ${env.NODE_ENV}`);
+    logger.info(`  Port        : ${env.PORT}`);
+    logger.info(`  Client URL  : ${env.CLIENT_URL}`);
+    logger.info(`  Python AI   : ${PYTHON_API_URL}`);
+    logger.info(`  CORS Origins: ${CORS_ORIGINS.join(", ")}`);
+    logger.info(`  Google Auth : ${env.GOOGLE_CLIENT_ID ? "ENABLED" : "DISABLED"}`);
+    logger.info(`  CSRF        : ${env.CSRF_ENABLED ? "ENABLED" : "DISABLED"}`);
+    logger.info(`  Tasks       : ${env.TASKS_ENABLED ? "ENABLED" : "DISABLED"}`);
+    logger.info(`  Monetization: ${env.MONETIZATION_ENABLED ? "ENABLED" : "DISABLED"}`);
+    logger.info(`  Cookie Sec  : ${env.COOKIE_SECURE}`);
+    logger.info(`  Trust Proxy : ${env.TRUST_PROXY}`);
+    logger.info("═══════════════════════════════════════════════════════════");
   }
 
+  // Return configured Express application
   return app;
 };

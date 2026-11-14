@@ -48,19 +48,29 @@ describe("api key quota enforcement", () => {
     });
 
     await request(app)
-      .get("/api/v1/usage/ledger")
+      .get("/api/usage/ledger")
       .set("X-Org-Id", orgId.toString())
       .set("X-API-Key", created.secret)
       .expect(200);
 
-    const denied = await request(app)
-      .get("/api/v1/usage/ledger")
-      .set("X-Org-Id", orgId.toString())
-      .set("X-API-Key", created.secret)
-      .expect(402);
+    // Allow fire-and-forget usage recording to commit before expecting quota exhaustion
+    let denied: request.Response | undefined;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const res = await request(app)
+        .get("/api/usage/ledger")
+        .set("X-Org-Id", orgId.toString())
+        .set("X-API-Key", created.secret);
+      if (res.status === 402) {
+        denied = res;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
 
-    expect(denied.body.code).toBe("FEATURE_LIMIT_REACHED");
-    expect(denied.body.details.feature).toBe("api_requests");
+    expect(denied).toBeDefined();
+    expect(denied?.status).toBe(402);
+    expect(denied?.body.code).toBe("FEATURE_LIMIT_REACHED");
+    expect(denied?.body.details.feature).toBe("api_requests");
   });
 });
 

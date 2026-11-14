@@ -2,6 +2,9 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+// Standard styled text input component for forms and search bars.
+// Configures border styling, focus rings, placeholder colors, and disabled states.
+// Forwards DOM references to the underlying native HTML input element.
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, ...props }, ref) => {
     return (

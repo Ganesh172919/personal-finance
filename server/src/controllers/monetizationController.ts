@@ -1,3 +1,23 @@
+/**
+ * @fileoverview Monetization Controller
+ *
+ * Exposes plan catalog, per-user/org entitlement resolution, and an internal
+ * usage-event ingestion endpoint for metered billing.
+ *
+ * Routes served:
+ *   GET  /api/monetization/plans           - getPlans
+ *   GET  /api/monetization/entitlements    - getMyEntitlements
+ *   POST /api/monetization/usage-events    - ingestUsageEvent (internal-only)
+ *
+ * Key patterns:
+ *   - getPlans returns the static plan catalog (free/pro/team limits)
+ *   - getMyEntitlements resolves the caller's current plan, usage, and remaining quota
+ *   - ingestUsageEvent is a server-to-server endpoint protected by x-internal-usage-token
+ *   - Falls back to user's default org if org_id is not provided in usage events
+ *
+ * @module controllers/monetizationController
+ */
+
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 
@@ -7,6 +27,9 @@ import { getEnv } from "../config/env";
 import { PLAN_CATALOG, getResolvedEntitlements, recordFeatureUsage } from "../services/entitlements";
 import OrgMemberModel from "../models/orgMemberModel";
 
+// Exposes the static catalog of available subscription tiers and feature allocations.
+// Extracts plan identifiers, display titles, and resource limits from the catalog.
+// Responds with serialized subscription packages accompanied by request identifiers.
 export const getPlans = async (req: Request, res: Response) => {
   return res.json({
     plans: Object.values(PLAN_CATALOG).map(plan => ({
@@ -18,6 +41,9 @@ export const getPlans = async (req: Request, res: Response) => {
   });
 };
 
+// Resolves the effective feature quotas, credit balances, and usage metrics for caller.
+// Combines base subscription plan tiers with granted credit packages and tenant context.
+// Returns an assembled entitlement snapshot showing consumed and remaining allowances.
 export const getMyEntitlements = async (req: Request, res: Response) => {
   const user = req.user as IUserDocument;
   const orgId = req.org?.orgId ? new mongoose.Types.ObjectId(req.org.orgId) : undefined;
@@ -37,6 +63,9 @@ export const getMyEntitlements = async (req: Request, res: Response) => {
   });
 };
 
+// Records metered feature consumption events received from trusted internal services.
+// Authenticates calls using dedicated shared internal tokens and validates payloads.
+// Commits usage ledger records idempotently against the target user or organization.
 export const ingestUsageEvent = async (req: Request, res: Response) => {
   const token = String(req.header("x-internal-usage-token") || "");
   const env = getEnv();

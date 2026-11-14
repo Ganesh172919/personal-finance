@@ -5,6 +5,9 @@ import { logger } from '../config/logger';
 
 const MONGODB_URI = getEnv().MONGO_URI;
 
+// Mock author profiles associated with seed blog articles.
+// Provides realistic industry names, avatar URLs, and professional biographies.
+// Attached to financial educational articles for UI display.
 const mockAuthors = [
   {
     name: 'Kunal Shah',
@@ -28,6 +31,9 @@ const mockAuthors = [
   },
 ];
 
+// Static collection of educational blog posts covering investing, taxation, and budgeting.
+// Formatted with markdown content, metadata categories, reading estimates, and tags.
+// Seeded into database collections to populate frontend financial knowledge base.
 const blogPosts = [
   {
     title: "How to Start SIP Investing in 2026: A Complete Beginner's Guide",
@@ -308,6 +314,9 @@ Start small. Set a goal to save your first 1-month buffer, then build up from th
   },
 ];
 
+// Asynchronous execution function seeding blog articles and bi-directional post relationships.
+// Checks existing slug set to avoid duplicate insertions across successive seed invocations.
+// Links adjacent articles into related post arrays and exits upon completion.
 async function seedData() {
   try {
     // Connect to MongoDB
@@ -353,6 +362,9 @@ async function seedData() {
 }
 
 // Ensure the script is executed directly
+// Executes seeding routine directly if the script is invoked from the command line.
+// Differentiates direct execution from programmatic module importing.
+// Guarantees automatic execution when run via npm run scripts.
 if (require.main === module) {
   seedData();
 }

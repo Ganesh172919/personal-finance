@@ -3,11 +3,17 @@ import TransactionModel from "../models/transactionModel";
 import { ensureProfileWithMigration, bumpTransactionMetadata, setProfileMutationSource } from "../services/profileService";
 import { publishDomainEvent } from "../services/domainEvents";
 
+// Adjusts transaction numerical polarity based on transaction direction type.
+// Returns positive numbers for income transactions and negative numbers for expenses.
+// Enforces standard accounting sign conventions across generated ledger entries.
 const normalizeTransactionAmount = (amount: number, type: "income" | "expense" | "investment") => {
   const absoluteAmount = Math.abs(Number(amount));
   return type === "income" ? absoluteAmount : -absoluteAmount;
 };
 
+// Constant array of everyday spending category strings used for stub data generation.
+// Cycles through common expense categories including groceries, utilities, and dining.
+// Provides realistic distribution of simulated transactions for local development.
 const CATEGORY_POOL = [
   "Groceries",
   "Dining Out",
@@ -20,12 +26,18 @@ const CATEGORY_POOL = [
   "Subscriptions",
 ] as const;
 
+// Computes a deterministic pseudo-random monetary amount from an integer sequence index.
+// Combines modular base figures with cent offsets to produce non-round prices.
+// Generates realistic spending totals for mock transaction batches.
 const deterministicAmount = (index: number) => {
   const base = 12 + (index % 7) * 9;
   const cents = (index % 3) * 0.37;
   return Math.round((base + cents) * 100) / 100;
 };
 
+// Built-in synthetic banking integration connector for testing and demonstration workflows.
+// Simulates batch transaction generation, performs bulk database upserts, and logs sync telemetry.
+// Emits IntegrationSynced domain events to notify subscribers of updated account activity.
 export const bankStubConnector: IntegrationConnector = {
   key: "bank_stub",
   catalog: {

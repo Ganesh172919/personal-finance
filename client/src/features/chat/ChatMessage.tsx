@@ -1,13 +1,101 @@
+/**
+ * @fileoverview Chat Message Component
+ *
+ * Renders a single chat message (user or assistant) with rich formatting.
+ *
+ * FEATURES:
+ * - Markdown rendering with GFM support (tables, code blocks, lists)
+ * - User vs assistant visual distinction (avatar, alignment)
+ * - Tool call visualization with approve/simulate actions
+ * - Action plan rendering with "Create tasks" button
+ * - File attachment display
+ * - Agent workflow trace visualization
+ * - Copy-to-clipboard for assistant messages
+ * - Thumbs up/down feedback for AI outputs
+ *
+ * TOOL CALLS:
+ * When the AI suggests actions (create transaction, create goal, etc.),
+ * each tool call is rendered as an interactive card. Users can:
+ * - "Simulate" — preview the effect without applying
+ * - "Approve" — execute the action on the server
+ *
+ * MINDMAP FLOW
+ * ------------
+ * ```
+ * ChatMessage Component
+ * ├── 1. Message Bubble Taxonomy
+ * │   ├── User Message: Right-aligned, primary accent bubble, user avatar
+ * │   └── Assistant Message: Left-aligned, bot icon, full markdown prose
+ * ├── 2. Markdown Rendering Engine (ReactMarkdown + remarkGfm)
+ * │   ├── Tables, code blocks, checklists, emphasized math
+ * │   └── Sanitized links and bullet lists
+ * ├── 3. RAG Grounding Evidence & Citations
+ * │   ├── File attachment chips
+ * │   └── Evidence footnotes and knowledge chunk citations
+ * ├── 4. Interactive AI Tool Calls (ToolCallCard)
+ * │   ├── Simulate Button: Previews transaction/goal effect without state changes
+ * │   └── Approve Button: Directly commits action to database
+ * ├── 5. Structured Action Plan Card
+ * │   └── "Create tasks from plan" bulk action button
+ * └── 6. Message Controls & Feedback
+ *     ├── Copy message text to clipboard
+ *     ├── Thumbs up / down feedback submission (submitAgentOutputFeedback)
+ *     └── Agent workflow trace collapsible inspector
+ * ```
+ *
+ * ASCII FLOW
+ * ----------
+ * ```
+ *   +---------------------------------------------------------------+
+ *   |                   ChatMessage Component Mounts                |
+ *   +-------------------------------+-------------------------------+
+ *                                   |
+ *                                   v
+ *                      [Is message from User or AI?]
+ *                               /          \
+ *                             USER          ASSISTANT
+ *                             /              \
+ *                            v                v
+ *     +----------------------------+   +----------------------------+
+ *     | Right-aligned chat bubble  |   | Left-aligned AI bubble     |
+ *     | with avatar & attachments  |   | ReactMarkdown formatting   |
+ *     +----------------------------+   +--------------+-------------+
+ *                                                     |
+ *                                                     v
+ *                                      +----------------------------+
+ *                                      | Grounding Evidence Badges  |
+ *                                      | - Source file citations    |
+ *                                      +--------------+-------------+
+ *                                                     |
+ *                                                     v
+ *                                      +----------------------------+
+ *                                      | Interactive Tool Cards     |
+ *                                      | [Simulate]    [Approve]    |
+ *                                      +--------------+-------------+
+ *                                                     |
+ *                                                     v
+ *                                      +----------------------------+
+ *                                      | Action Plan & Feedback Row |
+ *                                      | [Add Tasks] [👍] [👎] [📋] |
+ *                                      +----------------------------+
+ * ```
+ *
+ * @module features/chat/ChatMessage
+ */
+
 import { motion } from "framer-motion";
-import { User, Wand2, Copy, CheckCircle, ListTodo, Paperclip, ThumbsDown, ThumbsUp } from "lucide-react";
-import { useState } from "react";
+import { User, Wand2, Copy, CheckCircle, ListTodo, Paperclip, RefreshCw, ThumbsDown, ThumbsUp, Volume2, VolumeX } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { synthesizeVoice } from "@/lib/api/voice";
+import { prepareChatSpeech } from "@/lib/chatSpeech";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { IChatMessage } from "@/types/chat.types";
+import type { IChatAttachment, IChatMessage } from "@/types/chat.types";
 import { Avatar, AvatarFallback } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/hooks/useAuth";
 import { AgentWorkflowVisualizer } from "@/components/AgentWorkflowVisualizer";
+import { SourceEvidenceList } from "@/components/SourceEvidenceList";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
@@ -24,15 +112,131 @@ import { useToast } from "@/hooks/useToast";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import type { ToolCall } from "@/types/ai.types";
 import { buildApiUrl } from "@/lib/apiBase";
+import { splitAnswerAndPlan } from "@/lib/chatResponse";
+import { FEEDBACK_CORRECTION_MAX, FEEDBACK_REASONS, type FeedbackReasonCode } from "@/lib/api/chat";
+import { useChatStore } from "@/stores/chatStore";
+import { ChatDocumentCard } from "./ChatDocumentCard";
 
+// Property specifications for rendering an individual conversation message.
+// Supplies the chat message object containing role, body, and AI metadata.
+// Supports custom callbacks for document attachment ingestion and busy states.
 interface ChatMessageProps {
   message: IChatMessage;
+  onUseDocument?: (file: IChatAttachment) => void;
+  isSending?: boolean;
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+// Renders rich user prompts and assistant outputs with Markdown and interactive widgets.
+// Embeds source citations, task creation actions, tool approval cards, and ratings.
+// Handles feedback submissions, clipboard copying, and autopilot run simulations.
+export function ChatMessage({ message, onUseDocument, isSending }: ChatMessageProps) {
+  const chatLocation = `/chat/${message.sessionId}`;
   const isUser = message.role === "user";
+  const recoveredFailureCount = message.metadata?.recoveredFailureCount ?? message.metadata?.recoveredFailures?.length ?? 0;
+  const usedLanguageModel = message.metadata?.llmCallCount !== 0;
+  const responseParts = splitAnswerAndPlan(message.content);
   const [copied, setCopied] = useState(false);
-  const [feedbackRating, setFeedbackRating] = useState<"up" | "down" | null>(null);
+  const [copying, setCopying] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speakingLoading, setSpeakingLoading] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const playbackRequest = useRef(0);
+  const speechCache = useRef<{ text: string; url: string } | null>(null);
+
+  useEffect(() => () => {
+    playbackRequest.current += 1;
+    audioRef.current?.pause();
+    if (utteranceRef.current) window.speechSynthesis.cancel();
+  }, []);
+
+  const handleSpeak = async () => {
+    if (isSpeaking) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (utteranceRef.current) {
+        window.speechSynthesis.cancel();
+        utteranceRef.current = null;
+      }
+      setIsSpeaking(false);
+      return;
+    }
+
+    const request = ++playbackRequest.current;
+    const { cappedText: spokenText, language } = prepareChatSpeech(message.content);
+    if (!spokenText) return;
+    setSpeakingLoading(true);
+    try {
+      let audioUrl = speechCache.current?.text === spokenText ? speechCache.current.url : null;
+      if (!audioUrl) {
+        const result = await synthesizeVoice({ text: spokenText, language, voiceGender: "female" }).catch(() => null);
+        if (request !== playbackRequest.current) return;
+        if (result?.provider === "gnani_timbre_live" && result.audioBase64) {
+          audioUrl = `data:${result.mimeType};base64,${result.audioBase64}`;
+          speechCache.current = { text: spokenText, url: audioUrl };
+        }
+      }
+      if (request !== playbackRequest.current) return;
+
+      if (audioUrl) {
+        const audio = new Audio(audioUrl);
+        audioRef.current = audio;
+        audio.onplay = () => setIsSpeaking(true);
+        audio.onended = () => setIsSpeaking(false);
+        audio.onerror = () => {
+          speechCache.current = null;
+          setIsSpeaking(false);
+        };
+        await audio.play();
+        return;
+      }
+
+      const speech = window.speechSynthesis;
+      const localVoices = speech?.getVoices().filter(voice => voice.localService) ?? [];
+      const voice = localVoices.find(item => item.lang.toLowerCase() === language.toLowerCase())
+        ?? localVoices.find(item => item.lang.toLowerCase().startsWith(language.slice(0, 2)));
+      if (!voice) throw new Error("No local voice available");
+
+      const utterance = new SpeechSynthesisUtterance(spokenText);
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+      utteranceRef.current = utterance;
+      const finish = () => {
+        if (utteranceRef.current !== utterance) return;
+        utteranceRef.current = null;
+        setIsSpeaking(false);
+      };
+      utterance.onend = finish;
+      utterance.onerror = finish;
+      speech.speak(utterance);
+      setIsSpeaking(true);
+    } catch {
+      toast({
+        title: "Voice playback unavailable",
+        description: "Timbre or a compatible device voice is needed to read this answer aloud.",
+        variant: "destructive",
+      });
+    } finally {
+      if (request === playbackRequest.current) setSpeakingLoading(false);
+    }
+  };
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  // Thumbs state is persisted server-side (message.metadata.feedback) so it survives reloads.
+  const persistedRating = message.metadata?.feedback?.rating ?? null;
+  const [feedbackRating, setFeedbackRating] = useState<"up" | "down" | null>(persistedRating);
+  useEffect(() => {
+    if (persistedRating) setFeedbackRating(persistedRating);
+  }, [persistedRating]);
+  const [showFeedbackDetails, setShowFeedbackDetails] = useState(false);
+  const [feedbackReason, setFeedbackReason] = useState<FeedbackReasonCode | null>(null);
+  const [feedbackCorrection, setFeedbackCorrection] = useState("");
+  const [feedbackDetailsSent, setFeedbackDetailsSent] = useState(false);
   const [tasksAdded, setTasksAdded] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
@@ -192,10 +396,27 @@ export function ChatMessage({ message }: ChatMessageProps) {
   });
 
   const feedbackMutation = useMutation({
-    mutationFn: (payload: { agentOutputId: string; rating: "up" | "down" }) =>
-      submitAgentOutputFeedback(payload.agentOutputId, { rating: payload.rating }),
+    mutationFn: (payload: {
+      agentOutputId: string;
+      rating: "up" | "down";
+      reasonCode?: FeedbackReasonCode;
+      correction?: string;
+    }) =>
+      submitAgentOutputFeedback(payload.agentOutputId, {
+        rating: payload.rating,
+        ...(payload.reasonCode ? { reasonCode: payload.reasonCode } : {}),
+        ...(payload.correction ? { correction: payload.correction } : {}),
+      }),
     onSuccess: (_data, variables) => {
       setFeedbackRating(variables.rating);
+      if (variables.rating === "down" && !variables.reasonCode && !variables.correction) {
+        // Rating is saved; offer the optional "what went wrong" details.
+        setShowFeedbackDetails(true);
+        setFeedbackDetailsSent(false);
+      } else {
+        setShowFeedbackDetails(false);
+        if (variables.rating === "down") setFeedbackDetailsSent(true);
+      }
       toast({ title: "Thanks for the feedback!" });
     },
     onError: (error: unknown) => {
@@ -218,10 +439,19 @@ export function ChatMessage({ message }: ChatMessageProps) {
     return `${value.toFixed(1)}%`;
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(message.content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    if (copying) return;
+    setCopying(true);
+    setCopied(false);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard is unavailable in this browser.");
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+    } catch {
+      toast({ title: "Copy failed", description: "Select the response text to copy it, or try again.", variant: "destructive" });
+    } finally {
+      setCopying(false);
+    }
   };
 
   const handleAddToTasks = () => {
@@ -242,7 +472,40 @@ export function ChatMessage({ message }: ChatMessageProps) {
   const handleFeedback = (rating: "up" | "down") => {
     const agentOutputId = message.metadata?.agentOutputId;
     if (!agentOutputId) return;
+    if (rating === "up") setShowFeedbackDetails(false);
     feedbackMutation.mutate({ agentOutputId, rating });
+  };
+
+  const handleSendFeedbackDetails = () => {
+    const agentOutputId = message.metadata?.agentOutputId;
+    const correction = feedbackCorrection.trim();
+    if (!agentOutputId || (!feedbackReason && !correction)) return;
+    feedbackMutation.mutate({
+      agentOutputId,
+      rating: "down",
+      reasonCode: feedbackReason ?? undefined,
+      correction: correction || undefined,
+    });
+  };
+
+  const handleRegenerate = () => {
+    const agentOutputId = message.metadata?.agentOutputId;
+    const store = useChatStore.getState();
+    if (!agentOutputId || store.isSending) return;
+    const index = store.messages.findIndex((m) => m.id === message.id);
+    const previousUser = index > 0 ? [...store.messages.slice(0, index)].reverse().find((m) => m.role === "user") : undefined;
+    if (!previousUser) {
+      toast({ title: "Can't regenerate", description: "The original question isn't available.", variant: "destructive" });
+      return;
+    }
+    // Fresh Idempotency-Key is generated by the store per send; cache is bypassed for a genuinely new answer.
+    void store.sendMessage(previousUser.content, {
+      regenerateOf: agentOutputId,
+      bypassCache: true,
+      ...(previousUser.metadata?.attachments?.length
+        ? { fileIds: previousUser.metadata.attachments.map((attachment) => attachment.workspaceFileId) }
+        : {}),
+    });
   };
 
   const handleOpenAttachment = (fileId: string) => {
@@ -262,22 +525,23 @@ export function ChatMessage({ message }: ChatMessageProps) {
   // Custom markdown components for AI responses
   const markdownComponents = {
     h1: ({ children }: any) => (
-      <h1 className="text-xl font-bold text-foreground mb-3 mt-4">{children}</h1>
+      <h3 className="text-xl font-bold text-foreground mb-3 mt-4">{children}</h3>
     ),
     h2: ({ children }: any) => (
-      <h2 className="text-lg font-semibold text-foreground mb-2 mt-3">{children}</h2>
+      <h3 className="text-lg font-semibold text-foreground mb-2 mt-3">{children}</h3>
     ),
     h3: ({ children }: any) => (
-      <h3 className="text-base font-semibold text-foreground mb-2 mt-3">{children}</h3>
+      <h4 className="text-base font-semibold text-foreground mb-2 mt-3">{children}</h4>
     ),
     p: ({ children }: any) => (
       <p className="text-sm text-foreground leading-relaxed mb-3">{children}</p>
     ),
     ul: ({ children }: any) => (
-      <ul className="list-disc list-inside space-y-1 my-3 ml-4 text-foreground">{children}</ul>
+      <ul className="list-disc list-outside space-y-1 my-3 pl-6 text-foreground">{children}</ul>
     ),
+    // list-outside: with list-inside, loose items (wrapped in <p>) put the marker on its own line.
     ol: ({ children }: any) => (
-      <ol className="list-decimal list-inside space-y-1 my-3 ml-4 text-foreground">{children}</ol>
+      <ol className="list-decimal list-outside space-y-1 my-3 pl-6 text-foreground">{children}</ol>
     ),
     li: ({ children }: any) => (
       <li className="text-sm text-foreground leading-relaxed">{children}</li>
@@ -322,7 +586,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className={`group flex gap-4 p-4 ${isUser ? "justify-end" : "justify-start"}`}
+      className={`group flex gap-2 p-3 sm:gap-4 sm:p-4 ${isUser ? "justify-end" : "justify-start"}`}
     >
       {!isUser && (
         <Avatar className="w-8 h-8 flex-shrink-0">
@@ -333,13 +597,21 @@ export function ChatMessage({ message }: ChatMessageProps) {
       )}
 
       <div
-        className={`flex flex-col max-w-[80%] ${isUser ? "items-end" : "items-start"}`}
+        className={`flex min-w-0 flex-col ${isUser ? "max-w-[85%] items-end" : "flex-1 items-start"}`}
       >
+        {!isUser && message.metadata?.evidence?.length ? (
+          <details className="mb-3 w-full rounded-lg border border-border bg-background/60">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+              Sources ({message.metadata.evidence.length})
+            </summary>
+            <SourceEvidenceList items={message.metadata.evidence} returnTo={chatLocation} />
+          </details>
+        ) : null}
         <div
-          className={`rounded-2xl px-4 py-3 ${
+          className={`min-w-0 max-w-full break-words rounded-2xl px-4 py-3 ${
             isUser
               ? "bg-primary text-primary-foreground rounded-br-md"
-              : "bg-accent/50 text-foreground rounded-bl-md"
+              : "w-full bg-accent/50 text-foreground rounded-bl-md"
           }`}
         >
           {isUser ? (
@@ -350,11 +622,23 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 remarkPlugins={[remarkGfm]}
                 components={markdownComponents}
               >
-                {message.content}
+                {responseParts.answer}
               </ReactMarkdown>
+              {responseParts.plan ? (
+                <details className="mt-3 rounded-lg border border-border p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                    View financial plan
+                  </summary>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                    {responseParts.plan}
+                  </ReactMarkdown>
+                </details>
+              ) : null}
             </div>
           )}
         </div>
+
+        {!isUser && message.metadata?.generatedDocuments?.map(document => <ChatDocumentCard key={document.fileId} document={document} returnTo={chatLocation} onUseDocument={onUseDocument} disabled={isSending} />)}
 
         {message.metadata?.attachments?.length ? (
           <div className="mt-2 flex flex-wrap gap-2">
@@ -372,7 +656,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </div>
         ) : null}
 
-        {!isUser && message.metadata?.plan?.key_metrics && (
+        {!isUser && message.metadata?.plan?.key_metrics && Object.values(message.metadata.plan.key_metrics).some(value => typeof value === "number" && Number.isFinite(value)) && (
           <div className="mt-2 w-full grid grid-cols-2 md:grid-cols-5 gap-2">
             <div className="rounded-md border border-border bg-background/60 p-2">
               <p className="text-[11px] text-muted-foreground">Net cash flow</p>
@@ -418,6 +702,45 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 <li key={idx}>{warning}</li>
               ))}
             </ul>
+          </div>
+        ) : null}
+
+        {!isUser && message.metadata?.analysisType !== "financial_education" &&
+          (message.metadata?.confidence || message.metadata?.evidence?.length || message.metadata?.suggestedActions?.length) ? (
+          <div className="mt-2 w-full space-y-2">
+            {message.metadata?.confidence ? (
+              <div className="rounded-md border border-border bg-background/60 p-3">
+                <div className="text-xs font-semibold text-foreground">Context coverage</div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  {message.metadata.confidence.label || "unknown"} coverage
+                  {typeof message.metadata.confidence.score === "number"
+                    ? ` • score ${message.metadata.confidence.score.toFixed(2)}`
+                    : ""}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">Based on the records and document passages available for this answer.</p>
+                {message.metadata.confidence.notes?.length ? (
+                  <ul className="mt-2 list-disc list-inside space-y-1 text-xs text-muted-foreground">
+                    {message.metadata.confidence.notes.slice(0, 3).map((note, idx) => (
+                      <li key={idx}>{note}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+
+            {message.metadata?.suggestedActions?.length ? (
+              <div className="rounded-md border border-border bg-background/60 p-3">
+                <div className="text-xs font-semibold text-foreground">Suggested next actions</div>
+                <div className="mt-2 space-y-2">
+                  {message.metadata.suggestedActions.slice(0, 3).map((item, idx) => (
+                    <div key={`${item.title}-${idx}`} className="rounded-md border border-border/70 bg-background p-2">
+                      <div className="text-sm font-medium text-foreground">{item.title || "Action"}</div>
+                      {item.why ? <div className="mt-1 text-xs text-muted-foreground">{item.why}</div> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -565,12 +888,47 @@ export function ChatMessage({ message }: ChatMessageProps) {
               workflowTrace={message.metadata?.workflowTrace || []}
               agentsInvolved={message.metadata?.agentsInvolved || []}
               fallbackUsed={message.metadata?.fallbackUsed || false}
+              recoveredProvider={recoveredFailureCount > 0}
               llmCallCount={message.metadata?.llmCallCount || 0}
             />
           </div>
           )}
 
-        <div className="flex items-center gap-2 mt-1 px-2">
+        {!isUser &&
+        ((usedLanguageModel && (message.metadata?.activeProvider || message.metadata?.activeModel)) ||
+          message.metadata?.fallbackPath?.length ||
+          recoveredFailureCount > 0 ||
+          message.metadata?.sessionId) ? (
+          <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+            {message.metadata?.sessionId ? (
+              <span className="rounded-full border border-border/70 bg-background/60 px-2 py-1 text-muted-foreground">
+                session {message.metadata.sessionStatus || "active"}
+              </span>
+            ) : null}
+            {usedLanguageModel && message.metadata?.activeProvider ? (
+              <span className="rounded-full border border-border/70 bg-background/60 px-2 py-1 text-muted-foreground">
+                provider {message.metadata.activeProvider}
+              </span>
+            ) : null}
+            {usedLanguageModel && message.metadata?.activeModel ? (
+              <span className="max-w-[280px] truncate rounded-full border border-border/70 bg-background/60 px-2 py-1 text-muted-foreground">
+                model {message.metadata.activeModel}
+              </span>
+            ) : null}
+            {recoveredFailureCount > 0 ? (
+              <span className="rounded-full border border-border/70 bg-background/60 px-2 py-1 text-muted-foreground">
+                recovered {recoveredFailureCount}
+              </span>
+            ) : null}
+            {message.metadata?.fallbackPath?.length ? (
+              <span className="rounded-full border border-border/70 bg-background/60 px-2 py-1 text-muted-foreground">
+                route {message.metadata.fallbackPath.length}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="mt-1 flex max-w-full flex-wrap items-center gap-2 px-2">
           <span className="text-xs text-muted-foreground">
             {formatTime(message.createdAt)}
           </span>
@@ -580,7 +938,9 @@ export function ChatMessage({ message }: ChatMessageProps) {
               variant="ghost"
               size="sm"
               onClick={handleCopy}
-              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:opacity-100"
+              aria-label={copying ? "Copying response" : copied ? "Response copied" : "Copy response"}
+              disabled={copying}
+              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-100"
             >
               {copied ? (
                 <CheckCircle className="w-3 h-3 text-green-500" />
@@ -590,7 +950,27 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </Button>
           )}
 
-          {!isUser && message.metadata?.plan && (
+          {!isUser && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSpeak}
+              aria-label={isSpeaking ? "Stop voice" : "Listen to response"}
+              disabled={speakingLoading}
+              title="Read this response aloud"
+              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:opacity-100 text-indigo-400"
+            >
+              {speakingLoading ? (
+                <RefreshCw className="w-3 h-3 animate-spin" />
+              ) : isSpeaking ? (
+                <VolumeX className="w-3 h-3 text-red-400" />
+              ) : (
+                <Volume2 className="w-3 h-3" />
+              )}
+            </Button>
+          )}
+
+          {!isUser && message.metadata?.plan && Object.values(message.metadata.plan.actions || {}).some(bucket => Array.isArray(bucket) && bucket.length > 0) && (
             <Button
               variant="ghost"
               size="sm"
@@ -626,15 +1006,83 @@ export function ChatMessage({ message }: ChatMessageProps) {
               >
                 <ThumbsDown className="w-3 h-3" />
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRegenerate}
+                disabled={isSending || feedbackMutation.isPending}
+                className="h-6 px-2 text-xs"
+                title="Regenerate this answer"
+                aria-label="Regenerate response"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Regenerate</span>
+              </Button>
             </div>
           )}
           
           {!isUser && message.metadata?.agentsInvolved && message.metadata.agentsInvolved.length > 0 && (
-            <span className="text-xs text-muted-foreground">
+            <span className="break-all text-xs text-muted-foreground">
               via {message.metadata.agentsInvolved.join(", ")}
             </span>
           )}
         </div>
+
+        {!isUser && message.metadata?.agentOutputId && feedbackRating === "down" && showFeedbackDetails && (
+          <div
+            className="mt-2 w-full max-w-md space-y-2 rounded-md border border-border bg-muted/30 p-2 text-xs"
+            data-testid="feedback-details"
+          >
+            <p className="font-medium text-foreground">What went wrong? (optional)</p>
+            <div className="flex flex-wrap gap-1" role="group" aria-label="Feedback reason">
+              {FEEDBACK_REASONS.map((reason) => (
+                <button
+                  key={reason.code}
+                  type="button"
+                  aria-pressed={feedbackReason === reason.code}
+                  onClick={() => setFeedbackReason(feedbackReason === reason.code ? null : reason.code)}
+                  className={`rounded-full border px-2 py-0.5 ${
+                    feedbackReason === reason.code
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {reason.label}
+                </button>
+              ))}
+            </div>
+            <div>
+              <textarea
+                value={feedbackCorrection}
+                onChange={(e) => setFeedbackCorrection(e.target.value.slice(0, FEEDBACK_CORRECTION_MAX))}
+                maxLength={FEEDBACK_CORRECTION_MAX}
+                rows={2}
+                placeholder="What should the answer have said? Avoid account numbers and personal details."
+                aria-label="Suggested correction"
+                className="w-full rounded-md border border-border bg-background p-1.5 text-xs"
+              />
+              <div className="text-right text-[10px] text-muted-foreground">
+                {feedbackCorrection.length}/{FEEDBACK_CORRECTION_MAX}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setShowFeedbackDetails(false)}>
+                Skip
+              </Button>
+              <Button
+                size="sm"
+                className="h-6 px-2 text-xs"
+                disabled={feedbackMutation.isPending || (!feedbackReason && !feedbackCorrection.trim())}
+                onClick={handleSendFeedbackDetails}
+              >
+                Send details
+              </Button>
+            </div>
+          </div>
+        )}
+        {!isUser && feedbackDetailsSent && feedbackRating === "down" && !showFeedbackDetails && (
+          <p className="mt-1 px-2 text-[11px] text-muted-foreground">Details sent. Thank you.</p>
+        )}
       </div>
 
       {isUser && (

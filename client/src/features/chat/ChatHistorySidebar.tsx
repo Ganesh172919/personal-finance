@@ -1,3 +1,20 @@
+/**
+ * @fileoverview Chat History Sidebar
+ *
+ * Displays the list of chat sessions with search, create, rename, and delete.
+ * Shows session title, last message time, and message count.
+ *
+ * FEATURES:
+ * - Search sessions by title
+ * - Create new session
+ * - Inline rename (double-click or edit button)
+ * - Delete with confirmation
+ * - Active session highlighting
+ * - Relative time display ("2h ago", "Yesterday")
+ *
+ * @module features/chat/ChatHistorySidebar
+ */
+
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "wouter";
@@ -17,11 +34,18 @@ import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { useChatStore } from "@/stores/chatStore";
 import type { IChatSession } from "@/types/chat.types";
+import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 
+// Property configuration contract for the chat conversation history sidebar.
+// Provides callback hooks triggered when the user selects a distinct session.
+// Enables parent navigation shells to synchronize pane states or mobile views.
 interface ChatHistorySidebarProps {
   onSessionSelect?: (sessionId: string) => void;
 }
 
+// Sidebar navigation component presenting past conversations organized by date.
+// Offers fast search filtering, thread creation, inline renaming, and deletion.
+// Displays localized message timestamps, message counts, and active thread highlights.
 export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps) {
   const {
     sessions,
@@ -34,6 +58,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
     renameSession,
   } = useChatStore();
   const [, navigate] = useLocation();
+  const { formatTime: formatOrgTime, formatDate } = useOrgFormatters();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -77,7 +102,12 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
 
   const handleDelete = async (sessionId: string) => {
     if (!window.confirm("Delete this conversation?")) return;
+    const wasOpen = useChatStore.getState().currentSessionId === sessionId;
     await deleteSession(sessionId);
+    // Leave the deleted thread's URL so a reload does not show "Conversation unavailable".
+    if (wasOpen && !useChatStore.getState().sessions.some((session) => session.id === sessionId)) {
+      navigate("/chat", { replace: true });
+    }
   };
 
   const filteredSessions = sessions.filter((session) =>
@@ -92,14 +122,14 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
 
     if (diffDays === 0) {
-      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return formatOrgTime(date);
     }
 
     if (diffDays < 7) {
-      return date.toLocaleDateString([], { weekday: "short" });
+      return formatDate(date, { weekday: "short" });
     }
 
-    return date.toLocaleDateString([], { month: "short", day: "numeric" });
+    return formatDate(date, { month: "short", day: "numeric" });
   };
 
   return (
@@ -116,6 +146,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search conversations..."
+            aria-label="Search conversations"
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             className="pl-9"
@@ -123,7 +154,9 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
+      {/* Radix renders the viewport child as display:table, which lets long titles widen rows
+          past the sidebar and defeats truncation; force block layout so titles ellipsize. */}
+      <ScrollArea className="flex-1 [&_[data-radix-scroll-area-viewport]>div]:!block">
         <div className="px-2 pb-4">
           {isLoadingSessions ? (
             <div className="flex items-center justify-center py-8">
@@ -151,6 +184,15 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                           ? "border border-primary/20 bg-primary/10 text-foreground"
                           : "text-foreground hover:bg-accent hover:text-accent-foreground"
                       }`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open conversation ${session.title}`}
+                      onKeyDown={(event) => {
+                        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                          event.preventDefault();
+                          handleSelectSession(session.id);
+                        }
+                      }}
                       onClick={() => handleSelectSession(session.id)}
                     >
                       <MessageSquare className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
@@ -158,6 +200,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                       {editingId === session.id ? (
                         <div className="flex flex-1 items-center gap-1" onClick={(event) => event.stopPropagation()}>
                           <Input
+                            aria-label="Conversation title"
                             value={editTitle}
                             onChange={(event) => setEditTitle(event.target.value)}
                             className="h-6 text-sm"
@@ -172,6 +215,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                             size="sm"
                             className="h-6 w-6 p-0"
                             onClick={() => void handleSaveRename(session.id)}
+                            aria-label="Save conversation title"
                           >
                             <Check className="h-3 w-3" />
                           </Button>
@@ -180,6 +224,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                             size="sm"
                             className="h-6 w-6 p-0"
                             onClick={handleCancelRename}
+                            aria-label="Cancel conversation rename"
                           >
                             <X className="h-3 w-3" />
                           </Button>
@@ -192,13 +237,13 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                               <Clock className="h-3 w-3" />
                               {formatTime(session.lastMessageAt)}
                               <span>&bull;</span>
-                              {Math.ceil(session.messageCount / 2)}{" "}
-                              {Math.ceil(session.messageCount / 2) === 1 ? "message" : "messages"}
+                              {session.messageCount}{" "}
+                              {session.messageCount === 1 ? "message" : "messages"}
                             </div>
                           </div>
 
                           <div
-                            className="flex items-center gap-1 opacity-0 group-hover:opacity-100"
+                            className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
                             onClick={(event) => event.stopPropagation()}
                           >
                             <Button
@@ -206,6 +251,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                               size="sm"
                               className="h-6 w-6 p-0"
                               onClick={() => handleStartRename(session)}
+                              aria-label="Rename conversation"
                             >
                               <Edit2 className="h-3 w-3" />
                             </Button>
@@ -214,6 +260,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
                               size="sm"
                               className="h-6 w-6 p-0 text-destructive hover:text-destructive"
                               onClick={() => void handleDelete(session.id)}
+                              aria-label="Delete conversation"
                             >
                               <Trash2 className="h-3 w-3" />
                             </Button>
@@ -232,6 +279,9 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
   );
 }
 
+// Buckets conversation sessions into chronological time intervals.
+// Categorizes sessions across Today, Yesterday, Last 7 Days, and Older buckets.
+// Produces an ordered grouping structure for intuitive sidebar browsing.
 function groupSessionsByDate(sessions: IChatSession[]): Record<string, IChatSession[]> {
   const groups: Record<string, IChatSession[]> = {};
   const now = new Date();

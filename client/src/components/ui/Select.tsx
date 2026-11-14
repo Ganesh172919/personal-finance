@@ -6,12 +6,24 @@ import { Check, ChevronDown, ChevronUp } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// Root dropdown select component coordinating selection state and popover views.
+// Built on Radix UI SelectPrimitive Root to support accessible keyboard navigation.
+// Replaces native select elements with custom styled dropdown listboxes.
 const Select = SelectPrimitive.Root;
 
+// Grouping element organizing related select items into labeled sections.
+// Re-exports Radix UI SelectPrimitive Group for assistive accessibility.
+// Enhances screen reader navigation across categorized selection lists.
 const SelectGroup = SelectPrimitive.Group;
 
+// Component displaying the currently selected option's label or placeholder.
+// Re-exports Radix UI SelectPrimitive Value with auto-updating display text.
+// Formats placeholder text when no option is currently selected.
 const SelectValue = SelectPrimitive.Value;
 
+// Interactive button trigger toggling the select dropdown popover on click.
+// Renders an animated ChevronDown icon with line-clamped label text.
+// Controls focus rings, border styling, and accessible keyboard activation.
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
@@ -32,6 +44,9 @@ const SelectTrigger = React.forwardRef<
 ));
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
 
+// Scroll button appearing at top of long select lists to indicate overflow.
+// Displays ChevronUp icon allowing users to scroll upwards with pointer hover.
+// Forwards DOM references to the underlying Radix ScrollUpButton primitive.
 const SelectScrollUpButton = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.ScrollUpButton>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.ScrollUpButton>
@@ -49,6 +64,9 @@ const SelectScrollUpButton = React.forwardRef<
 ));
 SelectScrollUpButton.displayName = SelectPrimitive.ScrollUpButton.displayName;
 
+// Scroll button appearing at bottom of long select lists to indicate overflow.
+// Displays ChevronDown icon allowing users to scroll downwards with pointer hover.
+// Forwards DOM references to the underlying Radix ScrollDownButton primitive.
 const SelectScrollDownButton = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.ScrollDownButton>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.ScrollDownButton>
@@ -67,6 +85,9 @@ const SelectScrollDownButton = React.forwardRef<
 SelectScrollDownButton.displayName =
   SelectPrimitive.ScrollDownButton.displayName;
 
+// Floating listbox container rendered in a portal when select is opened.
+// Features popper positioning, smooth zoom animations, and auto-scrolling.
+// Contains selection items, category headers, and scroll control buttons.
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
@@ -99,6 +120,9 @@ const SelectContent = React.forwardRef<
 ));
 SelectContent.displayName = SelectPrimitive.Content.displayName;
 
+// Category header label dividing sections within the select listbox menu.
+// Formats semi-bold typography indented to align with checkable select items.
+// Forwards DOM references to the underlying Radix Label primitive.
 const SelectLabel = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Label>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
@@ -111,6 +135,9 @@ const SelectLabel = React.forwardRef<
 ));
 SelectLabel.displayName = SelectPrimitive.Label.displayName;
 
+// Selectable option item within the select dropdown listbox component.
+// Displays an animated Check icon indicator when item value is selected.
+// Forwards DOM references and manages option change callbacks upon selection.
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
@@ -134,6 +161,9 @@ const SelectItem = React.forwardRef<
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;
 
+// Thin horizontal divider separating logical sections inside select menus.
+// Renders a muted background line with negative horizontal margins.
+// Forwards DOM references to the underlying Radix Separator primitive.
 const SelectSeparator = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Separator>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Separator>

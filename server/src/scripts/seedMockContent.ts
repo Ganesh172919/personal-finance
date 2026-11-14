@@ -2,12 +2,16 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import { BlogPost } from '../models/blogPostModel';
 import { GrowthStory } from '../models/growthStoryModel';
+import { requireFixtureDatabase } from './fixtureDatabase';
 
 dotenv.config();
 
 // ─────────────────────────────────────────────────────────────
 //  AUTHORS
 // ─────────────────────────────────────────────────────────────
+// Configures static author profiles referenced by mock blog posts.
+// Provides biographical summaries, display names, and avatar image links.
+// Acts as a consistent lookup table for content authorship during seeding.
 const authors = {
   priya: { name: 'Priya Sharma', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=PriyaSharma', bio: 'CFA Charterholder & Personal Finance Educator with 12 years in wealth management.' },
   arjun: { name: 'Arjun Mehta', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=ArjunMehta', bio: 'Former Investment Banker turned Financial Independence blogger.' },
@@ -19,6 +23,9 @@ const authors = {
 // ─────────────────────────────────────────────────────────────
 //  BLOG POSTS (7 entries)
 // ─────────────────────────────────────────────────────────────
+// Declares pre-configured educational blog articles across personal finance categories.
+// Contains rich Markdown content, search metadata, reading duration, and tags.
+// Feeds realistic sample reading material into the database for local development.
 const blogPosts = [
   // ── BLOG 1 ──────────────────────────────────────────────────
   {
@@ -576,6 +583,9 @@ For most people investing their first ₹50 Lakhs, **index funds win decisively*
 // ─────────────────────────────────────────────────────────────
 //  GROWTH STORIES (7 entries) — continued in next section
 // ─────────────────────────────────────────────────────────────
+// Enumerates detailed personal financial transformation journeys and case studies.
+// Captures quantitative net worth trajectories, milestones, and strategic approaches.
+// Supplies comprehensive mock data for the growth stories community feature.
 const growthStories = [
   // ── STORY 1 ─────────────────────────────────────────────────
   {
@@ -1060,16 +1070,12 @@ The financial literacy I gained was worth more than the savings. My batchmates w
 // ─────────────────────────────────────────────────────────────
 //  SEED FUNCTION
 // ─────────────────────────────────────────────────────────────
+// Connects to the target database and idempotently repopulates content collections.
+// Removes prior posts and stories before inserting the enriched sample payloads.
+// Establishes relational links across sequential articles to enable recommendations.
 async function seedMockContent() {
-  const MONGO_URI = process.env.MONGO_URI;
-
-  if (!MONGO_URI) {
-    console.error('❌ MONGO_URI is not defined in .env');
-    process.exit(1);
-  }
-
   try {
-    await mongoose.connect(MONGO_URI);
+    await mongoose.connect(requireFixtureDatabase(), { directConnection: true });
     console.log('✅ Connected to MongoDB');
 
     // ── Idempotent: Clear old data ──────────────────────────
@@ -1111,4 +1117,7 @@ async function seedMockContent() {
   }
 }
 
+// Invokes the mock content seeding workflow immediately upon script execution.
+// Initiates the asynchronous database population routine and handles termination.
+// Acts as the root direct runner for initializing development environment posts.
 seedMockContent();

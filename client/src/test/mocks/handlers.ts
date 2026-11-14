@@ -5,12 +5,12 @@ import { http, HttpResponse } from "msw";
  * These mock the most commonly used API endpoints so component tests
  * don't need a running backend.
  *
- * NOTE: The client's `buildApiUrl()` normalizes all endpoints to `/api/v1/...`.
+ * NOTE: The client's `buildApiUrl()` normalizes all endpoints to `/api/...`.
  * These handlers MUST match those normalized paths.
  */
 export const handlers = [
   // Auth
-  http.get("/api/v1/auth/profile", () => {
+  http.get("/api/auth/profile", () => {
     return HttpResponse.json({
       id: "user-1",
       name: "Test User",
@@ -19,16 +19,16 @@ export const handlers = [
     });
   }),
 
-  http.get("/api/v1/auth/csrf", () => {
+  http.get("/api/auth/csrf", () => {
     return HttpResponse.json({ csrf_token: "test-csrf-token" });
   }),
 
-  http.post("/api/v1/auth/logout", () => {
+  http.post("/api/auth/logout", () => {
     return HttpResponse.json({ ok: true });
   }),
 
   // Transactions
-  http.get("/api/v1/transactions", () => {
+  http.get("/api/transactions", () => {
     return HttpResponse.json({
       transactions: [
         {
@@ -53,7 +53,7 @@ export const handlers = [
   }),
 
   // Financial vitals / dashboard summary
-  http.get("/api/v1/transactions/summary", () => {
+  http.get("/api/transactions/summary", () => {
     return HttpResponse.json({
       totalIncome: 3500,
       totalExpenses: 1200,
@@ -68,7 +68,7 @@ export const handlers = [
   }),
 
   // Budget envelopes
-  http.get("/api/v1/finance/budgets/:periodKey/envelopes", () => {
+  http.get("/api/finance/budgets/:periodKey/envelopes", () => {
     return HttpResponse.json({
       org_id: "org-1",
       period_key: "2026-02",
@@ -82,19 +82,19 @@ export const handlers = [
   }),
 
   // Entitlements
-  http.get("/api/v1/usage/ledger", () => {
+  http.get("/api/usage/ledger", () => {
     return HttpResponse.json({ records: [], total: 0 });
   }),
 
   // Organizations
-  http.get("/api/v1/orgs/me", () => {
+  http.get("/api/orgs/me", () => {
     return HttpResponse.json([
       { _id: "org-1", name: "Personal", role: "owner" },
     ]);
   }),
 
   // AI memory
-  http.get("/api/v1/ai/memory/search", () => {
+  http.get("/api/ai/memory/search", () => {
     return HttpResponse.json({ records: [] });
   }),
 ];

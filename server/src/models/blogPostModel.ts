@@ -1,5 +1,8 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
+// Defines TypeScript interface for public and user-authored financial blog posts.
+// Encapsulates post content, SEO metadata, reading metrics, categories, and author info.
+// Extends Mongoose Document to support full lifecycle persistence and typing.
 export interface IBlogPost extends Document {
   title: string;
   slug: string;
@@ -30,6 +33,9 @@ export interface IBlogPost extends Document {
   updatedAt: Date;
 }
 
+// Mongoose schema definition governing financial blog post document structure.
+// Enforces unique slug constraints, category enumerations, and author attributes.
+// Configured with automated createdAt and updatedAt timestamp tracking fields.
 const blogPostSchema = new Schema<IBlogPost>(
   {
     title: { type: String, required: true },
@@ -76,9 +82,15 @@ const blogPostSchema = new Schema<IBlogPost>(
 );
 
 // Indexes
+// Configures multi-attribute lookup, publishing timeline, and full-text search indexes.
+// Speeds up category filtering, tag searches, and chronological public article feeds.
+// Powers keyword search across title, content, and tags using MongoDB text indexing.
 blogPostSchema.index({ category: 1 });
 blogPostSchema.index({ tags: 1 });
 blogPostSchema.index({ isPublished: 1, publishedAt: -1 });
 blogPostSchema.index({ title: 'text', content: 'text', tags: 'text' }); // Full-text search
 
+// Instantiates and exports compiled Mongoose model for "BlogPost" collection.
+// Provides strongly typed querying, full-text search, and article CRUD operations.
+// Consumed by public blog controllers, content feeds, and administration tools.
 export const BlogPost = mongoose.model<IBlogPost>('BlogPost', blogPostSchema);

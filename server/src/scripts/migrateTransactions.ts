@@ -5,6 +5,9 @@ import { ensureProfileTransactionsMigrated } from "../services/transactionMigrat
 
 dotenv.config();
 
+// Migrates embedded transaction arrays from financial profiles into top-level transaction collections.
+// Streams legacy financial profile documents using cursor iterations to prevent memory bloat.
+// Extracts transactions, calls migration helpers, updates counts, and logs migration telemetry.
 async function migrateTransactions() {
   if (!process.env.MONGO_URI) {
     throw new Error("MONGO_URI is not configured");
@@ -42,6 +45,9 @@ async function migrateTransactions() {
   await mongoose.disconnect();
 }
 
+// Script entrypoint invoking transaction extraction migration with process exit bindings.
+// Exits cleanly with code 0 on completion or logs failure and terminates with code 1.
+// Guarantees reliable CLI feedback during deployment database migrations.
 migrateTransactions()
   .then(() => process.exit(0))
   .catch(error => {

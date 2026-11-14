@@ -1,3 +1,21 @@
+/**
+ * @fileoverview Blog listing page for financial intelligence articles.
+ *
+ * Displays a searchable, category-filtered grid of blog posts with a
+ * featured post hero section. Users can also create new posts via a
+ * modal form.
+ *
+ * Key data flows:
+ * - Fetches featured posts via getFeaturedBlogs(1).
+ * - Fetches categories via getBlogCategories() for the filter chips.
+ * - Fetches paginated blog list via getBlogs({ category, search, limit })
+ *   using a debounced search query (300ms).
+ * - Featured section hides when searching or filtering by category.
+ *
+ * Part of the content/community layer alongside Growth Stories, providing
+ * user-generated and curated financial education content.
+ */
+
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
@@ -11,6 +29,9 @@ import { CreateBlogForm } from "@/components/forms/CreateBlogForm";
 import { getBlogs, getFeaturedBlogs, getBlogCategories } from "@/lib/apiClient";
 import { useDebounce } from "@/hooks/useDebounce";
 
+// Framer Motion animation configuration for the blog card grid container.
+// Implements staggered entrance timing across rendered blog article cards.
+// Smooths visual entrance when switching categories or clearing search filters.
 const containerVariants = {
   hidden: { opacity: 0 },
   show: {
@@ -21,11 +42,17 @@ const containerVariants = {
   },
 };
 
+// Framer Motion animation configuration for individual blog card items.
+// Controls vertical slide and fade-in transitions for cards entering the grid.
+// Provides fluid micro-interactions as cards populate the catalog view.
 const itemVariants = {
   hidden: { opacity: 0, y: 20 },
   show: { opacity: 1, y: 0 },
 };
 
+// Blog listing directory featuring searchable and category-filtered finance articles.
+// Renders a hero section for featured articles alongside a write-post modal creation flow.
+// Uses debounced text search to query articles dynamically from the server.
 export default function Blogs() {
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");

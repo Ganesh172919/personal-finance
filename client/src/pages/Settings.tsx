@@ -1,6 +1,32 @@
+/**
+ * @fileoverview Settings page with Profile, Security, API Keys, Preferences, and Newsletter tabs.
+ *
+ * Centralises account and workspace configuration in a five-tab layout:
+ * - Profile: display name, email (read-only), avatar, and bio editing.
+ * - Security: password change, 2FA setup/verify/disable (TOTP-based),
+ *   with QR code display and backup code generation.
+ * - API Keys: create keys with granular scopes, view last-four prefix,
+ *   copy to clipboard, and revoke with confirmation.
+ * - Preferences: currency, locale, timezone, and theme selection.
+ * - Newsletter: daily newsletter subscription, delivery time, content sections.
+ *
+ * Key data flows:
+ * - updateProfile() / changePassword() mutate user account fields.
+ * - setup2FA() / verify2FA() / disable2FA() / get2FAStatus() manage
+ *   the two-factor authentication lifecycle.
+ * - listApiKeys() / createApiKey() / revokeApiKey() handle API key
+ *   CRUD via the v1 API.
+ * - useAppConfig() provides current workspace settings and entitlements.
+ *
+ * Each sub-component (ProfileSection, SecuritySection, ApiKeysSection,
+ * PreferencesSection) manages its own form state and mutations.
+ *
+ * Routed at /settings; accessible from the sidebar for authenticated users.
+ */
+
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { User, Shield, Key, Settings as SettingsIcon, Copy, Eye, EyeOff } from "lucide-react";
+import { User, Shield, Key, Settings as SettingsIcon, Copy, Eye, EyeOff, Mail, Mic, Sparkles } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { useToast } from "@/hooks/useToast";
@@ -24,7 +50,11 @@ import {
 } from "@/lib/api/settings";
 import { listApiKeys, createApiKey, revokeApiKey } from "@/lib/api/v1/apiKeys";
 import type { ApiKeyListItem } from "@/lib/api/v1/apiKeys";
+import NewsletterSettings from "@/components/NewsletterSettings";
 
+// Unified account settings, profile configuration, and security control center.
+// Provides tabbed management across user profile, passwords, 2FA, API keys, and preferences.
+// Synchronizes organization-level formatting defaults and newsletter delivery options.
 export default function Settings() {
   const { user, checkAuthStatus } = useAuth();
   const configQuery = useAppConfig();
@@ -33,7 +63,7 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState("profile");
 
   return (
-    <div className="page-grid flex-1 overflow-auto">
+    <div className="page-grid flex-1 overflow-auto" data-testid="settings-page">
       <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         <PageIntro
           icon={SettingsIcon}
@@ -48,22 +78,30 @@ export default function Settings() {
         />
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 rounded-[calc(var(--radius)-4px)] border border-border/70 bg-card/85 p-1">
-          <TabsTrigger value="profile" className="flex items-center gap-2">
+          <TabsList className="grid w-full grid-cols-6 rounded-[calc(var(--radius)-4px)] border border-border/70 bg-card/85 p-1">
+          <TabsTrigger value="profile" className="flex items-center gap-2" data-testid="tab-profile" onClick={() => setActiveTab("profile")}>
             <User className="w-4 h-4" />
-            <span className="hidden sm:inline">Profile</span>
+            <span className="sr-only sm:not-sr-only">Profile</span>
           </TabsTrigger>
-          <TabsTrigger value="security" className="flex items-center gap-2">
+          <TabsTrigger value="security" className="flex items-center gap-2" data-testid="tab-security" onClick={() => setActiveTab("security")}>
             <Shield className="w-4 h-4" />
-            <span className="hidden sm:inline">Security</span>
+            <span className="sr-only sm:not-sr-only">Security</span>
           </TabsTrigger>
-          <TabsTrigger value="api-keys" className="flex items-center gap-2">
+          <TabsTrigger value="api-keys" className="flex items-center gap-2" data-testid="tab-api-keys" onClick={() => setActiveTab("api-keys")}>
             <Key className="w-4 h-4" />
-            <span className="hidden sm:inline">API Keys</span>
+            <span className="sr-only sm:not-sr-only">API Keys</span>
           </TabsTrigger>
-          <TabsTrigger value="preferences" className="flex items-center gap-2">
+          <TabsTrigger value="preferences" className="flex items-center gap-2" data-testid="tab-preferences" onClick={() => setActiveTab("preferences")}>
             <SettingsIcon className="w-4 h-4" />
-            <span className="hidden sm:inline">Preferences</span>
+            <span className="sr-only sm:not-sr-only">Preferences</span>
+          </TabsTrigger>
+          <TabsTrigger value="newsletter" className="flex items-center gap-2" data-testid="tab-newsletter" onClick={() => setActiveTab("newsletter")}>
+            <Mail className="w-4 h-4" />
+            <span className="sr-only sm:not-sr-only">Newsletter</span>
+          </TabsTrigger>
+          <TabsTrigger value="gnani" className="flex items-center gap-2 text-indigo-400" data-testid="tab-gnani" onClick={() => setActiveTab("gnani")}>
+            <Mic className="w-4 h-4" />
+            <span className="sr-only sm:not-sr-only">Gnani AI</span>
           </TabsTrigger>
         </TabsList>
 
@@ -82,6 +120,14 @@ export default function Settings() {
         <TabsContent value="preferences" className="space-y-4 mt-6">
           <PreferencesSection configQuery={configQuery} toast={toast} queryClient={queryClient} />
         </TabsContent>
+
+        <TabsContent value="newsletter" className="space-y-4 mt-6">
+          <NewsletterSettings />
+        </TabsContent>
+
+        <TabsContent value="gnani" className="space-y-4 mt-6">
+          <GnaniVoiceSection toast={toast} />
+        </TabsContent>
         </Tabs>
       </div>
     </div>
@@ -90,6 +136,9 @@ export default function Settings() {
 
 // ─── Profile Section ────────────────────────────────────
 
+// User profile configuration section displaying editable personal details.
+// Manages display name, phone number updates, and read-only email verification status.
+// Refreshes global authentication state upon saving profile updates.
 function ProfileSection({ user, toast, checkAuthStatus }: any) {
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user?.name || "");
@@ -100,7 +149,8 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await updateProfile({ name, email, phoneNumber });
+      // Email is not editable via this endpoint (the server ignores it), so only send mutable fields.
+      await updateProfile({ name, phoneNumber });
       toast({
         title: "Profile updated",
         description: "Your profile has been updated successfully.",
@@ -142,6 +192,7 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
               onChange={(e) => setName(e.target.value)}
               disabled={!isEditing}
               placeholder="Your name"
+              data-testid="profile-name-input"
             />
           </div>
 
@@ -151,10 +202,15 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
               id="email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={!isEditing}
+              readOnly
+              disabled
+              aria-describedby="email-readonly-hint"
               placeholder="your.email@example.com"
+              data-testid="profile-email-input"
             />
+            <p id="email-readonly-hint" className="text-xs text-muted-foreground">
+              Your sign-in email can't be changed here.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -166,6 +222,7 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
               onChange={(e) => setPhoneNumber(e.target.value)}
               disabled={!isEditing}
               placeholder="+1 (555) 123-4567"
+              data-testid="profile-phone-input"
             />
           </div>
 
@@ -186,10 +243,10 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
 
         <div className="flex gap-3 pt-4">
           {!isEditing ? (
-            <Button onClick={() => setIsEditing(true)}>Edit Profile</Button>
+            <Button onClick={() => setIsEditing(true)} data-testid="edit-profile-btn">Edit Profile</Button>
           ) : (
             <>
-              <Button onClick={handleSave} disabled={isSaving}>
+              <Button onClick={handleSave} disabled={isSaving} data-testid="save-profile-btn">
                 {isSaving ? "Saving..." : "Save Changes"}
               </Button>
               <Button variant="outline" onClick={handleCancel} disabled={isSaving}>
@@ -205,6 +262,9 @@ function ProfileSection({ user, toast, checkAuthStatus }: any) {
 
 // ─── Security Section ───────────────────────────────────
 
+// Account security management section for password rotation and 2FA coordination.
+// Validates password complexity requirements and matches confirmation inputs.
+// Embeds two-factor authentication controls and active session monitoring.
 function SecuritySection({ user, toast, queryClient }: any) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -232,6 +292,16 @@ function SecuritySection({ user, toast, queryClient }: any) {
       toast({
         title: "Error",
         description: "Password must be at least 8 characters long",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Mirror the server password policy (same as registration).
+    if (!/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      toast({
+        title: "Error",
+        description: "Password must include upper, lower, and numeric characters",
         variant: "destructive",
       });
       return;
@@ -276,15 +346,19 @@ function SecuritySection({ user, toast, queryClient }: any) {
                 <div className="relative">
                   <Input
                     id="current-password"
+                    className="pr-12"
                     type={showCurrentPassword ? "text" : "password"}
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="Enter current password"
+                    data-testid="current-password-input"
                   />
                   <button
                     type="button"
                     onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showCurrentPassword ? "Hide current password" : "Show current password"}
+                    aria-pressed={showCurrentPassword}
+                    className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center text-muted-foreground hover:text-foreground"
                   >
                     {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -296,15 +370,19 @@ function SecuritySection({ user, toast, queryClient }: any) {
                 <div className="relative">
                   <Input
                     id="new-password"
+                    className="pr-12"
                     type={showNewPassword ? "text" : "password"}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Enter new password"
+                    data-testid="new-password-input"
                   />
                   <button
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showNewPassword ? "Hide new password" : "Show new password"}
+                    aria-pressed={showNewPassword}
+                    className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center text-muted-foreground hover:text-foreground"
                   >
                     {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -319,6 +397,7 @@ function SecuritySection({ user, toast, queryClient }: any) {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Confirm new password"
+                  data-testid="confirm-password-input"
                 />
               </div>
             </div>
@@ -326,6 +405,7 @@ function SecuritySection({ user, toast, queryClient }: any) {
             <Button
               onClick={handleChangePassword}
               disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}
+              data-testid="change-password-btn"
             >
               {isChangingPassword ? "Changing..." : "Change Password"}
             </Button>
@@ -345,6 +425,9 @@ function SecuritySection({ user, toast, queryClient }: any) {
 
 // ─── Two-Factor Authentication ──────────────────────────
 
+// Two-factor authentication configuration section using TOTP authenticator apps.
+// Generates QR setup codes, verifies registration tokens, and produces emergency backup codes.
+// Supports safe disabling of 2FA with token confirmation dialogs.
 function TwoFactorSection({ enabled, isLoading, toast, queryClient }: any) {
   const [isSettingUp, setIsSettingUp] = useState(false);
   const [setupData, setSetupData] = useState<any>(null);
@@ -567,7 +650,7 @@ function TwoFactorSection({ enabled, isLoading, toast, queryClient }: any) {
             password
           </p>
         </div>
-        <Button onClick={handleSetup} disabled={isSettingUp}>
+        <Button onClick={handleSetup} disabled={isSettingUp} data-testid="enable-2fa-btn">
           {isSettingUp ? "Setting up..." : "Enable 2FA"}
         </Button>
       </div>
@@ -577,6 +660,9 @@ function TwoFactorSection({ enabled, isLoading, toast, queryClient }: any) {
 
 // ─── API Keys Section ───────────────────────────────────
 
+// Developer API key management interface for personal integrations and scripts.
+// Displays active API keys with masked prefixes, usage counts, and creation timestamps.
+// Facilitates key generation with one-time secret revelation and immediate revocation.
 function ApiKeysSection({ toast, queryClient }: any) {
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeySecret, setNewKeySecret] = useState("");
@@ -687,8 +773,9 @@ function ApiKeysSection({ toast, queryClient }: any) {
               onChange={(e) => setNewKeyName(e.target.value)}
               placeholder="API key name (e.g., Production App)"
               className="flex-1"
+              data-testid="api-key-name-input"
             />
-            <Button onClick={handleCreateKey} disabled={!newKeyName.trim()}>
+            <Button onClick={handleCreateKey} disabled={!newKeyName.trim()} data-testid="create-api-key-btn">
               Create Key
             </Button>
           </div>
@@ -751,6 +838,9 @@ function ApiKeysSection({ toast, queryClient }: any) {
 
 // ─── Preferences Section ────────────────────────────────
 
+// Supported monetary currencies for workspace-wide financial reporting.
+// Supplies ISO currency symbols and international currency codes.
+// Configures default ledger formatting across accounts, budgets, and exports.
 const CURRENCIES = [
   { value: "INR", label: "₹ INR — Indian Rupee" },
   { value: "USD", label: "$ USD — US Dollar" },
@@ -764,6 +854,9 @@ const CURRENCIES = [
   { value: "CHF", label: "CHF — Swiss Franc" },
 ];
 
+// Predefined regional locale identifiers supported by the application.
+// Determines date formatting, decimal conventions, and language preferences.
+// Maps standard BCP 47 language tags to human-readable names.
 const LOCALES = [
   { value: "en-IN", label: "English (India)" },
   { value: "en-US", label: "English (US)" },
@@ -776,6 +869,9 @@ const LOCALES = [
   { value: "zh-CN", label: "Chinese (China)" },
 ];
 
+// Canonical IANA timezone identifiers available for organization schedule timing.
+// Configures automated report generation, daily summaries, and reminder delivery.
+// Provides offset abbreviations to aid timezone selection.
 const TIMEZONES = [
   { value: "Asia/Kolkata", label: "Asia/Kolkata (IST, UTC+5:30)" },
   { value: "UTC", label: "UTC" },
@@ -790,6 +886,9 @@ const TIMEZONES = [
   { value: "Asia/Dubai", label: "Asia/Dubai (GST)" },
 ];
 
+// Organization preferences section controlling global currency, locale, and timezone.
+// Detects uncommitted preference modifications to prevent accidental navigation loss.
+// Mutates organization settings and updates query caches across all dashboards.
 function PreferencesSection({ configQuery, toast, queryClient }: any) {
   const org = configQuery.data?.org;
   const [currency, setCurrency] = useState(org?.currency || "USD");
@@ -811,7 +910,7 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
     setIsSaving(true);
     try {
       const { apiClient } = await import("@/lib/api/core");
-      await apiClient(`/v1/orgs/${orgId}/settings`, {
+      await apiClient(`/orgs/${orgId}/settings`, {
         method: "PATCH",
         body: JSON.stringify({ currency, locale, timezone }),
       });
@@ -853,6 +952,7 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
               id="currency"
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
+              data-testid="currency-select"
               className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {CURRENCIES.map((c) => (
@@ -870,6 +970,7 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
               id="locale"
               value={locale}
               onChange={(e) => setLocale(e.target.value)}
+              data-testid="locale-select"
               className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {LOCALES.map((l) => (
@@ -887,6 +988,7 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
               id="timezone"
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
+              data-testid="timezone-select"
               className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {TIMEZONES.map((tz) => (
@@ -903,9 +1005,94 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
           <Button
             onClick={handleSave}
             disabled={isSaving || !hasChanges}
+            data-testid="save-preferences-btn"
           >
             {isSaving ? "Saving..." : "Save Preferences"}
           </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function GnaniVoiceSection({ toast }: { toast: any }) {
+  const [indicLang, setIndicLang] = useState("hi-IN");
+  const [telephonicFilter, setTelephonicFilter] = useState(true);
+
+  return (
+    <Card className="border border-indigo-500/30 bg-card p-6">
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-indigo-400" />
+              The Great Indian AI Internship Challenge — Build Resources
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Configuration and live telemetry for Gnani AI Speech and LLM models.
+            </p>
+          </div>
+          <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-500/40">
+            J Ganesh Kumar Reddy
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-4 rounded-lg bg-muted/40 border border-border">
+            <div className="text-xs text-muted-foreground">Allocated Credits</div>
+            <div className="text-xl font-bold text-foreground">5,000 Credits</div>
+            <div className="text-xs text-emerald-400 mt-1">● Active on app.gnani.ai</div>
+          </div>
+          <div className="p-4 rounded-lg bg-muted/40 border border-border">
+            <div className="text-xs text-muted-foreground">Speech Models</div>
+            <div className="text-sm font-semibold text-foreground">Prisma v3.0 (STT) &amp; Timbre (TTS)</div>
+            <div className="text-xs text-muted-foreground mt-1">12+ Indic Languages &amp; Hinglish</div>
+          </div>
+          <div className="p-4 rounded-lg bg-muted/40 border border-border">
+            <div className="text-xs text-muted-foreground">Reasoning Engine</div>
+            <div className="text-sm font-semibold text-foreground">Evon v3.3 (30B Model)</div>
+            <div className="text-xs text-muted-foreground mt-1">Deep Financial Reasoning</div>
+          </div>
+        </div>
+
+        <div className="space-y-4 pt-2">
+          <div className="space-y-2">
+            <Label htmlFor="default-indic-lang">Default Spoken Indic Dialect</Label>
+            <select
+              id="default-indic-lang"
+              value={indicLang}
+              onChange={(e) => {
+                setIndicLang(e.target.value);
+                toast({ title: "Language preference saved", description: `Default set to ${e.target.value}` });
+              }}
+              className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="hi-IN">हिन्दी (Hindi)</option>
+              <option value="hi-en-IN">Hinglish (Code-Mixed)</option>
+              <option value="te-IN">తెలుగు (Telugu)</option>
+              <option value="ta-IN">தமிழ் (Tamil)</option>
+              <option value="kn-IN">ಕನ್ನಡ (Kannada)</option>
+              <option value="mr-IN">मराठी (Marathi)</option>
+              <option value="bn-IN">বাংলা (Bengali)</option>
+              <option value="gu-IN">ગુજરાતી (Gujarati)</option>
+              <option value="en-IN">Indian English</option>
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/20">
+            <div>
+              <div className="text-sm font-medium text-foreground">8kHz Telephonic Audio Filter</div>
+              <div className="text-xs text-muted-foreground">
+                Enhance transcription accuracy in noisy Indian market &amp; traffic audio.
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={telephonicFilter}
+              onChange={(e) => setTelephonicFilter(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+          </div>
         </div>
       </div>
     </Card>

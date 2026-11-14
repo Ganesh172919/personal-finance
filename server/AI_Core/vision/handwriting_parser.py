@@ -1,3 +1,31 @@
+"""
+vision/handwriting_parser.py - Handwriting Intent Extraction
+=============================================================
+
+Extracts financial intent from handwritten text recognised by the OCR
+engine.  Unlike the receipt parser (which targets structured printed
+receipts), this parser handles **unstructured handwritten notes** like
+"save 50000 for emergency fund in 6 months".
+
+Extracted values
+----------------
+- **Amounts** -- numeric values with optional currency symbols and
+  suffixes (k, m).
+- **Percentages** -- values followed by %.
+- **Dates** -- date-like patterns parsed with ``dateutil``.
+- **Goal candidates** -- inferred from keywords like "emergency",
+  "savings target", "debt payoff".
+- **Budget adjustments** -- amounts near budget/expense/spend keywords.
+
+Design decisions
+----------------
+- Deduplication ensures the same date/value is not reported twice.
+- Goal inference is conservative: only one goal is inferred per
+  recognition (the first keyword match).
+- Security: the ``_looks_like_secret`` check (inherited from
+  ``memory/extract.py``) prevents storing API keys or passwords.
+"""
+
 from __future__ import annotations
 
 import re
@@ -7,6 +35,7 @@ from dateutil.parser import parse as parse_date
 
 from .engine import OcrLine
 
+# Regex patterns for extracting financial values from OCR text.
 _PERCENT_RE = re.compile(r"(?<!\d)(\d+(?:\.\d+)?)\s*%")
 _DATE_LIKE_RE = re.compile(r"\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})\b")
 _AMOUNT_RE = re.compile(
@@ -14,10 +43,16 @@ _AMOUNT_RE = re.compile(
 )
 
 
+# Collapses consecutive whitespace and trims surrounding whitespace characters.
+# Standardizes text lines extracted from handwritten optical recognition runs.
+# Returns clean single-spaced string output for downstream parsing.
 def _normalize_ws(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+# Extracts numeric currency amounts along with symbols and magnitude multipliers.
+# Handles common international currency signs such as rupees, dollars, and euros.
+# Normalizes magnitude suffixes k and m into standard floating-point quantities.
 def _parse_amounts(text: str) -> List[Dict]:
     results: List[Dict] = []
     for match in _AMOUNT_RE.finditer(text):
@@ -51,6 +86,9 @@ def _parse_amounts(text: str) -> List[Dict]:
     return results
 
 
+# Searches recognized text for percentage representations using regular expressions.
+# Extracts floating-point values preceding percent signs across input text.
+# Returns a list of floating-point numbers representing parsed percentages.
 def _parse_percentages(text: str) -> List[float]:
     values: List[float] = []
     for match in _PERCENT_RE.finditer(text):
@@ -61,6 +99,9 @@ def _parse_percentages(text: str) -> List[float]:
     return values
 
 
+# Discovers and parses date strings formatted in slash or dash formats.
+# Leverages dateutil parsing with fuzzy and day-first matching capabilities.
+# Returns a deduplicated list of standard ISO-formatted date strings.
 def _parse_dates(text: str) -> List[str]:
     out: List[str] = []
     for match in _DATE_LIKE_RE.finditer(text):
@@ -80,6 +121,9 @@ def _parse_dates(text: str) -> List[str]:
     return unique
 
 
+# Infers savings, emergency fund, or debt goals from handwritten text keywords.
+# Associates detected financial amounts with recognized financial goal targets.
+# Returns candidate financial goals with associated target values and currencies.
 def _extract_goal_candidates(text: str, amounts: List[Dict]) -> List[Dict]:
     lowered = text.lower()
     candidates: List[Dict] = []
@@ -100,6 +144,9 @@ def _extract_goal_candidates(text: str, amounts: List[Dict]) -> List[Dict]:
     return candidates
 
 
+# Detects budget-related statements and associates them with nearby amounts.
+# Checks for budget, expense, and spending keywords within input strings.
+# Returns a list of structured budget adjustment candidates with currencies.
 def _extract_budget_adjustments(text: str, amounts: List[Dict]) -> List[Dict]:
     lowered = text.lower()
     adjustments: List[Dict] = []
@@ -117,6 +164,9 @@ def _extract_budget_adjustments(text: str, amounts: List[Dict]) -> List[Dict]:
     return adjustments
 
 
+# Aggregates handwritten OCR lines into structured financial intent representations.
+# Calculates aggregate line confidences and extracts amounts, dates, and goals.
+# Returns structured dictionary payload with recognized text and entity fields.
 def extract_handwriting(lines: List[OcrLine]) -> Dict:
     normalized_lines = [OcrLine(text=_normalize_ws(line.text), confidence=float(line.confidence)) for line in lines if line.text]
     raw_text = "\n".join(line.text for line in normalized_lines if line.text).strip()

@@ -1,3 +1,25 @@
+/**
+ * @fileoverview NotificationCenter — slide-in notification panel with filtering,
+ * time-grouped display, and a reusable `NotificationBell` trigger button.
+ *
+ * WHAT IT DOES
+ *  - Renders a right-side drawer (AnimatePresence + spring animation) listing
+ *    notifications grouped into "Today", "This Week", and "Earlier".
+ *  - Supports filter tabs: All / Unread / Read with unread count badge.
+ *  - Each notification row shows a context-aware icon (AI, budget, alert, billing),
+ *    accent colour, relative timestamp, and a hover-reveal "mark as read" button.
+ *  - Exports `NotificationBell` — an animated icon button with an unread-count badge
+ *    designed to sit in the Sidebar.
+ *
+ * KEY PROPS & DATA FLOW
+ *  - `isOpen` / `onClose` — controlled by the parent (Sidebar).
+ *  - Uses `useNotifications` hook for data fetching, mark-read, and mark-all-read.
+ *
+ * ARCHITECTURE NOTES
+ *  - Consumed by `Sidebar` which mounts both the bell trigger and this panel.
+ *  - Notifications originate from transactions, budgets, AI insights, and workflow events.
+ *  - Purely presentational after the hook provides data; no direct API calls inside.
+ */
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -20,8 +42,14 @@ import type { NotificationItem } from "@/lib/api/v1/notifications";
 
 // ─── Helpers ────────────────────────────────────────────
 
+// Categorization intervals bucketing user notification alerts by recency.
+// Partitions incoming messages across today, this week, and earlier records.
+// Organizes notification feeds into clean, chronologically clustered sections.
 type TimeGroup = "today" | "this_week" | "older";
 
+// Determines the chronological time group category for a notification timestamp.
+// Evaluates calendar date boundaries relative to the user's current day and week.
+// Returns today, this_week, or older category identifiers for timeline bucketing.
 function getTimeGroup(dateStr: string): TimeGroup {
   const date = new Date(dateStr);
   const now = new Date();
@@ -34,6 +62,9 @@ function getTimeGroup(dateStr: string): TimeGroup {
   return "older";
 }
 
+// Formats an ISO date string into a concise human-readable relative time offset.
+// Produces clean interval descriptions such as just now, minutes, or hours ago.
+// Converts dates past one week into abbreviated month and day notations.
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60_000);
@@ -46,25 +77,34 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+// Presentation label dictionary translating time group keys into section headers.
+// Maps internal temporal buckets to localized strings like Today, This Week, and Earlier.
+// Used as section divider titles across scrollable notification drawer feeds.
 const GROUP_LABELS: Record<TimeGroup, string> = {
   today: "Today",
   this_week: "This Week",
   older: "Earlier",
 };
 
+// Selects appropriate Lucide iconography based on notification topic and metadata.
+// Maps categories such as AI insights, budgets, alerts, and billing to distinct icons.
+// Supplies visual cues for quick recognition within the notification drawer.
 function getNotificationIcon(notification: NotificationItem) {
   const title = (notification.title || "").toLowerCase();
   const meta = notification.metadata as Record<string, unknown> | undefined;
   const type = (meta?.type as string) || "";
 
-  if (type === "ai" || title.includes("ai") || title.includes("insight")) return Brain;
-  if (type === "budget" || title.includes("budget") || title.includes("spending")) return TrendingUp;
-  if (type === "alert" || title.includes("alert") || title.includes("warning")) return AlertTriangle;
-  if (type === "billing" || title.includes("billing") || title.includes("payment")) return CreditCard;
-  if (type === "workflow" || title.includes("workflow")) return Workflow;
-  return Info;
+  if (type === "ai" || title.includes("ai") || title.includes("insight")) return <Brain className="w-4 h-4" />;
+  if (type === "budget" || title.includes("budget") || title.includes("spending")) return <TrendingUp className="w-4 h-4" />;
+  if (type === "alert" || title.includes("alert") || title.includes("warning")) return <AlertTriangle className="w-4 h-4" />;
+  if (type === "billing" || title.includes("billing") || title.includes("payment")) return <CreditCard className="w-4 h-4" />;
+  if (type === "workflow" || title.includes("workflow")) return <Workflow className="w-4 h-4" />;
+  return <Info className="w-4 h-4" />;
 }
 
+// Computes theme-aware background and accent color classes for notification icons.
+// Differentiates critical warnings, intelligence alerts, and budget milestones.
+// Applies subtle translucent background badges and matching icon foreground colors.
 function getNotificationAccent(notification: NotificationItem): string {
   const title = (notification.title || "").toLowerCase();
   const meta = notification.metadata as Record<string, unknown> | undefined;
@@ -83,10 +123,16 @@ function getNotificationAccent(notification: NotificationItem): string {
 
 // ─── Filter Tabs ────────────────────────────────────────
 
+// Navigation tab filter states for segmenting notification drawer entries.
+// Supports displaying all notifications or isolating unread versus read items.
+// Drives reactive filtering of the user notification collection.
 type FilterTab = "all" | "unread" | "read";
 
 // ─── Main Component ─────────────────────────────────────
 
+// Slide-in drawer component managing real-time notifications and alerts.
+// Organizes items into chronological buckets with mark-all-read capabilities.
+// Features smooth spring animations and tabbed filtering for unread messages.
 export function NotificationCenter({
   isOpen,
   onClose,
@@ -269,6 +315,9 @@ export function NotificationCenter({
 
 // ─── Notification Row ───────────────────────────────────
 
+// Renders an individual notification entry row within the notification drawer.
+// Displays contextual category icons, formatted message prose, and relative timestamps.
+// Embeds hover-activated actions to mark individual messages as read.
 function NotificationRow({
   notification,
   onMarkRead,
@@ -278,7 +327,7 @@ function NotificationRow({
   onMarkRead: (id: string) => void;
   index: number;
 }) {
-  const Icon = getNotificationIcon(notification);
+  const icon = getNotificationIcon(notification);
   const accent = getNotificationAccent(notification);
   const isUnread = notification.status === "unread";
 
@@ -302,7 +351,7 @@ function NotificationRow({
       <div className="flex gap-3">
         {/* Icon */}
         <div className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${accent}`}>
-          <Icon className="w-4 h-4" />
+          {icon}
         </div>
 
         {/* Content */}
@@ -345,6 +394,9 @@ function NotificationRow({
 
 // ─── Bell Button (to embed in Sidebar) ──────────────────
 
+// Interactive header bell icon button indicating unread notification counts.
+// Renders an animated pulse badge when unread notifications are present.
+// Toggles the slide-over notification drawer when triggered by user clicks.
 export function NotificationBell({
   onClick,
   unreadCount,
