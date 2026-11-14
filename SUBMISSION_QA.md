@@ -1,5 +1,11 @@
 # FinWise submission verification
 
+## November 15 browser retest
+
+The built-in browser used the synthetic workspace in both themes. Groq correctly defined fixed and variable expenses but added introductory text before the requested two bullets. A follow-up about an electricity bill with a fixed service charge and metered usage initially triggered a generic plan. After the routing fix, the Financial Educator used one Groq call and classified the two charges correctly in one sentence.
+
+Bharat Voice answered “How much money is left in my budget this month?” with ₹735 from the saved budget. The browser entered the Timbre playback state. Prisma turned the imported compound-interest audio into an editable Finance Chat draft. The Evon 30B status still shows that a separate endpoint is required.
+
 ## Submission rehearsal
 
 | Browser check | Result |
