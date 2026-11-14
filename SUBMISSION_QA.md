@@ -1,5 +1,16 @@
 # FinWise submission verification
 
+## Submission rehearsal
+
+| Browser check | Result |
+| --- | --- |
+| Finance Chat, fresh debt example | The initial route produced a generic plan. After the routing fix, the Financial Educator used one Groq call and explained paying both minimums before directing extra money to the 19% credit card. |
+| Finance Chat, follow-up | After the card is paid off, the model said to redirect the extra payment to the lower-rate loan. The one-sentence answer used the same example and one model call. |
+| Bharat Voice, custom questions | “How much of my budget is left this month?” returned ₹735 from saved limits. “How much have I spent in total this month?” returned ₹100 and Food & Dining from the ledger. Replay entered the Timbre playback state. |
+| Dictation | The imported clip placed the ₹1,000 compound-interest question in the editable composer. The submitted draft returned ₹1,210 including ₹210 interest, with zero model calls. |
+
+The rehearsal used the isolated synthetic workspace. The submission presentation is in [DEMO_PRESENTATION.txt](DEMO_PRESENTATION.txt). The production client build, 61 focused server tests, and 18 AI Core routing and provider tests passed.
+
 ## Final browser retest
 
 | Check | Observed result |
