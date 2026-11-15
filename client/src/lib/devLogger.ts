@@ -21,7 +21,6 @@
  * │   └── Duration & payload size formatting
  * ├── 3. Structured Logging (logger.debug, info, warn, error)
  * │   ├── Timestamped prefix & namespace tagging
- * │   └── Automatic breadcrumb forwarding to errorReporting
  * └── 4. Performance Profiling
  *     ├── time(label) -> performance.mark()
  *     └── timeEnd(label) -> performance.measure() with elapsed ms output
@@ -54,7 +53,6 @@
  * @module lib/devLogger
  */
 
-import { errorReporting } from "@/services/errorReporting";
 
 const isDev = import.meta.env.DEV;
 
@@ -124,11 +122,6 @@ export function installNetworkLogger() {
       const size = contentLength ? formatBytes(parseInt(contentLength, 10)) : undefined;
 
       logRequest({ method, url, status: response.status, durationMs, size });
-
-      // Add breadcrumb for API calls
-      if (url.includes("/api/")) {
-        errorReporting.addBreadcrumb("custom", `${method} ${url} → ${response.status}`);
-      }
 
       return response;
     } catch (error) {

@@ -24,11 +24,10 @@ describe("useKeyboardShortcuts", () => {
 // ─── errorReporting Tests ───────────────────────────────
 
 describe("errorReporting", () => {
-  it("should have install, report, and addBreadcrumb", async () => {
+  it("should expose install and report", async () => {
     const { errorReporting } = await import("@/services/errorReporting");
     expect(typeof errorReporting.install).toBe("function");
     expect(typeof errorReporting.report).toBe("function");
-    expect(typeof errorReporting.addBreadcrumb).toBe("function");
   });
 
   it("should not throw when install is called", async () => {

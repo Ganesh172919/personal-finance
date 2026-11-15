@@ -31,7 +31,7 @@ import { Suspense, type ReactNode } from "react";
 import { Link, Redirect, Route, Switch } from "wouter";         // Lightweight React router
 
 import { FullScreenLoader } from "@/components/feedback/FullScreenLoader"; // Loading indicator
-import { useAuth } from "@/context/AuthContext";                  // Authentication context
+import { useAuth } from "@/hooks/useAuth";                  // Authentication context
 import { AppShell } from "@/layouts/AppShell";                    // Main app layout (sidebar)
 import { ChatLayout } from "@/layouts/ChatLayout";               // Chat-specific layout
 import { ThemeToggle } from "@/components/ThemeToggle";

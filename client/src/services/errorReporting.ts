@@ -1,165 +1,94 @@
-/**
- * @fileoverview Client-side Error Reporting Service
- *
- * Captures unhandled errors, React boundary crashes, and custom events.
- * Reports via POST /api/client-errors when available, and logs to
- * console in development. Designed as a drop-in for future Sentry migration.
- *
- * BREADCRUMB SYSTEM:
- * Maintains a rolling buffer of recent user actions (navigation, clicks,
- * console logs). These breadcrumbs are attached to error reports to help
- * developers reproduce the steps leading to an error.
- *
- * ARCHITECTURE:
- * - install(): Registers global error listeners (called once on app mount)
- * - report(): Sends error to server (best-effort, non-blocking)
- * - addBreadcrumb(): Records user actions for context
- *
- * @module services/errorReporting
- */
+import { buildApiUrl } from "@/lib/apiBase";
 
-// Defines the payload structure dispatched when reporting client exceptions.
-// Aggregates stack traces, runtime metadata, session IDs, and active breadcrumbs.
-// Transmitted to the server-side telemetry endpoint for diagnostic analysis.
-interface ErrorReport {
-  message: string;
-  stack?: string;
-  componentStack?: string;
-  url: string;
-  timestamp: string;
-  userAgent: string;
-  sessionId: string;
-  breadcrumbs: Breadcrumb[];
+type ErrorSource = "render" | "window-error" | "unhandled-rejection";
+
+function routeArea(path: string) {
+  const [, area, mode] = path.split("/", 3);
+  if (area === "chat" && (mode === "local" || mode === "cloud")) return `chat-${mode}` as const;
+  if (area === "login" || area === "register" || area === "verify-email") return "auth";
+  if (area === "chat" || area === "voice" || area === "files" || area === "dashboard" || area === "submission") return area;
+  return "other";
 }
 
-// Represents a discrete user interaction or telemetry event recorded in session.
-// Captures category types such as navigation changes, clicks, and console events.
-// Attached to subsequent error reports to supply chronological reproduction context.
-interface Breadcrumb {
-  type: "navigation" | "click" | "console" | "custom";
-  message: string;
-  timestamp: string;
-}
-
-// ─── Session ID ─────────────────────────────────────────
-
-// Unique pseudo-random identifier generated per browser session lifetime.
-// Distinguishes independent user visits across client error report logs.
-// Constructed by combining timestamps with randomized base-36 substrings.
-const SESSION_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-// ─── Breadcrumb Buffer ──────────────────────────────────
-
-// Maximum quantity of breadcrumb interaction records retained in memory.
-// Prevents unbounded memory growth by restricting the rolling event buffer.
-// Oldest interaction breadcrumbs are evicted when buffer capacity is exceeded.
-const MAX_BREADCRUMBS = 30;
-const breadcrumbs: Breadcrumb[] = [];
-
-// Appends a new user interaction event into the rolling breadcrumb history.
-// Stamps each entry with the current ISO timestamp and event category type.
-// Maintains a bounded queue by discarding the oldest item when over capacity.
-function pushBreadcrumb(type: Breadcrumb["type"], message: string) {
-  breadcrumbs.push({
-    type,
-    message,
-    timestamp: new Date().toISOString(),
-  });
-  if (breadcrumbs.length > MAX_BREADCRUMBS) {
-    breadcrumbs.shift();
+function errorCategory(error: Error) {
+  if (error.message === "useAuth must be used within an AuthProvider") return "auth-context";
+  if (error.message === "useTheme must be used within ThemeProvider") return "theme-context";
+  if (/Failed to fetch dynamically imported module|Importing a module script failed|ChunkLoadError/i.test(error.message)) {
+    return "asset-load";
   }
+  return "unexpected";
 }
 
-// ─── Report ─────────────────────────────────────────────
-
-// Gathers browser error context and transmits telemetry to the backend.
-// Outputs diagnostic traces to the local development console when active.
-// Issues a non-blocking keepalive POST request that ignores transient network failures.
-async function report(error: Error, componentStack?: string) {
-  const payload: ErrorReport = {
-    message: error.message,
-    stack: error.stack,
-    componentStack,
-    url: window.location.href,
-    timestamp: new Date().toISOString(),
-    userAgent: navigator.userAgent,
-    sessionId: SESSION_ID,
-    breadcrumbs: [...breadcrumbs],
-  };
-
-  // Log locally in dev
-  if (import.meta.env.DEV) {
-    console.group("🐛 Error Report");
-    console.error(error);
-    if (componentStack) console.log("Component Stack:", componentStack);
-    console.log("Breadcrumbs:", payload.breadcrumbs);
-    console.groupEnd();
+function appFrames(stack: string) {
+  const frames = new Set<string>();
+  const origin = window.location.origin;
+  for (const line of stack.split("\n").slice(0, 32)) {
+    if (!/^\s*at\s|^[\w$.<>]*@/.test(line)) continue;
+    const start = line.indexOf(`${origin}/`);
+    if (start < 0 || !/[\s(@]/.test(line[start - 1] ?? "")) continue;
+    const location = line.slice(start + origin.length + 1);
+    const match = location.match(/^(src\/[\w/-]+\.[cm]?[jt]sx?|assets\/[\w-]+\.js)(?:\?[^\s)]*?)?:(\d{1,7}):(\d{1,7})\)?\s*$/);
+    if (!match) continue;
+    const frame = `${match[1]}:${match[2]}:${match[3]}`;
+    if (frame.length <= 160) frames.add(frame);
+    if (frames.size >= 8) break;
   }
+  return [...frames];
+}
 
-  // Best-effort server report (non-blocking, swallow errors)
+export function createErrorDiagnostic(error: unknown, source: ErrorSource, componentStack?: string) {
+  const route = routeArea(window.location.pathname);
+  const category = error instanceof Error ? errorCategory(error) : "unexpected";
+  const stack = error instanceof Error && typeof error.stack === "string" ? error.stack : "";
+  const frames = appFrames(`${stack}\n${componentStack ?? ""}`);
+  return { source, category, route, frames };
+}
+
+export type ErrorDiagnostic = ReturnType<typeof createErrorDiagnostic>;
+
+const reports = new WeakMap<Error, Promise<string | null>>();
+
+async function send(diagnostic: ErrorDiagnostic): Promise<string | null> {
   try {
-    await fetch("/api/client-errors", {
+    const response = await fetch(buildApiUrl("/client-errors"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      credentials: "include",
+      body: JSON.stringify(diagnostic),
+      credentials: "omit",
+      referrerPolicy: "no-referrer",
       keepalive: true,
     });
+    if (response.status !== 202) return null;
+    const { request_id: reference } = await response.json();
+    return typeof reference === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(reference) ? reference : null;
   } catch {
-    // Failed to report — that's okay, don't cascade
+    return null;
   }
 }
 
-// ─── Global listeners ───────────────────────────────────
-
-// Binds global browser error listeners and DOM event tracking handlers.
-// Intercepts unhandled promise rejections, window errors, clicks, and routing.
-// Populates chronological diagnostic trails leading up to unexpected exceptions.
-function install() {
-  // Unhandled promise rejections
-  window.addEventListener("unhandledrejection", (event) => {
-    const error =
-      event.reason instanceof Error
-        ? event.reason
-        : new Error(String(event.reason || "Unhandled rejection"));
-    report(error);
-  });
-
-  // Uncaught errors
-  window.addEventListener("error", (event) => {
-    if (event.error instanceof Error) {
-      report(event.error);
-    }
-  });
-
-  // Navigation breadcrumbs
-  const origPushState = history.pushState.bind(history);
-  history.pushState = (...args) => {
-    pushBreadcrumb("navigation", `→ ${String(args[2] || "")}`);
-    return origPushState(...args);
-  };
-
-  // Click breadcrumbs
-  document.addEventListener(
-    "click",
-    (e) => {
-      const target = e.target as HTMLElement;
-      const id = target.id || target.dataset?.testid || "";
-      const tag = target.tagName?.toLowerCase() || "";
-      const label = target.textContent?.slice(0, 30) || "";
-      pushBreadcrumb("click", `${tag}${id ? `#${id}` : ""} "${label}"`);
-    },
-    { capture: true, passive: true }
-  );
+function report(error: unknown, diagnostic: ErrorDiagnostic): Promise<string | null> {
+  if (!(error instanceof Error)) return send(diagnostic);
+  const pending = reports.get(error);
+  if (pending) return pending;
+  const request = send(diagnostic);
+  reports.set(error, request);
+  return request;
 }
 
-// ─── Public API ─────────────────────────────────────────
+let installed = false;
 
-// Public client error monitoring API exposed for application consumption.
-// Packages initialization routines, error dispatchers, and breadcrumb loggers.
-// Enables modular integration with UI error boundaries and instrumentation.
-export const errorReporting = {
-  install,
-  report,
-  addBreadcrumb: pushBreadcrumb,
-};
+function install() {
+  if (installed) return;
+  installed = true;
+  window.addEventListener("unhandledrejection", ({ reason }) => {
+    const error = reason instanceof Error ? reason : new Error();
+    void report(error, createErrorDiagnostic(error, "unhandled-rejection"));
+  });
+  window.addEventListener("error", ({ error }) => {
+    if (error instanceof Error) {
+      queueMicrotask(() => void report(error, createErrorDiagnostic(error, "window-error")));
+    }
+  });
+}
+
+export const errorReporting = { install, report };

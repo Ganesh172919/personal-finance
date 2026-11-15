@@ -181,3 +181,18 @@ The server and client production builds passed. The full Python suite passed 496
 | Storage and scope | The API test verified the local `%PDF-` signature, download headers, zero Files records, and denial for another user. The cloud test verified that drafted Hindi text was saved and downloaded intact as UTF-8. The browser used the local test deployment. |
 
 Both production builds and the TypeScript checks passed. The full AI Core suite passed 496 tests. The focused server suite passed 211 tests across chat, document rendering and retrieval, voice, and the four end-to-end suites. The focused client suite passed 71 tests. Physical microphone capture and a hosted cloud deployment were outside this retest.
+
+## November 15 browser recovery and live chat retest
+
+| Built-in browser check | Observed result |
+| --- | --- |
+| Reported Local files crash | The original conversation URL showed the reported auth error before the fix. Reload restored the saved conversation. A subsequent Vite update to `AuthProvider` left the chat and its composer usable. |
+| Black recovery | A temporary QA page invoked the auth hook without a provider. The recovery background measured RGB 0, 0, 0 and the text RGB 255, 255, 255 with the document's light theme active. The gateway returned a report ID that appeared in the logs. Copy confirmed success, and the dashboard action opened the signed-in dashboard. The QA page was removed. |
+| Local and Cloud files chat | Local files correctly explained orbital free fall in one sentence. Cloud files returned only “Sunday” when asked for the day three days after Thursday. Both traces showed one live Groq GPT-OSS 20B call. The chat backgrounds measured pure black and pure white. |
+| Prisma dictation and Live Voice Chat | An imported synthetic clip filled the editable composer. The sent question returned ₹1,210 for two years. Hands-free imported speech sent the follow-up and reused context to return ₹1,331 for three years. Both calculations used zero model calls. |
+| Bharat Voice Q&A | An autumn leaves question received a relevant answer about chlorophyll and other pigments. The browser exposed synthesized replay, and the replay control was exercised. Evon v3.3 30B continued to show **Separate endpoint required**. |
+| Submission display | The simplified demo page displayed **Official rules** and **Submission form**. The old personal challenge banner, credits, and dossier controls were absent. |
+
+The security review covered the changed authentication, theme, recovery, and telemetry paths. The gateway tests passed for structured reports, rejection of raw diagnostics, and rate limits. The browser tests covered credential-free delivery, receipt validation, exclusion of third-party frames, and duplicate suppression for the same error object. Both JavaScript runtime dependency audits reported zero advisories. Git excludes local environment files, build folders, and Codex build artifacts. Live Evon inference, physical microphone input, a hosted cloud deployment, and a broader production security audit remain unverified.
+
+Both production builds passed. The focused retest passed 68 client tests and 197 server tests, including all four end-to-end suites. All 11 local submission checks passed.

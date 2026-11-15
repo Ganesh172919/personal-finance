@@ -17,6 +17,7 @@ const demoAssets = [
   "demo/verified-public-research.jpg",
   "demo/verified-local-files.jpg",
   "demo/verified-cloud-files.jpg",
+  "demo/verified-black-recovery.jpg",
 ].filter((file) => existsSync(path.join(output, file)));
 
 mkdirSync(output, { recursive: true });

@@ -25,8 +25,6 @@
  */
 
 import {
-  createContext,
-  useContext,
   useState,
   useEffect,
   useCallback,
@@ -38,45 +36,7 @@ import { ApiError, apiClient, fetchCsrfToken } from "@/services/api";
 import { reportClientError, reportClientWarning } from "@/lib/runtimeLogger";
 import { clearActiveOrgId } from "@/lib/orgContext";
 import { retireRequestContext } from "@/lib/requestContext";
-
-/**
- * User profile interface.
- * Matches the shape returned by GET /auth/profile.
- */
-// Represents the authenticated user profile returned from the backend session endpoint.
-// Encapsulates core identity properties, verification flags, and third-party auth providers.
-// Consumed across client contexts, route guards, and personalized display components.
-interface User {
-  id: string;
-  _id?: string;
-  name: string;
-  email: string;
-  photoURL?: string;
-  phoneNumber?: string;
-  authProvider?: string;
-  isEmailVerified?: boolean;
-}
-
-/**
- * Authentication context interface.
- * Provides user state, loading state, and auth methods.
- */
-// Defines the shape of the global authentication context state and actions.
-// Exposes the current user identity, session loading indicators, and error tracking.
-// Provides asynchronous handlers for signing out and manual session revalidation.
-interface AuthContextType {
-  user: User | null;                    // Current user (null if not authenticated)
-  loading: boolean;                     // True while checking auth status
-  authError: string | null;
-  logout: () => Promise<void>;          // Logout function
-  checkAuthStatus: () => Promise<void>; // Re-check auth status
-}
-
-// Create context with undefined default (will throw if used outside provider)
-// React Context instance holding the active user identity and auth handlers.
-// Initialized to undefined to enforce consumer execution inside AuthProvider.
-// Serves as the single source of truth for global authentication status.
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+import { AuthContext, type User } from "./authContextValue";
 
 /**
  * Authentication context provider.
@@ -106,10 +66,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  /**
-   * Checks the current authentication status by fetching the user profile.
-   * This is called on mount and can be called manually to refresh auth state.
-   */
   /**
    * Checks the current authentication status by fetching the user profile.
    * This is called on mount and can be called manually to refresh auth state.
@@ -145,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Log successful authentication (dev only)
       if (import.meta.env.DEV) {
-        console.log(`[Auth] Authenticated as ${profile.email} (provider: ${profile.authProvider || "email"})`);
+        console.debug("[Auth] Session verified");
       }
     } catch (error: any) {
       if (revision !== authRevision.current) return;
@@ -233,59 +189,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     </AuthContext.Provider>
   );
 }
-
-/**
- * Hook to access authentication context.
- *
- * Must be used within an AuthProvider. Throws if used outside the provider.
- *
- * @returns Authentication context (user, loading, logout, checkAuthStatus)
- *
- * @example
- * const { user, loading, logout } = useAuth();
- * if (loading) return <Spinner />;
- * if (!user) return <Redirect to="/login" />;
- */
-// Custom hook facilitating type-safe access to the global authentication context.
-// Validates that calling components reside within an enclosing AuthProvider tree.
-// Returns the authenticated user object, status flags, and logout dispatchers.
-export function useAuth() {
-  const context = useContext(AuthContext);
-
-  // Guard: ensure hook is used within AuthProvider
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-
-  return context;
-}
-
-/**
- * ══════════════════════════════════════════════════════════════════════
- * END-OF-FILE SUMMARY
- * ══════════════════════════════════════════════════════════════════════
- *
- * KEY TAKEAWAYS:
- * ─────────────
- * 1. **Context + Hook Pattern**: createContext + useContext + custom hook
- *    provides type-safe, reusable access to auth state throughout the app.
- *
- * 2. **CSRF + JWT**: The app uses both CSRF tokens (for state-changing requests)
- *    and JWT cookies (for authentication). This is a defense-in-depth approach.
- *
- * 3. **Credentials Include**: All auth requests use credentials: "include"
- *    to send HTTP-only cookies. This is required for cookie-based auth.
- *
- * 4. **Loading State**: The loading flag prevents flash redirects during
- *    the initial auth check.
- *
- * 5. **Graceful Logout**: The logout function clears local state even if
- *    the server call fails, ensuring the user always gets logged out client-side.
- *
- * HOW THIS FITS INTO THE SYSTEM:
- * ─────────────────────────────
- * AuthContext → provided by AppProviders
- * useAuth() → used by route guards, pages, and components
- * AuthContext → calls /auth/profile and /auth/logout endpoints
- * ══════════════════════════════════════════════════════════════════════
- */

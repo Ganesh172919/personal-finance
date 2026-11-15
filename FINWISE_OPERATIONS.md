@@ -91,6 +91,14 @@ Open the workflow trace and compare the route with the question. A ledger or cal
 
 Correlate Express and AI Core using the request ID. Look for `chat.turn.completed`, `chat.ai_context.built`, `public_web_research_completed`, `public_web_research_failed`, `ai.command.completed`, `voice.reasoning.completed`, `voice.query.completed`, `voice.expense.saved`, and `llm_call_success`. Check route, provider, model, duration, model-call count, source count, fallback, and cache-hit fields. Keep credentials, local logs, and real account records out of the public submission.
 
+## Diagnose a browser crash
+
+The black recovery screen can render before the authentication and theme providers initialize. Reload to retry the current page or select **Go to Dashboard**. Expand **Technical details** for the error category, route area, source, application file locations, and the report ID when available. The copy control uses the same details.
+
+Search the API logs for `client.error.reported` and the report ID shown in the browser. A single report records an error category, route area such as `chat-local`, capture source, and up to eight same-origin application frames. The browser omits session cookies, chat and file contents, raw error messages, query strings, and click history. The server validates the JSON and limits each IP to 10 reports per minute. The screen shows a receipt after the API returns HTTP 202 with a request ID.
+
+In development, the provider and hook import the same React context independently of Vite Fast Refresh. An update to the provider can replace the component while the context retains its identity. In a new deployment, check for an API or asset load failure first if reload leaves the recovery screen visible.
+
 ## Submit
 
 Use [the timed text script](DEMO_PRESENTATION.txt), [the public post drafts](DEMO_AND_POST.md), and [the verification report](SUBMISSION_QA.md). Run `npm run verify:submission` and `npm run package:submission`. The ZIP goes to `dist/submission`.

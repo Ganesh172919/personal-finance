@@ -23,7 +23,7 @@
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider } from "@/context/AuthContext";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { server } from "@/test/mocks/server";
 

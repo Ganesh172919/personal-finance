@@ -118,6 +118,7 @@ import { responseContext } from "./middleware/responseContext"; // Response cont
 import { securityHeaders } from "./middleware/securityHeaders"; // Additional security headers
 import { requestLogger } from "./middleware/requestLogger"; // Structured request logging
 import { mountApiRoutes } from "./routes/routeRegistry"; // Route mounting (single /api/* namespace)
+import { createClientErrorRouter } from "./routes/clientErrors";
 import { sendErrorResponse } from "./utils/apiResponse"; // Standardized error response utility
 import { getDeadLetterStats } from "./services/deadLetterQueue"; // Dead-letter queue stats
 import { getRedis } from "./config/redis"; // Redis cache client
@@ -441,6 +442,7 @@ export const createApp = () => {
    * Validates CSRF tokens for state-changing operations (POST, PUT, DELETE).
    */
   app.use("/api", csrfProtection);
+  app.use("/api/client-errors", createClientErrorRouter());
 
   /**
    * Authentication Rate Limiter

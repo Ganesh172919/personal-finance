@@ -34,7 +34,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Redirect } from "wouter";                              // wouter's redirect component
 
 import { FullScreenLoader } from "@/components/feedback/FullScreenLoader"; // Loading indicator
-import { useAuth } from "@/context/AuthContext";                  // Authentication context
+import { useAuth } from "@/hooks/useAuth";                  // Authentication context
 import { Button } from "@/components/ui/Button";
 
 // Fallback error UI presented when session authentication checks fail or timeout.

@@ -21,7 +21,7 @@
  */
 import { Moon, Sun } from "lucide-react";
 
-import { useTheme } from "@/components/ThemeProvider";
+import { useTheme } from "@/context/themeContext";
 import { cn } from "@/lib/utils";
 
 // Defines configuration properties for the ThemeToggle button group.

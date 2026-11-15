@@ -12,7 +12,7 @@
 import { Mic, ShieldCheck } from "lucide-react";
 import { Link } from "wouter";
 import { PageIntro } from "@/components/layout/PageIntro";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { BharatVoiceAssistant } from "@/components/voice/BharatVoiceAssistant";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
