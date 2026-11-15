@@ -126,54 +126,56 @@ export class LiveGnaniVoiceProvider implements IGnaniVoiceProvider {
     const sampleRate = 16_000;
 
     if (apiKey) {
+      const requestBody = {
+        text,
+        language: languageCode,
+        voice: voiceGender === "male" ? "Avinash" : "Shivani",
+        speed,
+        model: "timbre-v3.0",
+        audio_config: {
+          sample_rate: sampleRate,
+          num_channels: 1,
+          sample_width: 2,
+          encoding: "linear_pcm",
+          container: "wav",
+        },
+      };
+      const deadline = Date.now() + 15_000;
       try {
-        const response = await axios.post(
-          env.GNANI_TTS_URL,
-          {
-            text,
-            language: languageCode,
-            voice: voiceGender === "male" ? "Avinash" : "Shivani",
-            speed,
-            model: "timbre-v3.0",
-            audio_config: {
-              sample_rate: sampleRate,
-              num_channels: 1,
-              sample_width: 2,
-              encoding: "linear_pcm",
-              container: "wav",
-            },
-          },
-          {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const remainingMs = deadline - Date.now();
+          if (remainingMs < 1_000) break;
+          const response = await axios.post(env.GNANI_TTS_URL, requestBody, {
             headers: {
               "Content-Type": "application/json",
               "X-API-Key-ID": apiKey,
             },
             responseType: "arraybuffer",
-            timeout: 15000,
+            timeout: remainingMs,
             signal: options?.signal,
+          });
+
+          const audioBuffer = Buffer.from(response.data);
+          if (audioBuffer.length <= 44 || audioBuffer.toString("ascii", 0, 4) !== "RIFF" ||
+              audioBuffer.toString("ascii", 8, 12) !== "WAVE") {
+            logger.warn({ event: "voice.timbre.invalid_audio", attempt, bytes: audioBuffer.length, providerStatus: response.status },
+              "Timbre returned an invalid WAV");
+            continue;
           }
-        );
 
-        const audioBuffer = Buffer.from(response.data);
-        if (
-          audioBuffer.length <= 44 ||
-          audioBuffer.toString("ascii", 0, 4) !== "RIFF" ||
-          audioBuffer.toString("ascii", 8, 12) !== "WAVE"
-        ) {
-          throw new Error("Unexpected Timbre audio response");
+          return {
+            audioBuffer,
+            audioBase64: audioBuffer.toString("base64"),
+            contentType: "audio/wav",
+            mimeType: "audio/wav",
+            durationMs: Math.round(((audioBuffer.length - 44) / (sampleRate * 2)) * 1_000),
+            language,
+            voiceGender,
+            model: "Timbre v3.0 (TTS)",
+            provider: "gnani_timbre_live",
+          };
         }
-
-        return {
-          audioBuffer,
-          audioBase64: audioBuffer.toString("base64"),
-          contentType: "audio/wav",
-          mimeType: "audio/wav",
-          durationMs: Math.round(((audioBuffer.length - 44) / (sampleRate * 2)) * 1_000),
-          language,
-          voiceGender,
-          model: "Timbre v3.0 (TTS)",
-          provider: "gnani_timbre_live",
-        };
+        throw new Error("Unexpected Timbre audio response");
       } catch (err: any) {
         options?.signal?.throwIfAborted();
         logger.warn(

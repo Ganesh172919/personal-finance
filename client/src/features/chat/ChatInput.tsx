@@ -19,7 +19,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Paperclip, Send, X, Mic, Upload } from "lucide-react";
+import { Globe, Loader2, Paperclip, Send, X, Mic, Upload } from "lucide-react";
 
 import { useToast } from "@/hooks/useToast";
 import { uploadWorkspaceFiles } from "@/lib/api/files";
@@ -29,6 +29,8 @@ import { prepareVoiceRecording } from "@/lib/voiceRecording";
 import { Button } from "@/components/ui/Button";
 import { Switch as ToggleSwitch } from "@/components/ui/Switch";
 import type { IChatAttachment } from "@/types/chat.types";
+
+const WEB_SEARCH_PREFIX = "Search the web for ";
 
 // Property definition contract for the conversational chat input component.
 // Configures send dispatchers, loading states, custom placeholders, and attachments.
@@ -55,9 +57,11 @@ export function ChatInput({
   workspaceAttachments = [],
   onRemoveWorkspaceAttachment,
   onBusyChange,
-  placeholder = "Ask me anything about your finances or attach files for context...",
+  placeholder = "Ask a question or attach a file...",
 }: ChatInputProps) {
   const [message, setMessage] = useState(initialMessage);
+  const webSearch = message.toLowerCase().startsWith(WEB_SEARCH_PREFIX.toLowerCase());
+  const searchQuestionMissing = webSearch && !message.slice(WEB_SEARCH_PREFIX.length).trim();
   const [narrative, setNarrative] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -190,6 +194,14 @@ export function ChatInput({
     setSendError(null);
 
     try {
+      if (searchQuestionMissing) {
+        setSendError("Enter a public question to search for.");
+        return;
+      }
+      if (webSearch && (selectedFiles.length || workspaceAttachments.length)) {
+        setSendError("Send the public question separately from workspace files.");
+        return;
+      }
       if (selectedFiles.length + workspaceAttachments.length > 10) {
         setSendError("Attach up to 10 files per message. Remove a file before sending. Your draft is kept.");
         return;
@@ -355,7 +367,7 @@ export function ChatInput({
             <Button
               aria-label={isBusy ? "Sending message" : "Send message"}
               onClick={() => void handleSend()}
-              disabled={(!message.trim() && selectedFiles.length === 0 && workspaceAttachments.length === 0) || isBusy || Boolean(dictationPhase)}
+              disabled={searchQuestionMissing || (!message.trim() && selectedFiles.length === 0 && workspaceAttachments.length === 0) || isBusy || Boolean(dictationPhase)}
               size="sm"
               className="flex-shrink-0 rounded-2xl"
             >
@@ -366,13 +378,28 @@ export function ChatInput({
 
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant={webSearch ? "secondary" : "ghost"}
+              size="sm"
+              aria-pressed={webSearch}
+              aria-describedby={webSearch ? "chat-composer-hint" : undefined}
+              disabled={isBusy || Boolean(dictationPhase)}
+              onClick={() => {
+                setMessage(webSearch ? message.slice(WEB_SEARCH_PREFIX.length) : WEB_SEARCH_PREFIX + message);
+                setSendError(null);
+                textareaRef.current?.focus();
+              }}
+            >
+              <Globe className="mr-1 h-4 w-4" aria-hidden="true" /> Search web
+            </Button>
             <span className="text-xs text-muted-foreground">Narrative mode</span>
             <ToggleSwitch aria-label="Narrative mode" checked={narrative} onCheckedChange={setNarrative} disabled={isBusy} />
             <span className="text-xs text-muted-foreground">{narrative ? "deeper analysis" : "faster response"}</span>
           </div>
 
           <p id="chat-composer-hint" className="text-xs text-muted-foreground">
-            Press Enter to send, Shift+Enter for a new line.
+            {webSearch ? "Use public information. Only this question is sent to web search." : "Press Enter to send, Shift+Enter for a new line."}
             {message.length >= 3600 ? ` ${message.length}/4000 characters` : ""}
           </p>
         </div>

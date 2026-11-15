@@ -153,3 +153,18 @@ The updated spending route goes directly to the authenticated ledger and skips A
 The root launcher reported healthy client, API, and AI Core endpoints. The AI Core request and response schemas both included `conversation_mode`. The live speech smoke check produced a 74,284-byte WAV and Prisma read the expected Hindi ₹50 sentence. Evon v3.3 30B appeared on the website as requiring a separate endpoint. Live Evon inference and production traffic remain unverified.
 
 The final checks passed 552 client tests, 492 AI Core tests, and 185 server tests across chat, transport, speech, and all four end-to-end suites. The server and client builds passed, as did the nine local submission checks. The server suite also verified that an older AI Core stream cannot persist a generic answer and that the Hindi question about the highest spending category uses the ledger.
+
+## November 15 general chat and public research retest
+
+| Built-in browser check | Observed result |
+| --- | --- |
+| Translation containing finance terms | Before the fix, asking to translate “my budget” into French produced a financial plan. The same question in a fresh chat returned “mon budget” with one Groq call. |
+| Coding | A request for Python code to count English vowels returned code only. Its set included lowercase and uppercase vowels. The trace recorded one call. |
+| General question about an attachment | Chat read a synthetic text note and extracted the 12 seedling kits, Tuesday delivery, and 9:30 a.m. meeting time. OpenRouter returned the answer after the primary provider failed. The trace recorded two calls. |
+| Public research | The broad event question surfaced institute pages without verifying the date. A more specific question returned July 4, 2025 for the Seventh Convocation and linked the official invitation. The targeted run used one Groq call and took about 22.6 seconds. [Institute invitation](https://assets.iiitdwd.ac.in/docs/Invitation_2025_H.pdf) |
+| Research isolation | The server test seeded a private chat turn first. The research payload contained the current public question and routing flags. An attempt to include an attachment returned 400 before calling AI Core. Source parsing tests used only URLs reported as opened by the provider. |
+| Ledger and dictation | The synthetic workspace returned $1.80 in November spending with zero model calls. Prisma's imported dictation was editable before submission and produced ₹1,210. The hands-free follow-up produced ₹1,331 using the same principal and interest rate. |
+| Bharat Voice general knowledge | A question about lunar phases received a correct one-sentence explanation. Timbre initially returned malformed audio and the UI labeled the fallback chime. The retained 15-second budget now allows one retry for malformed audio. The browser retest showed live Timbre replay and the gateway logged `gnani_timbre_live`. |
+| Product and submission | The built-in browser measured pure white and pure black backgrounds. Evon v3.3 30B remained visible with its separate endpoint status. The simplified demo page showed the rules and submission form. Live Evon inference and physical microphone capture were not verified. |
+
+The server and client production builds passed. The full Python suite passed 496 tests. The focused server run passed 189 tests, including all four end-to-end suites and the Timbre retry contract. The focused client run passed 50 tests. The live Timbre–Prisma check produced a 79,404-byte WAV and the expected ₹50 Hindi transcript. All 10 local submission checks passed.

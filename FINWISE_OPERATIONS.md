@@ -21,10 +21,11 @@ The local launcher checks Express at `/readyz`, which requires a MongoDB connect
 | Provider | Configuration | Live verification |
 | --- | --- | --- |
 | Groq or another supported text provider | Set the provider key in `server/AI_Core/.env`. `GROQ_API_KEY` uses the existing provider pool. | Send an original question in Finance Chat and check its workflow trace for the model, provider, and number of calls. |
+| Groq public web search | Configure a Groq key in the same pool. Public research uses browser search with `openai/gpt-oss-20b`. | Select **Search web** in Finance Chat, enter a public question, and open the source link in the reply. |
 | Gnani Prisma and Timbre | Set `GNANI_API_KEY` in `server/.env`. The example lists the speech endpoints. Check the live model label on each result. If Timbre is unavailable, the receipt displays confirmation text and labels the fallback chime. | Run `npm run verify:gnani`. It sends a synthetic Hindi statement to Timbre and then transcribes the returned WAV through Prisma. |
 | Gnani Evon v3.3 30B | Set `GNANI_REASONING_URL`, `GNANI_REASONING_API_KEY` if the endpoint requires it, and `GNANI_MODEL` in both service environments. Use the OpenAI-compatible base URL and the model ID served by the deployment. | Check Bharat Voice for endpoint configuration. Confirm live inference through the actual provider and model on a request trace. |
 
-The test workspace uses Groq for conversation and Gnani for speech. Evon has provider contract coverage and requires a separate live deployment. General chat can help frame public research and identify missing sources. Live web verification is unavailable in the test workspace.
+The test workspace uses Groq for conversation and public research, and Gnani for speech. Evon has provider contract coverage and requires a separate live deployment.
 
 ## Request paths
 
@@ -39,11 +40,16 @@ The test workspace uses Groq for conversation and Gnani for speech. Evon has pro
 
 Ordinary conversation takes one gateway request to AI Core and usually one model call. Failover can add attempts. Supported ledger totals and compound-interest calculations use zero model calls. Chat cache keys include workspace and thread state. Chat and dashboard cache keys changed with the routing contract. The API verifies that AI Core honored the conversational option before accepting a response, and the client preserves unsent drafts when it receives a retryable error.
 
+Ordinary Finance Chat questions can cover general knowledge, coding, translation, writing, and financial education. If you attach a workspace file, the model can use its available text excerpts. For current facts or a public source, select **Search web** or begin the message with `Search the web for` or `/search`. Enter a self-contained public question. Only that question goes to the browsing model. Search skips the response cache, workspace files, finance context, and conversation history. The reply links to public pages the browsing tool opened. A missing source yields an explicit unverified result. A provider failure preserves the draft for retry.
+
 Live Voice Chat uses Prisma for speech-in and Timbre for speech-out. Its completed utterances enter the same thread as typed messages. Bharat Voice Q&A handles individual questions and sends general questions through AI Core. Expense preview and save use a signed draft tied to the workspace and user so the ledger receives the details the user reviewed.
+
+If Timbre returns a successful HTTP response with malformed WAV data, the server makes one retry within the original 15-second synthesis budget. Check `voice.timbre.invalid_audio` for the attempt and byte count. If usable audio stays unavailable, the interface labels the fallback chime and preserves the generated text.
 
 ## Verify the application
 
 1. Open Finance Chat and send `hi`, an English public-topic question, and a Hindi question. Check that each addresses its prompt and shows the conversational assistant in the trace.
+   Try `Translate the phrase “my budget” into French` and a request for a short Python function. Then enable **Search web** and ask for the date in the official IIIT Dharwad Seventh Convocation invitation. Check the PDF link in the answer.
 2. Ask `How much did I spend this month?` and compare it with the ledger in the same reporting currency. The saved-record answer should show zero model calls.
 3. Open the dashboard quick assistant and send a different question. Check the answer and the `ai.command.completed` event in the Express log.
 4. Ask a question in Bharat Voice and replay the Timbre answer. Set a Food & Dining allocation of INR 835, start with no dining spending, and preview a ₹50 expense. The expected remainder is ₹785.
@@ -68,7 +74,7 @@ The browser observations and limitations are recorded in [SUBMISSION_QA.md](SUBM
 
 Open the workflow trace and compare the route with the question. A ledger or calculator reply can be correct with zero model calls. A greeting that shows a full financial plan indicates a routing problem. Try **Regenerate** against the current build. If new messages show a retryable error, check the compatibility schema, API and Core health, provider configuration, and provider limits.
 
-Correlate Express and AI Core using the request ID. Look for `chat.turn.completed`, `ai.command.completed`, `voice.reasoning.completed`, `voice.query.completed`, `voice.expense.saved`, and `llm_call_success`. Check route, provider, model, duration, model-call count, fallback, and cache-hit fields. Keep credentials, local logs, and real account records out of the public submission.
+Correlate Express and AI Core using the request ID. Look for `chat.turn.completed`, `chat.ai_context.built`, `public_web_research_completed`, `public_web_research_failed`, `ai.command.completed`, `voice.reasoning.completed`, `voice.query.completed`, `voice.expense.saved`, and `llm_call_success`. Check route, provider, model, duration, model-call count, source count, fallback, and cache-hit fields. Keep credentials, local logs, and real account records out of the public submission.
 
 ## Submit
 

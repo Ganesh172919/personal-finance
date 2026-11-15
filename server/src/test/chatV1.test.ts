@@ -133,6 +133,35 @@ describe("chat v1 API", () => {
       .set("x-csrf-token", csrfToken).expect(404);
   });
 
+  it("sends only the explicit public question to web research and rejects file attachments", async () => {
+    const headers = [cookie, csrfCookie];
+    const created = await request(app).post("/api/chat/sessions")
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken).send({}).expect(201);
+    const ask = (content: string, fileIds: string[] = []) => request(app)
+      .post(`/api/chat/sessions/${created.body.id}/messages`)
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken).send({ content, fileIds });
+
+    await ask("My private test record is not public.").expect(200);
+    const core = vi.mocked(processAiCoreRequest);
+    core.mockClear();
+    await ask("Search the web for ").expect(400);
+    await ask("Search the web for public school events", [new Types.ObjectId().toString()]).expect(400);
+    expect(core).not.toHaveBeenCalled();
+    core.mockResolvedValueOnce({
+      success: true, final_output: "The institute published an event agenda.",
+      analysis_type: "public_web_research", agent: "public_web_research", agents_involved: ["public_web_research"],
+      detailed_analysis: {}, insights: [], workflow_trace: [], fallback_used: false,
+      llm_call_count: 1, request_id: "public-research-test",
+    });
+    const response = await ask("Search the web for public school events").expect(200);
+    expect(core.mock.calls[0]?.[0]).toEqual({
+      user_input: "public school events", user_profile: null, user_id: ownerUserId, org_id: expect.any(String),
+      options: { conversation_mode: true, public_web_search: true },
+    });
+    expect(response.body.assistantMessage.metadata.analysisType).toBe("public_web_research");
+    expect(response.body.assistantMessage.metadata.cacheHit).toBe(false);
+  });
+
   it("answers a current-month spending question from the caller’s ledger without AI Core", async () => {
     vi.mocked(processAiCoreRequest).mockClear();
     const userId = new Types.ObjectId(ownerUserId);

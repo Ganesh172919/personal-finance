@@ -199,11 +199,23 @@ _PLAN_REQUEST = re.compile(
     r"(?:financial plan|budget plan|debt payoff plan|investment plan|cash flow forecast)\b",
     re.I,
 )
+_GENERAL_CONTENT_REQUEST = re.compile(
+    r"^(?:(?:please|(?:can|could|would) you)\s+)*(?:translate|rewrite|rephrase|proofread|transliterate|"
+    r"(?:write|draft|generate|create|make)\s+(?:\w+\s+){0,4}"
+    r"(?:code|script|function|program|poem|story|email|essay|dialogue|song|quiz))\b",
+    re.I,
+)
+_HYPOTHETICAL_REQUEST = re.compile(r"\b(?:hypothetical|fictional|sample|example|assume)\b", re.I)
+_SAVED_WORKSPACE = re.compile(r"\b(?:saved|recorded|workspace|ledger|bank statement|uploaded)\b", re.I)
 
 
 def wants_financial_workflow(question: str) -> bool:
     """Select the planner for saved financial data or an explicit plan request."""
     question = question.split("\n\nAttached workspace files:", 1)[0]
+    if _GENERAL_CONTENT_REQUEST.search(question.strip()):
+        return False
+    if _HYPOTHETICAL_REQUEST.search(question) and not _SAVED_WORKSPACE.search(question):
+        return False
     return bool(_WORKSPACE_FINANCES.search(question) or _PLAN_REQUEST.search(question))
 
 

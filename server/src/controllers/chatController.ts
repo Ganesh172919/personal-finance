@@ -120,7 +120,7 @@ import WorkspaceFileModel from "../models/workspaceFileModel";
 import { IUserDocument } from "../models/userModel";
 import OrganizationModel from "../models/organizationModel";
 import mongoose from "mongoose";
-import { processAiCoreRequest } from "../services/aiCoreClient";
+import { processAiCoreRequest, type AiCoreProcessRequest } from "../services/aiCoreClient";
 import { isAiCapacityError } from "../services/aiConcurrency";
 import { AiCoreOverloadedError, AiCoreUnavailableError } from "../services/aiCoreResilience";
 import { buildProcessRequest } from "../services/aiRequestBuilder";
@@ -557,6 +557,12 @@ export async function sendMessage(req: Request, res: Response) {
     if (!content || typeof content !== "string" || content.trim().length === 0) {
       return res.status(400).json({ message: "Message content is required" });
     }
+    const webSearchDirective = /^\s*(?:\/search|(?:please\s+)?search (?:the )?web(?: for)?)\b\s*:?[ \t]*/i.exec(content);
+    const webQuestion = webSearchDirective ? content.slice(webSearchDirective[0].length).trim() : null;
+    if (webQuestion === "") throw new HttpError(400, "WEB_QUESTION_REQUIRED", "Enter a public question to search for.");
+    if (webQuestion && requestedFileIds.length) {
+      throw new HttpError(400, "WEB_SEARCH_WITH_ATTACHMENTS", "Send the public question separately from workspace files.");
+    }
 
     if (!mongoose.Types.ObjectId.isValid(sessionId)) {
       return res.status(400).json({ message: "Invalid session ID" });
@@ -620,7 +626,7 @@ export async function sendMessage(req: Request, res: Response) {
         { createdAt: originalUserMessage.createdAt, _id: { $lt: originalUserMessage._id } },
       ] }
       : {};
-    const historyDocs = await ChatMessageModel.find({ orgId, userId: user._id, sessionId: session._id, ...historyCutoff })
+    const historyDocs = webQuestion ? [] : await ChatMessageModel.find({ orgId, userId: user._id, sessionId: session._id, ...historyCutoff })
       .sort({ createdAt: -1, _id: -1 })
       .limit(6)
       .lean();
@@ -632,7 +638,7 @@ export async function sendMessage(req: Request, res: Response) {
         content: String(message.content)
       }));
 
-    const monthlySpendingQuestion = requestedFileIds.length || originalUserMessage?.metadata?.attachments?.length
+    const monthlySpendingQuestion = webQuestion || requestedFileIds.length || originalUserMessage?.metadata?.attachments?.length
       ? null
       : getMonthlySpendingPeriod(content) ?? getMonthlySpendingFollowUp(content, historyDocs.map(message => ({
         role: message.role,
@@ -655,8 +661,8 @@ export async function sendMessage(req: Request, res: Response) {
     });
 
     // Get the user's financial profile for AI context
-    const documentRequest = parseChatDocumentRequest(content);
-    const financialProfile = documentRequest || monthlySpendingQuestion
+    const documentRequest = webQuestion ? null : parseChatDocumentRequest(content);
+    const financialProfile = webQuestion || documentRequest || monthlySpendingQuestion
       ? null
       : await ensureProfileWithMigration({ orgId, userId: user._id });
 
@@ -721,14 +727,14 @@ export async function sendMessage(req: Request, res: Response) {
         ? new Date(session.summaryUpdatedAt as unknown as Date).toISOString()
         : undefined;
 
-      const journalContext = await getJournalContextForAi({ orgId, userId: user._id });
+      const journalContext = webQuestion ? undefined : await getJournalContextForAi({ orgId, userId: user._id });
 
-      const cacheKey = buildChatMessageCacheKey({
+      const cacheKey = webQuestion ? null : buildChatMessageCacheKey({
         orgId: orgId.toString(),
         userId: user._id.toString(),
         profileUpdatedAt,
         transactionsUpdatedAt,
-        journalUpdatedAt: journalContext.updatedAt,
+        journalUpdatedAt: journalContext?.updatedAt,
         narrative,
         sessionId: session._id.toString(),
         sessionMessageCount: session.messageCount,
@@ -737,7 +743,7 @@ export async function sendMessage(req: Request, res: Response) {
       });
       aiCacheKey = cacheKey;
 
-      const cached = bypassCache ? null : await AiResponseCacheModel.findOne({ cacheKey }).lean();
+      const cached = bypassCache || !cacheKey ? null : await AiResponseCacheModel.findOne({ cacheKey }).lean();
       if (cached?.responseData && typeof cached.responseData === "object") {
         const cachedData = cached.responseData as any;
         aiResponseContent = String(cachedData.content || aiResponseContent);
@@ -747,42 +753,54 @@ export async function sendMessage(req: Request, res: Response) {
         recordAiCache({ endpoint: "chat-message", hit: true });
       } else {
         recordAiCache({ endpoint: "chat-message", hit: false });
-        const [txResult, orgSettings, grounding] = await Promise.all([
-          fetchTransactionsForAi({ orgId, userId: user._id }),
-          getOrgAiSettings(orgId),
-          buildAiFinanceGrounding({
-            orgId,
-            userId: user._id,
-            selectedWorkspaceFileIds: requestedFileIds,
-            retrievalQuery: String(content || ""),
-          }),
-        ]);
+        let aiRequest: AiCoreProcessRequest;
+        let grounding: Awaited<ReturnType<typeof buildAiFinanceGrounding>> | undefined;
+        if (webQuestion) {
+          aiRequest = {
+            user_input: webQuestion,
+            user_profile: null,
+            org_id: orgId.toString(),
+            user_id: user._id.toString(),
+            options: { conversation_mode: true, public_web_search: true },
+          };
+        } else {
+          const [txResult, orgSettings, financeGrounding] = await Promise.all([
+            fetchTransactionsForAi({ orgId, userId: user._id }),
+            getOrgAiSettings(orgId),
+            buildAiFinanceGrounding({
+              orgId,
+              userId: user._id,
+              selectedWorkspaceFileIds: requestedFileIds,
+              retrievalQuery: content,
+            }),
+          ]);
+          grounding = financeGrounding;
 
-         const { request: aiRequest, stats } = buildProcessRequest({
-           userInput: aiUserInput,
-           profile: financialProfile,
-           financeContext: grounding.finance_context,
-           orgId: orgId.toString(),
-           userId: user._id.toString(),
-           sessionId: session.aiSessionId,
-           resumeFromCheckpoint: ["in_progress", "failed", "paused"].includes(String(session.aiSessionStatus || "")),
-           orgSettings,
-           transactions: txResult.transactions,
-           totalTransactions: txResult.stats.totalTransactions,
-           conversationHistory,
-           sessionSummary: [session.summary, journalContext.summary].filter(Boolean).join("\n\n") || undefined,
-           narrative,
-         });
-         aiContextStats = stats;
-
-        logger.info(
-          `[requestId=${requestId}] chat.aiRequest transactionCountSent=${stats.sentTransactions} droppedTransactions=${stats.droppedTransactions}`
-        );
-
-        aiRequest.options = { ...aiRequest.options, conversation_mode: true };
+          const { request, stats } = buildProcessRequest({
+            userInput: aiUserInput,
+            profile: financialProfile,
+            financeContext: grounding.finance_context,
+            orgId: orgId.toString(),
+            userId: user._id.toString(),
+            sessionId: session.aiSessionId,
+            resumeFromCheckpoint: ["in_progress", "failed", "paused"].includes(String(session.aiSessionStatus || "")),
+            orgSettings,
+            transactions: txResult.transactions,
+            totalTransactions: txResult.stats.totalTransactions,
+            conversationHistory,
+            sessionSummary: [session.summary, journalContext?.summary].filter(Boolean).join("\n\n") || undefined,
+            narrative,
+          });
+          aiContextStats = stats;
+          req.log?.info({ event: "chat.ai_context.built", sentTransactions: stats.sentTransactions,
+            droppedTransactions: stats.droppedTransactions }, "Chat AI context built");
+          aiRequest = request;
+          aiRequest.options = { ...aiRequest.options, conversation_mode: true };
+        }
         const aiResponse = await processAiCoreRequest(aiRequest, requestId, { userId: user._id.toString() });
-        if (!aiResponse.success || !aiResponse.final_output?.trim() || (aiResponse.fallback_used && (
-          aiResponse.analysis_type === "chat_assistant" || aiResponse.session_status === "failed" ||
+        if (!aiResponse.success || !aiResponse.final_output?.trim() ||
+          (webQuestion && aiResponse.analysis_type !== "public_web_research") || (aiResponse.fallback_used && (
+          aiResponse.analysis_type === "chat_assistant" || aiResponse.analysis_type === "public_web_research" || aiResponse.session_status === "failed" ||
           aiResponse.workflow_trace.some(step => step.agent === "ai_core_client")
         ))) {
           recordAiFallback({ endpoint: "chat-message" });
@@ -807,8 +825,8 @@ export async function sendMessage(req: Request, res: Response) {
             plan: normalizedPlan,
             planValid,
             toolCalls: aiResponse.tool_calls || [],
-            evidence: aiResponse.evidence || grounding.evidence,
-            confidence: aiResponse.confidence || grounding.confidence,
+            evidence: aiResponse.evidence || grounding?.evidence,
+            confidence: aiResponse.confidence || grounding?.confidence,
             suggestedActions:
               aiResponse.suggested_actions ||
               [
@@ -827,9 +845,9 @@ export async function sendMessage(req: Request, res: Response) {
             attachments,
             aiCoreDurationMs: aiDurationMs,
             cacheHit: false,
-            sessionId: aiResponse.session_id,
-            sessionStatus: aiResponse.session_status,
-            workflowPhase: aiResponse.workflow_phase,
+            sessionId: webQuestion ? undefined : aiResponse.session_id,
+            sessionStatus: webQuestion ? undefined : aiResponse.session_status,
+            workflowPhase: webQuestion ? undefined : aiResponse.workflow_phase,
             activeProvider: aiResponse.active_provider,
             activeModel: aiResponse.active_model,
             promptVersion: aiResponse.prompt_version,
@@ -842,7 +860,7 @@ export async function sendMessage(req: Request, res: Response) {
           }
         }
 
-        if (!aiResponse.fallback_used) await AiResponseCacheModel.findOneAndUpdate(
+        if (cacheKey && !aiResponse.fallback_used) await AiResponseCacheModel.findOneAndUpdate(
           { cacheKey },
           {
             $set: {
@@ -858,12 +876,13 @@ export async function sendMessage(req: Request, res: Response) {
       }
       }
     } catch (aiError: any) {
-      if (isAiCapacityError(aiError) || aiError instanceof AiCoreOverloadedError || aiError instanceof AiCoreUnavailableError) {
+      if (webQuestion || isAiCapacityError(aiError) || aiError instanceof AiCoreOverloadedError || aiError instanceof AiCoreUnavailableError) {
         // A shed request is not a successful answer; don't leave an orphaned
         // question, consume quota, or turn a retryable 429/503 into a 200.
         if (!originalUserMessage) {
           await ChatMessageModel.deleteOne({ _id: userMessage._id, orgId, userId: user._id });
         }
+        if (webQuestion && !(aiError instanceof HttpError)) throw new AiCoreUnavailableError(5);
         throw aiError;
       }
       logger.error({ error: aiError?.message ?? aiError }, `[requestId=${requestId}] ${documentRequest ? "Document creation error" : monthlySpendingQuestion ? "Ledger summary error" : "AI service error"}`);

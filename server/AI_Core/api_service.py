@@ -915,6 +915,7 @@ class ProcessOptions(BaseModel):
 
     narrative: bool = False
     conversation_mode: bool = False
+    public_web_search: bool = False
     llm_decomposition: bool = False
     include_evidence: bool = True
     include_document_passages: bool = True
@@ -2572,7 +2573,7 @@ def _process_financial_request_sync(
         )
 
         # Build structured plan (always present)
-        direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator"}
+        direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator", "public_web_research"}
         if direct_answer:
             plan = Plan(executive_summary="")
             action_type = None
@@ -2749,8 +2750,8 @@ def _process_financial_request_sync(
             active_provider=llm_route.get("active_provider") if llm_route else None,
             active_model=llm_route.get("active_model") if llm_route else None,
             active_key_id=llm_route.get("active_key_id") if llm_route else None,
-            fallback_path=llm_route.get("fallback_path") if llm_route else [],
-            recovered_failures=llm_route.get("recovered_failures") if llm_route else [],
+            fallback_path=(llm_route or {}).get("fallback_path") or [],
+            recovered_failures=(llm_route or {}).get("recovered_failures") or [],
             recovered_from_checkpoint=bool(result.get("recovered_from_checkpoint")),
         )
 
@@ -3260,7 +3261,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                 str(analysis_raw).split(".")[-1].lower() if hasattr(analysis_raw, "name") else str(analysis_raw).lower()
             )
 
-            direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator"}
+            direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator", "public_web_research"}
             if direct_answer:
                 plan = Plan(executive_summary="")
                 action_type = None
@@ -3316,8 +3317,8 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                         "active_provider": llm_route.get("active_provider") if llm_route else None,
                         "active_model": llm_route.get("active_model") if llm_route else None,
                         "active_key_id": llm_route.get("active_key_id") if llm_route else None,
-                        "fallback_path": llm_route.get("fallback_path") if llm_route else [],
-                        "recovered_failures": llm_route.get("recovered_failures") if llm_route else [],
+                        "fallback_path": (llm_route or {}).get("fallback_path") or [],
+                        "recovered_failures": (llm_route or {}).get("recovered_failures") or [],
                         "recovered_from_checkpoint": bool(result.get("recovered_from_checkpoint")),
                     }
                 ),

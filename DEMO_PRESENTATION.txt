@@ -44,6 +44,10 @@ THREE-MINUTE JUDGE WALKTHROUGH
 02:43–03:00 | Describe what ran
 “Prisma transcribed the audio and Timbre spoke the replies. FinWise used the saved ledger and calculator for exact totals. Groq answered the general education examples. Evon v3.3 30B is supported through a separately configured inference endpoint.”
 
+OPTIONAL JUDGE Q&A
+
+For a non-finance question, ask “Translate the phrase ‘my budget’ into French. Only give the translation.” The verified answer was “mon budget,” from the conversational assistant. For a question that requires a public source, choose Search web and ask “What date does IIIT Dharwad’s official Seventh Convocation invitation list? Check assets.iiitdwd.ac.in.” Point to July 4, 2025 and the official PDF link. Public research uses Groq. The 60-second entry demonstrates Gnani Prisma and Timbre.
+
 RECORDING AND SUBMISSION
 
 The bundled MP4s were recorded with a workspace that already had one ₹50 dining expense. The ₹735 preview in those videos is correct for that starting state. For a fresh recording, use the ₹785 example above. The in-app browser kept microphone permission pending during QA, so the verified dictation and hands-free recording used imported clips. Show the complete voice demo with the audio that actually ran.

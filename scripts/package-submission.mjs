@@ -14,6 +14,7 @@ const demoAssets = [
   "demo/verified-budget.jpg",
   "demo/verified-chat.jpg",
   "demo/verified-live-chat.jpg",
+  "demo/verified-public-research.jpg",
 ].filter((file) => existsSync(path.join(output, file)));
 
 mkdirSync(output, { recursive: true });
@@ -30,7 +31,7 @@ const manifest = {
   providers: {
     "Gnani Prisma": "Live transcription verified with synthetic Hindi speech and imported browser dictation",
     "Gnani Timbre": "Live speech synthesis verified through provider calls and the browser",
-    "Groq GPT-OSS 20B": "Live answers verified in Finance Chat, dashboard assistant, and Bharat Voice",
+    "Groq GPT-OSS 20B": "Live answers verified in Finance Chat, dashboard assistant, and Bharat Voice, with public-source research in Finance Chat",
     "Gnani Evon v3.3 30B": "Optional reasoning integration with contract tests. Requires a separate inference deployment for live use",
   },
   files: [...docs, ...demoAssets],

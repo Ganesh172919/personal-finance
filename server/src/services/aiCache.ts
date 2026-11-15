@@ -8,10 +8,7 @@
  * MINDMAP FLOW: DETERMINISTIC CACHE KEY ENGINE & STATE INVARIANTS
  * ============================================================================
  * - Deterministic AI Response Cache Engine
- *     ├── 1. Text Normalization Core
- *     │   ├── Case insensitivity (toLowerCase)
- *     │   ├── Whitespace collapsing (trim & multi-space regex replace)
- *     │   └── Stable token ordering
+ *     ├── 1. Preserve prompt case and internal whitespace for code and text requests
  *     ├── 2. State-Aware Cache Key Synthesis
  *     │   ├── User & Tenant Context: orgId, userId
  *     │   ├── Invalidation Timestamps:
@@ -41,8 +38,7 @@
  *                                     |
  *                                     v
  *                  +--------------------------------------+
- *                  | Normalize User Query Text:           |
- *                  | text.trim().replace(/\s+/g, " ")     |
+ *                  | Preserve the submitted prompt        |
  *                  +------------------+-------------------+
  *                                     |
  *                                     v
@@ -73,11 +69,6 @@
 
 import crypto from "crypto";
 
-// Normalizes user query text by trimming whitespace, collapsing spaces, and lowercasing.
-// Produces consistent input formatting for deterministic cache key derivation.
-// Ensures that minor spacing or casing variations hit identical cache records.
-export const normalizeUserText = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase();
-
 // Computes a cryptographic SHA-256 hash digest encoded as a hexadecimal string.
 // Provides fixed-length, collision-resistant string representations for caching.
 // Used across key synthesis functions to produce uniform database lookup keys.
@@ -95,12 +86,11 @@ export const buildProcessCommandCacheKey = (params: {
   command: string;
   narrative?: boolean;
 }) => {
-  const normalized = normalizeUserText(params.command);
   const txUpdatedAt = params.transactionsUpdatedAt || "";
   const journalUpdatedAt = params.journalUpdatedAt || "";
   const narrative = params.narrative === undefined ? "" : params.narrative ? "1" : "0";
   return sha256(
-    `process-command-v2|${params.orgId}|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${journalUpdatedAt}|${narrative}|${normalized}`
+    `process-command-v3|${params.orgId}|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${journalUpdatedAt}|${narrative}|${params.command.trim()}`
   );
 };
 
@@ -119,13 +109,12 @@ export const buildChatMessageCacheKey = (params: {
   content: string;
   narrative?: boolean;
 }) => {
-  const normalized = normalizeUserText(params.content);
   const summaryUpdatedAt = params.sessionSummaryUpdatedAt || "";
   const txUpdatedAt = params.transactionsUpdatedAt || "";
   const journalUpdatedAt = params.journalUpdatedAt || "";
   const narrative = params.narrative === undefined ? "" : params.narrative ? "1" : "0";
   return sha256(
-    `chat-message-v3|${params.orgId}|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${journalUpdatedAt}|${narrative}|${params.sessionId}|${params.sessionMessageCount}|${summaryUpdatedAt}|${normalized}`
+    `chat-message-v4|${params.orgId}|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${journalUpdatedAt}|${narrative}|${params.sessionId}|${params.sessionMessageCount}|${summaryUpdatedAt}|${params.content.trim()}`
   );
 };
 

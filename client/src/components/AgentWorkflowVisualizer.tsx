@@ -119,6 +119,7 @@ const AGENT_VISUALS: Record<string, AgentVisualConfig> = {
   debt_optimizer: { label: "Debt Optimizer", icon: PiggyBank, color: "hsl(0 84% 60%)" },
   financial_educator: { label: "Financial Educator", icon: GraduationCap, color: "hsl(134 61% 41%)" },
   chat_assistant: { label: "Conversational assistant", icon: GraduationCap, color: "hsl(134 61% 41%)" },
+  public_web_research: { label: "Public web research", icon: GraduationCap, color: "hsl(134 61% 41%)" },
   compound_interest_calculator: { label: "Compound interest calculator", icon: GraduationCap, color: "hsl(134 61% 41%)" },
   ai_core_client: { label: "AI Core Client", icon: BrainCircuit, color: "hsl(271 81% 56%)" },
 };

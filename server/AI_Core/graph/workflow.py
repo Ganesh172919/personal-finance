@@ -1426,8 +1426,10 @@ class FinancialWorkflow:
             from utils.document_answers import document_passage_answer, wants_document_lookup
             answer_agent = None
             calculated_answer = None
-            question = user_input.split("\n\nAttached workspace files:", 1)[0]
-            if (options or {}).get("task_type") == "conversation_insights":
+            question, _, document_context = user_input.partition("\n\nAttached workspace files:")
+            if (options or {}).get("conversation_mode") and (options or {}).get("public_web_search"):
+                answer_agent = "public_web_research"
+            elif (options or {}).get("task_type") == "conversation_insights":
                 answer_agent = "conversation_summarizer"
             elif isinstance(finance_context, dict) and wants_activity_review(user_input):
                 answer_agent = "activity_review"
@@ -1448,8 +1450,11 @@ class FinancialWorkflow:
                     if answer_agent == "conversation_summarizer":
                         from agents.conversation_summarizer import summarize_conversations
                         summary = summarize_conversations(finance_context, narrative=bool((options or {}).get("narrative")))
+                    elif answer_agent == "public_web_research":
+                        from agents.public_web_research import research_public_web
+                        summary = research_public_web(question)
                     elif answer_agent == "chat_assistant":
-                        summary = self.financial_educator.answer_chat(question, conversation_history or [])
+                        summary = self.financial_educator.answer_chat(question, conversation_history or [], document_context)
                     elif calculated_answer:
                         summary = {"response": calculated_answer}
                     elif answer_agent == "activity_review":

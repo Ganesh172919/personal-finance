@@ -22,6 +22,20 @@ beforeEach(() => { vi.clearAllMocks(); });
 afterEach(cleanup);
 
 describe("chat composer recovery", () => {
+  it("keeps a public web search separate from attachments and clears the marker after sending", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const { rerender } = render(<ChatInput onSend={onSend} isSending={false} workspaceAttachments={[savedFile]} />);
+    typeMessage("public university events");
+    fireEvent.click(screen.getByRole("button", { name: "Search web" }));
+    send();
+    expect(await screen.findByRole("alert")).toHaveTextContent("separately from workspace files");
+    expect(onSend).not.toHaveBeenCalled();
+    rerender(<ChatInput onSend={onSend} isSending={false} />);
+    send();
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith("Search the web for public university events", { narrative: false, fileIds: [] }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Search web" })).toHaveAttribute("aria-pressed", "false"));
+  });
+
   it("appends a completed dictation to the draft without sending it", async () => {
     vi.mocked(transcribeLiveVoice).mockResolvedValueOnce({ text: "What is compound interest?" });
     const onSend = vi.fn();

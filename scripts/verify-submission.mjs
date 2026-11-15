@@ -21,6 +21,7 @@ const checks = [
   ["Gnani speech routes", () => contains("server/src/routes/voiceRoutes.ts", "/voice/transcribe", "/voice/synthesize", "/voice/query", "/voice/live-ticket", "/voice/expense-preview")],
   ["Evon model and browser availability status", () => contains("server/AI_Core/data/model_catalog.json", "evon-v3.3-30b") && contains("client/src/components/voice/BharatVoiceAssistant.tsx", "Evon v3.3 30B", "Separate endpoint required")],
   ["Conversational gateway compatibility", () => contains("server/src/services/aiCoreClient.ts", "isConversationalResponseUsable", "response.conversation_mode === true") && contains("server/AI_Core/contracts/responses.py", "conversation_mode")],
+  ["Explicit web search and source links", () => contains("client/src/features/chat/ChatInput.tsx", "Search web") && contains("server/AI_Core/agents/public_web_research.py", "browser.open", "Web sources")],
   ["Sensitive and Codex build files are ignored", () => contains(".gitignore", ".env", "*.pem", "*.key", ".codex-build/", "codex-build/", ".tmp/")],
 ];
 

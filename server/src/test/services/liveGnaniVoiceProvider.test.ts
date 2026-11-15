@@ -11,9 +11,13 @@ describe("Live Gnani speech API contract", () => {
     body: Buffer;
   }>();
   let server: ReturnType<typeof createServer>;
+  let malformedAudioRemaining: number;
+  let ttsRequests: number;
 
   beforeEach(async () => {
     requests.clear();
+    malformedAudioRemaining = 0;
+    ttsRequests = 0;
     server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
       const chunks: Buffer[] = [];
       for await (const chunk of request) chunks.push(chunk);
@@ -30,7 +34,13 @@ describe("Live Gnani speech API contract", () => {
         return;
       }
 
+      ttsRequests++;
       response.setHeader("Content-Type", "audio/wav");
+      if (malformedAudioRemaining > 0) {
+        malformedAudioRemaining--;
+        response.end("Incomplete WAV");
+        return;
+      }
       response.end(wav);
     });
 
@@ -104,5 +114,14 @@ describe("Live Gnani speech API contract", () => {
       mimeType: "audio/wav",
       provider: "gnani_timbre_live",
     });
+    expect(ttsRequests).toBe(1);
+  });
+
+  it("retries a malformed successful Timbre response once", async () => {
+    malformedAudioRemaining = 1;
+    const result = await provider.synthesizeSpeech("The Moon shows phases.");
+    expect(ttsRequests).toBe(2);
+    expect(result.provider).toBe("gnani_timbre_live");
+    expect(result.audioBuffer).toEqual(wav);
   });
 });
