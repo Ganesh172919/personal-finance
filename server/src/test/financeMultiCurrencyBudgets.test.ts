@@ -27,6 +27,27 @@ describe("Finance OS Multi-Currency FX Budgets, Envelopes & Forecast", () => {
   afterAll(stopTestDb);
   beforeEach(clearTestDb);
 
+  it("normalizes a native INR allocation and invalidates a previously read envelope", async () => {
+    const auth = await createAuthedUser();
+    const csrf = await request(app).get("/api/auth/csrf").expect(200);
+    const headers = [auth.cookie, csrf.headers["set-cookie"]?.[0]?.split(";")[0] || ""];
+    const period = monthKey(new Date());
+    const path = `/api/finance/budgets/${period}`;
+    const envelopes = () => request(app).get(`${path}/envelopes?currency=INR`).set("Cookie", headers);
+
+    await envelopes().expect(200).expect(response => expect(response.body.totals.planned).toBe(0));
+    await request(app).put(`${path}/allocations`).set("Cookie", headers).set("x-csrf-token", csrf.body.csrf_token)
+      .send({ category: "Food & Dining", amount: 835, currency: "INR" }).expect(200);
+
+    await envelopes().expect(200).expect(response => expect(response.body.envelopes[0]).toMatchObject({
+      category: "Food & Dining", planned: 835, remaining: 835, currency: "INR",
+    }));
+    await request(app).get(`${path}/allocations?currency=USD`).set("Cookie", headers)
+      .expect(200).expect(response => expect(response.body.allocations[0]).toMatchObject({ amount: 10, currency: "USD" }));
+    await request(app).get(`${path}/allocations`).set("Cookie", headers)
+      .expect(200).expect(response => expect(response.body.allocations[0]).toMatchObject({ amount: 835, currency: "INR" }));
+  });
+
   it("converts budget allocations and envelopes across global currencies (EUR, GBP, JPY, INR) with tenant isolation", async () => {
     const auth = await createAuthedUser();
     const { orgId } = await ensurePersonalOrgForUser(auth.user._id);

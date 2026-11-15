@@ -172,9 +172,7 @@ export const getBudgetEnvelopes = async (params: {
 
   const { start, end } = parsePeriodKey(params.periodKey);
 
-  const org = await OrganizationModel.findById(params.orgId).select({ currency: 1 }).lean();
-  const baseCurrency = String((org as any)?.currency || "USD");
-  const currency = isFxConversion ? targetCurrency! : baseCurrency;
+  const currency = targetCurrency ?? "USD";
 
   const allocations = await BudgetAllocationModel.find({ orgId: params.orgId, periodKey: params.periodKey })
     .select({ category: 1, amount: 1, currency: 1 })
@@ -211,7 +209,8 @@ export const getBudgetEnvelopes = async (params: {
 
   for (const allocation of allocations as any[]) {
     const category = String(allocation.category || "Other");
-    const planned = Math.max(0, Number(allocation.amount || 0));
+    const nativeAmount = Math.max(0, Number(allocation.amount || 0));
+    const planned = nativeAmount / FX_RATES_TO_USD[normalizeCurrency(allocation.currency)];
     const match = spentByCategory.get(category) || { spent: 0, tx_count: 0 };
     spentByCategory.delete(category);
 
@@ -222,7 +221,7 @@ export const getBudgetEnvelopes = async (params: {
       planned,
       spent,
       remaining,
-      currency: String(allocation.currency || baseCurrency),
+      currency: "USD",
       tx_count: Math.max(0, Number(match.tx_count || 0)),
       unbudgeted: false,
     });
@@ -236,7 +235,7 @@ export const getBudgetEnvelopes = async (params: {
       planned: 0,
       spent,
       remaining: -spent,
-      currency: baseCurrency,
+      currency: "USD",
       tx_count: Math.max(0, Number(match.tx_count || 0)),
       unbudgeted: true,
     });
@@ -299,9 +298,13 @@ export const getBudgetEnvelopes = async (params: {
   return result;
 };
 
-export async function invalidateBudgetEnvelopes(orgId: string, date: Date): Promise<void> {
-  const prefix = `env:${orgId}:${date.toISOString().slice(0, 7)}`;
+export async function invalidateBudgetEnvelopePeriod(orgId: string, periodKey: string): Promise<void> {
+  const prefix = `env:${orgId}:${periodKey}`;
   await Promise.all([cacheDel(prefix), ...SUPPORTED_CURRENCIES.map(currency => cacheDel(`${prefix}:${currency}`))]);
+}
+
+export function invalidateBudgetEnvelopes(orgId: string, date: Date): Promise<void> {
+  return invalidateBudgetEnvelopePeriod(orgId, date.toISOString().slice(0, 7));
 }
 
 // Cleanses transaction descriptions to generate canonical keys for recurring clustering.

@@ -630,28 +630,30 @@ export const logout = (req: Request, res: Response) => {
 };
 
 /**
- * Instant Demo Login for Hackathon Evaluators and Challenge Reviewers.
- * Authenticates as J Ganesh Kumar Reddy (Primary Registrant).
+ * Creates an isolated workspace for a local demo session.
  */
-export const demoEvaluatorLogin = async (req: Request, res: Response) => {
-  const email = "evaluator.ganesh@gnani.ai";
-  let user = await UserModel.findOne({ email });
+export const isEvaluatorDemoEnabled = () => {
+  const env = getEnv();
+  return env.NODE_ENV === "development" && env.DEMO_EVALUATOR_ENABLED;
+};
 
-  if (!user) {
-    user = new UserModel({
-      name: "J Ganesh Kumar Reddy",
-      email,
-      password: "GnaniChallenge2026!Secure",
-      isEmailVerified: true,
-      authProvider: "email",
-    });
-    await user.save();
+export const demoEvaluatorLogin = async (req: Request, res: Response) => {
+  if (!isEvaluatorDemoEnabled()) {
+    throw new HttpError(404, "DEMO_UNAVAILABLE", "Demo sign-in is unavailable.");
   }
 
+  const user = await UserModel.create({
+    name: "Demo User",
+    email: `demo-${crypto.randomUUID()}@finwise.invalid`,
+    password: crypto.randomBytes(32).toString("base64url"),
+    isEmailVerified: true,
+    authProvider: "email",
+  });
   generateAndSetToken(res, user._id.toString(), false, user.sessionVersion);
   setCsrfCookie(res);
+  req.log?.info({ event: "auth.demo.created" }, "Local demo account created");
 
-  return res.status(200).json({
+  return res.set("Cache-Control", "no-store").status(200).json({
     success: true,
     data: {
       id: user._id.toString(),
@@ -659,6 +661,6 @@ export const demoEvaluatorLogin = async (req: Request, res: Response) => {
       email: user.email,
       currency: "INR",
     },
-    message: "Logged in as Challenge Evaluator (J Ganesh Kumar Reddy)",
+    message: "Local demo workspace started",
   });
 };

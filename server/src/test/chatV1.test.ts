@@ -98,6 +98,41 @@ describe("chat v1 API", () => {
     expect(csrfToken.length).toBeGreaterThan(10);
   });
 
+  it("routes general Bharat Voice questions through AI Core and leaves ledger questions local", async () => {
+    const useCore = vi.mocked(processAiCoreRequest);
+    useCore.mockClear().mockResolvedValueOnce({
+      success: true,
+      analysis_type: "financial_education",
+      fallback_used: false,
+      final_output: "Compound interest includes interest earned in earlier periods.",
+      active_model: "gnani/gnani-evon-v3.3-30B-A3B",
+      llm_call_count: 1,
+    } as Awaited<ReturnType<typeof processAiCoreRequest>>);
+    const ask = (query: string) => request(app).post("/api/v1/voice/query")
+      .set("Cookie", [cookie, csrfCookie]).set("x-csrf-token", csrfToken)
+      .send({ query, language: "en-IN" });
+
+    const education = await ask("How does compound interest work?").expect(200);
+    expect(education.body.data).toMatchObject({
+      answer: "Compound interest includes interest earned in earlier periods.",
+      modelsUsed: { reasoning: "gnani/gnani-evon-v3.3-30B-A3B" },
+    });
+    expect(useCore).toHaveBeenCalledTimes(1);
+    expect(useCore.mock.calls[0]?.[0]).toMatchObject({ user_profile: null, user_id: ownerUserId });
+    expect(useCore.mock.calls[0]?.[0]).not.toHaveProperty("finance_context");
+
+    const ledger = await ask("How much did I spend this month?").expect(200);
+    expect(ledger.body.data.modelsUsed.reasoning).toBe("Ledger summary");
+    expect(useCore).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables local demo sign-in by default", async () => {
+    await request(app).get("/api/auth/providers").expect(200)
+      .expect(response => expect(response.body.demo).toBe(false));
+    await request(app).post("/api/auth/demo-evaluator").set("Cookie", csrfCookie)
+      .set("x-csrf-token", csrfToken).expect(404);
+  });
+
   it("answers a current-month spending question from the caller’s ledger without AI Core", async () => {
     vi.mocked(processAiCoreRequest).mockClear();
     const userId = new Types.ObjectId(ownerUserId);

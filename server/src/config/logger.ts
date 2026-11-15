@@ -45,6 +45,11 @@ const REDACT_PATHS = [
   "req.body.image", // Image uploads
   "req.body.buffer", // Binary data
   "req.body.receipt_buffer", // Receipt data
+  "req.body.audioBase64",
+  "req.body.transcript",
+  "req.body.query",
+  "req.body.content",
+  "req.body.text",
 ];
 
 // Configures development-mode log formatting using pino-pretty for human readability.

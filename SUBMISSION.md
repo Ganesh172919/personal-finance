@@ -28,6 +28,8 @@ Start MongoDB, copy the environment examples, and set the required values in eac
 
 Open `http://localhost:5173/voice` for the expense workflow and `http://localhost:5173/submission` for the demo materials.
 
+For a local rehearsal with a synthetic database, set `DEMO_EVALUATOR_ENABLED=true` on the development API and use **Start a local demo workspace** at sign-in. Each session starts in its own workspace. [Timed presentation and recording cues](DEMO_PRESENTATION.txt)
+
 ## Final submission checklist
 
 - [x] Verify live Prisma and Timbre with `npm run verify:gnani` and compare the transcript with the synthetic sample.

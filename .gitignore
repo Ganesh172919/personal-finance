@@ -20,6 +20,8 @@ client/.vite/
 !.env.*.example
 *.env
 credentials.json
+credentials.local.json
+secrets.local.json
 service-account*.json
 *.pem
 *.key
@@ -31,6 +33,7 @@ service-account*.json
 
 # Local Codex builds and workspace notes
 .codex/
+.codex_build/
 .codex-build/
 codex-build/
 codex_build/

@@ -356,10 +356,7 @@ export default function FinanceOS() {
 
   const allocationsQuery = useQuery({
     queryKey: ["v1/finance/budgets", budgetPeriodKey, selectedReportingCurrency],
-    queryFn: () =>
-      selectedReportingCurrency !== "USD"
-        ? listBudgetAllocations(budgetPeriodKey, { limit: 300, currency: selectedReportingCurrency })
-        : listBudgetAllocations(budgetPeriodKey, { limit: 300 }),
+    queryFn: () => listBudgetAllocations(budgetPeriodKey, { limit: 300, currency: selectedReportingCurrency }),
     enabled: /^\d{4}-(0[1-9]|1[0-2])$/.test(budgetPeriodKey.trim()),
   });
 

@@ -553,18 +553,17 @@ export async function logExpenseFromVoice(params: {
 }
 
 /**
- * Answers a spoken financial query in natural Indic language using Gnani Evon 30B reasoning
- * combined with the user's live ledger metrics, then synthesizes a voice response with Timbre.
+ * Answers supported ledger questions locally. Other questions can use the
+ * authenticated Finance Chat provider path before Timbre reads the answer.
  */
-export async function answerVoiceQueryWithEvon(params: {
+export async function answerFinanceVoiceQuery(params: {
   orgId: string | Types.ObjectId;
   userId: string | Types.ObjectId;
   query: string;
   language?: string;
   currency?: string;
+  generateAnswer?: () => Promise<{ text: string; source: string } | undefined>;
 }): Promise<VoiceQueryAnswerResult> {
-  const env = getEnv();
-  const apiKey = env.GNANI_REASONING_API_KEY;
   const lang = params.language || "hi-IN";
   const currency = normalizeCurrency(params.currency || "INR");
 
@@ -597,7 +596,7 @@ export async function answerVoiceQueryWithEvon(params: {
   const asksTopCategory = /\b(?:top|highest) (?:spending|expense) category\b/i.test(question);
   const monthlySpending = getMonthlySpendingPeriod(question);
   const asksMonthlyBalance = /\b(?:my (?:current |monthly )?balance|balance (?:this month|for this month))\b/i.test(question);
-  const useLedger = asksRemainingBudget || asksMonthlyBalance || monthlySpending === "current" ||
+  const useLedger = asksRemainingBudget || asksMonthlyBalance || asksTopCategory || monthlySpending === "current" ||
     /\b(?:total (?:kharcha|balance)|e mahina.*karchu|indha maasam.*savings|ee tingala.*kharchu|hya mahinyatil.*balance)\b/i.test(question);
   let answerText = "";
   let source = useLedger ? "Ledger summary" : "FinWise guidance";
@@ -625,41 +624,11 @@ export async function answerVoiceQueryWithEvon(params: {
     source = "Budget and ledger summary";
   }
 
-  if (!useLedger && env.GNANI_REASONING_URL && process.env.GNANI_MOCK_MODE !== "true" && process.env.NODE_ENV !== "test") {
-    try {
-      const response = await axios.post(
-        `${env.GNANI_REASONING_URL}/chat/completions`,
-        {
-          model: env.GNANI_MODEL,
-          messages: [
-            {
-              role: "system",
-              content: `You are Gnani Evon 30B, an empathetic Indian financial reasoning AI for FinWise. Answer the user's spoken financial question concisely (maximum 2 sentences) in the user's language (${lang}). Be encouraging, clear, and cite exact numbers when relevant. Context: Total spent this month: ${formatMoney(totalSpent)}, Total income: ${formatMoney(totalIncome)}, Top category: ${topCategory}, Total transactions: ${transactionCount}.`,
-            },
-            {
-              role: "user",
-              content: params.query,
-            },
-          ],
-          temperature: 0.3,
-          max_tokens: 150,
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-          },
-          timeout: 10000,
-        }
-      );
-
-      const generated = response.data?.choices?.[0]?.message?.content?.trim();
-      if (generated) {
-        answerText = generated;
-        source = "Gnani Evon";
-      }
-    } catch (err: any) {
-      logger.warn({ err: err?.message }, "Live Gnani Evon query generation failed, using Indic response template");
+  if (!useLedger && params.generateAnswer) {
+    const generated = await params.generateAnswer();
+    if (generated) {
+      answerText = generated.text;
+      source = generated.source;
     }
   }
 
@@ -709,7 +678,7 @@ export async function answerVoiceQueryWithEvon(params: {
 
   // Synthesize spoken voice answer via Timbre
   const audioFeedback = await synthesizeSpeechTimbre({
-    text: answerText,
+    text: answerText.replace(/(?:^|\n)\s*[-*#]+\s+/g, "\n").replace(/\*\*|`/g, "").trim().slice(0, 500),
     language: speechLanguage !== "auto" ? speechLanguage : "hi-IN",
     voiceGender: "female",
   });

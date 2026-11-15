@@ -8,7 +8,7 @@ The ZIP also includes a three-minute walkthrough and a timed Markdown script. Th
 
 Set `GNANI_API_KEY` in `server/.env`, then run `npm run verify:gnani` from the repository root. The check sends one synthetic Hindi sentence to Timbre, passes the returned WAV to Prisma, and prints the transcript. Compare it with the sample sentence and play `dist/submission/demo/live-gnani-check.wav`. The command saves the audio after both providers respond live and FinWise extracts the expected ₹50.
 
-Restart the app server with the configured key and open **Bharat Voice AI** in a fresh demo workspace. In **Finance → Budgets**, set a 10 USD monthly allocation for **Food & Dining**. FinWise displays the equivalent ₹835 at its fixed reference rate. Switch the Transactions display currency to **INR**. Rehearse in a separate workspace so the budget starts unspent in the recording. Check that the review shows ₹50 and a projected ₹785 remaining, then play **Replay Voice** after saving. If the browser cannot access the microphone, use **Upload an expense recording** with a short recording of the sample. Use only synthetic entries. Keep the key, sign-in screen, and personal records outside the recording.
+Restart the app server with the configured key and open **Bharat Voice AI** in a fresh demo workspace. In **Finance → Budgets**, set an INR 835 monthly allocation for **Food & Dining**. Switch the Transactions display currency to **INR**. Check that the review shows ₹50 and a projected ₹785 remaining, then play **Replay Voice** after saving. If the browser cannot access the microphone, use **Upload an expense recording** with a short recording of the sample. Keep the key, sign-in screen, and personal records outside the recording.
 
 ## Record a 60-second demo
 
@@ -20,7 +20,7 @@ Restart the app server with the configured key and open **Bharat Voice AI** in a
 | 0:36–0:47 | Play the spoken confirmation. Leave room for the audio. | “Gnani Timbre reads the confirmation back.” |
 | 0:47–1:00 | Open Transactions, choose INR, and show the new ₹50 entry. | “The entry is now in the same ledger as the rest of my spending. I built FinWise Bharat Voice for the Great Indian AI Internship Challenge.” |
 
-Use the app’s **Dossier & Teleprompter → Record Screen Demo** if the browser can capture the app tab and its audio. If the capture chooser does not open, record the FinWise window with a recorder that captures microphone and app audio. Play the exported video before posting to confirm that the expense and ledger entry are visible and that both the sample utterance and Timbre’s reply are audible. The submission copy below assumes the final video shows both live speech APIs.
+Use [the timed text script](DEMO_PRESENTATION.txt) with a screen recorder that captures the FinWise window and its audio. Play the exported video before posting to confirm that the expense and ledger entry are visible and that both the sample utterance and Timbre’s reply are audible.
 
 ## LinkedIn draft
 

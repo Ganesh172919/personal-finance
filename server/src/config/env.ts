@@ -192,6 +192,7 @@ const envSchema = z
     // Authentication Configuration
     JWT_SECRET: z.string().trim().min(1, "JWT_SECRET is required"),
     COOKIE_SECRET: optionalNonEmptyString,
+    DEMO_EVALUATOR_ENABLED: boolFromEnv.default(false),
     TRUST_PROXY: z.preprocess(emptyStringToUndefined, z.string().trim().optional()),
 
     // Async Jobs Configuration

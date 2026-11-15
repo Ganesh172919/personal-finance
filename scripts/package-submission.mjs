@@ -231,10 +231,14 @@ if (fs.existsSync(zipPath)) {
 }
 
 const archiveFiles = [...docsToCopy, "manifest.json", "evaluations.json"];
-const demoVideo = "demo/finwise-bharat-voice-demo.mp4";
-if (fs.existsSync(path.join(outDir, demoVideo))) archiveFiles.push(demoVideo);
-const extendedVideo = "demo/finwise-bharat-voice-3min.mp4";
-if (fs.existsSync(path.join(outDir, extendedVideo))) archiveFiles.push(extendedVideo);
+const demoAssets = [
+  "demo/finwise-bharat-voice-demo.mp4",
+  "demo/finwise-bharat-voice-3min.mp4",
+  "demo/live-gnani-check.wav",
+  "demo/verified-budget.jpg",
+  "demo/verified-chat.jpg",
+];
+archiveFiles.push(...demoAssets.filter(asset => fs.existsSync(path.join(outDir, asset))));
 if (process.platform === "win32") {
   execFileSync("tar.exe", ["-a", "-cf", zipPath, ...archiveFiles], { cwd: outDir, stdio: "inherit" });
 } else {

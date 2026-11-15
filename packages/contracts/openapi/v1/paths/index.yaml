@@ -101,6 +101,8 @@
   post:
 /api/auth/csrf:
   get:
+/api/auth/demo-evaluator:
+  post:
 /api/auth/google:
   get:
 /api/auth/google/callback:
@@ -579,6 +581,8 @@
   post:
 /api/v1/auth/csrf:
   get:
+/api/v1/auth/demo-evaluator:
+  post:
 /api/v1/auth/google:
   get:
 /api/v1/auth/google/callback:
@@ -962,23 +966,37 @@
   post:
 /api/v1/voice/assist:
   post:
+/api/v1/voice/automotive:
+  post:
 /api/v1/voice/billing:
   post:
 /api/v1/voice/biometrics/verify:
   post:
+/api/v1/voice/bpo-audit:
+  post:
 /api/v1/voice/collections:
+  post:
+/api/v1/voice/consumer-durables:
   post:
 /api/v1/voice/dispute:
   post:
 /api/v1/voice/expense-preview:
   post:
+/api/v1/voice/healthcare:
+  post:
+/api/v1/voice/hospitality:
+  post:
 /api/v1/voice/languages:
   get:
 /api/v1/voice/lead-qualification:
   post:
+/api/v1/voice/live-ticket:
+  post:
 /api/v1/voice/log-expense:
   post:
 /api/v1/voice/query:
+  post:
+/api/v1/voice/real-estate:
   post:
 /api/v1/voice/schemes:
   post:
@@ -1003,23 +1021,37 @@
   post:
 /api/voice/assist:
   post:
+/api/voice/automotive:
+  post:
 /api/voice/billing:
   post:
 /api/voice/biometrics/verify:
   post:
+/api/voice/bpo-audit:
+  post:
 /api/voice/collections:
+  post:
+/api/voice/consumer-durables:
   post:
 /api/voice/dispute:
   post:
 /api/voice/expense-preview:
   post:
+/api/voice/healthcare:
+  post:
+/api/voice/hospitality:
+  post:
 /api/voice/languages:
   get:
 /api/voice/lead-qualification:
   post:
+/api/voice/live-ticket:
+  post:
 /api/voice/log-expense:
   post:
 /api/voice/query:
+  post:
+/api/voice/real-estate:
   post:
 /api/voice/schemes:
   post:

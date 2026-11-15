@@ -331,8 +331,7 @@ export async function previewVoiceExpense(transcript: string, language: string) 
 }
 
 /**
- * Submits a spoken or textual question to FinWise via Gnani Evon 30B reasoning
- * and receives a synthesized spoken response via Timbre.
+ * Submits a spoken or textual question to FinWise and receives the answer and Timbre audio.
  */
 export async function queryVoice(params: {
   audioBlob?: Blob;

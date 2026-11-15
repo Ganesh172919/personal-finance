@@ -1,5 +1,25 @@
 # FinWise submission verification
 
+## November 15 isolated workspace verification
+
+This run used the in-app browser, a new synthetic account and database, and a separately started AI Core. The browser showed pure white and black document backgrounds. Both chat surfaces identified the provider used for their answers.
+
+| Check | Observed result |
+| --- | --- |
+| Finance Chat with Groq | An emergency-versus-sinking-fund prompt produced accurate definitions and concrete examples with one model call. One run followed the two-bullet instruction exactly. Another added a preamble. |
+| Contextual follow-up | The original route produced a generic plan for the annual premium. On retest, one Groq call chose a sinking fund because the premium was predictable. The correct first sentence was followed by an extra definition. |
+| Bharat Voice with Groq and Timbre | A typed English question explained the difference between simple and compound interest in one sentence. A separate Hindi question about emergency funds received a relevant one-sentence Hindi answer. Both replies showed Groq and supplied replayable Timbre audio. |
+| Live expense | Prisma transcribed the Hindi tea sample. The INR 835 budget initially displayed as USD 835. After the conversion fix the draft showed INR 785 remaining after a INR 50 purchase. The purchase saved and Timbre confirmed it. A later INR 900 draft showed INR 115 over budget and was discarded. |
+| Bharat Voice ledger query | After the save, “How much money is left in my budget this month?” returned INR 785 and showed the Budget and ledger summary as the source. |
+| Dictation and hands-free voice | Prisma appended the imported INR 1,000 question to the editable composer. Two years at 10% returned INR 1,210 including INR 210 interest. An imported three-year hands-free follow-up sent automatically, retained the principal and rate, and returned INR 1,331 including INR 331 interest. Both calculator turns used zero model calls. Timbre replay reached the playing state. |
+| Microphone | Permission remained pending in the in-app browser. The app displayed the import option and a permission message. The audio-file path exercised live Prisma and Timbre. |
+| Files | Finance Chat created a one-page checklist PDF, saved it in Files, and opened its extracted text. |
+| Evon | The model appears as Evon v3.3 30B with “Separate endpoint required.” The provider path has automated coverage. The workspace has no live Evon endpoint. |
+
+The English Bharat Voice question used one AI Core request. Its reasoning took about 0.6 seconds and the full speech turn took about 8.2 seconds in that run. A separate model request exceeded the 45-second gateway timeout while suites were running. The trace identified the fallback and the same prompt completed on retry. Request IDs now link provider, route, model call count, duration, and fallback logs for both chat surfaces. The application logs omit audio, transcripts, and prompt text from request bodies.
+
+The full client suite passed 552 tests, with a 26-test rerun on the final voice, settings, and finance files. AI Core passed 488 tests. The broader server run passed 683 of 687 tests during the retest. The final 114-test server runs passed and covered all four earlier failures, including the INR budget calculation, voice authentication, and OpenAPI coverage. The production client build, lint, and 33 submission checks passed.
+
 ## November 15 browser retest
 
 The built-in browser used the synthetic workspace in both themes. Groq correctly defined fixed and variable expenses but added introductory text before the requested two bullets. A follow-up about an electricity bill with a fixed service charge and metered usage initially triggered a generic plan. After the routing fix, the Financial Educator used one Groq call and classified the two charges correctly in one sentence.

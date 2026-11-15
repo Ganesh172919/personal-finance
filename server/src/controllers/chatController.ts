@@ -1093,7 +1093,10 @@ export async function sendMessage(req: Request, res: Response) {
 
     req.log?.info({
       event: "chat.turn.completed",
-      agents: aiMetadata.agentsUsed,
+      analysisType: aiMetadata.analysisType,
+      agents: aiMetadata.agentsInvolved,
+      provider: aiMetadata.activeProvider,
+      model: aiMetadata.activeModel,
       llmCalls: aiMetadata.llmCallCount,
       coreDurationMs: aiMetadata.aiCoreDurationMs,
       cacheHit: aiMetadata.cacheHit === true,

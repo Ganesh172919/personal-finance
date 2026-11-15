@@ -12,11 +12,14 @@
 import { Mic, ShieldCheck } from "lucide-react";
 import { Link } from "wouter";
 import { PageIntro } from "@/components/layout/PageIntro";
+import { useAuth } from "@/context/AuthContext";
 import { BharatVoiceAssistant } from "@/components/voice/BharatVoiceAssistant";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 
 export default function BharatVoicePage() {
+  const { user, loading } = useAuth();
+
   return (
     <div className="page-grid flex-1 overflow-auto" data-testid="bharat-voice-page">
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -25,15 +28,19 @@ export default function BharatVoicePage() {
           eyebrow="Voice tools"
           title="Bharat Voice"
           description="Speak in Hindi, Telugu, Tamil, Kannada, Marathi, Bengali, or Hinglish to log expenses and check your budget."
-          actions={
+          actions={user ? (
             <Link href="/chat?voice=live" className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-muted">
               Open live voice chat
             </Link>
-          }
+          ) : !loading && (
+            <Link href="/login?next=%2Fvoice" className="rounded-md border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-muted">
+              Sign in to use voice tools
+            </Link>
+          )}
         />
 
         {/* Core Interactive Assistant Cockpit */}
-        <BharatVoiceAssistant />
+        {user && <BharatVoiceAssistant />}
 
         {/* Telephonic & Noisy Market Benchmark Sandbox Info */}
         <Card className="border-border bg-card">

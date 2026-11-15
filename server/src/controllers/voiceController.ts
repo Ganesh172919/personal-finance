@@ -14,18 +14,21 @@
 import type { Request, Response } from "express";
 import { createHmac, randomUUID } from "node:crypto";
 import jwt from "jsonwebtoken";
+import { Types } from "mongoose";
 import { getEnv } from "../config/env";
 import { HttpError } from "../middleware/httpError";
 import type { IUserDocument } from "../models/userModel";
 import { transcribeBodySchema } from "../schemas/voiceSchemas";
 import { normalizeCurrency } from "../utils/currencyFx";
 import { invalidateBudgetEnvelopes } from "../services/financeIntelligence";
+import { processAiCoreRequest } from "../services/aiCoreClient";
+import { recordFeatureUsage, reserveFeatureUsage } from "../services/entitlements";
 import {
   transcribeAudioPrisma,
   synthesizeSpeechTimbre,
   extractExpenseFromVoiceTranscript,
   logExpenseFromVoice,
-  answerVoiceQueryWithEvon,
+  answerFinanceVoiceQuery,
   extractKhataDebtFromVoice,
   qualifyLeadFromVoice,
   resolveDisputeFromVoice,
@@ -251,12 +254,11 @@ export async function logExpenseVoiceHandler(req: Request, res: Response) {
 
 /**
  * Handles spoken two-way financial conversational queries.
- * Transcribes voice via Prisma STT -> Reasons over user ledger via Evon 30B ->
- * Synthesizes voice answer via Timbre TTS in chosen Indic dialect.
+ * Transcribes via Prisma, answers from the ledger or AI Core, and reads via Timbre.
  */
 export async function queryVoiceHandler(req: Request, res: Response) {
   const startedAt = performance.now();
-  const { orgId, userId } = extractUserAndOrg(req);
+  const { orgId, userId, user } = extractUserAndOrg(req);
 
   const file = (req as any).file;
   const body = req.body || {};
@@ -283,16 +285,54 @@ export async function queryVoiceHandler(req: Request, res: Response) {
     transcriptionModel = transcription.model;
   }
 
-  if (!query || typeof query !== "string") {
+  if (typeof query !== "string" || !query.trim() || query.length > 4000) {
     throw new HttpError(400, "MISSING_QUERY", "Spoken voice query or query text is required");
   }
 
-  const result = await answerVoiceQueryWithEvon({
+  const inputLanguage = INDIC_LANGUAGES.find(item => item.code === language);
+  const result = await answerFinanceVoiceQuery({
     orgId,
     userId,
     query,
     language: language !== "auto" ? language : "hi-IN",
     currency: body.currency || "INR",
+    generateAnswer: user && req.org?.orgId ? async () => {
+      const usageScope = { orgId: new Types.ObjectId(orgId), userId: user._id };
+      const requestId = req.requestId;
+      const feature = "monthly_ai_calls";
+      const reservation = await reserveFeatureUsage({ ...usageScope, feature, requestId });
+      const reasoningStartedAt = performance.now();
+      try {
+        const response = await processAiCoreRequest({
+          user_input: `${query.trim()}\n\nReply briefly in ${inputLanguage?.name ?? "Hindi"} in plain text for spoken playback.`,
+          user_profile: null,
+          org_id: orgId,
+          user_id: userId,
+          options: { include_actions: false, include_evidence: false, include_confidence: false },
+        }, requestId, { userId });
+        const text = response.final_output?.trim();
+        const usable = response.success && !response.fallback_used && response.analysis_type === "financial_education" && Boolean(text);
+        req.log?.info({
+          event: "voice.reasoning.completed",
+          analysisType: response.analysis_type,
+          provider: response.active_provider,
+          model: response.active_model,
+          llmCalls: response.llm_call_count,
+          usable,
+          durationMs: Math.round(performance.now() - reasoningStartedAt),
+        }, "Voice reasoning completed");
+        if (usable && text) {
+          if (response.llm_call_count > 0) {
+            await recordFeatureUsage({ ...usageScope, feature, requestId, units: 1, reservation,
+              tokensIn: response.usage?.tokens_in, tokensOut: response.usage?.tokens_out,
+              costUsd: response.usage?.cost_usd, modelName: response.active_model });
+          }
+          return { text, source: response.active_model || "Finance calculator" };
+        }
+      } finally {
+        await reservation.release();
+      }
+    } : undefined,
   });
 
   req.log?.info({

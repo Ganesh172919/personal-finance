@@ -128,3 +128,16 @@ def test_definition_follow_up_classifies_a_mixed_expense():
         question, {"age": 30}, conversation_history=history,
     ) == AnalysisType.FINANCIAL_EDUCATION
 
+
+def test_comparison_follow_up_applies_the_earlier_concepts_to_a_new_example():
+    original = "What is the difference between an emergency fund and a sinking fund?"
+    question = "Which of those two should I use for an annual insurance premium due next June?"
+    history = [{"role": "user", "content": original}]
+    assert MasterFinancialStrategistAgent().determine_analysis_type(
+        question, {"age": 30}, conversation_history=history,
+    ) == AnalysisType.FINANCIAL_EDUCATION
+    assert education_follow_up("Explain that in one sentence.", [*history, {"role": "user", "content": question}]) == [
+        original, question,
+    ]
+    assert not education_follow_up("Which of those two should I use for my saved transactions?", history)
+

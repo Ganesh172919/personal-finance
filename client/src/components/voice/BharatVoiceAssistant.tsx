@@ -1107,7 +1107,7 @@ export function BharatVoiceAssistant() {
         // Conversational Q&A mode
         toast({
           title: "Preparing your finance answer",
-          description: "Prisma transcribing query; Evon reasoning over your financial ledger...",
+          description: "Prisma is transcribing the question for FinWise.",
         });
 
         const response = await queryVoice({
@@ -1828,7 +1828,6 @@ export function BharatVoiceAssistant() {
         playSynthesizedAudio(response.audioFeedback.audioBase64, response.audioFeedback.mimeType);
       }
 
-      updateAssistInsights(response.extractedExpense.rawTranscript, "expense");
       setExpenseDraft(undefined);
       setExpenseNote("");
       toast({ title: "Expense saved", description: response.extractedExpense.category });
@@ -3196,7 +3195,7 @@ export function BharatVoiceAssistant() {
                     <div className="text-center space-y-1">
                       <p className="text-sm font-medium text-foreground">
                         {isProcessing
-                          ? "Processing with Gnani Prisma & Evon 30B..."
+                          ? "Working on your request…"
                           : interactionMode === "expense"
                           ? "Click to Speak Your Expense"
                           : interactionMode === "query"

@@ -1,69 +1,54 @@
 FINWISE BHARAT VOICE
-Presentation and recording script for The Great Indian AI Internship Challenge 2026
+The Great Indian AI Internship Challenge 2026
 Presenter: J Ganesh Kumar Reddy
+
+SET UP THE DEMO
+
+Start MongoDB, the Express API in server, AI Core in server/AI_Core, and the Vite client. See SUBMISSION.md for commands. Use a signed-in synthetic workspace. To enable a fresh workspace on a local development server with a test database, set DEMO_EVALUATOR_ENABLED=true and select Start a local demo workspace.
+
+In Finance > Budgets, set this month's Food & Dining budget to INR 835. Use a workspace with no recorded expenses for the ₹785 preview. Run npm run verify:gnani and use dist/submission/demo/live-gnani-check.wav for the Hindi example. Keep credentials and personal records out of the recording.
 
 60-SECOND PUBLIC DEMO
 
-00:00–00:07 | The problem
-Screen: Open Bharat Voice. Use the synthetic finance workspace.
-Say: “A small purchase is easy to make and easy to forget. FinWise helps people record expenses in the language they already speak.”
+00:00–00:08 | Show Bharat Voice in dark mode
+“I built FinWise Bharat Voice so people can record everyday spending in the language they already speak.”
 
-00:07–00:18 | Speak the purchase
-Screen: Upload the Hindi sample and show the Prisma transcript.
-Sample: “मैंने चाय पर पचास रुपये खर्च किए।”
-Say: “Gnani Prisma turns this Hindi note into text. FinWise picks out fifty rupees and suggests Food & Dining.”
+00:08–00:21 | Upload or record the Hindi expense note
+Play or say “मैंने चाय पर पचास रुपये खर्च किए।”
+“Gnani Prisma turns the Hindi audio into a note I can review and edit.”
 
-00:18–00:32 | Show the decision before saving
-Screen: Show the amount, category, and projected ₹735 left in the budget.
-Say: “Before this changes my ledger, I can correct the note and see what the purchase leaves in my budget. Here it leaves seven hundred thirty-five rupees.”
+00:21–00:35 | Show the review
+Point to ₹50, Food & Dining, and ₹785 left out of the ₹835 limit.
+“I can see what this purchase leaves in my dining budget before I save it.”
 
-00:32–00:42 | Save and confirm
-Screen: Select Save to ledger. Play the Timbre confirmation and open Transactions.
-Say: “Gnani Timbre reads the confirmation aloud. The purchase is now in the same ledger I use to track spending.”
+00:35–00:48 | Save and play the spoken confirmation
+Tap Save to ledger. Pause narration while the Timbre confirmation plays.
+“Gnani Timbre reads the confirmation aloud.”
 
-00:42–00:54 | Ask a follow-up
-Screen: Show the Telugu spending answer or the Finance Chat voice follow-up. Show the actual reply source.
-Say: “I can ask how much I spent in Telugu and hear the answer. FinWise calculates this total from saved transactions and shows where the answer came from.”
-
-00:54–01:00 | Close
-Screen: Show Bharat Voice and Finance Chat in the black and white themes.
-Say: “FinWise takes an everyday expense from speech to a reviewed, usable budget entry.”
+00:48–01:00 | Show the transaction
+Open Transactions. Select INR and show the new ₹50 entry.
+“The expense is now in the same ledger I use to track spending. I built the voice workflow, budget review, and conversational assistant for this challenge.”
 
 THREE-MINUTE JUDGE WALKTHROUGH
 
-00:00–00:16 | Introduce the user
-“I built FinWise for people who want to keep track of everyday spending without typing every purchase. Here is the same workspace in white and black.”
+00:00–00:50 | Repeat the expense workflow in the black and white themes. Show the editable Prisma transcript, preview, saved transaction, and Timbre playback. Switch to the INR reporting view to compare amounts on the same basis.
 
-00:16–01:08 | Show the full expense workflow
-Upload and play the Hindi tea sample. Show the editable Prisma transcript, ₹50 amount, Food & Dining, and projected ₹735 budget left. Save, play the Timbre confirmation, and open the transaction list. The synthetic INR ledger contains two separate ₹50 purchases after the demonstrated save.
+00:50–01:20 | In Bharat Voice, ask “How much money is left in my budget this month?” Point to ₹785 and the Budget and ledger summary source. Then ask “Explain the difference between simple and compound interest in one sentence.” Show the answer source and play the reply.
 
-01:08–01:44 | Ask about the ledger
-In Finance Chat ask “How much did I spend this month?” and follow up with “And last month?” Open the trace and show zero model calls. The recorded demo reports $1.20 in the workspace's USD reporting currency and no October expenses. In Bharat Voice, ask the Telugu monthly-spending question and replay Timbre. That voice view reports the two purchases as ₹100.
+01:20–01:57 | In Finance Chat, ask “What is the difference between an emergency fund and a sinking fund? Give exactly two bullets with one example each.” Follow with “Which of those two should I use for an annual insurance premium due next June?” Check that it selects a sinking fund and explains why a predictable premium belongs there. Open the Agent Workflow Trace to identify the provider and model.
 
-01:44–02:04 | Show editable dictation
-Import the compound-interest clip via the composer microphone menu. Show that it becomes an editable draft. Send it and point to ₹1,210 including ₹210 interest. The calculation uses ₹1,000 at 10% compounded annually for two years.
+01:57–02:28 | Open the composer microphone menu and import a short clip asking about ₹1,000 at 10% annually for two years. Show that dictation appends editable text before sending. Send it and point to ₹1,210 with ₹210 total interest. Open Live voice chat, enable Hands-free conversation, and import “What about after three years?” Show automatic submission, the ₹1,331 answer, and Timbre playback. The calculator uses zero model calls on both turns.
 
-02:04–02:22 | Show the hands-free flow
-Enable Hands-free conversation in Live Voice Chat. Import a short question. The finished transcript sends automatically and Timbre reads the start of the reply. Show the earlier “What about after three years?” example and the ₹1,331 answer. Describe the demonstration as a turn-based flow verified with imported audio.
+02:28–02:43 | Show the generated FinWise Demo Checklist in Files. The assistant can create a reusable document from the checklist text supplied in chat.
 
-02:22–02:41 | Show the output the user can keep
-Show the PDF checklist card in Finance Chat. Open it in Files. Explain that users can reuse it in a later conversation.
+02:43–03:00 | Describe what ran
+“Prisma transcribed the audio and Timbre spoke the replies. FinWise used the saved ledger and calculator for exact totals. Groq answered the general education examples. Evon v3.3 30B is supported through a separately configured inference endpoint.”
 
-02:41–03:00 | Explain what ran
-“Prisma handled transcription and Timbre handled speech. Finance Chat shows its answer source. Calculation and ledger answers come from the app, and the live education examples used Groq. Evon v3.3 30B is available as a separately configured provider. This demo shows live Prisma and Timbre.”
+RECORDING AND SUBMISSION
 
-LIVE DEMO NOTES
+The bundled MP4s were recorded with a workspace that already had one ₹50 dining expense. The ₹735 preview in those videos is correct for that starting state. For a fresh recording, use the ₹785 example above. The in-app browser kept microphone permission pending during QA, so the verified dictation and hands-free recording used imported clips. Show the complete voice demo with the audio that actually ran.
 
-Use synthetic records and blur personal account details. If latency exceeds the live slot, switch to the supplied narrated MP4.
-To reproduce the ₹735 preview, start from the recorded fixture state with one ₹50 dining purchase and an allocation equivalent to ₹835. Repeating a demo purchase against a workspace that already has two entries changes the figures.
-With the separate Evon endpoint absent, point to “Separate endpoint required” on Bharat Voice. List Prisma and Timbre as the live Gnani services used.
-Participant contribution: built the voice expense workflow, budget preview, contextual assistant and response traces, provider integration, and submission testing.
+Gnani lists 15 November 2026, 6:00 p.m. IST as the deadline. The public demo must be live before submitting. Post on LinkedIn or X, tag Gnani AI, and include #GnaniAI and #GreatIndianAIInternshipChallenge. Nominate at most one public post per platform. Include the video, written project explanation, live Gnani APIs used, and each member's contribution. The 60-second cut is for the Demo Day Drop format. Use the three-minute version for a longer walkthrough.
 
-SUBMISSION CHECKLIST
-
-Deadline on the current official page: 15 November 2026, 6:00 p.m. IST. The enrollment email lists 10 November.
-Post the working video publicly on LinkedIn or X. Identify the Gnani technology used, tag Gnani AI, and include #GnaniAI and #GreatIndianAIInternshipChallenge.
-Nominate at most one public post per platform. Submit the demo, written explanation, models/APIs used, intended users, and your contribution in the official form.
-The 60-second cut matches the Demo Day Drop award format. The three-minute cut is the extended walkthrough.
 Official rules: https://www.gnani.ai/internship
 Submission form: https://forms.cloud.microsoft/r/dfFShbp7W7

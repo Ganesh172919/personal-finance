@@ -67,6 +67,7 @@ export default function Login() {
   const search = useSearch();
   const { toast } = useToast();
   const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [demoEnabled, setDemoEnabled] = useState(false);
   const [needsMfa, setNeedsMfa] = useState(false);
   const [code, setCode] = useState("");
   const [oauthSubmitting, setOauthSubmitting] = useState(false);
@@ -104,8 +105,9 @@ export default function Login() {
   useEffect(() => {
     (async () => {
       try {
-        const providers = await apiClient<{ email: boolean; google: boolean }>("/auth/providers", { method: "GET" });
+        const providers = await apiClient<{ email: boolean; google: boolean; demo?: boolean }>("/auth/providers", { method: "GET" });
         setGoogleEnabled(Boolean(providers.google));
+        setDemoEnabled(providers.demo === true);
         if (import.meta.env.DEV) {
           console.log(`[Login] Auth providers: email=${providers.email}, google=${providers.google}`);
         }
@@ -137,8 +139,7 @@ export default function Login() {
       });
       await checkAuthStatus();
       toast({
-        title: "Evaluator Session Active",
-        description: "Welcome J Ganesh Kumar Reddy! Navigating to Dashboard...",
+        title: "Demo workspace ready",
       });
       navigate("/dashboard");
     } catch (error: unknown) {
@@ -303,22 +304,12 @@ export default function Login() {
                 ) : null}
               </form>}
 
-              <div className="relative my-5">
-                <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-border" /></div>
-                <div className="relative flex justify-center text-[10px] tracking-wider uppercase font-mono"><span className="bg-card px-2 text-muted-foreground font-semibold">Gnani AI Internship Evaluator Mode</span></div>
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full border-emerald-500/50 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-medium py-2.5 flex items-center justify-center gap-2 transition-all shadow-sm"
-                disabled={evaluatorSubmitting}
-                onClick={handleEvaluatorDemoLogin}
-                id="btn-evaluator-demo-login"
-              >
-                <Shield className="w-4 h-4 text-emerald-500" />
-                {evaluatorSubmitting ? "Launching Evaluator Session..." : "⚡ Evaluator Instant Access (1-Click)"}
-              </Button>
+              {demoEnabled && (
+                <Button type="button" variant="outline" className="mt-4 w-full"
+                  disabled={evaluatorSubmitting} onClick={handleEvaluatorDemoLogin}>
+                  {evaluatorSubmitting ? "Starting demo workspace…" : "Start a local demo workspace"}
+                </Button>
+              )}
 
               <div className="mt-4 text-center text-sm">
                 Don&apos;t have an account? <Link href="/register" className="underline text-primary">Sign up</Link>

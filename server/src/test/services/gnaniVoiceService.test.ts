@@ -4,7 +4,7 @@ import {
   transcribeAudioPrisma,
   synthesizeSpeechTimbre,
   extractExpenseFromVoiceTranscript,
-  answerVoiceQueryWithEvon,
+  answerFinanceVoiceQuery,
   extractKhataDebtFromVoice,
   qualifyLeadFromVoice,
   resolveDisputeFromVoice,
@@ -123,7 +123,7 @@ describe("Gnani AI Voice & Indic Speech Service", () => {
   it("answers the spoken ledger question with one speech synthesis call", async () => {
     const synthesize = vi.spyOn(getVoiceProvider(), "synthesizeSpeech");
     try {
-      const queryResult = await answerVoiceQueryWithEvon({
+      const queryResult = await answerFinanceVoiceQuery({
         orgId: "507f1f77bcf86cd799439011",
         userId: "507f1f77bcf86cd799439012",
         query: "Mera is mahine ka total balance kitna hai?",
@@ -142,7 +142,7 @@ describe("Gnani AI Voice & Indic Speech Service", () => {
   });
 
   it("answers Telugu voice financial queries with localized synthesis", async () => {
-    const queryResult = await answerVoiceQueryWithEvon({
+    const queryResult = await answerFinanceVoiceQuery({
       orgId: "507f1f77bcf86cd799439011",
       userId: "507f1f77bcf86cd799439012",
       query: "Nenu e mahina entha karchu pettanu?",
@@ -162,7 +162,7 @@ describe("Gnani AI Voice & Indic Speech Service", () => {
     } as Awaited<ReturnType<typeof financeIntelligence.getBudgetEnvelopes>>);
     try {
       const query = "What is my remaining budget and highest spending category?";
-      const result = await answerVoiceQueryWithEvon({
+      const result = await answerFinanceVoiceQuery({
         orgId: "507f1f77bcf86cd799439011", userId: "507f1f77bcf86cd799439012",
         query, language: "hi-en-IN", currency: "INR",
       });
@@ -176,7 +176,7 @@ describe("Gnani AI Voice & Indic Speech Service", () => {
   });
 
   it("handles a naturally worded remaining-budget question", async () => {
-    const result = await answerVoiceQueryWithEvon({
+    const result = await answerFinanceVoiceQuery({
       orgId: "test-org", userId: "test-user",
       query: "How much of my budget is left this month?", language: "en-IN",
     });
@@ -184,8 +184,8 @@ describe("Gnani AI Voice & Indic Speech Service", () => {
     expect(result.answerText).toContain("no saved budget limits");
   });
 
-  it("routes unsupported voice questions to Finance Chat when Evon is unavailable", async () => {
-    const result = await answerVoiceQueryWithEvon({
+  it("routes unsupported voice questions to Finance Chat when an educator is unavailable", async () => {
+    const result = await answerFinanceVoiceQuery({
       orgId: "507f1f77bcf86cd799439011",
       userId: "507f1f77bcf86cd799439012",
       query: "How does compound interest work?",

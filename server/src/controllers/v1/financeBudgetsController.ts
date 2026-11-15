@@ -25,6 +25,7 @@ import mongoose from "mongoose";
 import BudgetAllocationModel from "../../models/budgetAllocationModel";
 import type { IUserDocument } from "../../models/userModel";
 import { HttpError } from "../../middleware/httpError";
+import { invalidateBudgetEnvelopePeriod } from "../../services/financeIntelligence";
 import {
   CURRENCY_SYMBOLS,
   FX_RATES_TO_USD,
@@ -104,7 +105,7 @@ export const listBudgetAllocations = async (req: Request, res: Response) => {
     if (!targetCurrency) return base;
     return {
       ...base,
-      amount: convertUsdToCurrency(base.amount, targetCurrency),
+      amount: convertUsdToCurrency(base.amount / FX_RATES_TO_USD[normalizeCurrency(base.currency)], targetCurrency),
       currency: targetCurrency,
     };
   });
@@ -169,6 +170,7 @@ export const upsertBudgetAllocation = async (req: Request, res: Response) => {
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   ).lean();
+  await invalidateBudgetEnvelopePeriod(orgId.toString(), periodKey);
 
   res.status(200).json({
     org_id: orgId.toString(),
@@ -199,6 +201,7 @@ export const deleteBudgetAllocation = async (req: Request, res: Response) => {
   if (!deleted) {
     throw new HttpError(404, "ALLOCATION_NOT_FOUND", "Budget allocation not found");
   }
+  await invalidateBudgetEnvelopePeriod(orgId.toString(), periodKey);
 
   res.status(200).json({
     message: "Budget allocation deleted",
@@ -290,6 +293,7 @@ export const rebalanceBudgetAllocations = async (req: Request, res: Response) =>
   const updatedAllocations = await BudgetAllocationModel.find({ orgId, periodKey })
     .sort({ updatedAt: -1 })
     .lean();
+  await invalidateBudgetEnvelopePeriod(orgId.toString(), periodKey);
 
   res.status(200).json({
     org_id: orgId.toString(),

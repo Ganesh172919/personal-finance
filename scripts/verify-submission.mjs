@@ -104,10 +104,11 @@ check("Backend Voice Controller & Routes mounted", () => {
   return fs.existsSync(p1) && fs.existsSync(p2) && c1.includes("queryVoiceHandler") && c2.includes("/voice/query");
 });
 
-check("Two-way Voice Q&A with Evon 30B reasoning & Timbre TTS", () => {
-  const p = path.join(rootDir, "server", "src", "services", "gnaniVoiceService.ts");
-  const content = fs.readFileSync(p, "utf-8");
-  return content.includes("answerVoiceQueryWithEvon") && content.includes("synthesizeSpeechTimbre");
+check("Two-way Voice Q&A uses AI Core and Timbre TTS", () => {
+  const service = fs.readFileSync(path.join(rootDir, "server", "src", "services", "gnaniVoiceService.ts"), "utf-8");
+  const controller = fs.readFileSync(path.join(rootDir, "server", "src", "controllers", "voiceController.ts"), "utf-8");
+  return service.includes("answerFinanceVoiceQuery") && service.includes("synthesizeSpeechTimbre") &&
+    controller.includes("await answerFinanceVoiceQuery") && controller.includes("await processAiCoreRequest");
 });
 
 check("Python AI Core Provider Registry includes Gnani Evon", () => {

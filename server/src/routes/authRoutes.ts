@@ -38,6 +38,7 @@ import {
   changePassword,
   logout,
   demoEvaluatorLogin,
+  isEvaluatorDemoEnabled,
 } from "../controllers/authController";
 import { validate } from "../middleware/validate";
 import {
@@ -70,7 +71,7 @@ const router = Router();
 // Google OAuth availability is evaluated per request (credentials present AND strategy registered),
 // so /providers always reflects the live configuration.
 router.get("/providers", (req, res) => {
-  res.json({ email: true, google: isGoogleOAuthEnabled(), request_id: req.requestId });
+  res.json({ email: true, google: isGoogleOAuthEnabled(), demo: isEvaluatorDemoEnabled(), request_id: req.requestId });
 });
 
 // Issues a cryptographically signed CSRF protection token for forms.

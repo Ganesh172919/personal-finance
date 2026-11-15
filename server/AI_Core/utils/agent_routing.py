@@ -113,6 +113,11 @@ _CLASSIFY_EXAMPLE = re.compile(
     r"(?:an?|the following)\s+",
     re.I,
 )
+_CHOOSE_EXAMPLE = re.compile(
+    r"^which of (?:those|these|the) (?:two|options|examples)\s+"
+    r"(?:should i use|would you use|would work|works|fits)\s+for\s+",
+    re.I,
+)
 _EDUCATION_FOLLOW_UP = re.compile(
     r"^(?:(?:and )?(?:what|how) (?:about|if)\b|and (?:after|if|over|for|at)\b|"
     r"(?:can you )?(?:explain (?:that|it)|give (?:me )?(?:(?:a|one) (?:generic |simple |worked |hypothetical )?|an )example\b|"
@@ -129,21 +134,24 @@ def is_illustrative_education(question: str) -> bool:
     )
 
 
+def _is_education_follow_up(question: str) -> bool:
+    example_prefix = _CLASSIFY_EXAMPLE.match(question) or _CHOOSE_EXAMPLE.match(question)
+    subject = question[example_prefix.end():] if example_prefix else question
+    return bool(example_prefix or _EDUCATION_FOLLOW_UP.search(question)) and not _PERSONAL.search(subject)
+
+
 def education_follow_up(question: str, history: Optional[list[dict[str, str]]]) -> list[str]:
     """Keep a short chain of user examples when answering an educational follow-up."""
-    question = (question or "").strip()
-    example_prefix = _CLASSIFY_EXAMPLE.match(question)
-    subject = question[example_prefix.end():] if example_prefix else question
-    if (not example_prefix and not _EDUCATION_FOLLOW_UP.search(question)) or _PERSONAL.search(subject):
+    if not _is_education_follow_up((question or "").strip()):
         return []
     turns = [turn.get("content", "") for turn in (history or []) if turn.get("role") == "user"]
     context = []
     for turn in reversed(turns[-3:]):
-        if not isinstance(turn, str) or len(turn) > 700 or _PERSONAL.search(turn):
+        if not isinstance(turn, str) or len(turn) > 700:
             break
-        if _EDUCATION_FOLLOW_UP.search(turn.strip()):
+        if _is_education_follow_up(turn.strip()):
             context.insert(0, turn.strip())
-        elif _EDUCATION.search(turn) or is_illustrative_education(turn):
+        elif not _PERSONAL.search(turn) and (_EDUCATION.search(turn) or is_illustrative_education(turn)):
             return [turn.strip(), *context]
         else:
             break

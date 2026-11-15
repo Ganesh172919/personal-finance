@@ -26,7 +26,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { User, Shield, Key, Settings as SettingsIcon, Copy, Eye, EyeOff, Mail, Mic, Sparkles } from "lucide-react";
+import { User, Shield, Key, Settings as SettingsIcon, Copy, Eye, EyeOff, Mail } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { useToast } from "@/hooks/useToast";
@@ -78,7 +78,7 @@ export default function Settings() {
         />
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-6 rounded-[calc(var(--radius)-4px)] border border-border/70 bg-card/85 p-1">
+          <TabsList className="grid w-full grid-cols-5 rounded-[calc(var(--radius)-4px)] border border-border/70 bg-card/85 p-1">
           <TabsTrigger value="profile" className="flex items-center gap-2" data-testid="tab-profile" onClick={() => setActiveTab("profile")}>
             <User className="w-4 h-4" />
             <span className="sr-only sm:not-sr-only">Profile</span>
@@ -98,10 +98,6 @@ export default function Settings() {
           <TabsTrigger value="newsletter" className="flex items-center gap-2" data-testid="tab-newsletter" onClick={() => setActiveTab("newsletter")}>
             <Mail className="w-4 h-4" />
             <span className="sr-only sm:not-sr-only">Newsletter</span>
-          </TabsTrigger>
-          <TabsTrigger value="gnani" className="flex items-center gap-2 text-indigo-400" data-testid="tab-gnani" onClick={() => setActiveTab("gnani")}>
-            <Mic className="w-4 h-4" />
-            <span className="sr-only sm:not-sr-only">Gnani AI</span>
           </TabsTrigger>
         </TabsList>
 
@@ -125,9 +121,6 @@ export default function Settings() {
           <NewsletterSettings />
         </TabsContent>
 
-        <TabsContent value="gnani" className="space-y-4 mt-6">
-          <GnaniVoiceSection toast={toast} />
-        </TabsContent>
         </Tabs>
       </div>
     </div>
@@ -1009,90 +1002,6 @@ function PreferencesSection({ configQuery, toast, queryClient }: any) {
           >
             {isSaving ? "Saving..." : "Save Preferences"}
           </Button>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function GnaniVoiceSection({ toast }: { toast: any }) {
-  const [indicLang, setIndicLang] = useState("hi-IN");
-  const [telephonicFilter, setTelephonicFilter] = useState(true);
-
-  return (
-    <Card className="border border-indigo-500/30 bg-card p-6">
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-indigo-400" />
-              The Great Indian AI Internship Challenge — Build Resources
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Configuration and live telemetry for Gnani AI Speech and LLM models.
-            </p>
-          </div>
-          <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-500/40">
-            J Ganesh Kumar Reddy
-          </Badge>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 rounded-lg bg-muted/40 border border-border">
-            <div className="text-xs text-muted-foreground">Allocated Credits</div>
-            <div className="text-xl font-bold text-foreground">5,000 Credits</div>
-            <div className="text-xs text-emerald-400 mt-1">● Active on app.gnani.ai</div>
-          </div>
-          <div className="p-4 rounded-lg bg-muted/40 border border-border">
-            <div className="text-xs text-muted-foreground">Speech Models</div>
-            <div className="text-sm font-semibold text-foreground">Prisma v3.0 (STT) &amp; Timbre (TTS)</div>
-            <div className="text-xs text-muted-foreground mt-1">12+ Indic Languages &amp; Hinglish</div>
-          </div>
-          <div className="p-4 rounded-lg bg-muted/40 border border-border">
-            <div className="text-xs text-muted-foreground">Reasoning Engine</div>
-            <div className="text-sm font-semibold text-foreground">Evon v3.3 (30B Model)</div>
-            <div className="text-xs text-muted-foreground mt-1">Deep Financial Reasoning</div>
-          </div>
-        </div>
-
-        <div className="space-y-4 pt-2">
-          <div className="space-y-2">
-            <Label htmlFor="default-indic-lang">Default Spoken Indic Dialect</Label>
-            <select
-              id="default-indic-lang"
-              value={indicLang}
-              onChange={(e) => {
-                setIndicLang(e.target.value);
-                toast({ title: "Language preference saved", description: `Default set to ${e.target.value}` });
-              }}
-              className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="hi-IN">हिन्दी (Hindi)</option>
-              <option value="hi-en-IN">Hinglish (Code-Mixed)</option>
-              <option value="te-IN">తెలుగు (Telugu)</option>
-              <option value="ta-IN">தமிழ் (Tamil)</option>
-              <option value="kn-IN">ಕನ್ನಡ (Kannada)</option>
-              <option value="mr-IN">मराठी (Marathi)</option>
-              <option value="bn-IN">বাংলা (Bengali)</option>
-              <option value="gu-IN">ગુજરાતી (Gujarati)</option>
-              <option value="en-IN">Indian English</option>
-            </select>
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/20">
-            <div>
-              <div className="text-sm font-medium text-foreground">8kHz Telephonic Audio Filter</div>
-              <div className="text-xs text-muted-foreground">
-                Enhance transcription accuracy in noisy Indian market &amp; traffic audio.
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={telephonicFilter}
-              onChange={(e) => setTelephonicFilter(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-            />
-          </div>
         </div>
       </div>
     </Card>

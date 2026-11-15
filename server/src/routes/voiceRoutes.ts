@@ -12,8 +12,8 @@
  */
 
 import { Router } from "express";
-import passport from "passport";
 import { getEnv } from "../config/env";
+import { HttpError } from "../middleware/httpError";
 import type { IUserDocument } from "../models/userModel";
 import { createVoiceTicket } from "../services/gnaniVoiceStream";
 import { asyncRoute } from "../utils/asyncRoute";
@@ -50,14 +50,13 @@ import {
 
 const router = Router();
 
-// Optional authentication for voice operations so challenge evaluators can test presets
-router.use((req, res, next) => {
-  passport.authenticate("jwt", { session: false }, (_err: any, user: any) => {
-    if (user) {
-      req.user = user;
-    }
-    next();
-  })(req, res, next);
+router.get("/voice/status", asyncRoute(getVoiceStatusHandler));
+
+router.use("/voice", (req, _res, next) => {
+  if (!req.user || !req.org) {
+    return next(new HttpError(401, "UNAUTHORIZED", "Sign in to use voice tools."));
+  }
+  next();
 });
 
 router.post("/voice/live-ticket", (req, res) => {
@@ -100,7 +99,7 @@ router.post(
   asyncRoute(logExpenseVoiceHandler)
 );
 
-// Two-way conversational voice financial Q&A (Prisma STT -> Evon 30B reasoning -> Timbre TTS)
+// Voice financial Q&A (Prisma, ledger or AI Core, Timbre)
 router.post(
   "/voice/query",
   voiceUpload().single("audio"),
@@ -216,12 +215,6 @@ router.post(
 router.get(
   "/voice/languages",
   asyncRoute(getVoiceLanguagesHandler)
-);
-
-// Get Gnani platform and build credits status
-router.get(
-  "/voice/status",
-  asyncRoute(getVoiceStatusHandler)
 );
 
 export default router;
