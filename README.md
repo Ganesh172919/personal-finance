@@ -27,6 +27,39 @@ FinWise is a three-tier personal finance platform: a React 18 client, an Express
 - 📓 **Financial Journal**: offline-first handwriting and Markdown notes with idempotent batch sync.
 - 📅 **Financial Calendar**: recurring bill detection with RFC 5545 `.ics` export and reminders.
 
+## 🎙️ Voice-First Finance with Gnani AI
+
+FinWise integrates three Gnani AI models so users can log expenses and hear answers in their own language.
+
+| Model | Role in FinWise | What it does |
+| :--- | :--- | :--- |
+| **Prisma v3.0 (STT)** | Speech-to-text | Transcribes live microphone input in Chat and the FinanceOS Cockpit |
+| **Evon v3.3 (30B Reasoning LLM)** | Transaction extraction | Turns colloquial phrasing into structured transactions |
+| **Timbre (TTS, beta)** | Text-to-speech | Speaks AI responses and confirmations back to the user |
+
+### Voice Flow
+```text
+🎤 Speak → Prisma STT → Evon reasoning → Structured transaction → 🔊 Timbre confirmation
+```
+
+### Highlights
+- 🎤 **Live recording**: the microphone works directly inside Chat and the FinanceOS Cockpit.
+- 🗣️ **12+ Indic languages**: Hindi, Telugu, Tamil, Kannada, Marathi, Bengali, Gujarati, Malayalam, Punjabi, Odia, and Indian English.
+- 🔀 **Code-mixed speech**: Hinglish and similar mixed-language phrasing is transcribed.
+- 📞 **Noisy audio**: Prisma handles 8kHz telephonic audio with noise cancellation.
+- 🧠 **First-class LLM provider**: Evon v3.3 is integrated into the Python AI Core.
+- 🧾 **Structured extraction**: Evon returns `amount`, `category`, `merchant`, and `paymentMethod` from natural speech.
+- 🔢 **Arithmetic accuracy**: extraction is designed to avoid arithmetic hallucinations.
+- 🔊 **Spoken confirmations**: Timbre reads transaction confirmations back in the user's native dialect.
+
+### Example (illustrative)
+```json
+{
+  "spoken": "Aaj Swiggy pe 450 rupaye UPI se kharch kiye",
+  "extracted": { "amount": 450, "category": "Food", "merchant": "Swiggy", "paymentMethod": "UPI" }
+}
+```
+
 ## 🧰 Tech Stack
 | Layer | Technologies |
 | :--- | :--- |
