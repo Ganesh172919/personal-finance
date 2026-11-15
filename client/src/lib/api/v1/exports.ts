@@ -98,13 +98,17 @@ const parseFilenameFromContentDisposition = (value: string | null) => {
  * Uses raw `fetch` instead of `apiClient` because the response is binary
  * and needs special handling for Content-Disposition parsing.
  */
-export async function downloadExportFile(id: string): Promise<{ blob: Blob; filename: string; contentType: string }> {
+export function downloadExportFile(id: string): Promise<{ blob: Blob; filename: string; contentType: string }> {
+  return downloadAuthenticatedFile(`/exports/${id}/download`, `export-${id}`);
+}
+
+export async function downloadAuthenticatedFile(path: string, fallback: string): Promise<{ blob: Blob; filename: string; contentType: string }> {
   // Manually set auth headers since we're bypassing apiClient.
   const headers = new Headers();
   const activeOrgId = getActiveOrgId();
   if (activeOrgId) headers.set("X-Org-Id", activeOrgId);
 
-  const response = await fetch(buildApiUrl(`/exports/${id}/download`), {
+  const response = await fetch(buildApiUrl(path), {
     method: "GET",
     headers,
     credentials: "include",
@@ -116,12 +120,11 @@ export async function downloadExportFile(id: string): Promise<{ blob: Blob; file
 
   const contentType = response.headers.get("Content-Type") || "application/octet-stream";
   const filenameFromHeader = parseFilenameFromContentDisposition(response.headers.get("Content-Disposition"));
-  const fallbackFilename = `export-${id}`;
   const blob = await response.blob();
 
   return {
     blob,
-    filename: filenameFromHeader || fallbackFilename,
+    filename: filenameFromHeader || fallback,
     contentType,
   };
 }

@@ -139,7 +139,8 @@ import { publishDomainEvent } from "../services/domainEvents";
 import { buildAiFinanceGrounding } from "../services/financeGrounding";
 import { HttpError } from "../middleware/httpError";
 import { logger } from "../config/logger";
-import { buildSavedActivityDocument, createChatDocument, parseChatDocumentRequest } from "../services/chatDocuments";
+import { buildSavedActivityDocument, chatTextFilename, createChatDocument, parseChatDocumentRequest } from "../services/chatDocuments";
+import { renderLocalAuthoredPdf } from "../services/richDocumentRenderer";
 import { getOrGenerateConversationInsights } from "../services/conversationInsightsCache";
 import { getMonthlyLedgerSummary, getMonthlySpendingFollowUp, getMonthlySpendingPeriod } from "../services/monthlyLedgerSummary";
 import { formatBillingCurrency } from "../utils/currencyFx";
@@ -531,6 +532,27 @@ export async function getMessages(req: Request, res: Response) {
 // Handles incoming user chat queries, coordinates multi-modal context, and invokes AI.
 // Manages feature quota deductions, response caching, and agent tool execution runs.
 // Records user and assistant messages, updates rolling summaries, and emits events.
+export async function downloadLocalChatDocument(req: Request, res: Response) {
+  const startedAt = Date.now();
+  const user = req.user as IUserDocument;
+  const orgId = requireOrgId(req);
+  const message = await ChatMessageModel.findOne({
+    _id: req.params.messageId, sessionId: req.params.sessionId, orgId, userId: user._id,
+    role: "assistant", "metadata.fileDestination": "local",
+  }).select("metadata.localDocument").lean();
+  const draft = message?.metadata?.localDocument;
+  if (!message || !draft?.content || !draft.title) throw new HttpError(404, "CHAT_DOCUMENT_NOT_FOUND", "This download is unavailable.");
+
+  const textFile = draft.kind === "text";
+  const file = textFile ? { filename: chatTextFilename(draft.title), buffer: Buffer.from(draft.content, "utf8") }
+    : await renderLocalAuthoredPdf({ orgId, userId: user._id, requestId: req.requestId || message._id.toString(), ...draft });
+
+  req.log?.info({ event: "chat.document.downloaded", destination: "local", bytes: file.buffer.length,
+    durationMs: Date.now() - startedAt }, "Local chat document downloaded");
+  return res.attachment(file.filename).type(textFile ? "text/plain; charset=utf-8" : "application/pdf")
+    .set("Cache-Control", "private, no-store").send(file.buffer);
+}
+
 export async function sendMessage(req: Request, res: Response) {
   try {
     const user = req.user as IUserDocument;
@@ -599,6 +621,8 @@ export async function sendMessage(req: Request, res: Response) {
         return res.status(404).json({ message: "Original question not found" });
       }
     }
+    const fileDestination = (originalUserMessage ? originalUserMessage.metadata?.fileDestination : options?.file_destination) === "local"
+      ? "local" : "cloud";
 
     const workspaceFiles = requestedFileIds.length
       ? await WorkspaceFileModel.find({
@@ -645,7 +669,8 @@ export async function sendMessage(req: Request, res: Response) {
         content: String(message.content),
         hasAttachments: Boolean(message.metadata?.attachments?.length),
       })));
-    const reservation = monthlySpendingQuestion ? undefined : await reserveFeatureUsage({
+    const documentRequest = webQuestion ? null : parseChatDocumentRequest(content);
+    let reservation = monthlySpendingQuestion || documentRequest ? undefined : await reserveFeatureUsage({
       orgId, userId: user._id, feature: "monthly_ai_calls", units: 1, requestId,
     });
     if (reservation) releaseReservationOnResponseEnd(res, reservation);
@@ -657,11 +682,10 @@ export async function sendMessage(req: Request, res: Response) {
       userId: user._id,
       role: "user",
       content: content.trim(),
-      metadata: attachments.length ? { attachments } : undefined,
+      metadata: attachments.length || documentRequest ? { attachments, ...(documentRequest ? { fileDestination } : {}) } : undefined,
     });
 
     // Get the user's financial profile for AI context
-    const documentRequest = webQuestion ? null : parseChatDocumentRequest(content);
     const financialProfile = webQuestion || documentRequest || monthlySpendingQuestion
       ? null
       : await ensureProfileWithMigration({ orgId, userId: user._id });
@@ -678,22 +702,52 @@ export async function sendMessage(req: Request, res: Response) {
 
       if (documentRequest) {
         const startedAt = new Date().toISOString();
-        aiMetadata = { analysisType: "document_creation", agentsInvolved: ["document_renderer"], llmCallCount: 0, fallbackUsed: false, requestId };
+        aiMetadata = { analysisType: "document_creation", agentsInvolved: ["document_renderer"], llmCallCount: 0, fallbackUsed: false, requestId, fileDestination };
         const savedContent = !documentRequest.content ? await buildSavedActivityDocument({
           orgId, userId: user._id, request: content, currency: (await getOrgAiSettings(orgId)).currency,
         }) : null;
-        if (!documentRequest.content && !savedContent) {
-          aiResponseContent = "I can create a PDF and save it in Files. Include the text after Content:, for example:\n\nCreate a PDF document titled Monthly checklist.\nContent:\n# Monthly checklist\n- Review spending\n- Check savings progress";
-        } else {
-          const document = await createChatDocument({ orgId, userId: user._id, requestId, ...documentRequest,
-            title: savedContent && documentRequest.title === "Chat document" ? "Your saved activity" : documentRequest.title,
-            content: documentRequest.content || savedContent!,
-          });
-          aiResponseContent = `Created **${document.title}** as a PDF from ${savedContent ? "your saved workspace records" : "the text you supplied"}. It is saved in Files.`;
-          aiMetadata.generatedDocuments = [document];
+        let body = documentRequest.content || savedContent || "";
+        const hasDraftInstructions = documentRequest.title !== "Chat document" || attachments.length > 0 ||
+          /\b(?:about|covering|explaining|summari[sz](?:e|ing)|with|based on|previous answer|last reply)\s+\S+/i.test(content);
+        if (!body && hasDraftInstructions) {
+          reservation = await reserveFeatureUsage({ orgId, userId: user._id, feature: "monthly_ai_calls", units: 1, requestId });
+          releaseReservationOnResponseEnd(res, reservation);
+          const draftStartedAt = Date.now();
+          const result = await processAiCoreRequest({
+            user_input: aiUserInput, user_profile: null, org_id: orgId.toString(), user_id: user._id.toString(),
+            conversation_history: conversationHistory,
+            options: { conversation_mode: true, document_draft: true, include_actions: false },
+          }, requestId, { userId: user._id.toString() });
+          if (!result.success || result.fallback_used || result.analysis_type !== "document_draft" || !result.final_output?.trim()) {
+            throw new AiCoreUnavailableError(5);
+          }
+          body = result.final_output.trim();
+          aiUsage = result.usage;
+          Object.assign(aiMetadata, { activeProvider: result.active_provider, activeModel: result.active_model,
+            aiCoreDurationMs: Date.now() - draftStartedAt, llmCallCount: result.llm_call_count, tokenUsage: result.usage,
+            agentsInvolved: ["document_draft", "document_renderer"], workflowTrace: result.workflow_trace });
         }
-        aiMetadata.aiCoreDurationMs = 0;
-        aiMetadata.workflowTrace = [{ agent: "PDF document renderer", startedAt, endedAt: new Date().toISOString(), status: "success" }];
+        if (!body) {
+          aiResponseContent = "Tell me what the file should cover or paste its text after `Content:`. For example, “Create a PDF about planning a weekend trip.”";
+        } else {
+          const draft = { ...documentRequest, title: savedContent && documentRequest.title === "Chat document" ? "Your saved activity" : documentRequest.title,
+            content: body };
+          const fileType = draft.kind === "text" ? "text file" : "PDF";
+          if (fileDestination === "local") {
+            aiMetadata.localDocument = draft;
+            aiResponseContent = `**${draft.title}** is ready to download as a ${fileType}.`;
+          } else {
+            const document = await createChatDocument({ orgId, userId: user._id, requestId, ...draft });
+            aiMetadata.generatedDocuments = [document];
+            aiResponseContent = `Created **${document.title}** as a ${fileType}${savedContent ? " from your saved workspace records" : ""}. It is saved in Files.`;
+          }
+          req.log?.info({ event: "chat.document.prepared", destination: fileDestination, fileType,
+            source: savedContent ? "workspace" : documentRequest.content ? "user" : "model",
+            durationMs: Date.now() - aiStartedAt, llmCalls: aiMetadata.llmCallCount }, "Chat document prepared");
+        }
+        aiMetadata.workflowTrace = [...(aiMetadata.workflowTrace || []),
+          { agent: fileDestination === "local" ? "Local download prepared" : "Workspace document renderer",
+            startedAt, endedAt: new Date().toISOString(), status: "success" }];
       } else if (monthlySpendingQuestion) {
         const startedAt = new Date().toISOString();
         const [summary, settings] = await Promise.all([
@@ -876,19 +930,21 @@ export async function sendMessage(req: Request, res: Response) {
       }
       }
     } catch (aiError: any) {
-      if (webQuestion || isAiCapacityError(aiError) || aiError instanceof AiCoreOverloadedError || aiError instanceof AiCoreUnavailableError) {
+      if (documentRequest || webQuestion || isAiCapacityError(aiError) || aiError instanceof AiCoreOverloadedError || aiError instanceof AiCoreUnavailableError) {
         // A shed request is not a successful answer; don't leave an orphaned
         // question, consume quota, or turn a retryable 429/503 into a 200.
         if (!originalUserMessage) {
           await ChatMessageModel.deleteOne({ _id: userMessage._id, orgId, userId: user._id });
         }
         if (webQuestion && !(aiError instanceof HttpError)) throw new AiCoreUnavailableError(5);
+        if (documentRequest && !(aiError instanceof HttpError)) {
+          req.log?.error({ event: "chat.document.failed", destination: fileDestination, errorType: aiError?.name }, "Chat document failed");
+          throw new HttpError(503, "CHAT_DOCUMENT_UNAVAILABLE", "The file couldn't be prepared. Try again shortly.");
+        }
         throw aiError;
       }
-      logger.error({ error: aiError?.message ?? aiError }, `[requestId=${requestId}] ${documentRequest ? "Document creation error" : monthlySpendingQuestion ? "Ledger summary error" : "AI service error"}`);
-      aiResponseContent = documentRequest
-        ? "I couldn't create the PDF. Your request is saved in this conversation. Send it again to retry."
-        : monthlySpendingQuestion
+      logger.error({ error: aiError?.message ?? aiError }, `[requestId=${requestId}] ${monthlySpendingQuestion ? "Ledger summary error" : "AI service error"}`);
+      aiResponseContent = monthlySpendingQuestion
         ? "I couldn't read your ledger right now. Send the question again to retry."
         : "I'm currently experiencing some difficulties connecting to the AI service. Please try again in a moment.";
     }

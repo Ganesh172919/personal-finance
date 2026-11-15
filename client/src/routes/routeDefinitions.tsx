@@ -121,6 +121,8 @@ export const appRoutes: AppRouteDefinition[] = [
   { path: "/share/financial-story/:token", access: "public", component: SharedFinancialStory },
 
   // Chat routes (protected, chat layout)
+  { path: "/chat/local/:sessionId?", access: "protected", layout: "chat", component: ChatPage },
+  { path: "/chat/cloud/:sessionId?", access: "protected", layout: "chat", component: ChatPage },
   { path: "/chat/:sessionId?", access: "protected", layout: "chat", component: ChatPage },
 
   // Core application routes (protected, app layout with sidebar)

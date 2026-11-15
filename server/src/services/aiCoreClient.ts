@@ -185,7 +185,7 @@ export interface AiCoreProcessRequest {
   resume_from_checkpoint?: boolean; // Whether to resume from checkpoint
   conversation_history?: Array<{ role: "user" | "assistant"; content: string }>; // Conversation history
   session_summary?: string; // Session summary
-  options?: { narrative?: boolean; conversation_mode?: boolean; public_web_search?: boolean; llm_decomposition?: boolean; include_evidence?: boolean; include_document_passages?: boolean; include_confidence?: boolean; include_actions?: boolean; task_type?: "finance" | "conversation_insights" }; // Processing options
+  options?: { narrative?: boolean; conversation_mode?: boolean; public_web_search?: boolean; document_draft?: boolean; llm_decomposition?: boolean; include_evidence?: boolean; include_document_passages?: boolean; include_confidence?: boolean; include_actions?: boolean; task_type?: "finance" | "conversation_insights" }; // Processing options
 }
 
 /**
@@ -967,7 +967,7 @@ export const processAiCoreRequest = async (
 
 export function isConversationalResponseUsable(response: Record<string, unknown> | AiCoreProcessResponse): boolean {
   const isFailedAnswer = response.fallback_used === true && (
-    response.analysis_type === "chat_assistant" || response.analysis_type === "financial_education" || response.analysis_type === "public_web_research" ||
+    response.analysis_type === "chat_assistant" || response.analysis_type === "financial_education" || response.analysis_type === "public_web_research" || response.analysis_type === "document_draft" ||
     response.session_status === "failed" || response.workflow_phase === "error"
   );
   return response.conversation_mode === true && response.success === true &&

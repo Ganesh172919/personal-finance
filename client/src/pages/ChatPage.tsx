@@ -75,7 +75,11 @@ const capabilityHighlights = [
 export default function ChatPage() {
   const params = useParams();
   const sessionId = params.sessionId as string | undefined;
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+  const modePrefix = /^\/chat\/(local|cloud)(?:\/|$)/.exec(location)?.[1];
+  const basePath = modePrefix ? `/chat/${modePrefix}` : "/chat";
+  const local = modePrefix === "local";
+  const threadPath = sessionId ? `/${sessionId}` : "";
   const { loadSessions, createSession } = useChatStore();
   const { user, logout } = useAuth();
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
@@ -91,7 +95,7 @@ export default function ChatPage() {
 
   const handleNewSession = async () => {
     const session = await createSession();
-    navigate(session ? `/chat/${session.id}` : "/chat");
+    navigate(session ? `${basePath}/${session.id}` : basePath);
     setShowMobileSidebar(false);
   };
 
@@ -133,10 +137,10 @@ export default function ChatPage() {
 
                 <div className="max-w-[48rem] space-y-0.5">
                   <h1 className="sr-only text-base font-semibold leading-tight tracking-tight text-foreground lg:not-sr-only lg:text-lg xl:text-[1.55rem]">
-                    Chat with your finance assistant
+                    {local ? "Local files chat" : "Cloud files chat"}
                   </h1>
                   <p className="hidden max-w-3xl text-xs leading-5 text-muted-foreground lg:block">
-                    Ask about your budget, debts, goals, or uploaded files.
+                    {local ? "Draft PDFs and text files for download to this device." : "Draft PDFs and text files that are saved in your workspace."}
                   </p>
                 </div>
 
@@ -201,12 +205,20 @@ export default function ChatPage() {
               </div>
             </div>
           </div>
+          <nav aria-label="Chat file destination" className="flex items-center gap-1.5 text-sm">
+            <Button asChild size="sm" variant={local ? "ghost" : "secondary"}>
+              <Link href={`/chat/cloud${threadPath}`} aria-current={local ? undefined : "page"}>Cloud files</Link>
+            </Button>
+            <Button asChild size="sm" variant={local ? "secondary" : "ghost"}>
+              <Link href={`/chat/local${threadPath}`} aria-current={local ? "page" : undefined}>Local files</Link>
+            </Button>
+          </nav>
         </div>
       </header>
 
       <div className="relative flex min-h-0 flex-1 gap-2.5 p-2.5 lg:gap-2.5 lg:p-2.5">
         <aside className="hidden w-[264px] shrink-0 overflow-hidden rounded-[calc(var(--radius)+4px)] border border-border/70 surface-panel lg:flex lg:flex-col xl:w-[276px]">
-          <ChatHistorySidebar />
+          <ChatHistorySidebar basePath={basePath} />
         </aside>
 
         {showMobileSidebar ? (
@@ -229,14 +241,14 @@ export default function ChatPage() {
                 </Button>
               </div>
               <div className="min-h-0 flex-1">
-                <ChatHistorySidebar onSessionSelect={() => setShowMobileSidebar(false)} />
+                <ChatHistorySidebar basePath={basePath} onSessionSelect={() => setShowMobileSidebar(false)} />
               </div>
             </aside>
           </div>
         ) : null}
 
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 overflow-hidden rounded-[calc(var(--radius)+4px)] border border-border/70 surface-panel">
-          <ChatContainer sessionId={sessionId} />
+          <ChatContainer sessionId={sessionId} basePath={basePath} localFiles={local} />
         </main>
 
       </div>

@@ -41,12 +41,13 @@ import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 // Enables parent navigation shells to synchronize pane states or mobile views.
 interface ChatHistorySidebarProps {
   onSessionSelect?: (sessionId: string) => void;
+  basePath?: string;
 }
 
 // Sidebar navigation component presenting past conversations organized by date.
 // Offers fast search filtering, thread creation, inline renaming, and deletion.
 // Displays localized message timestamps, message counts, and active thread highlights.
-export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps) {
+export function ChatHistorySidebar({ onSessionSelect, basePath = "/chat" }: ChatHistorySidebarProps) {
   const {
     sessions,
     currentSessionId,
@@ -72,13 +73,13 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
     const session = await createSession();
     if (!session) return;
 
-    navigate(`/chat/${session.id}`);
+    navigate(`${basePath}/${session.id}`);
     onSessionSelect?.(session.id);
   };
 
   const handleSelectSession = (sessionId: string) => {
     void selectSession(sessionId);
-    navigate(`/chat/${sessionId}`);
+    navigate(`${basePath}/${sessionId}`);
     onSessionSelect?.(sessionId);
   };
 
@@ -106,7 +107,7 @@ export function ChatHistorySidebar({ onSessionSelect }: ChatHistorySidebarProps)
     await deleteSession(sessionId);
     // Leave the deleted thread's URL so a reload does not show "Conversation unavailable".
     if (wasOpen && !useChatStore.getState().sessions.some((session) => session.id === sessionId)) {
-      navigate("/chat", { replace: true });
+      navigate(basePath, { replace: true });
     }
   };
 

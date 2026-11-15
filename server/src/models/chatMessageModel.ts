@@ -131,6 +131,8 @@ export interface IChatMessageMetadata {
   suggestedActions?: Array<Record<string, unknown>>;
   linkedEntityIds?: Record<string, string[]>;
   generatedDocuments?: Array<{ workspaceFileId: string; fileId: string; title: string; filename: string; mimeType: string; sizeBytes: number }>;
+  fileDestination?: "local" | "cloud";
+  localDocument?: import("../services/chatDocuments").ChatDocumentDraft;
 
   /**
    * Trace of the multi-agent workflow showing each agent's execution timeline.
@@ -334,6 +336,8 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
       suggestedActions: { type: [Schema.Types.Mixed], default: [] },
       linkedEntityIds: { type: Schema.Types.Mixed, default: undefined },
       generatedDocuments: { type: [Schema.Types.Mixed], default: [] },
+      fileDestination: { type: String, enum: ["local", "cloud"] },
+      localDocument: { type: Schema.Types.Mixed },
 
       // Multi-agent workflow trace showing execution timeline per agent
       workflowTrace: {

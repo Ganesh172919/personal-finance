@@ -26,11 +26,12 @@ import {
   deleteSession,
   renameSession,
   getMessages,
+  downloadLocalChatDocument,
   sendMessage,
   getConversationInsights
 } from "../controllers/chatController";
 import { validate } from "../middleware/validate";
-import { sessionIdParamSchema } from "../schemas/common";
+import { fileIdParamSchema, sessionIdParamSchema } from "../schemas/common";
 import {
   getMessagesQuerySchema,
   renameSessionBodySchema,
@@ -92,6 +93,10 @@ router.get(
   validate({ params: sessionIdParamSchema, query: getMessagesQuerySchema }),
   asyncRoute(getMessages)
 );
+
+router.get("/sessions/:sessionId/messages/:messageId/download", requireAuth,
+  validate({ params: sessionIdParamSchema.extend({ messageId: fileIdParamSchema.shape.fileId }) }),
+  asyncRoute(downloadLocalChatDocument));
 
 // Extracts AI-generated insights, summaries, and action items from conversation.
 // Requires authenticated user session to inspect user conversational context.

@@ -103,12 +103,12 @@ export async function fetchMessages(
 export async function sendMessage(
   sessionId: string,
   content: string,
-  options?: { narrative?: boolean; fileIds?: string[]; idempotencyKey?: string; regenerateOf?: string; bypassCache?: boolean }
+  options?: { narrative?: boolean; fileIds?: string[]; idempotencyKey?: string; regenerateOf?: string; bypassCache?: boolean; fileDestination?: "local" }
 ): Promise<ISendMessageResponse> {
   const payload: {
     content: string;
     fileIds?: string[];
-    options?: { narrative?: boolean; regenerate_of?: string; bypass_cache?: boolean };
+    options?: { narrative?: boolean; regenerate_of?: string; bypass_cache?: boolean; file_destination?: "local" };
   } = { content };
   // Only include fileIds if there are actual attachments
   if (Array.isArray(options?.fileIds) && options.fileIds.length > 0) {
@@ -118,6 +118,7 @@ export async function sendMessage(
   if (typeof options?.narrative === "boolean") {
     payload.options = { narrative: options.narrative };
   }
+  if (options?.fileDestination) payload.options = { ...payload.options, file_destination: options.fileDestination };
   // Regenerate: link to the previous output and skip the response cache (server also forces a cache bypass).
   if (options?.regenerateOf) {
     payload.options = { ...payload.options, regenerate_of: options.regenerateOf, bypass_cache: true };

@@ -51,6 +51,7 @@ export const sendMessageBodySchema = z
     options: z
       .object({
         narrative: z.boolean().optional(),
+        file_destination: z.enum(["local", "cloud"]).optional(),
         // Regenerate action: id of the AgentOutput being redone, and a flag to skip the response cache.
         regenerate_of: z.string().regex(/^[a-f\d]{24}$/i, "Invalid agent output id").optional(),
         bypass_cache: z.boolean().optional(),

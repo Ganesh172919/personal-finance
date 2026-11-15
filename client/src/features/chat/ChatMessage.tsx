@@ -112,10 +112,12 @@ import { useToast } from "@/hooks/useToast";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import type { ToolCall } from "@/types/ai.types";
 import { buildApiUrl } from "@/lib/apiBase";
+import { readChatReturnPath } from "@/lib/fileReferences";
+import { useLocation } from "wouter";
 import { splitAnswerAndPlan } from "@/lib/chatResponse";
 import { FEEDBACK_CORRECTION_MAX, FEEDBACK_REASONS, type FeedbackReasonCode } from "@/lib/api/chat";
 import { useChatStore } from "@/stores/chatStore";
-import { ChatDocumentCard } from "./ChatDocumentCard";
+import { ChatDocumentCard, ChatFileDownloadLink } from "./ChatDocumentCard";
 
 // Property specifications for rendering an individual conversation message.
 // Supplies the chat message object containing role, body, and AI metadata.
@@ -130,7 +132,8 @@ interface ChatMessageProps {
 // Embeds source citations, task creation actions, tool approval cards, and ratings.
 // Handles feedback submissions, clipboard copying, and autopilot run simulations.
 export function ChatMessage({ message, onUseDocument, isSending }: ChatMessageProps) {
-  const chatLocation = `/chat/${message.sessionId}`;
+  const [location] = useLocation();
+  const chatLocation = readChatReturnPath(location) || `/chat/${message.sessionId}`;
   const isUser = message.role === "user";
   const recoveredFailureCount = message.metadata?.recoveredFailureCount ?? message.metadata?.recoveredFailures?.length ?? 0;
   const usedLanguageModel = message.metadata?.llmCallCount !== 0;
@@ -639,6 +642,19 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
         </div>
 
         {!isUser && message.metadata?.generatedDocuments?.map(document => <ChatDocumentCard key={document.fileId} document={document} returnTo={chatLocation} onUseDocument={onUseDocument} disabled={isSending} />)}
+        {!isUser && message.metadata?.localDocument && (
+          <section aria-label="Local file" className="mt-3 space-y-2 rounded-md border border-border bg-background p-3 text-sm">
+            <h3 className="break-words font-semibold">{message.metadata.localDocument.title}</h3>
+            <ChatFileDownloadLink path={`/chat/sessions/${encodeURIComponent(message.sessionId)}/messages/${encodeURIComponent(message.id)}/download`}
+              filename={`chat_document.${message.metadata.localDocument.kind === "text" ? "txt" : "pdf"}`}>
+              Download {message.metadata.localDocument.kind === "text" ? "TXT" : "PDF"} locally
+            </ChatFileDownloadLink>
+            <details>
+              <summary className="cursor-pointer text-muted-foreground">Preview file text</summary>
+              <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words font-sans">{message.metadata.localDocument.content}</pre>
+            </details>
+          </section>
+        )}
 
         {message.metadata?.attachments?.length ? (
           <div className="mt-2 flex flex-wrap gap-2">

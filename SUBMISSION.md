@@ -28,6 +28,8 @@ Use the operations guide to configure MongoDB, AI Core, a reasoning provider, an
 
 Open `http://127.0.0.1:5173/voice` for the expense workflow and `http://127.0.0.1:5173/submission` for the demo entry page.
 
+Chat can draft PDF and TXT files. `/chat/local` prepares a download for this device. `/chat/cloud` saves the file to the workspace so it can be opened from Files. Both views answer general questions and use the same chat and Gnani voice features.
+
 For a local rehearsal with a synthetic database, set `DEMO_EVALUATOR_ENABLED=true` on the development API and use **Start a local demo workspace** at sign-in. Each session starts in its own workspace. [Timed presentation and recording cues](DEMO_PRESENTATION.txt)
 
 ## Final submission checklist

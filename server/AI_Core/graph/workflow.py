@@ -1429,6 +1429,8 @@ class FinancialWorkflow:
             question, _, document_context = user_input.partition("\n\nAttached workspace files:")
             if (options or {}).get("conversation_mode") and (options or {}).get("public_web_search"):
                 answer_agent = "public_web_research"
+            elif (options or {}).get("conversation_mode") and (options or {}).get("document_draft"):
+                answer_agent = "document_draft"
             elif (options or {}).get("task_type") == "conversation_insights":
                 answer_agent = "conversation_summarizer"
             elif isinstance(finance_context, dict) and wants_activity_review(user_input):
@@ -1455,6 +1457,8 @@ class FinancialWorkflow:
                         summary = research_public_web(question)
                     elif answer_agent == "chat_assistant":
                         summary = self.financial_educator.answer_chat(question, conversation_history or [], document_context)
+                    elif answer_agent == "document_draft":
+                        summary = self.financial_educator.answer_chat(question, conversation_history or [], document_context, draft_document=True)
                     elif calculated_answer:
                         summary = {"response": calculated_answer}
                     elif answer_agent == "activity_review":

@@ -89,12 +89,14 @@ import { isWorkspaceFileId } from "@/lib/fileReferences";
 // Determines whether an existing chat thread or a blank workspace is mounted.
 interface ChatContainerProps {
   sessionId?: string;
+  basePath?: string;
+  localFiles?: boolean;
 }
 
 // Primary chat experience orchestrator integrating Zustand stores and layout panes.
 // Coordinates session hydration, message drafting, file attachments, and prompt suggestions.
 // Renders active agent indicators, conversation threads, and responsive error banners.
-export function ChatContainer({ sessionId }: ChatContainerProps) {
+export function ChatContainer({ sessionId, basePath = "/chat", localFiles = false }: ChatContainerProps) {
   const {
     sessions,
     currentSessionId,
@@ -166,13 +168,13 @@ export function ChatContainer({ sessionId }: ChatContainerProps) {
 
   const handleSendMessage = async (content: string, options?: { narrative?: boolean; fileIds?: string[] }, clearFileDraft = true) => {
     const sendingSessionId = useChatStore.getState().currentSessionId;
-    const sent = await sendMessage(content, options);
+    const sent = await sendMessage(content, localFiles ? { ...options, fileDestination: "local" } : options);
     if (sent && clearFileDraft) setSavedFileDraft(previous => previous.sessionId === sendingSessionId ? { ...previous, files: [] } : previous);
     if (sent && useChatStore.getState().messages.at(-1)?.metadata?.generatedDocuments?.length) {
       void queryClient.invalidateQueries({ queryKey: ["/api/files"] });
     }
     const activeId = useChatStore.getState().currentSessionId;
-    if (activeId && activeId !== sessionId) navigate(`/chat/${activeId}`, { replace: true });
+    if (activeId && activeId !== sessionId) navigate(`${basePath}/${activeId}`, { replace: true });
     return sent;
   };
 

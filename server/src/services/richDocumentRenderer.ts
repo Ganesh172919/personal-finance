@@ -30,7 +30,7 @@ import { populateProfileTemplateData } from "./profileDocumentData";
 export { populateProfileTemplateData } from "./profileDocumentData";
 import WorkspaceFileModel from "../models/workspaceFileModel";
 import { extractWorkspaceFileText, type ExtractedWorkspaceContent } from "./fileTextExtraction";
-import { deleteGridFsFile, openGridFsDownloadStream, openGridFsUploadStream } from "./gridfs";
+import { deleteGridFsFile, openGridFsUploadStream } from "./gridfs";
 import { ensureWorkspaceFileChunks } from "./retrievalService";
 
 // Defines supported financial document layouts for PDF authorship generation.
@@ -101,6 +101,9 @@ export interface RenderedAuthoredDocument {
   sizeBytes: number;
   pageCount: number;
 }
+
+type BufferedAuthoredDocument = { filename: string; buffer: Buffer; pageCount: number };
+const MAX_PDF_EXTRACTION_BYTES = 4 * 1024 * 1024;
 
 // Converts an input string into a sanitized alphanumeric slug.
 // Replaces invalid file path characters and symbols with underscores.
@@ -222,7 +225,17 @@ export function parseAuthoredContentBlocks(content: string): {
 // Renders an authored multi-page PDF document using PDFKit layout primitives.
 // Streams rendered bytes directly to GridFS and creates workspace file records.
 // Automatically triggers vector chunk indexing for instant RAG readiness.
-export async function renderRichAuthoredPdf(params: AuthoredDocumentInput): Promise<RenderedAuthoredDocument> {
+export function renderRichAuthoredPdf(params: AuthoredDocumentInput): Promise<RenderedAuthoredDocument> {
+  return renderAuthoredPdf(params, "cloud");
+}
+
+export function renderLocalAuthoredPdf(params: AuthoredDocumentInput): Promise<BufferedAuthoredDocument> {
+  return renderAuthoredPdf({ ...params, includeProfileData: false }, "local");
+}
+
+function renderAuthoredPdf(params: AuthoredDocumentInput, destination: "cloud"): Promise<RenderedAuthoredDocument>;
+function renderAuthoredPdf(params: AuthoredDocumentInput, destination: "local"): Promise<BufferedAuthoredDocument>;
+async function renderAuthoredPdf(params: AuthoredDocumentInput, destination: "cloud" | "local"): Promise<RenderedAuthoredDocument | BufferedAuthoredDocument> {
   const format: AuthoredDocumentFormat = params.format || "standard";
   const safeTitle = params.title.trim() || "Financial Document";
   const filename = `${sanitizeFilenameStem(params.filenameStem || safeTitle)}.pdf`;
@@ -251,7 +264,7 @@ export async function renderRichAuthoredPdf(params: AuthoredDocumentInput): Prom
   const disclaimer = params.disclaimer || DEFAULT_DISCLAIMERS[format];
 
   // Open GridFS upload stream
-  const { fileId, uploadStream } = openGridFsUploadStream({
+  const upload = destination === "cloud" ? openGridFsUploadStream({
     filename,
     contentType: "application/pdf",
     metadata: {
@@ -261,7 +274,7 @@ export async function renderRichAuthoredPdf(params: AuthoredDocumentInput): Prom
       format,
       requestId: params.requestId,
     },
-  });
+  }) : undefined;
 
   const pdf = new PDFDocument({
     size: "A4",
@@ -270,12 +283,14 @@ export async function renderRichAuthoredPdf(params: AuthoredDocumentInput): Prom
   });
 
   let bytes = 0;
+  const chunks: Buffer[] = [];
   pdf.on("data", (chunk: Buffer) => {
     bytes += chunk.length;
+    if (!upload || bytes <= MAX_PDF_EXTRACTION_BYTES) chunks.push(chunk);
   });
 
   try {
-    pdf.pipe(uploadStream);
+    if (upload) pdf.pipe(upload.uploadStream);
 
     const contentWidth = 595.28 - 96; // 499.28 pt
 
@@ -298,8 +313,7 @@ export async function renderRichAuthoredPdf(params: AuthoredDocumentInput): Prom
     const metadataParts = [
       `Date: ${new Date().toISOString().slice(0, 10)}`,
       `Document ID: ${params.requestId.slice(0, 12)}`,
-      `Org: ${params.orgId.toString().slice(-6)}`,
-      `User: ${params.userId.toString().slice(-6)}`,
+      ...(upload ? [`Org: ${params.orgId.toString().slice(-6)}`, `User: ${params.userId.toString().slice(-6)}`] : []),
     ];
     pdf.fontSize(8).fillColor("#64748b").text(metadataParts.join("   •   "), 48, pdf.y, {
       width: contentWidth,
@@ -505,14 +519,10 @@ export async function renderRichAuthoredPdf(params: AuthoredDocumentInput): Prom
       );
     }
 
+    const finished = upload ? once(upload.uploadStream, "finish") : once(pdf, "end");
     pdf.end();
-
-    await Promise.race([
-      once(uploadStream, "finish"),
-      once(uploadStream, "error").then(([err]) => {
-        throw err;
-      }),
-    ]);
+    await finished;
+    if (!upload) return { filename, buffer: Buffer.concat(chunks, bytes), pageCount: totalPages };
   } catch (error) {
     try {
       (pdf as any).destroy?.();
@@ -520,14 +530,15 @@ export async function renderRichAuthoredPdf(params: AuthoredDocumentInput): Prom
       // ignore cleanup error
     }
     try {
-      uploadStream.destroy();
+      upload?.uploadStream.destroy();
     } catch {
       // ignore cleanup error
     }
-    await deleteGridFsFile(fileId.toString()).catch(() => null);
+    if (upload) await deleteGridFsFile(upload.fileId.toString()).catch(() => null);
     throw error;
   }
 
+  const { fileId } = upload;
   // Extract text and persist physical form feeds (\f) for RAG & Document Q&A
   let extracted: ExtractedWorkspaceContent = {
     text: bodyContent.replace(/\f/g, "\n"),
@@ -537,16 +548,9 @@ export async function renderRichAuthoredPdf(params: AuthoredDocumentInput): Prom
   };
 
   try {
-    const stream = openGridFsDownloadStream(fileId.toString());
-    const buffers: Buffer[] = [];
-    let readBytes = 0;
-    for await (const chunk of stream) {
-      readBytes += chunk.length;
-      if (readBytes > 4 * 1024 * 1024) throw new Error("Generated PDF exceeds extraction bounds");
-      buffers.push(Buffer.from(chunk));
-    }
+    if (bytes > MAX_PDF_EXTRACTION_BYTES) throw new Error("Generated PDF exceeds extraction bounds");
     const parsedExtracted = await extractWorkspaceFileText({
-      buffer: Buffer.concat(buffers),
+      buffer: Buffer.concat(chunks, bytes),
       mimeType: "application/pdf",
       fileName: filename,
       requestId: params.requestId,

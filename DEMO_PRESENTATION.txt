@@ -39,7 +39,7 @@ THREE-MINUTE JUDGE WALKTHROUGH
 
 01:57–02:28 | Open the composer microphone menu and import a short clip asking about ₹1,000 at 10% annually for two years. Show that dictation appends editable text before sending. Send it and point to ₹1,210 with ₹210 total interest. Open Live voice chat, enable Hands-free conversation, and import “What about after three years?” Show automatic submission, the ₹1,331 answer, and Timbre playback. The calculator uses zero model calls on both turns.
 
-02:28–02:43 | Show the generated FinWise Demo Checklist in Files. The assistant can create a reusable document from the checklist text supplied in chat.
+02:28–02:43 | Show the two file views. In Local files, open and download the prepared Water Cycle Field Notes PDF. In Cloud files, open the prepared TXT from Files. Prepare both turns before recording to keep the walkthrough within three minutes.
 
 02:43–03:00 | Describe what ran
 “Prisma transcribed the audio and Timbre spoke the replies. FinWise used the saved ledger and calculator for exact totals. Groq answered the general education examples. Evon v3.3 30B is supported through a separately configured inference endpoint.”
@@ -47,6 +47,8 @@ THREE-MINUTE JUDGE WALKTHROUGH
 OPTIONAL JUDGE Q&A
 
 For a non-finance question, ask “Translate the phrase ‘my budget’ into French. Only give the translation.” The verified answer was “mon budget,” from the conversational assistant. For a question that requires a public source, choose Search web and ask “What date does IIIT Dharwad’s official Seventh Convocation invitation list? Check assets.iiitdwd.ac.in.” Point to July 4, 2025 and the official PDF link. Public research uses Groq. The 60-second entry demonstrates Gnani Prisma and Timbre.
+
+To reproduce the two file turns, ask Local files to create a PDF titled Water Cycle Field Notes with three bullets describing the water cycle. In Cloud files, ask for a text file titled Weekend Reading Plan with three concrete steps for a 30-minute reading session. Show the generated content and its destination. The local view downloads a copy to the device. The cloud view saves the artifact in the signed-in workspace.
 
 RECORDING AND SUBMISSION
 

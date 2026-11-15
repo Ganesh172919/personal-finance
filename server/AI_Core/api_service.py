@@ -916,6 +916,7 @@ class ProcessOptions(BaseModel):
     narrative: bool = False
     conversation_mode: bool = False
     public_web_search: bool = False
+    document_draft: bool = False
     llm_decomposition: bool = False
     include_evidence: bool = True
     include_document_passages: bool = True
@@ -2573,7 +2574,7 @@ def _process_financial_request_sync(
         )
 
         # Build structured plan (always present)
-        direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator", "public_web_research"}
+        direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator", "public_web_research", "document_draft"}
         if direct_answer:
             plan = Plan(executive_summary="")
             action_type = None
@@ -3261,7 +3262,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                 str(analysis_raw).split(".")[-1].lower() if hasattr(analysis_raw, "name") else str(analysis_raw).lower()
             )
 
-            direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator", "public_web_research"}
+            direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator", "public_web_research", "document_draft"}
             if direct_answer:
                 plan = Plan(executive_summary="")
                 action_type = None

@@ -19,7 +19,7 @@ export const readSourcePage = (value: string | null) => {
 // Matches expected chat URL patterns to prevent open-redirect vulnerabilities.
 // Preserves navigation history so users can return seamlessly from file inspections.
 export const readChatReturnPath = (value: string | null | undefined) =>
-  typeof value === "string" && /^\/chat\/[a-f\d]{24}$/i.test(value) ? value : null;
+  typeof value === "string" && /^\/chat\/(?:(?:cloud|local)\/)?[a-f\d]{24}$/i.test(value) ? value : null;
 
 // Constructs a deep-link URL pointing directly to a cited workspace evidence document.
 // Attaches target file ID, specific page numbers, and chat return path parameters.

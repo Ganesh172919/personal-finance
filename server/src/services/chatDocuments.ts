@@ -1,9 +1,7 @@
 import mongoose from "mongoose";
 import WorkspaceFileModel from "../models/workspaceFileModel";
-import { renderPdfFromTextRequest } from "./pdfRequestServer";
 import { renderRichAuthoredPdf, type AuthoredDocumentFormat, type DocumentKPI, type DocumentTable, type DocumentCallout } from "./richDocumentRenderer";
-import { deleteGridFsFile, openGridFsDownloadStream } from "./gridfs";
-import { extractWorkspaceFileText, type ExtractedWorkspaceContent } from "./fileTextExtraction";
+import { deleteGridFsFile, uploadBufferToGridFs } from "./gridfs";
 import { ensureWorkspaceFileChunks } from "./retrievalService";
 import { logger } from "../config/logger";
 import FinancialProfileModel from "../models/financialProfileModel";
@@ -49,11 +47,14 @@ export async function buildSavedActivityDocument(params: {
 // Parses natural language chat prompts to detect explicit document generation intent.
 // Extracts document title, body markdown content, and specialized formatting layouts.
 // Returns normalized title and format metadata or null if no valid request was identified.
-export function parseChatDocumentRequest(message: string): { title: string; content: string; format?: AuthoredDocumentFormat } | null {
+export type ChatDocumentDraft = { title: string; content: string; kind?: "text"; format?: AuthoredDocumentFormat };
+
+export function parseChatDocumentRequest(message: string): ChatDocumentDraft | null {
   const normalized = message.trim();
-  const bodyStart = /(?:^|\n|\s)Content\s*:/i.exec(normalized);
+  const bodyStart = /(?:^|\s)(?:content|with (?:these tasks|the following text|the following content))\s*:/i.exec(normalized);
   const instruction = bodyStart ? normalized.slice(0, bodyStart.index).trim() : normalized;
-  if (!/^(?:(?:please|can you|could you|would you)\s+)?(?:create|generate|make|write|draft)\s+(?:me\s+)?(?:a\s+|an\s+|the\s+)?(?:pdf\s+document|pdf|document|report)\b/i.test(instruction)) return null;
+  const command = /^(?:(?:please|can you|could you|would you)\s+)?(?:create|generate|make|write|draft)\s+(?:me\s+)?(?:a\s+|an\s+|the\s+)?(text\s+file|txt\s+file|pdf\s+document|pdf|document|report)\b/i.exec(instruction);
+  if (!command) return null;
   if (/\b(?:docx|word document|spreadsheet|xlsx)\b/i.test(instruction)) return null;
 
   let format: AuthoredDocumentFormat = "standard";
@@ -75,7 +76,8 @@ export function parseChatDocumentRequest(message: string): { title: string; cont
     format = "net_worth_statement";
   }
 
-  const titleInstruction = /\b(?:titled|named|called)\s+(.+)/i.exec(instruction)?.[1] || "Chat document";
+  const titleInstruction = /\b(?:titled|named|called)\s+(.+)/i.exec(instruction)?.[1]
+    || /\b(?:about|on)\s+([^\n.!?]+)/i.exec(instruction.slice(command[0].length))?.[1] || "Chat document";
   // A quoted title ends at its matching quote, not at the next sentence.
   // Keep subsequent instructions out of the saved file name and heading.
   const quotedTitle = /^(?:"([^"]+)"|'([^']+)'|“([^”]+)”|‘([^’]+)’)/.exec(titleInstruction);
@@ -83,7 +85,12 @@ export function parseChatDocumentRequest(message: string): { title: string; cont
   const title = (quotedTitle ? rawTitle : rawTitle.replace(/[.!?]\s+.*$/s, ""))
     .replace(/--format=\S+/g, "").replace(/^["']+|["'.!?]+$/g, "").replace(/[\r\n<>\[\]`*_]/g, " ").trim().slice(0, 120) || "Chat document";
   const content = bodyStart ? normalized.slice(bodyStart.index + bodyStart[0].length).trim() : "";
+  if (/^(?:text|txt)\b/i.test(command[1])) return { title, content, kind: "text" };
   return format === "standard" ? { title, content } : { title, content, format };
+}
+
+export function chatTextFilename(title: string): string {
+  return `${title.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "chat_document"}.txt`;
 }
 
 // Delegates rich authored PDF generation to the specialized document renderer engine.
@@ -92,11 +99,31 @@ export function parseChatDocumentRequest(message: string): { title: string; cont
 export async function createChatDocument(params: {
   orgId: mongoose.Types.ObjectId; userId: mongoose.Types.ObjectId; requestId: string;
   title: string; content: string;
+  kind?: ChatDocumentDraft["kind"];
   format?: AuthoredDocumentFormat;
   kpis?: DocumentKPI[];
   tables?: DocumentTable[];
   callouts?: DocumentCallout[];
 }) {
+  if (params.kind === "text") {
+    const { orgId, userId, content, title } = params;
+    const filename = chatTextFilename(title);
+    const mimeType = "text/plain";
+    const buffer = Buffer.from(content, "utf8");
+    const fileId = await uploadBufferToGridFs({ userId: userId.toString(), orgId: orgId.toString(),
+      purpose: "export", buffer, filename, contentType: mimeType });
+    const file = await WorkspaceFileModel.create({ orgId, userId, fileId, originalName: filename,
+      mimeType, sizeBytes: buffer.length, extension: "txt", kind: "document", status: "processed",
+      extractedText: content, extractedPreview: content.slice(0, 800) }).catch(async error => {
+      await deleteGridFsFile(fileId.toString()).catch(() => undefined);
+      throw error;
+    });
+    await ensureWorkspaceFileChunks({ orgId, userId, workspaceFileId: file._id, fileId, originalName: filename,
+      sourceKind: "document", extractedText: content }).catch(error => {
+      logger.warn({ requestId: params.requestId, err: error }, "Chat text file saved; indexing will retry on demand");
+    });
+    return { workspaceFileId: file._id.toString(), fileId: fileId.toString(), title, filename, mimeType, sizeBytes: buffer.length };
+  }
   return renderRichAuthoredPdf({
     orgId: params.orgId,
     userId: params.userId,

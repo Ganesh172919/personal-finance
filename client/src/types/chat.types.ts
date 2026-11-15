@@ -50,6 +50,7 @@ export interface IChatSession {
 // Powers rich client-side message widgets including citations, actions, and debug logs.
 export interface IChatMessageMetadata {
   generatedDocuments?: Array<{ workspaceFileId: string; fileId: string; title: string; filename: string; mimeType: string; sizeBytes: number; format?: string; pageCount?: number }>;
+  localDocument?: { title: string; content: string; kind?: "text" };
   attachments?: IChatAttachment[];
   analysisType?: string;
   agentsInvolved?: string[];

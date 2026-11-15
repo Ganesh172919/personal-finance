@@ -143,7 +143,7 @@ interface ChatState {
   selectSession: (sessionId: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   renameSession: (sessionId: string, title: string) => Promise<void>;
-  sendMessage: (content: string, options?: { narrative?: boolean; fileIds?: string[]; regenerateOf?: string; bypassCache?: boolean }) => Promise<boolean>;
+  sendMessage: (content: string, options?: { narrative?: boolean; fileIds?: string[]; regenerateOf?: string; bypassCache?: boolean; fileDestination?: "local" }) => Promise<boolean>;
   clearCurrentSession: () => void;
   setWorkflowPhase: (phase: WorkflowPhase | null, agent?: string) => void;
   clearWorkflowProgress: () => void;
@@ -318,7 +318,7 @@ export const useChatStore = create<ChatState>()(
        * @param options.narrative - Request narrative response style
        * @param options.fileIds - Attached file IDs
        */
-      sendMessage: async (content: string, options?: { narrative?: boolean; fileIds?: string[]; regenerateOf?: string; bypassCache?: boolean }) => {
+      sendMessage: async (content, options) => {
         const revision = dataRevision;
         if (get().isSending) return false;
         set({ isSending: true });

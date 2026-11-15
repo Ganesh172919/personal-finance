@@ -65,6 +65,7 @@ import * as fileTextExtraction from "../services/fileTextExtraction";
 import FinancialProfileModel from "../models/financialProfileModel";
 import TaskModel from "../models/taskModel";
 import TransactionModel from "../models/transactionModel";
+import WorkspaceFileModel from "../models/workspaceFileModel";
 import { ensurePersonalOrgForUser } from "../services/orgService";
 import UsageEventModel from "../models/usageEventModel";
 import { recordFeatureUsage } from "../services/entitlements";
@@ -337,6 +338,55 @@ describe("chat v1 API", () => {
     expect([403, 404]).toContain(denied.status);
   });
 
+  it("downloads a local PDF with no Files record and preserves ownership", async () => {
+    const headers = [cookie, csrfCookie];
+    const created = await request(app).post("/api/chat/sessions")
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken).send({}).expect(201);
+    const sessionId = created.body.id;
+    const url = `/api/chat/sessions/${sessionId}/messages`;
+    const core = vi.mocked(processAiCoreRequest);
+    core.mockClear();
+    const sent = await request(app).post(url).set("Cookie", headers).set("X-CSRF-Token", csrfToken)
+      .send({ content: "Make a PDF titled Local Checklist. Content: Pack water and a notebook.", options: { file_destination: "local" } })
+      .expect(200);
+    expect(core).not.toHaveBeenCalled();
+    const reply = sent.body.assistantMessage;
+    expect(reply.metadata.localDocument).toMatchObject({ title: "Local Checklist", content: "Pack water and a notebook." });
+    expect(reply.metadata.generatedDocuments).toHaveLength(0);
+    const download = `${url}/${reply.id}/download`;
+    const pdf = await request(app).get(download).set("Cookie", cookie).expect(200);
+    expect(pdf.body.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(pdf.headers["content-disposition"]).toContain("local_checklist.pdf");
+    expect(pdf.headers["cache-control"]).toContain("no-store");
+    expect(await WorkspaceFileModel.countDocuments()).toBe(0);
+    const other = await createAuthedUser();
+    await request(app).get(download).set("Cookie", other.cookie).expect(404);
+  });
+
+  it("drafts a cloud text file with one model call and keeps it in Files", async () => {
+    const headers = [cookie, csrfCookie];
+    const created = await request(app).post("/api/chat/sessions")
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken).send({}).expect(201);
+    const core = vi.mocked(processAiCoreRequest);
+    core.mockClear().mockResolvedValueOnce({
+      success: true, final_output: "चाय के लिए ₹50 रखें।", analysis_type: "document_draft", agent: "document_draft",
+      agents_involved: ["document_draft"], detailed_analysis: {}, insights: [], workflow_trace: [], fallback_used: false,
+      llm_call_count: 1, request_id: "draft-text-test", active_provider: "groq",
+    });
+    const sent = await request(app).post(`/api/chat/sessions/${created.body.id}/messages`)
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken)
+      .send({ content: "Create a text file titled Tea Note. Write a single line in Hindi about setting aside ₹50 for tea.", options: { file_destination: "cloud" } })
+      .expect(200);
+    expect(core).toHaveBeenCalledTimes(1);
+    expect(core.mock.calls[0]?.[0]).toMatchObject({ user_profile: null, options: { conversation_mode: true, document_draft: true } });
+    const file = sent.body.assistantMessage.metadata.generatedDocuments[0];
+    expect(file).toMatchObject({ filename: "tea_note.txt", mimeType: "text/plain" });
+    const downloaded = await request(app).get(`/api/files/rendered/${file.fileId}/download`).set("Cookie", cookie).expect(200);
+    expect(downloaded.text).toBe("चाय के लिए ₹50 रखें।");
+    const saved = await WorkspaceFileModel.findById(file.workspaceFileId).lean();
+    expect(saved?.extractedText).toBe("चाय के लिए ₹50 रखें।");
+  });
+
   it("indexes verified physical pages of a generated multipage PDF", async () => {
     const created = await request(app).post("/api/chat/sessions")
       .set("Cookie", [cookie, csrfCookie]).set("X-CSRF-Token", csrfToken).send({}).expect(201);
@@ -424,7 +474,7 @@ describe("chat v1 API", () => {
     vi.mocked(processAiCoreRequest).mockClear();
     const sent = await request(app).post(`/api/chat/sessions/${created.body.id}/messages`)
       .set("Cookie", [cookie, csrfCookie]).set("X-CSRF-Token", csrfToken)
-      .send({ content: "Please create a document titled Monthly notes" }).expect(200);
+      .send({ content: "Please create a document." }).expect(200);
     expect(processAiCoreRequest).not.toHaveBeenCalled();
     expect(sent.body.assistantMessage.content).toContain("Content:");
     expect(sent.body.assistantMessage.metadata.generatedDocuments).toEqual([]);

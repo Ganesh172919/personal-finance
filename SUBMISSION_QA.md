@@ -168,3 +168,16 @@ The final checks passed 552 client tests, 492 AI Core tests, and 185 server test
 | Product and submission | The built-in browser measured pure white and pure black backgrounds. Evon v3.3 30B remained visible with its separate endpoint status. The simplified demo page showed the rules and submission form. Live Evon inference and physical microphone capture were not verified. |
 
 The server and client production builds passed. The full Python suite passed 496 tests. The focused server run passed 189 tests, including all four end-to-end suites and the Timbre retry contract. The focused client run passed 50 tests. The live Timbre–Prisma check produced a 79,404-byte WAV and the expected ₹50 Hindi transcript. All 10 local submission checks passed.
+
+## November 15 local and cloud file retest
+
+| Built-in browser check | Observed result |
+| --- | --- |
+| Local files chat in black | The model drafted `Water Cycle Field Notes` with three accurate bullets covering evaporation, condensation, and precipitation. The preview matched the request. The download action returned a 2,082-byte PDF and handed it to the browser. The server rendered the download in 138 ms in this run. |
+| Cloud files chat in white | The model drafted `weekend_reading_plan.txt` with three steps for a Saturday reading session. The file opened in Files, showed its extracted text, and offered a link back to the Cloud files thread. The storage path used the configured MongoDB and GridFS. |
+| General questions in both views | Local files returned a correctly scoped Telugu translation of “The Moon orbits Earth.” Cloud files explained that ice floats because it is less dense than liquid water. Each used one live model call. |
+| Dictation and live voice | Prisma placed the full compound-interest question in the editable composer. The calculator returned ₹1,210 for two years. The imported hands-free follow-up used the same assumptions and returned ₹1,331 for three years with a playback control. |
+| Bharat Voice and navigation | Bharat Voice explained that light travels faster than sound in one sentence and exposed Timbre voice replay. The browser opened Dashboard, Transactions, Finance, Files, and the simplified submission page. Evon v3.3 30B showed the separate endpoint status. |
+| Storage and scope | The API test verified the local `%PDF-` signature, download headers, zero Files records, and denial for another user. The cloud test verified that drafted Hindi text was saved and downloaded intact as UTF-8. The browser used the local test deployment. |
+
+Both production builds and the TypeScript checks passed. The full AI Core suite passed 496 tests. The focused server suite passed 211 tests across chat, document rendering and retrieval, voice, and the four end-to-end suites. The focused client suite passed 71 tests. Physical microphone capture and a hosted cloud deployment were outside this retest.

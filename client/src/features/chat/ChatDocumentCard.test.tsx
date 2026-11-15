@@ -1,6 +1,9 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatDocumentCard } from "./ChatDocumentCard";
+import { downloadAuthenticatedFile, triggerBrowserDownload } from "@/lib/api/v1/exports";
+
+vi.mock("@/lib/api/v1/exports", () => ({ downloadAuthenticatedFile: vi.fn(), triggerBrowserDownload: vi.fn() }));
 
 afterEach(cleanup);
 const document = { workspaceFileId: "507f1f77bcf86cd799439011", fileId: "507f1f77bcf86cd799439012", title: "Student budget", filename: "student_budget.pdf", mimeType: "application/pdf", sizeBytes: 2048 };
@@ -11,6 +14,16 @@ describe("created document card", () => {
     expect(screen.getByRole("link", { name: "Download PDF" })).toHaveAttribute("href", "/api/files/rendered/507f1f77bcf86cd799439012/download");
     expect(screen.getByRole("link", { name: "Open in Files" })).toHaveAttribute("href", "/files?file=507f1f77bcf86cd799439011&returnTo=%2Fchat%2F507f1f77bcf86cd799439013");
     expect(screen.getByRole("region")).toHaveTextContent("2 KB");
+  });
+  it("fetches the generated file through the authenticated download helper", async () => {
+    const file = { blob: new Blob(["%PDF-"]), filename: "student_budget.pdf", contentType: "application/pdf" };
+    vi.mocked(downloadAuthenticatedFile).mockResolvedValueOnce(file);
+    render(<ChatDocumentCard document={document} returnTo="/chat/cloud/507f1f77bcf86cd799439013" />);
+    fireEvent.click(screen.getByRole("link", { name: "Download PDF" }));
+    await waitFor(() => expect(triggerBrowserDownload).toHaveBeenCalledWith(file));
+    expect(downloadAuthenticatedFile).toHaveBeenCalledWith(`/files/rendered/${document.fileId}/download`, document.filename);
+    expect(screen.getByRole("status")).toHaveTextContent("Sent to browser downloads");
+    expect(screen.getByRole("link", { name: "Open in Files" }).getAttribute("href")).toContain("returnTo=%2Fchat%2Fcloud%2F");
   });
   it("does not render malformed file references from persisted metadata", () => {
     render(<ChatDocumentCard document={{ ...document, fileId: "https://example.com" }} />);
