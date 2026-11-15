@@ -195,6 +195,19 @@ describe("Gnani AI Voice & Indic Speech Service", () => {
     expect(result.answerText).toContain("open Finance Chat");
   });
 
+  it("returns a model-generated voice answer without speaking or displaying Markdown", async () => {
+    const generateAnswer = vi.fn(async () => ({
+      text: "**Example:** Save `₹1,000` monthly for a planned expense.",
+      source: "model-under-test",
+    }));
+    const result = await answerFinanceVoiceQuery({
+      orgId: "test-org", userId: "test-user", query: "What is a sinking fund?", language: "en-IN", generateAnswer,
+    });
+    expect(generateAnswer).toHaveBeenCalledOnce();
+    expect(result.answerText).toBe("Example: Save ₹1,000 monthly for a planned expense.");
+    expect(result.model).toBe("model-under-test");
+  });
+
   it("extracts informal BFSI Khata/Udhar debt and generates collection speech reminder", async () => {
     const khataResult = await extractKhataDebtFromVoice({
       orgId: "507f1f77bcf86cd799439011",

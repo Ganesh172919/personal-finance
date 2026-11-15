@@ -705,7 +705,7 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
           </div>
         ) : null}
 
-        {!isUser && message.metadata?.analysisType !== "financial_education" &&
+        {!isUser && !["financial_education", "chat_assistant", "compound_interest_calculator"].includes(message.metadata?.analysisType || "") &&
           (message.metadata?.confidence || message.metadata?.evidence?.length || message.metadata?.suggestedActions?.length) ? (
           <div className="mt-2 w-full space-y-2">
             {message.metadata?.confidence ? (

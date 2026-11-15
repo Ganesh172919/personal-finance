@@ -100,7 +100,7 @@ export const buildProcessCommandCacheKey = (params: {
   const journalUpdatedAt = params.journalUpdatedAt || "";
   const narrative = params.narrative === undefined ? "" : params.narrative ? "1" : "0";
   return sha256(
-    `process-command|${params.orgId}|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${journalUpdatedAt}|${narrative}|${normalized}`
+    `process-command-v2|${params.orgId}|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${journalUpdatedAt}|${narrative}|${normalized}`
   );
 };
 
@@ -125,7 +125,7 @@ export const buildChatMessageCacheKey = (params: {
   const journalUpdatedAt = params.journalUpdatedAt || "";
   const narrative = params.narrative === undefined ? "" : params.narrative ? "1" : "0";
   return sha256(
-    `chat-message|${params.orgId}|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${journalUpdatedAt}|${narrative}|${params.sessionId}|${params.sessionMessageCount}|${summaryUpdatedAt}|${normalized}`
+    `chat-message-v3|${params.orgId}|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${journalUpdatedAt}|${narrative}|${params.sessionId}|${params.sessionMessageCount}|${summaryUpdatedAt}|${normalized}`
   );
 };
 

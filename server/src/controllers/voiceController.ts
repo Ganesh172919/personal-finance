@@ -22,6 +22,7 @@ import { transcribeBodySchema } from "../schemas/voiceSchemas";
 import { normalizeCurrency } from "../utils/currencyFx";
 import { invalidateBudgetEnvelopes } from "../services/financeIntelligence";
 import { processAiCoreRequest } from "../services/aiCoreClient";
+import { AiCoreUnavailableError } from "../services/aiCoreResilience";
 import { recordFeatureUsage, reserveFeatureUsage } from "../services/entitlements";
 import {
   transcribeAudioPrisma,
@@ -180,6 +181,7 @@ export async function synthesizeVoiceHandler(req: Request, res: Response) {
  * commits to ledger, and generates a Timbre TTS spoken response.
  */
 export async function logExpenseVoiceHandler(req: Request, res: Response) {
+  const startedAt = performance.now();
   const { orgId, userId } = extractUserAndOrg(req);
   const file = (req as any).file;
   const body = req.body || {};
@@ -211,20 +213,24 @@ export async function logExpenseVoiceHandler(req: Request, res: Response) {
   // 1. Extract transaction parameters using Gnani Evon 30B reasoning
   const extracted = draft?.expense ?? await extractExpenseFromVoiceTranscript(transcript, body.currency || "INR");
 
-  // Generate audio before committing so synthesis failures leave the ledger intact.
+  const speechLanguage = language === "auto" ? "hi-IN" : language;
   const formattedAmount = new Intl.NumberFormat("en-IN", {
     style: "currency", currency: normalizeCurrency(extracted.currency), minimumFractionDigits: 0,
   }).format(extracted.amount);
   const spokenConfirmationText =
-    language === "te-IN"
+    speechLanguage === "hi-IN"
+      ? `आपका ${formattedAmount} का खर्च दर्ज हो गया है।`
+      : speechLanguage === "en-IN"
+      ? `Your ${formattedAmount} expense was saved in ${extracted.category}.`
+      : speechLanguage === "te-IN"
       ? `Mee ${formattedAmount} selavu ${extracted.category} category lo safalamga record cheyabadindi.`
-      : language === "ta-IN"
+      : speechLanguage === "ta-IN"
       ? `Ungalathu ${formattedAmount} selavu ${extracted.category} category lo safaltapoorvak log ho gaya hai.`
       : `Aapka ${formattedAmount} ka kharcha ${extracted.category} category me safaltapoorvak log ho gaya hai.`;
 
   const audioConfirmation = await synthesizeSpeechTimbre({
     text: spokenConfirmationText,
-    language: language !== "auto" ? language : "hi-IN",
+    language: speechLanguage,
     voiceGender: "female",
   });
   const transaction = await logExpenseFromVoice({
@@ -235,6 +241,8 @@ export async function logExpenseVoiceHandler(req: Request, res: Response) {
     draftId: draft?.jti,
   });
   await invalidateBudgetEnvelopes(orgId, transaction.date);
+  req.log?.info({ event: "voice.expense.saved", language: speechLanguage, speechProvider: audioConfirmation.provider,
+    durationMs: Math.round(performance.now() - startedAt) }, "Reviewed voice expense saved");
 
   return res.status(201).json({
     success: true,
@@ -308,10 +316,11 @@ export async function queryVoiceHandler(req: Request, res: Response) {
           user_profile: null,
           org_id: orgId,
           user_id: userId,
-          options: { include_actions: false, include_evidence: false, include_confidence: false },
+          options: { conversation_mode: true, include_actions: false, include_evidence: false, include_confidence: false },
         }, requestId, { userId });
         const text = response.final_output?.trim();
-        const usable = response.success && !response.fallback_used && response.analysis_type === "financial_education" && Boolean(text);
+        const usable = response.success && !response.fallback_used &&
+          ["chat_assistant", "compound_interest_calculator", "financial_education"].includes(response.analysis_type) && Boolean(text);
         req.log?.info({
           event: "voice.reasoning.completed",
           analysisType: response.analysis_type,
@@ -321,14 +330,16 @@ export async function queryVoiceHandler(req: Request, res: Response) {
           usable,
           durationMs: Math.round(performance.now() - reasoningStartedAt),
         }, "Voice reasoning completed");
-        if (usable && text) {
-          if (response.llm_call_count > 0) {
-            await recordFeatureUsage({ ...usageScope, feature, requestId, units: 1, reservation,
-              tokensIn: response.usage?.tokens_in, tokensOut: response.usage?.tokens_out,
-              costUsd: response.usage?.cost_usd, modelName: response.active_model });
-          }
-          return { text, source: response.active_model || "Finance calculator" };
+        if (!response.success || response.fallback_used || !text) throw new AiCoreUnavailableError(5);
+        if (!usable) {
+          throw new HttpError(422, "VOICE_QUESTION_REQUIRES_CHAT", "Open Finance Chat to continue with this type of request.");
         }
+        if (response.llm_call_count > 0) {
+          await recordFeatureUsage({ ...usageScope, feature, requestId, units: 1, reservation,
+            tokensIn: response.usage?.tokens_in, tokensOut: response.usage?.tokens_out,
+            costUsd: response.usage?.cost_usd, modelName: response.active_model });
+        }
+        return { text, source: response.active_model || "Finance calculator" };
       } finally {
         await reservation.release();
       }

@@ -10,12 +10,22 @@ import logging
 import re
 from typing import Any, Dict, Optional
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from registry import get_exemplars, get_prompt, render_prompt
 from utils import create_llm
 
 logger = logging.getLogger(__name__)
+
+CHAT_SYSTEM_PROMPT = SystemMessage(content=(
+    "You are the FinWise conversational assistant. Answer the user's actual question directly in their language. "
+    "Respond naturally to greetings. Ask a short clarifying question when the request is incomplete. "
+    "Follow the requested length and format. Use previous turns only when relevant to the current question. "
+    "For public research, distinguish general knowledge from facts requiring verification. "
+    "You have no live web access in this mode. Never claim to have checked a source or invent statistics or URLs. "
+    "When exact figures require a source, explain what can be answered and identify the kind of official record to consult. "
+    "You cannot access the user's live account or perform actions in this conversation."
+))
 
 
 # Educational AI agent explaining financial literacy concepts and terminology.
@@ -36,6 +46,26 @@ class FinancialEducatorAgent:
         # Resolved through the artifact registry at call time (baked-in default
         # when empty); assigning ``system_prompt`` overrides it.
         self._system_prompt_override: Optional[SystemMessage] = None
+
+    def answer_chat(self, question: str, history: list[dict[str, str]]) -> Dict[str, Any]:
+        """Use the existing provider and failover policy for conversational turns."""
+        messages = [CHAT_SYSTEM_PROMPT]
+        for message in history[-4:]:
+            role = message.get("role")
+            content = message.get("content", "").strip()[:1200]
+            if content and role in {"user", "assistant"}:
+                message_type = HumanMessage if role == "user" else AIMessage
+                messages.append(message_type(content=content))
+        messages.append(HumanMessage(content=question))
+        unavailable = "The conversation service is temporarily unavailable. Try again shortly."
+        reply, fallback = self.llm.invoke_with_fallback(messages, unavailable, max_attempts=3)
+        answer = reply.content if hasattr(reply, "content") else str(reply)
+        answer = answer.strip() if isinstance(answer, str) else ""
+        return {
+            "response": answer or unavailable,
+            "fallback_used": fallback or not answer,
+            "llm_route": self.llm.get_route_metadata(),
+        }
 
     # Resolves educational system prompt guidelines from artifact registry.
     # Defines pedagogy, tone, clarity principles, and factual bounds.

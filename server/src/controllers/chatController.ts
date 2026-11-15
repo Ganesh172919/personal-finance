@@ -122,7 +122,7 @@ import OrganizationModel from "../models/organizationModel";
 import mongoose from "mongoose";
 import { processAiCoreRequest } from "../services/aiCoreClient";
 import { isAiCapacityError } from "../services/aiConcurrency";
-import { AiCoreOverloadedError } from "../services/aiCoreResilience";
+import { AiCoreOverloadedError, AiCoreUnavailableError } from "../services/aiCoreResilience";
 import { buildProcessRequest } from "../services/aiRequestBuilder";
 import { buildChatMessageCacheKey, ttlMs } from "../services/aiCache";
 import { extractLearningMeta } from "../services/aiLearningClient"; // Learning-loop attribution for AgentOutput
@@ -779,7 +779,15 @@ export async function sendMessage(req: Request, res: Response) {
           `[requestId=${requestId}] chat.aiRequest transactionCountSent=${stats.sentTransactions} droppedTransactions=${stats.droppedTransactions}`
         );
 
+        aiRequest.options = { ...aiRequest.options, conversation_mode: true };
         const aiResponse = await processAiCoreRequest(aiRequest, requestId, { userId: user._id.toString() });
+        if (!aiResponse.success || !aiResponse.final_output?.trim() || (aiResponse.fallback_used && (
+          aiResponse.analysis_type === "chat_assistant" || aiResponse.session_status === "failed" ||
+          aiResponse.workflow_trace.some(step => step.agent === "ai_core_client")
+        ))) {
+          recordAiFallback({ endpoint: "chat-message" });
+          throw new AiCoreUnavailableError(5);
+        }
         aiUsage = aiResponse.usage;
         const aiDurationMs = Date.now() - aiStartedAt;
 
@@ -834,7 +842,7 @@ export async function sendMessage(req: Request, res: Response) {
           }
         }
 
-        await AiResponseCacheModel.findOneAndUpdate(
+        if (!aiResponse.fallback_used) await AiResponseCacheModel.findOneAndUpdate(
           { cacheKey },
           {
             $set: {
@@ -850,7 +858,7 @@ export async function sendMessage(req: Request, res: Response) {
       }
       }
     } catch (aiError: any) {
-      if (isAiCapacityError(aiError) || aiError instanceof AiCoreOverloadedError) {
+      if (isAiCapacityError(aiError) || aiError instanceof AiCoreOverloadedError || aiError instanceof AiCoreUnavailableError) {
         // A shed request is not a successful answer; don't leave an orphaned
         // question, consume quota, or turn a retryable 429/503 into a 200.
         if (!originalUserMessage) {

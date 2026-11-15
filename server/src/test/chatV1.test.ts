@@ -198,6 +198,26 @@ describe("chat v1 API", () => {
     expect(history.body.messages).toHaveLength(0);
   });
 
+  it("does not save or reuse canned advice if conversational inference is unavailable", async () => {
+    const core = vi.mocked(processAiCoreRequest);
+    core.mockClear().mockResolvedValueOnce({
+      success: true, final_output: "Generic advice", analysis_type: "chat_assistant", fallback_used: true,
+    } as Awaited<ReturnType<typeof processAiCoreRequest>>);
+    const headers = [cookie, csrfCookie];
+    const created = await request(app).post("/api/chat/sessions")
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken).send({}).expect(201);
+    const url = `/api/chat/sessions/${created.body.id}/messages`;
+    const ask = () => request(app).post(url).set("Cookie", headers).set("X-CSRF-Token", csrfToken)
+      .send({ content: "hi" });
+
+    await ask().expect(503);
+    const history = await request(app).get(url).set("Cookie", cookie).expect(200);
+    expect(history.body.messages).toHaveLength(0);
+    await ask().expect(200);
+    expect(core).toHaveBeenCalledTimes(2);
+    expect(core.mock.calls[1]?.[0].options?.conversation_mode).toBe(true);
+  });
+
   it("keeps ledger questions available after AI quota is exhausted and reports quota details for model requests", async () => {
     const userId = new Types.ObjectId(ownerUserId);
     const { orgId } = await ensurePersonalOrgForUser(userId);

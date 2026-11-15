@@ -65,7 +65,7 @@ function wrapWithLayout(route: AppRouteDefinition, page: ReactNode) {
         <header className="border-b border-border bg-card">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
             <Link href="/dashboard" className="text-sm font-semibold text-foreground hover:underline">FinWise workspace</Link>
-            <nav aria-label="Voice and submission" className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+            <nav aria-label="Voice tools" className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
               <Link href="/voice" aria-current={route.path === "/voice" ? "page" : undefined} className="hover:text-foreground aria-[current=page]:font-semibold aria-[current=page]:text-foreground">Bharat Voice</Link>
               <ThemeToggle compact />
             </nav>

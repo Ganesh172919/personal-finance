@@ -16,11 +16,13 @@ def test_specific_compound_interest_concept_takes_priority():
     assert FinancialEducatorAgent()._simple_concept_extraction("How does compound interest work?") == "compound interest"
 
 
-def test_hypothetical_compound_interest_and_rate_follow_up_use_the_calculator(monkeypatch):
+@pytest.mark.parametrize("conversation_mode", [False, True])
+def test_hypothetical_compound_interest_and_rate_follow_up_use_the_calculator(monkeypatch, conversation_mode):
     def fail_on_model(*_args, **_kwargs):
         pytest.fail("A complete compound-interest example should use the local calculator")
 
     monkeypatch.setattr(FinancialEducatorAgent, "explain_concept", fail_on_model)
+    monkeypatch.setattr(FinancialEducatorAgent, "answer_chat", fail_on_model)
     question = (
         "Answer briefly. Explain compound interest using a hypothetical example of "
         "1,000 rupees at 10% per year for 2 years."
@@ -34,10 +36,11 @@ def test_hypothetical_compound_interest_and_rate_follow_up_use_the_calculator(mo
                 "user_input": current,
                 "user_profile": {"age": 30, "annual_income": 0, "monthly_expenses": 0, "savings": 0},
                 "conversation_history": history,
+                "options": {"conversation_mode": conversation_mode},
             })
             assert response.status_code == 200
             data = response.json()
-            assert data["analysis_type"] == "financial_education"
+            assert data["analysis_type"] == ("compound_interest_calculator" if conversation_mode else "financial_education")
             assert data["llm_call_count"] == 0
             assert f"**{ending}**" in data["final_output"]
             assert f"**{interest}** in total interest" in data["final_output"]
@@ -92,3 +95,34 @@ def test_educational_chat_excludes_private_profile_and_unrelated_plan(monkeypatc
     assert not data["actionType"] and not data.get("tool_calls")
     assert not data["evidence"] and not data["confidence"]
     assert all(value is None for value in data["plan"]["key_metrics"].values())
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_chat_mode_answers_unrelated_questions_without_workspace_plans(monkeypatch, stream):
+    questions = {"hi": "Hi! What would you like help with?", "list public data on IIIT Dharwad in 2025": "Which records do you need?"}
+
+    def answer(_self, prompt, history):
+        assert history == [{"role": "user", "content": "Use short answers."}]
+        return {"response": questions[prompt], "fallback_used": False}
+
+    monkeypatch.setattr(FinancialEducatorAgent, "answer_chat", answer)
+    with TestClient(app) as client:
+        for prompt, expected in questions.items():
+            response = client.post("/api/agents/process" + ("/stream" if stream else ""), json={
+                "user_input": prompt,
+                "options": {"conversation_mode": True},
+                "user_profile": {"age": 30, "annual_income": 90000, "monthly_expenses": 3000, "savings": 15000},
+                "conversation_history": [{"role": "user", "content": "Use short answers."}],
+                "finance_context": {"evidence": [{"type": "account", "label": "Unrelated balance"}]},
+            })
+            assert response.status_code == 200
+            if stream:
+                events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: {")]
+                data = next(event["result"] for event in events if event.get("phase") == "complete")
+            else:
+                data = response.json()
+            assert data["analysis_type"] == "chat_assistant"
+            assert data["conversation_mode"] is True
+            assert data["final_output"] == expected
+            assert not data["evidence"] and not data.get("tool_calls")
+            assert {step["agent"] for step in data["workflow_trace"]} == {"chat_assistant"}

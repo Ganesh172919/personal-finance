@@ -1,6 +1,7 @@
 import { PassThrough, Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { proxyAiStream, type SseSink } from "../services/aiStreamProxy";
+import { isConversationalResponseUsable } from "../services/aiCoreClient";
 
 const sse = (payload: unknown) => `data: ${typeof payload === "string" ? payload : JSON.stringify(payload)}\n\n`;
 
@@ -20,6 +21,30 @@ const parseEvents = (text: string) =>
     .map((payload) => (payload === "[DONE]" ? payload : JSON.parse(payload)));
 
 describe("proxyAiStream", () => {
+  it("replaces legacy conversational completions with a retryable error before persistence", async () => {
+    const sink = new PassThrough();
+    const read = collect(sink);
+    const onComplete = vi.fn();
+
+    const outcome = await proxyAiStream({
+      upstream: Readable.from([
+        sse({ phase: "complete", result: { success: true, final_output: "Generic financial plan" } }),
+        sse("[DONE]"),
+      ]),
+      sink: sink as unknown as SseSink,
+      isClientClosed: () => false,
+      acceptCompletion: isConversationalResponseUsable,
+      onComplete,
+    });
+
+    expect(outcome.completed).toBe(false);
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(parseEvents(read())).toEqual([
+      { phase: "error", message: "AI Core is temporarily unavailable. Please retry shortly." },
+      "[DONE]",
+    ]);
+  });
+
   it("forwards events in order and injects fields returned by onComplete into the complete result", async () => {
     const sink = new PassThrough();
     const read = collect(sink);

@@ -101,6 +101,7 @@ class UsageMetadata(BaseModel):
 # Carries automated client tool call proposals and runtime model telemetry.
 class ProcessResponse(BaseModel):
     success: bool = True
+    conversation_mode: bool = False
     final_output: str
     agent: str = "master"
     actionType: Optional[str] = None

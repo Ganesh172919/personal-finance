@@ -593,7 +593,7 @@ export async function answerFinanceVoiceQuery(params: {
 
   const question = params.query.trim().toLowerCase();
   const asksRemainingBudget = /\b(?:remaining budget|budget (?:is |do i have )?left|left in (?:my|the) budget|budget (?:remaining|is remaining))\b/i.test(question);
-  const asksTopCategory = /\b(?:top|highest) (?:spending|expense) category\b/i.test(question);
+  const asksTopCategory = /\b(?:(?:top|highest) (?:spending|expense) category|sabse (?:zyada|jyada) kharch[ae]?)\b|सबसे\s+(?:ज़्यादा|ज्यादा|अधिक)\s+(?:ख़र्च|खर्च)/i.test(question);
   const monthlySpending = getMonthlySpendingPeriod(question);
   const asksMonthlyBalance = /\b(?:my (?:current |monthly )?balance|balance (?:this month|for this month))\b/i.test(question);
   const useLedger = asksRemainingBudget || asksMonthlyBalance || asksTopCategory || monthlySpending === "current" ||
@@ -668,17 +668,23 @@ export async function answerFinanceVoiceQuery(params: {
       answerText = isBudgetOrBalance
         ? `Your recorded income minus expenses this month is ${formatMoney(remaining)}.`
         : `Your total spending this month is ${formatMoney(totalSpent)}, with ${topCategory} being your top expense category.`;
+    } else if (lang === "hi-IN") {
+      answerText = isBudgetOrBalance
+        ? `इस महीने आय में से खर्च घटाने पर ${formatMoney(remaining)} बचते हैं।`
+        : totalSpent > 0
+          ? `इस महीने आपका कुल खर्च ${formatMoney(totalSpent)} है। सबसे ज़्यादा खर्च ${topCategory} में हुआ।`
+          : "इस महीने कोई खर्च दर्ज नहीं है।";
     } else {
-      // Default Hindi
       answerText = isBudgetOrBalance
         ? `Is mahine aamdani se kharcha ghatane par ${formatMoney(remaining)} bachta hai.`
         : `Aapka is mahine ka kul kharcha ${formatMoney(totalSpent)} hai, jisme sabse zyada kharch ${topCategory} category me hua hai.`;
     }
   }
 
-  // Synthesize spoken voice answer via Timbre
+  // Display and read the same plain-text answer.
+  answerText = answerText.replace(/(?:^|\n)\s*[-*#]+\s+/g, "\n").replace(/\*\*|`/g, "").trim();
   const audioFeedback = await synthesizeSpeechTimbre({
-    text: answerText.replace(/(?:^|\n)\s*[-*#]+\s+/g, "\n").replace(/\*\*|`/g, "").trim().slice(0, 500),
+    text: answerText.slice(0, 500),
     language: speechLanguage !== "auto" ? speechLanguage : "hi-IN",
     voiceGender: "female",
   });

@@ -1,6 +1,6 @@
 from agents.master_agent import MasterFinancialStrategistAgent
 from graph.state import AnalysisType
-from utils.agent_routing import education_follow_up
+from utils.agent_routing import education_follow_up, wants_financial_workflow
 
 
 def test_routing_define_compound_interest_goes_to_education():
@@ -11,6 +11,14 @@ def test_routing_define_compound_interest_goes_to_education():
     )
 
     assert analysis_type == AnalysisType.FINANCIAL_EDUCATION
+
+
+def test_chat_planner_requires_financial_scope():
+    assert wants_financial_workflow("Analyze my spending patterns this month")
+    assert wants_financial_workflow("Build a debt payoff plan")
+    assert not wants_financial_workflow("hi")
+    assert not wants_financial_workflow("List all data of IIIT Dharwad in 2025")
+    assert not wants_financial_workflow("Explain the difference between fixed and variable expenses")
 
 
 def test_hypothetical_compound_interest_with_amounts_goes_to_education():

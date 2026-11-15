@@ -188,6 +188,23 @@ _FOLLOW_UP = re.compile(
     r"^(?:and\b|what about\b|how about\b|continue\b)|"
     r"\b(?:that|this|those|these|it|more|same|instead|next year|next month)\b", re.I,
 )
+_WORKSPACE_FINANCES = re.compile(
+    r"\b(?:my|our|saved|recorded|workspace)\s+(?:\w+\s+){0,2}"
+    r"(?:finances|budget|spending|expenses|transactions|income|portfolio|investments|debts|savings|"
+    r"accounts|financial goals|ledger|cash flow)\b",
+    re.I,
+)
+_PLAN_REQUEST = re.compile(
+    r"\b(?:build|create|make|generate|prepare|draft|give me)\s+(?:\w+\s+){0,5}"
+    r"(?:financial plan|budget plan|debt payoff plan|investment plan|cash flow forecast)\b",
+    re.I,
+)
+
+
+def wants_financial_workflow(question: str) -> bool:
+    """Select the planner for saved financial data or an explicit plan request."""
+    question = question.split("\n\nAttached workspace files:", 1)[0]
+    return bool(_WORKSPACE_FINANCES.search(question) or _PLAN_REQUEST.search(question))
 
 
 # Evaluates text query against domain patterns counting matching keywords.

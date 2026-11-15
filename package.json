@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "node scripts/start-all.mjs",
+    "start": "node scripts/start-all.mjs",
+    "start:all": "node scripts/start-all.mjs",
     "verify:submission": "node scripts/verify-submission.mjs",
     "verify:gnani": "npm run verify:gnani --prefix server",
     "package:submission": "node scripts/package-submission.mjs",

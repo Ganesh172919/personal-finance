@@ -185,7 +185,7 @@ export interface AiCoreProcessRequest {
   resume_from_checkpoint?: boolean; // Whether to resume from checkpoint
   conversation_history?: Array<{ role: "user" | "assistant"; content: string }>; // Conversation history
   session_summary?: string; // Session summary
-  options?: { narrative?: boolean; llm_decomposition?: boolean; include_evidence?: boolean; include_document_passages?: boolean; include_confidence?: boolean; include_actions?: boolean; task_type?: "finance" | "conversation_insights" }; // Processing options
+  options?: { narrative?: boolean; conversation_mode?: boolean; llm_decomposition?: boolean; include_evidence?: boolean; include_document_passages?: boolean; include_confidence?: boolean; include_actions?: boolean; task_type?: "finance" | "conversation_insights" }; // Processing options
 }
 
 /**
@@ -216,6 +216,7 @@ export interface AiCoreToolCall {
 // Provides complete diagnostic metadata including provider information and token usage tallies.
 export interface AiCoreProcessResponse {
   success: boolean; // Whether the request was successful
+  conversation_mode?: boolean;
   final_output: string; // Final AI output
   agent: string; // Agent that processed the request
   actionType?: string; // Type of action recommended
@@ -520,6 +521,7 @@ const normalizeProcessResponse = (data: any, requestId: string): AiCoreProcessRe
   // Return normalized response
   return {
     success: data?.success !== false,
+    conversation_mode: data?.conversation_mode === true,
     final_output: String(data?.final_output || data?.response || ""),
     agent: String(data?.agent || "master"),
     actionType: data?.actionType ? String(data.actionType) : undefined,
@@ -889,15 +891,17 @@ export const processAiCoreRequest = async (
     priority: options?.priority,
     task: async () => {
       const env = getEnv();
+        const fallback = (reason: string) => {
+          if (payload.options?.conversation_mode) throw new AiCoreUnavailableError(5);
+          return buildFallbackResponse(requestId, reason, { includeReasonInOutput: env.NODE_ENV !== "production" });
+        };
 
       // STEP 1: Circuit breaker check -- fastest possible rejection path
       if (isCircuitOpen()) {
         const durationMs = Date.now() - startedAt;
         svcLog.warn({ ...logCtx, reason: "circuit_open", duration_ms: durationMs }, "AI Core request rejected: circuit breaker open");
         recordAiCoreRequest({ endpoint: "process", durationMs, fallbackUsed: true });
-        return buildFallbackResponse(requestId, "AI core circuit breaker open", {
-          includeReasonInOutput: env.NODE_ENV !== "production",
-        });
+        return fallback("AI core circuit breaker open");
       }
 
       // STEP 2: Health check -- verifies the AI service is reachable
@@ -914,9 +918,7 @@ export const processAiCoreRequest = async (
           env.NODE_ENV !== "production"
             ? ` (Is AI Core running at ${env.PYTHON_API_URL}? Start it with uvicorn on port 8001.)`
             : "";
-        return buildFallbackResponse(requestId, `${detail}${hint}`, {
-          includeReasonInOutput: env.NODE_ENV !== "production",
-        });
+        return fallback(`${detail}${hint}`);
       }
 
       try {
@@ -933,13 +935,21 @@ export const processAiCoreRequest = async (
         // Success resets the circuit breaker failure counter
         markSuccess();
         const durationMs = Date.now() - startedAt;
+        const response = normalizeProcessResponse(data, requestId);
+        if (payload.options?.conversation_mode && !isConversationalResponseUsable(response)) {
+          recordAiCoreRequest({ endpoint: "process", durationMs, fallbackUsed: true });
+          svcLog.warn({ ...logCtx, acknowledged: response.conversation_mode, analysisType: response.analysis_type,
+            fallback: response.fallback_used, duration_ms: durationMs }, "AI Core did not provide a usable conversational response");
+          throw new AiCoreUnavailableError(5);
+        }
         recordAiCoreRequest({ endpoint: "process", durationMs, fallbackUsed: false });
         logExit(svcLog, "processAiCoreRequest", { ...logCtx, agent: data?.agent, fallback_used: false }, durationMs);
         logSlowOperation(svcLog, "processAiCoreRequest", durationMs, 10_000);
         // NOTE: Usage tracking (tokens, cost) happens in the background.
         // We intentionally don't await it to minimize response latency.
-        return normalizeProcessResponse(data, requestId);
+        return response;
       } catch (error) {
+        if (error instanceof AiCoreUnavailableError) throw error;
         // STEP 4: On failure, record the error and return a safe fallback
         markFailure(env, error);
         rethrowIfOverloaded(error);
@@ -948,13 +958,20 @@ export const processAiCoreRequest = async (
         const detail = extractErrorReason(error);
         svcLog.error({ ...logCtx, error: detail, duration_ms: durationMs, fallback_used: true }, "AI Core request failed");
         const hint = env.NODE_ENV !== "production" ? ` (AI Core base URL: ${env.PYTHON_API_URL})` : "";
-        return buildFallbackResponse(requestId, `${detail}${hint}`, {
-          includeReasonInOutput: env.NODE_ENV !== "production",
-        });
+        return fallback(`${detail}${hint}`);
       }
     },
   });
 };
+
+export function isConversationalResponseUsable(response: Record<string, unknown> | AiCoreProcessResponse): boolean {
+  const isFailedAnswer = response.fallback_used === true && (
+    response.analysis_type === "chat_assistant" || response.analysis_type === "financial_education" ||
+    response.session_status === "failed" || response.workflow_phase === "error"
+  );
+  return response.conversation_mode === true && response.success === true &&
+    typeof response.final_output === "string" && Boolean(response.final_output.trim()) && !isFailedAnswer;
+}
 
 /**
  * Streams an AI request via Server-Sent Events (SSE).

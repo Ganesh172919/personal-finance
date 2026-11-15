@@ -562,6 +562,7 @@ describe("Tier 1: Feature Coverage — FinWise Bharat Voice", () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.answer.length).toBeGreaterThan(10);
+      expect(res.body.data.modelsUsed.reasoning).toBe("Ledger summary");
     });
 
     it("answers Telugu monthly total expenditure inquiry", async () => {

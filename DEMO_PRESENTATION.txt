@@ -1,0 +1,54 @@
+FINWISE BHARAT VOICE
+The Great Indian AI Internship Challenge 2026
+Presenter: J Ganesh Kumar Reddy
+
+SET UP THE DEMO
+
+Start MongoDB and run npm run dev from the repository root to start Express, AI Core, and the Vite client. Open http://127.0.0.1:5173/voice. See FINWISE_OPERATIONS.md for setup. Use a signed-in synthetic workspace. To enable a fresh workspace on a local development server with a test database, set DEMO_EVALUATOR_ENABLED=true and select Start a local demo workspace.
+
+In Finance > Budgets, set this month's Food & Dining budget to INR 835. Use a workspace with no recorded expenses for the ₹785 preview. Run npm run verify:gnani and use dist/submission/demo/live-gnani-check.wav for the Hindi example. Keep credentials and personal records out of the recording.
+
+60-SECOND PUBLIC DEMO
+
+00:00–00:08 | Show Bharat Voice in dark mode
+“I built FinWise Bharat Voice so people can record everyday spending in the language they already speak.”
+
+00:08–00:21 | Upload or record the Hindi expense note
+Play or say “मैंने चाय पर पचास रुपये खर्च किए।”
+“Gnani Prisma turns the Hindi audio into a note I can review and edit.”
+
+00:21–00:35 | Show the review
+Point to ₹50, Food & Dining, and ₹785 left out of the ₹835 limit.
+“I can see what this purchase leaves in my dining budget before I save it.”
+
+00:35–00:48 | Save and play the spoken confirmation
+Tap Save to ledger. Pause narration while the Timbre confirmation plays.
+“Gnani Timbre reads the confirmation aloud.”
+
+00:48–01:00 | Show the transaction
+Open Transactions. Select INR and show the new ₹50 entry.
+“The expense is now in the same ledger I use to track spending. I built the voice workflow, budget review, and conversational assistant for this challenge.”
+
+THREE-MINUTE JUDGE WALKTHROUGH
+
+00:00–00:50 | Repeat the expense workflow in the black and white themes. Show the editable Prisma transcript, preview, saved transaction, and Timbre playback. Switch to the INR reporting view to compare amounts on the same basis.
+
+00:50–01:20 | In Bharat Voice, ask “How much money is left in my budget this month?” Point to ₹785 and the Budget and ledger summary source. Then ask “Explain the difference between simple and compound interest in one sentence.” Show the answer source and play the reply.
+
+01:20–01:57 | In Finance Chat, ask “Explain the difference between an annual fee and a monthly subscription in two sentences, with a rupee example.” The verified answer compared ₹1,200 yearly with ₹100 monthly. Send “Recurring deposit और fixed deposit में एक मुख्य अंतर हिंदी में बताइए।” Check that the reply describes monthly deposits versus one lump sum in Hindi. Open the Agent Workflow Trace and identify the provider, model, and one model call per question.
+
+01:57–02:28 | Open the composer microphone menu and import a short clip asking about ₹1,000 at 10% annually for two years. Show that dictation appends editable text before sending. Send it and point to ₹1,210 with ₹210 total interest. Open Live voice chat, enable Hands-free conversation, and import “What about after three years?” Show automatic submission, the ₹1,331 answer, and Timbre playback. The calculator uses zero model calls on both turns.
+
+02:28–02:43 | Show the generated FinWise Demo Checklist in Files. The assistant can create a reusable document from the checklist text supplied in chat.
+
+02:43–03:00 | Describe what ran
+“Prisma transcribed the audio and Timbre spoke the replies. FinWise used the saved ledger and calculator for exact totals. Groq answered the general education examples. Evon v3.3 30B is supported through a separately configured inference endpoint.”
+
+RECORDING AND SUBMISSION
+
+The bundled MP4s were recorded with a workspace that already had one ₹50 dining expense. The ₹735 preview in those videos is correct for that starting state. For a fresh recording, use the ₹785 example above. The in-app browser kept microphone permission pending during QA, so the verified dictation and hands-free recording used imported clips. Show the complete voice demo with the audio that actually ran.
+
+Gnani lists 15 November 2026, 6:00 p.m. IST as the deadline. The public demo must be live before submitting. Post on LinkedIn or X, tag Gnani AI, and include #GnaniAI and #GreatIndianAIInternshipChallenge. Nominate at most one public post per platform. Include the video, written project explanation, live Gnani APIs used, and each member's contribution. The 60-second cut is for the Demo Day Drop format. Use the three-minute version for a longer walkthrough.
+
+Official rules: https://www.gnani.ai/internship
+Submission form: https://forms.cloud.microsoft/r/dfFShbp7W7

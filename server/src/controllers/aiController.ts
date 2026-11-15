@@ -110,7 +110,7 @@ import { IUserDocument } from "../models/userModel"; // User document type
 import { v4 as uuidv4 } from "uuid"; // UUID generation
 import mongoose from "mongoose"; // MongoDB ODM
 import OrganizationModel from "../models/organizationModel"; // Organization model
-import { processAiCoreRequest, processAiCoreScenario } from "../services/aiCoreClient"; // AI Core client
+import { isConversationalResponseUsable, processAiCoreRequest, processAiCoreScenario } from "../services/aiCoreClient"; // AI Core client
 import { acquireAiCoreSlot } from "../services/aiConcurrency"; // Long-lived AI slot for SSE streams
 import { proxyAiStream } from "../services/aiStreamProxy"; // Backpressure-aware SSE tee
 import { buildProcessRequest } from "../services/aiRequestBuilder"; // AI request builder
@@ -399,11 +399,9 @@ export const processAICommand = async (req: Request, res: Response) => {
     });
 
     // Log request details
-    logger.info(`[requestId=${requestId}] Sending command to Python AI Core`);
-    logger.info(`[requestId=${requestId}] userInputLength=${command?.length ?? 0}`);
-    logger.info(
-      `[requestId=${requestId}] profileAge=${profile.age} transactionCountSent=${stats.sentTransactions} droppedTransactions=${stats.droppedTransactions}`
-    );
+    req.log?.info({ event: "ai.command.started", inputLength: command.length,
+      transactionCountSent: stats.sentTransactions, droppedTransactions: stats.droppedTransactions }, "AI command started");
+    aiRequest.options = { ...aiRequest.options, conversation_mode: true };
 
     // Send request to Python AI Core
     const aiStartedAt = Date.now();
@@ -422,13 +420,9 @@ export const processAICommand = async (req: Request, res: Response) => {
     }
 
     // Log response details
-    logger.info(
-      `[requestId=${requestId}] aiCore.durationMs=${aiDurationMs} fallback_used=${aiResponse.fallback_used} llm_call_count=${aiResponse.llm_call_count} analysis_type=${aiResponse.analysis_type}`
-    );
-
-    logger.info(
-      `[requestId=${requestId}] Python response agent=${aiResponse.agent} analysisType=${aiResponse.analysis_type} responseLength=${aiResponse.final_output?.length || 0}`
-    );
+    req.log?.info({ event: "ai.command.completed", analysisType: aiResponse.analysis_type,
+      provider: aiResponse.active_provider, model: aiResponse.active_model, durationMs: aiDurationMs,
+      llmCalls: aiResponse.llm_call_count, fallback: aiResponse.fallback_used }, "AI command completed");
 
     // Extract and store complete agent output
     const sessionId = uuidv4();
@@ -544,7 +538,7 @@ export const processAICommand = async (req: Request, res: Response) => {
     };
 
     // Cache response for future use
-    await AiResponseCacheModel.findOneAndUpdate(
+    if (!aiResponse.fallback_used) await AiResponseCacheModel.findOneAndUpdate(
       { cacheKey },
       {
         $set: {
@@ -660,6 +654,7 @@ export const processAiStream = async (req: Request, res: Response) => {
       sessionSummary: journalContext.summary || undefined,
       narrative,
     });
+    aiRequest.options = { ...aiRequest.options, conversation_mode: true };
 
     // The client may have left while we were building context; don't start
     // upstream work nobody is waiting for.
@@ -705,6 +700,7 @@ export const processAiStream = async (req: Request, res: Response) => {
       upstream,
       sink: res,
       isClientClosed: () => clientClosed,
+      acceptCompletion: isConversationalResponseUsable,
       onError: (message, err) => logger.error({ err, requestId }, `SSE proxy: ${message}`),
       // Streams used to bypass persistence and usage tracking, which left them
       // with no cost record and nothing the user could rate. Persist the final

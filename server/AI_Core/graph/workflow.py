@@ -146,7 +146,7 @@ from uuid import uuid4
 from langgraph.graph import END, StateGraph
 
 from utils.agent_execution import AgentExecution
-from utils.agent_routing import education_follow_up, select_specialists
+from utils.agent_routing import education_follow_up, select_specialists, wants_financial_workflow
 from utils.compound_interest_answer import compound_interest_answer
 
 from .state import AgentState, AnalysisType, SubtaskStatus, WorkflowPhase
@@ -1425,6 +1425,8 @@ class FinancialWorkflow:
             from utils.activity_review import activity_review_answer, wants_activity_review
             from utils.document_answers import document_passage_answer, wants_document_lookup
             answer_agent = None
+            calculated_answer = None
+            question = user_input.split("\n\nAttached workspace files:", 1)[0]
             if (options or {}).get("task_type") == "conversation_insights":
                 answer_agent = "conversation_summarizer"
             elif isinstance(finance_context, dict) and wants_activity_review(user_input):
@@ -1436,18 +1438,26 @@ class FinancialWorkflow:
                   and (options or {}).get("include_document_passages", True)
                   and wants_document_lookup(user_input)):
                 answer_agent = "document_lookup"
+            elif (options or {}).get("conversation_mode") and not wants_financial_workflow(question):
+                context = education_follow_up(question, conversation_history)
+                calculated_answer = compound_interest_answer(question, context)
+                answer_agent = "compound_interest_calculator" if calculated_answer else "chat_assistant"
             if answer_agent:
                 from contracts.plan import Plan
                 with AgentExecution(answer_agent, phase="synthesis") as execution:
                     if answer_agent == "conversation_summarizer":
                         from agents.conversation_summarizer import summarize_conversations
                         summary = summarize_conversations(finance_context, narrative=bool((options or {}).get("narrative")))
+                    elif answer_agent == "chat_assistant":
+                        summary = self.financial_educator.answer_chat(question, conversation_history or [])
+                    elif calculated_answer:
+                        summary = {"response": calculated_answer}
+                    elif answer_agent == "activity_review":
+                        summary = {"response": activity_review_answer(user_input, user_profile, finance_context)}
                     else:
-                        summary = {}
+                        summary = {"response": document_passage_answer(user_input, finance_context)}
                     output = {
-                        "response": (summary["response"] if answer_agent == "conversation_summarizer" else
-                                     activity_review_answer(user_input, user_profile, finance_context)
-                                     if answer_agent == "activity_review" else document_passage_answer(user_input, finance_context)),
+                        "response": summary["response"],
                         "agent": answer_agent,
                         "plan": Plan(executive_summary="Review the cited saved records.").model_dump(),
                         "fallback_used": summary.get("fallback_used", False),

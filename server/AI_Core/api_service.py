@@ -914,6 +914,7 @@ class ProcessOptions(BaseModel):
     """
 
     narrative: bool = False
+    conversation_mode: bool = False
     llm_decomposition: bool = False
     include_evidence: bool = True
     include_document_passages: bool = True
@@ -2571,7 +2572,8 @@ def _process_financial_request_sync(
         )
 
         # Build structured plan (always present)
-        if analysis_type == "financial_education":
+        direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator"}
+        if direct_answer:
             plan = Plan(executive_summary="")
             action_type = None
             response_evidence = []
@@ -2595,7 +2597,7 @@ def _process_financial_request_sync(
         if not str(response_text).strip():
             response_text = render_plan_markdown(plan, currency_code=currency_code)
 
-        if analysis_type != "financial_education":
+        if not direct_answer:
             response_text = _add_document_passages(str(response_text), request)
 
         trace_simplified = _simplify_for_json(workflow_trace)
@@ -2616,7 +2618,7 @@ def _process_financial_request_sync(
                 except Exception:
                     continue
 
-        if analysis_type not in {"activity_review", "document_lookup", "conversation_summarizer", "financial_education"} and not tool_call_models and profile_data_for_workflow and isinstance(profile_data_for_workflow, dict):
+        if not direct_answer and analysis_type not in {"activity_review", "document_lookup", "conversation_summarizer"} and not tool_call_models and profile_data_for_workflow and isinstance(profile_data_for_workflow, dict):
             try:
                 tool_call_models = _build_default_tool_calls(plan, profile_data_for_workflow)
             except Exception:
@@ -2723,6 +2725,7 @@ def _process_financial_request_sync(
 
         return ProcessResponse(
             success=True,
+            conversation_mode=request.options.conversation_mode,
             final_output=str(response_text),
             agent=str(agent or "master"),
             actionType=str(action_type) if action_type is not None else None,
@@ -2767,6 +2770,7 @@ def _process_financial_request_sync(
 
         return ProcessResponse(
             success=True,
+            conversation_mode=request.options.conversation_mode,
             final_output=_add_document_passages(fallback_text, request),
             agent="master",
             actionType="review",
@@ -3256,7 +3260,8 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                 str(analysis_raw).split(".")[-1].lower() if hasattr(analysis_raw, "name") else str(analysis_raw).lower()
             )
 
-            if analysis_type == "financial_education":
+            direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator"}
+            if direct_answer:
                 plan = Plan(executive_summary="")
                 action_type = None
                 response_evidence = []
@@ -3280,7 +3285,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
             if not str(response_text).strip():
                 response_text = render_plan_markdown(plan, currency_code=currency_code)
 
-            if analysis_type != "financial_education":
+            if not direct_answer:
                 response_text = _add_document_passages(str(response_text), request)
 
             # 4️⃣ Complete event with full result
@@ -3289,6 +3294,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                 "result": _simplify_for_json(
                     {
                         "success": True,
+                        "conversation_mode": request.options.conversation_mode,
                         "final_output": str(response_text),
                         "agent": str(agent or "master"),
                         "actionType": str(action_type) if action_type else None,

@@ -92,10 +92,11 @@ export const proxyAiStream = async (params: {
   upstream: AsyncIterable<Buffer | string> & { destroy?: (error?: Error) => unknown };
   sink: SseSink;
   isClientClosed: () => boolean;
+  acceptCompletion?: (result: Record<string, unknown>) => boolean;
   onComplete?: StreamCompleteHandler;
   onError?: (message: string, error: unknown) => void;
 }): Promise<ProxyAiStreamResult> => {
-  const { upstream, sink, isClientClosed, onComplete, onError } = params;
+  const { upstream, sink, isClientClosed, acceptCompletion, onComplete, onError } = params;
   const outcome: ProxyAiStreamResult = { completed: false, clientClosed: false };
 
   const transformEvent = async (rawEvent: string): Promise<string> => {
@@ -110,6 +111,9 @@ export const proxyAiStream = async (params: {
     }
 
     if (parsed?.phase === "complete" && parsed.result && typeof parsed.result === "object") {
+      if (acceptCompletion && !acceptCompletion(parsed.result)) {
+        return `data: ${JSON.stringify({ phase: "error", message: "AI Core is temporarily unavailable. Please retry shortly." })}`;
+      }
       outcome.completed = true;
       if (onComplete) {
         try {
