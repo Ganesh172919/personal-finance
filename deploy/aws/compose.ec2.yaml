@@ -1,12 +1,28 @@
-services:
-  web:
-    networks: [default, edge]
+x-finwise-logging: &finwise-logging
+  driver: local
+  options:
+    max-size: "20m"
+    max-file: "3"
 
+services:
+  mongo:
+    logging: *finwise-logging
+  redis:
+    logging: *finwise-logging
+  web:
+    logging: *finwise-logging
+    networks: [default, edge]
   server:
+    logging: *finwise-logging
     environment:
       TRUST_PROXY: "2" # Caddy and nginx are the two ingress proxies.
 
+  worker:
+    logging: *finwise-logging
+  ai-core:
+    logging: *finwise-logging
   caddy:
+    logging: *finwise-logging
     image: caddy:2.11.9-alpine
     environment:
       FINWISE_HOST: ${FINWISE_HOST:?Set FINWISE_HOST in the root .env}

@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 
 process.env.NODE_ENV = "test";
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret";
+// Match the Compose MongoDB major and keep test downloads reproducible.
+process.env.MONGOMS_VERSION ??= "7.0.24";
 process.env.CSRF_ENABLED = process.env.CSRF_ENABLED || "true";
 process.env.MONETIZATION_ENABLED = process.env.MONETIZATION_ENABLED || "true";
 

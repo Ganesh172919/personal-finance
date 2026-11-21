@@ -1,0 +1,11 @@
+# Overlay for reviewed EC2 releases. The worker uses the exact server image.
+services:
+  web:
+    image: ${COMPOSE_PROJECT_NAME:-finwise}-web:${FINWISE_RELEASE_SHA:?Set FINWISE_RELEASE_SHA}
+  server:
+    image: ${COMPOSE_PROJECT_NAME:-finwise}-server:${FINWISE_RELEASE_SHA:?Set FINWISE_RELEASE_SHA}
+  worker:
+    image: ${COMPOSE_PROJECT_NAME:-finwise}-server:${FINWISE_RELEASE_SHA:?Set FINWISE_RELEASE_SHA}
+    build: !reset null
+  ai-core:
+    image: ${COMPOSE_PROJECT_NAME:-finwise}-ai-core:${FINWISE_RELEASE_SHA:?Set FINWISE_RELEASE_SHA}

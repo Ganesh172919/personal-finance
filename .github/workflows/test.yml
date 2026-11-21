@@ -72,9 +72,17 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        env:
+          MONGOMS_DISABLE_POSTINSTALL: "true"
 
       - name: Audit runtime dependencies
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Cache the MongoDB test binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: ${{ runner.os }}-${{ runner.arch }}-mongoms-${{ hashFiles('server/src/test/setup.ts', 'server/package-lock.json') }}
 
       - name: Run tests
         run: npm run test:ci
@@ -167,6 +175,15 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
+  release-tests:
+    name: EC2 Release and Rollback Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n deploy/aws/release-ec2.sh
+      - run: bash scripts/test-release-ec2.sh
+
   # Test production HTTPS ingress, then exercise the same images with k6.
   compose-smoke:
     name: EC2 HTTPS and k6 Smoke
@@ -174,7 +191,8 @@ jobs:
     timeout-minutes: 25
     env:
       COMPOSE_PROJECT_NAME: finwise-ci
-      COMPOSE_FILE: compose.yaml:deploy/aws/compose.ec2.yaml
+      FINWISE_RELEASE_SHA: ${{ github.sha }}
+      COMPOSE_FILE: compose.yaml:deploy/aws/compose.ec2.yaml:deploy/aws/compose.release.yaml
       FINWISE_HOST: finwise.localhost
       FINWISE_ALIASES: finwise-alias.localhost
       CLIENT_URL: https://finwise.localhost
@@ -198,11 +216,11 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Build and start the EC2 stack
+        id: ec2-stack
         run: |
           docker compose config --quiet
           docker compose build web server ai-core
-          docker image tag finwise-ci-server:latest finwise-ci-worker:latest
-          docker compose up -d --no-build --wait --wait-timeout 360
+          docker compose up -d --no-build --pull missing --wait --wait-timeout 360
 
       - name: Test the HTTPS edge with Caddy's local CA
         run: |
@@ -220,32 +238,29 @@ jobs:
           done
           NODE_EXTRA_CA_CERTS="$root_ca" node --test scripts/smoke-ec2.mjs
 
-      - name: Verify OCR imports and Mongo-backed AI state in the runtime image
-        run: |
-          docker compose exec -T ai-core python - <<'PY'
-          from paddleocr import PaddleOCR
-          from memory.state_store import MongoStateStore
+      - name: Verify OCR imports and compression in the runtime image
+        if: ${{ !cancelled() && steps.ec2-stack.outcome == 'success' }}
+        run: docker compose exec -T ai-core python - ocr < scripts/smoke-ai-core.py
 
-          assert callable(PaddleOCR)
-          store = MongoStateStore()
-          store.ensure_indexes()
-          for value in ["draft budget", "updated budget"]:
-              assert store.upsert_memories("ci-org", "ci-user", [("plan", value, 0.9, "test")]) == 1
-          memories = store.list_memories("ci-org", "ci-user", 5)
-          assert len(memories) == 1 and memories[0]["value"] == "updated budget"
-          assert not store.list_memories("other-ci-org", "ci-user", 5)
-          PY
+      - name: Verify Mongo-backed AI state with the runtime image
+        if: ${{ !cancelled() && steps.ec2-stack.outcome == 'success' }}
+        run: docker compose exec -T ai-core python - state < scripts/smoke-ai-core.py
 
       - name: Start the load-test configuration with the existing images
+        id: load-stack
+        if: ${{ !cancelled() && steps.ec2-stack.outcome == 'success' }}
         env:
-          COMPOSE_FILE: compose.yaml:deploy/aws/compose.ec2.yaml:loadtest/compose.loadtest.yaml
+          COMPOSE_FILE: compose.yaml:deploy/aws/compose.ec2.yaml:deploy/aws/compose.release.yaml:loadtest/compose.loadtest.yaml
           CLIENT_URL: http://127.0.0.1:8080
           CORS_ORIGINS: http://127.0.0.1:8080
         run: docker compose up -d --no-build --wait --wait-timeout 300
 
       - uses: grafana/setup-k6-action@v1
+        id: k6
+        if: ${{ !cancelled() && steps.load-stack.outcome == 'success' }}
 
       - name: k6 smoke
+        if: ${{ !cancelled() && steps.k6.outcome == 'success' }}
         run: k6 run loadtest/k6/smoke.js
         env:
           K6_BASE_URL: http://127.0.0.1:8080
@@ -286,5 +301,5 @@ jobs:
       - name: Lint AI Core and AWS templates
         run: |
           python -m pip install ruff==0.7.4 cfn-lint==1.61.0
-          ruff check server/AI_Core
+          ruff check server/AI_Core scripts/smoke-ai-core.py
           cfn-lint deploy/aws/ec2.yaml deploy/aws/finwise.yaml

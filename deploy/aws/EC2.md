@@ -4,6 +4,8 @@ This deployment runs the React frontend, Express API, background worker, Python 
 
 AWS Free plan credits can cover eligible infrastructure usage until the credits or plan expire. EC2, EBS, and the public IPv4 address are metered. [AWS Free Tier](https://aws.amazon.com/free/free-tier-faqs/)
 
+Use the [production runbook](PRODUCTION_RUNBOOK.md) for release, backup, recovery and maintenance procedures.
+
 ## Provision the host
 
 Use the AWS Region assigned to your project. Set `VPC_ID` and `PUBLIC_SUBNET_ID` to a VPC and a subnet with an internet gateway route. A default VPC subnet can be used if one is available. Choose an Availability Zone that offers `m7i-flex.large`, the Free Tier–eligible default for new accounts. [EC2 Free Tier](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-free-tier-usage.html)
@@ -54,8 +56,12 @@ EOF
 Supply a Gemini key as `GEMINI_API_KEY` in `server/AI_Core/.env`, or configure the chosen provider there and set `LLM_PROVIDER` in the root `.env`. Add `GNANI_API_KEY` to `server/.env` for live speech. For email registration and password reset, configure the documented SMTP settings in `server/.env` with a verified sender. Alternatively, configure Google OAuth in the root `.env` and authorize `https://<hostname>/api/auth/google/callback` in Google Cloud. Keep third-party provider keys in the protected environment files.
 
 ```bash
-docker compose -f compose.yaml -f deploy/aws/compose.ec2.yaml config --quiet
-docker compose -f compose.yaml -f deploy/aws/compose.ec2.yaml up -d --build --wait
+export COMPOSE_PROJECT_NAME=finwise
+export FINWISE_RELEASE_SHA="$(git rev-parse HEAD)"
+export COMPOSE_FILE=compose.yaml:deploy/aws/compose.ec2.yaml:deploy/aws/compose.release.yaml
+docker compose config --quiet
+docker compose build web server ai-core
+docker compose up -d --no-build --pull missing --wait --wait-timeout 360
 curl -fSI "https://$FINWISE_HOST/"
 curl -fsS "https://$FINWISE_HOST/api/python-health"
 ```

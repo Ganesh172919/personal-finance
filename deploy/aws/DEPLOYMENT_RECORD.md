@@ -79,58 +79,7 @@ The current hostname is free. EC2, EBS and the Elastic IP use metered AWS resour
 
 ## Publish a new GitHub release
 
-1. Put the intended commit on GitHub’s `codex/aws-deploy` branch and check its **Tests** workflow result. Changes on `main` need to be brought into that branch first.
-2. Open the `finwise-ec2` instance in the AWS console and connect through Session Manager. Run `sudo -i` to access the checkout and Docker.
-3. From the instance, record the current commit, fetch the release branch, and deploy the commit you reviewed.
-
-```bash
-cd /opt/finwise
-git status --short
-git diff --quiet && git diff --cached --quiet || {
-  echo "Review the local tracked changes before deploying."
-  exit 1
-}
-git rev-parse HEAD
-git fetch origin refs/heads/codex/aws-deploy
-git log -1 --oneline FETCH_HEAD
-```
-
-Copy the first SHA above as your rollback point. Use the full SHA of the release commit you reviewed in the next commands.
-
-```bash
-release_sha=YOUR_REVIEWED_COMMIT_SHA
-git switch --detach "$release_sha"
-docker compose -p finwise -f compose.yaml -f deploy/aws/compose.ec2.yaml config --quiet
-docker compose -p finwise -f compose.yaml -f deploy/aws/compose.ec2.yaml \
-  up -d --build --wait --wait-timeout 360
-docker compose -p finwise -f compose.yaml -f deploy/aws/compose.ec2.yaml ps
-git rev-parse HEAD
-```
-
-4. Verify the public site and its API after Docker reports the services ready.
-
-```bash
-base=https://finwise.3-106-147-122.sslip.io
-for path in /login /register /healthz /api/python-health; do
-  curl -fsS --max-time 15 -o /dev/null -w "$path %{http_code}\n" "$base$path" || break
-done
-```
-
-Each endpoint should return HTTP 200. For a feature release, also test the changed flow with a dedicated test account. This single-instance deployment can briefly interrupt requests when a container is replaced.
-
-### Roll back an application release
-
-Switch to the previous SHA you recorded and rerun Compose. Verify the same endpoints.
-
-```bash
-cd /opt/finwise
-previous_sha=YOUR_PREVIOUS_COMMIT_SHA
-git switch --detach "$previous_sha"
-docker compose -p finwise -f compose.yaml -f deploy/aws/compose.ec2.yaml \
-  up -d --build --wait --wait-timeout 360
-```
-
-Compose retains the data volumes during these application updates. A code rollback leaves the current database state in place, so check migration compatibility before rolling back. Take a snapshot or application backup before infrastructure replacement or an irreversible data migration. Snapshot scheduling was outside this release.
+Use the [production runbook](PRODUCTION_RUNBOOK.md) for tests, SHA-tagged releases, rollback, backups and maintenance.
 
 ## Verification performed
 

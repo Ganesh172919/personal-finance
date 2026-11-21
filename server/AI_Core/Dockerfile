@@ -16,7 +16,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     FINWISE_MEMORY_DB_PATH=/app/data/memory.sqlite3 \
     AI_CORE_MAX_INFLIGHT=6
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgomp1 libgl1 libglib2.0-0 \
+    && apt-get install -y --no-install-recommends libgomp1 libgl1 libglib2.0-0 zlib1g \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 finwise \
     && mkdir -p /app/data && chown finwise:finwise /app/data
@@ -24,6 +24,9 @@ COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 COPY --chown=finwise:finwise . .
 USER finwise
+# PaddlePaddle 2.6 exports zlib symbols. Resolve them against Debian's libz
+# before Paddle loads, so Python and PyClipper use the same implementation.
+ENV LD_PRELOAD=libz.so.1
 EXPOSE 8001
 # Liveness only: /health never touches the work gate. Orchestrators route on /ready.
 HEALTHCHECK --interval=15s --timeout=4s --start-period=60s --retries=3 \

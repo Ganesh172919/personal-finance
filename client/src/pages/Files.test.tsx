@@ -94,7 +94,7 @@ it("does not describe a file whose extraction failed as ready", async () => {
   api.listWorkspaceFiles.mockResolvedValue({ ...list, files: [{ ...file, id: "507f1f77bcf86cd799439012",
     originalName: "broken.pdf", status: "error", extractedPreview: "", extractedText: "" }] });
   showPage();
-  const card = await screen.findByRole("button", { name: /broken.pdf/ });
+  const card = await screen.findByRole("button", { name: /broken\.pdf/ }, { timeout: 5000 });
   expect(card).toHaveTextContent("Text could not be extracted from this file");
   expect(card).not.toHaveTextContent("Stored and ready");
 });

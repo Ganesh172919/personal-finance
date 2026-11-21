@@ -15,8 +15,18 @@ services:
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      # Idempotent: initiates the single-node replica set on first boot, then reports ok.
-      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok }"]
+      # Initialize a new replica set, then require an elected writable primary.
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - >-
+          try { rs.status(); } catch (error) {
+            if (error.code !== 94) throw error;
+            assert.commandWorked(rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}));
+          }
+          quit(db.adminCommand({hello: 1}).isWritablePrimary === true ? 0 : 1);
       interval: 10s
       timeout: 10s
       retries: 12
