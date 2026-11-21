@@ -98,7 +98,19 @@ services:
     build: ./server
     command: ["node", "dist/worker/worker.js"]
     healthcheck:
-      disable: true # The worker runs the job loop and has no HTTP listener.
+      # The worker polls MongoDB and has no HTTP listener.
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          const { MongoClient } = require('mongoose').mongo;
+          const client = new MongoClient(process.env.MONGO_URI, { serverSelectionTimeoutMS: 2500 });
+          client.db().command({ ping: 1 }).then(() => client.close()).catch(() => process.exit(1));
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     env_file: ./server/.env
     environment:
       NODE_ENV: production
