@@ -19,11 +19,11 @@ aws cloudformation describe-stacks --stack-name finwise-ec2 \
   --query 'Stacks[0].Outputs' --output table
 ```
 
-The stack outputs `InstanceId` and `PublicIp`. Assign a free DuckDNS subdomain to `PublicIp`, or point the A record of a domain you already manage to that IPv4 address. The domain must resolve to the instance before Caddy can obtain a public certificate. [DuckDNS](https://www.duckdns.org/) · [GitHub Student Developer Pack .TECH offer](https://education.github.com/pack) · [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https)
+The stack outputs `InstanceId` and `PublicIp`. For a free hostname without registration, replace dots in `PublicIp` with hyphens and use `finwise.<dashed-ip>.sslip.io`. A DuckDNS subdomain or an A record for a domain you manage can also point to that IPv4 address. The hostname must resolve to the instance before Caddy can obtain a public certificate. [sslip.io](https://sslip.io/) · [DuckDNS](https://www.duckdns.org/) · [GitHub Student Developer Pack .TECH offer](https://education.github.com/pack) · [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https)
 
 ## Configure and start FinWise
 
-Open a Session Manager session to the instance from the AWS console. Open a root shell with `sudo -i`, wait for provisioning with `cloud-init status --wait`, and confirm `docker compose version` succeeds.
+Open a Session Manager session to the instance from the AWS console. Open a root shell with `sudo -i`, wait for provisioning with `cloud-init status --wait`, and confirm `docker compose version` and `docker buildx version` succeed.
 
 From a fresh checkout of this deployment branch on the instance, create protected environment files. Replace the example hostname in the command with the chosen DNS name.
 
