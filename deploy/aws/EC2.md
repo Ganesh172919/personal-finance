@@ -21,6 +21,8 @@ aws cloudformation describe-stacks --stack-name finwise-ec2 \
 
 The stack outputs `InstanceId` and `PublicIp`. For a free hostname without registration, replace dots in `PublicIp` with hyphens and use `finwise.<dashed-ip>.sslip.io`. A DuckDNS subdomain or an A record for a domain you manage can also point to that IPv4 address. The hostname must resolve to the instance before Caddy can obtain a public certificate. [sslip.io](https://sslip.io/) · [DuckDNS](https://www.duckdns.org/) · [GitHub Student Developer Pack .TECH offer](https://education.github.com/pack) · [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https)
 
+To serve a second hostname on the same instance, add it to `FINWISE_ALIASES` in the root `.env` and add its HTTPS origin to the comma-separated `CORS_ORIGINS` list. Point the hostname's A record at `PublicIp`. Keep `CLIENT_URL` as the canonical origin for email links and OAuth redirects. Recreate the affected services with the same Compose command below.
+
 ## Configure and start FinWise
 
 Open a Session Manager session to the instance from the AWS console. Open a root shell with `sudo -i`, wait for provisioning with `cloud-init status --wait`, and confirm `docker compose version` and `docker buildx version` succeed.

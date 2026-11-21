@@ -10,6 +10,7 @@ services:
     image: caddy:2.11.9-alpine
     environment:
       FINWISE_HOST: ${FINWISE_HOST:?Set FINWISE_HOST in the root .env}
+      FINWISE_ALIASES: ${FINWISE_ALIASES:-}
     ports:
       - "80:80"
       - "443:443"

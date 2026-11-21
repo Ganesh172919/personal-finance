@@ -1,3 +1,3 @@
-{$FINWISE_HOST} {
+{$FINWISE_HOST} {$FINWISE_ALIASES} {
 	reverse_proxy web:80
 }
