@@ -108,6 +108,7 @@ import passport from "./config/passport"; // Passport.js authentication configur
 import axios from "axios"; // HTTP client for making requests to Python AI service
 import { requestContext } from "./middleware/requestContext"; // Middleware to attach request ID and context
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler"; // Error handling middleware
+import { HttpError } from "./middleware/httpError";
 import { getEnv } from "./config/env"; // Environment configuration loader
 import { httpLogger, logger } from "./config/logger"; // HTTP and application logging
 import { metricsHandler, metricsMiddleware } from "./observability/metrics"; // Prometheus metrics
@@ -167,6 +168,7 @@ export const createApp = () => {
   app.set("trust proxy", env.TRUST_PROXY);
   // Disable X-Powered-By header for security
   app.disable("x-powered-by");
+  app.use(requestContext);
 
   /**
    * Rate Limiter Configuration
@@ -263,7 +265,7 @@ export const createApp = () => {
           return;
         }
         // Reject requests from unauthorized origins
-        callback(new Error("Origin not allowed by CORS"));
+        callback(new HttpError(403, "ORIGIN_NOT_ALLOWED", "Origin not allowed by CORS"));
       },
       credentials: true, // Allow cookies to be sent
     }),
@@ -374,13 +376,6 @@ export const createApp = () => {
    * Initializes Passport authentication strategies (JWT, Google OAuth, etc.)
    */
   app.use(passport.initialize());
-
-  /**
-   * Request Context Middleware
-   *
-   * Attaches a unique request ID to each request for tracing and logging.
-   */
-  app.use(requestContext);
 
   /**
    * Response Context Middleware

@@ -15,12 +15,12 @@ Last verified on November 21, 2026.
 | What you change | What happens |
 | --- | --- |
 | Push to `main` or a feature branch | GitHub updates that branch. Bring the changes into `codex/aws-deploy`, then deploy the resulting commit. |
-| Push to `codex/aws-deploy` | GitHub updates the release branch. Run the EC2 release commands below to publish it. |
+| Push to `codex/aws-deploy` | GitHub updates the release branch and runs the **Tests** workflow. Run the EC2 release commands below after the checks pass. |
 | Edit a Markdown file | GitHub shows the new document after the push. Documentation-only changes need no application deploy. |
 | Update DNS | The hostname changes where it points once the DNS record propagates. DNS has its own workflow. |
 | Edit the EC2 CloudFormation template | Review and apply a CloudFormation change set separately. The application release commands update the containers. |
 
-The repository’s GitHub Actions workflows run checks and load tests on their configured branches. They do not control the EC2 release. Automatic deployment would require a separate workflow with AWS permissions.
+The **Tests** workflow also runs on pull requests targeting `codex/aws-deploy`. It checks all three application tiers, Node runtime dependencies, Docker image builds, AWS templates, and a throwaway copy of the production Compose stack. The Compose job verifies HTTPS on the primary and alias hostnames, SPA routes and assets, authentication, CSRF cookie flags, CORS, request IDs, metrics isolation, worker readiness, and the gateway’s connection to AI Core. It then reuses the images for the k6 smoke test. Both passes use test services and credentials. Automatic deployment would require a separate workflow with AWS permissions. [GitHub Actions runs for this branch](https://github.com/Ganesh172919/personal-finance/actions?query=branch%3Acodex%2Faws-deploy)
 
 ## What was deployed
 
@@ -69,7 +69,7 @@ The current hostname is free. EC2, EBS and the Elastic IP use metered AWS resour
 
 ## Publish a new GitHub release
 
-1. Finish testing the changes and put the intended commit on GitHub’s `codex/aws-deploy` branch. Changes on `main` need to be brought into that branch first.
+1. Put the intended commit on GitHub’s `codex/aws-deploy` branch and check its **Tests** workflow result. Changes on `main` need to be brought into that branch first.
 2. Open the `finwise-ec2` instance in the AWS console and connect through Session Manager. Run `sudo -i` to access the checkout and Docker.
 3. From the instance, record the current commit, fetch the release branch, and deploy the commit you reviewed.
 
