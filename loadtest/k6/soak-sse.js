@@ -84,7 +84,7 @@ if (SCRAPE) thresholds.finwise_sse_connections_scraped = [`value>=${GAUGE_MIN}`]
 // Configures multi-scenario soak options for concurrent Server-Sent Event testing.
 // Evaluates active connection persistence alongside background read probe traffic.
 // Applies strict error thresholds to verify connection resilience and API stability.
-export const options = { scenarios, thresholds, setupTimeout: "600s" };
+export const options = { scenarios, thresholds, setupTimeout: "600s", noCookiesReset: true };
 
 // Initializes authenticated test user accounts up to the target connection count.
 // Validates account provisioning before establishing concurrent event streams.

@@ -220,6 +220,22 @@ jobs:
           done
           NODE_EXTRA_CA_CERTS="$root_ca" node --test scripts/smoke-ec2.mjs
 
+      - name: Verify OCR imports and Mongo-backed AI state in the runtime image
+        run: |
+          docker compose exec -T ai-core python - <<'PY'
+          from paddleocr import PaddleOCR
+          from memory.state_store import MongoStateStore
+
+          assert callable(PaddleOCR)
+          store = MongoStateStore()
+          store.ensure_indexes()
+          for value in ["draft budget", "updated budget"]:
+              assert store.upsert_memories("ci-org", "ci-user", [("plan", value, 0.9, "test")]) == 1
+          memories = store.list_memories("ci-org", "ci-user", 5)
+          assert len(memories) == 1 and memories[0]["value"] == "updated budget"
+          assert not store.list_memories("other-ci-org", "ci-user", 5)
+          PY
+
       - name: Start the load-test configuration with the existing images
         env:
           COMPOSE_FILE: compose.yaml:deploy/aws/compose.ec2.yaml:loadtest/compose.loadtest.yaml

@@ -190,8 +190,13 @@ export function ensureSession() {
     return null;
   }
   const csrfRes = http.get(`${API}/auth/csrf`, { tags: { name: "csrf", class: "auth" } });
-  const csrfToken = (bodyJson(csrfRes) || {}).csrf_token;
-  session = { index, email, csrfToken: csrfToken || "", chatSessionId: null };
+  const csrfToken = bodyJson(csrfRes)?.csrf_token;
+  if (csrfRes.status !== 200 || !csrfToken) {
+    loginFailures.add(1);
+    console.error(`VU ${__VU}: CSRF token request failed -> ${csrfRes.status}`);
+    return null;
+  }
+  session = { index, email, csrfToken, chatSessionId: null };
   return session;
 }
 

@@ -22,6 +22,16 @@ Last verified on November 21, 2026.
 
 The **Tests** workflow also runs on pull requests targeting `codex/aws-deploy`. It checks all three application tiers, Node runtime dependencies, Docker image builds, AWS templates, and a throwaway copy of the production Compose stack. The Compose job verifies HTTPS on the primary and alias hostnames, SPA routes and assets, authentication, CSRF cookie flags, CORS, request IDs, metrics isolation, worker readiness, and the gateway’s connection to AI Core. It then reuses the images for the k6 smoke test. Both passes use test services and credentials. Automatic deployment would require a separate workflow with AWS permissions. [GitHub Actions runs for this branch](https://github.com/Ganesh172919/personal-finance/actions?query=branch%3Acodex%2Faws-deploy)
 
+For a faster local feedback loop, run the tests closest to the files you changed. For example, from the repository root:
+
+```bash
+npm --prefix server run test:ci -- src/test/appIngress.test.ts src/test/envConfig.test.ts
+npm --prefix client test -- src/hooks/useAuth.test.tsx
+(cd server/AI_Core && python -m pytest tests/test_state_store_parity.py -q)
+```
+
+The Python command uses an environment installed from `server/AI_Core/requirements-dev.txt`. The quick tests use isolated test stores. The CI Compose stack also runs an OCR import check and tests memory upserts and tenant isolation against a real MongoDB replica set.
+
 ## What was deployed
 
 | Item | Value |

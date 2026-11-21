@@ -23,6 +23,7 @@ const HOLD = __ENV.K6_HOLD || "10m";
 // Ramps concurrency to target user volumes over configurable hold periods.
 // Defines percentile tracking statistics across nominal platform operations.
 export const options = {
+  noCookiesReset: true,
   scenarios: {
     nominal: {
       executor: "ramping-vus",

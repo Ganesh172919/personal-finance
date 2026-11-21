@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import mongomock
 import pytest
+from mongomock.collection import BulkOperationBuilder
 
 from memory.state_store import (
     CHECKPOINTS_COLLECTION,
@@ -23,10 +24,20 @@ from utils.session_manager import CheckpointPhase, SessionManager, SessionStatus
 
 
 @pytest.fixture(params=["sqlite", "mongo"])
-def store(request, tmp_path):
+def store(request, tmp_path, monkeypatch):
     if request.param == "sqlite":
         s = SqliteStateStore(str(tmp_path / "state.sqlite3"))
     else:
+        # PyMongo passes sort=None for UpdateOne. Mongomock 4.3 has no sort
+        # parameter, so teach this test double to accept an unspecified sort.
+        add_update = BulkOperationBuilder.add_update
+
+        def add_update_without_sort(self, *args, sort=None, **kwargs):
+            if sort is not None:
+                raise NotImplementedError("This test double does not implement sorted updates")
+            return add_update(self, *args, **kwargs)
+
+        monkeypatch.setattr(BulkOperationBuilder, "add_update", add_update_without_sort)
         s = MongoStateStore(db=mongomock.MongoClient(tz_aware=True)["parity_test"])
     s.ensure_indexes()
     return s

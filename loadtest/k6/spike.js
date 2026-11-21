@@ -26,6 +26,7 @@ const PEAK = Math.round(BASE * FACTOR);
 // Tests system load shedding, circuit breaking, and subsequent recovery phases.
 // Applies relaxed latency ceilings and bounded shedding rate thresholds.
 export const options = {
+  noCookiesReset: true,
   scenarios: {
     spike: {
       executor: "ramping-vus",

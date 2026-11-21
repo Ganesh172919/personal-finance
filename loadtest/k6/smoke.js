@@ -26,6 +26,7 @@ const USERS = parseInt(__ENV.K6_USERS || "3", 10);
 // Asserts strict latency budgets for read operations, writes, and AI responses.
 // Enforces zero login errors and high request success thresholds.
 export const options = {
+  noCookiesReset: true, // ensureSession logs in once per virtual user.
   scenarios: {
     smoke: {
       executor: "constant-vus",
