@@ -9,11 +9,14 @@ Parameters:
     Description: Subnet in the selected VPC with a route to an internet gateway
   InstanceType:
     Type: String
-    Default: t3.large
-    AllowedValues: [t3.large, t3.xlarge, t3a.large, t3a.xlarge]
+    Default: m7i-flex.large
+    AllowedValues: [m7i-flex.large, t3.large, t3.xlarge, t3a.large, t3a.xlarge]
   AmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Conditions:
+  IsBurstable: !Not [!Equals [!Ref InstanceType, m7i-flex.large]]
 
 Resources:
   InstanceRole:
@@ -49,8 +52,10 @@ Resources:
         MetadataOptions:
           HttpTokens: required
           HttpPutResponseHopLimit: 1
-        CreditSpecification:
-          CpuCredits: standard
+        CreditSpecification: !If
+          - IsBurstable
+          - { CpuCredits: standard }
+          - !Ref AWS::NoValue
         BlockDeviceMappings:
           - DeviceName: /dev/xvda
             Ebs:

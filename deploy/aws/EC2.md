@@ -6,7 +6,7 @@ AWS Free plan credits can cover eligible infrastructure usage until the credits 
 
 ## Provision the host
 
-Use the AWS Region assigned to your project. Set `VPC_ID` and `PUBLIC_SUBNET_ID` to a VPC and a subnet with an internet gateway route. A default VPC subnet can be used if one is available.
+Use the AWS Region assigned to your project. Set `VPC_ID` and `PUBLIC_SUBNET_ID` to a VPC and a subnet with an internet gateway route. A default VPC subnet can be used if one is available. Choose an Availability Zone that offers `m7i-flex.large`, the Free Tier–eligible default for new accounts. [EC2 Free Tier](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-free-tier-usage.html)
 
 ```bash
 aws sts get-caller-identity
