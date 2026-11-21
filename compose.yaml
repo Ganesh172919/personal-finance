@@ -97,6 +97,8 @@ services:
   worker:
     build: ./server
     command: ["node", "dist/worker/worker.js"]
+    healthcheck:
+      disable: true # The worker runs the job loop and has no HTTP listener.
     env_file: ./server/.env
     environment:
       NODE_ENV: production
