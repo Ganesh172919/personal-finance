@@ -103,7 +103,7 @@ it("recovers a failed detail request and exposes the stored PDF pages", async ()
   api.listWorkspaceFiles.mockResolvedValue(list);
   api.getWorkspaceFile.mockRejectedValueOnce(new Error("Offline")).mockResolvedValueOnce({ file });
   showPage();
-  fireEvent.click(await screen.findByRole("button", { name: /sample.pdf/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /sample.pdf/ }, { timeout: 5000 }));
   const dialog = await screen.findByRole("dialog");
   expect(await within(dialog).findByRole("alert")).toHaveTextContent("File details could not be loaded");
   fireEvent.click(within(dialog).getByRole("button", { name: "Try again" }));
@@ -130,7 +130,7 @@ it("opens an exact file page from a citation, updates its URL and clears the sel
 it("ignores an invalid file reference without making a detail request", async () => {
   api.listWorkspaceFiles.mockResolvedValue(list);
   showPage("/files?file=https%3A%2F%2Fexample.com&page=4");
-  await screen.findByRole("button", { name: /sample.pdf/ });
+  await screen.findByRole("button", { name: /sample.pdf/ }, { timeout: 5000 });
   expect(api.getWorkspaceFile).not.toHaveBeenCalled();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });

@@ -85,6 +85,7 @@
 import { motion } from "framer-motion";
 import { Crown, Calculator, TrendingUp, PiggyBank, GraduationCap, BrainCircuit } from "lucide-react";
 import { IWorkflowTraceEntry } from "@/types";
+import type { IChatMessageMetadata } from "@/types/chat.types";
 
 // Component parameter specifications for the agent execution trace visualizer.
 // Supplies detailed trace step objects alongside fallback agent string lists.
@@ -95,6 +96,17 @@ interface AgentWorkflowVisualizerProps {
   fallbackUsed?: boolean;
   recoveredProvider?: boolean;
   llmCallCount?: number;
+  tokenUsage?: IChatMessageMetadata["tokenUsage"];
+  cacheHit?: boolean;
+}
+
+function legacyTokenUsage(step: IWorkflowTraceEntry | undefined, llmCallCount?: number) {
+  if (!step || !llmCallCount || step.llmCalls !== llmCallCount) return undefined;
+  const { inputTokens, outputTokens, tokenCount } = step;
+  if (inputTokens == null || outputTokens == null || tokenCount == null || tokenCount <= 0 ||
+      ![inputTokens, outputTokens, tokenCount].every(count => Number.isSafeInteger(count) && count >= 0) ||
+      tokenCount < inputTokens + outputTokens) return undefined;
+  return { tokens_in: inputTokens, tokens_out: outputTokens, total_tokens: tokenCount };
 }
 
 // Visual styling configuration associated with an AI specialist agent identity.
@@ -122,6 +134,7 @@ const AGENT_VISUALS: Record<string, AgentVisualConfig> = {
   public_web_research: { label: "Public web research", icon: GraduationCap, color: "hsl(134 61% 41%)" },
   document_draft: { label: "Document drafting", icon: GraduationCap, color: "hsl(134 61% 41%)" },
   compound_interest_calculator: { label: "Compound interest calculator", icon: GraduationCap, color: "hsl(134 61% 41%)" },
+  flat_rate_calculator: { label: "Fixed-fee comparison", icon: Calculator, color: "hsl(134 61% 41%)" },
   ai_core_client: { label: "AI Core Client", icon: BrainCircuit, color: "hsl(271 81% 56%)" },
 };
 
@@ -169,11 +182,15 @@ export function AgentWorkflowVisualizer({
   agentsInvolved = [],
   fallbackUsed = false,
   recoveredProvider = false,
-  llmCallCount = 0,
+  llmCallCount,
+  tokenUsage,
+  cacheHit = false,
 }: AgentWorkflowVisualizerProps) {
-  const trace = workflowTrace.length > 0 ? workflowTrace : buildFallbackTrace(agentsInvolved);
+  const calls = cacheHit ? 0 : llmCallCount;
+  const usage = tokenUsage ?? legacyTokenUsage(workflowTrace.length === 1 ? workflowTrace[0] : undefined, calls);
+  const trace = cacheHit ? [] : workflowTrace.length > 0 ? workflowTrace : buildFallbackTrace(agentsInvolved);
 
-  if (trace.length === 0) {
+  if (!cacheHit && trace.length === 0 && calls == null && !usage) {
     return (
       <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
         Workflow trace not available for this response.
@@ -186,8 +203,11 @@ export function AgentWorkflowVisualizer({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Agent Workflow Trace</h3>
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <span>LLM calls: {llmCallCount}</span>
-          <span>{fallbackUsed ? "Fallback used" : recoveredProvider ? "Provider recovered" : llmCallCount === 0 ? "No model call" : "Primary path"}</span>
+          {calls != null && <span>LLM calls: {calls}</span>}
+          {calls === 0 ? <span>Tokens: 0</span> : usage ? (
+            <span>Tokens: {usage.total_tokens.toLocaleString()} ({usage.tokens_in.toLocaleString()} input · {usage.tokens_out.toLocaleString()} output)</span>
+          ) : calls != null ? <span>Token usage unavailable</span> : null}
+          <span>{cacheHit ? "Cached reply" : fallbackUsed ? "Fallback used" : recoveredProvider ? "Provider recovered" : calls === 0 ? "No model call" : "Primary path"}</span>
         </div>
       </div>
 

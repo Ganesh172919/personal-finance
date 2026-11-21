@@ -148,6 +148,7 @@ from langgraph.graph import END, StateGraph
 from utils.agent_execution import AgentExecution
 from utils.agent_routing import education_follow_up, select_specialists, wants_financial_workflow
 from utils.compound_interest_answer import compound_interest_answer
+from utils.flat_rate_comparison import flat_rate_comparison
 
 from .state import AgentState, AnalysisType, SubtaskStatus, WorkflowPhase
 
@@ -1445,7 +1446,11 @@ class FinancialWorkflow:
             elif (options or {}).get("conversation_mode") and not wants_financial_workflow(question):
                 context = education_follow_up(question, conversation_history)
                 calculated_answer = compound_interest_answer(question, context)
-                answer_agent = "compound_interest_calculator" if calculated_answer else "chat_assistant"
+                if calculated_answer:
+                    answer_agent = "compound_interest_calculator"
+                else:
+                    calculated_answer = flat_rate_comparison(question)
+                    answer_agent = "flat_rate_calculator" if calculated_answer else "chat_assistant"
             if answer_agent:
                 from contracts.plan import Plan
                 with AgentExecution(answer_agent, phase="synthesis") as execution:

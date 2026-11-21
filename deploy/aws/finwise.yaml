@@ -15,7 +15,7 @@ Parameters:
   AiCoreImage: {Type: String}
   AppSecretArn:
     Type: String
-    Description: Secrets Manager secret (JSON) with keys JWT_SECRET, AI_CORE_INTERNAL_TOKEN, WEBHOOK_CREDENTIALS_KEY, MONGO_URI, GEMINI_API_KEYS (plus GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET when EnableGoogleAuth=true)
+    Description: Secrets Manager JSON with JWT_SECRET, AI_CORE_INTERNAL_TOKEN, WEBHOOK_CREDENTIALS_KEY, MONGO_URI, and the enabled provider credentials
   CertificateArn:
     Type: String
     Default: ""
@@ -28,8 +28,13 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
     Description: "true = server gets GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET from AppSecretArn (keys must exist, ECS fails task start otherwise) and GOOGLE_CALLBACK_URL=PublicUrl/api/auth/google/callback. PublicUrl must have no trailing slash."
+  EnableGnaniSpeech:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Enable Gnani Prisma and Timbre using the GNANI_API_KEY in AppSecretArn
   LlmProvider: {Type: String, Default: gemini}
-  LlmModel: {Type: String, Default: gemini-3.5-flash-lite}
+  LlmModel: {Type: String, Default: "", Description: Empty uses the default model for the selected provider}
   LlmRpm: {Type: Number, Default: 10, Description: "Free-tier requests/minute PER AI Core task; keep tasks x RPM within the provider quota"}
   AiCoreMaxInflight: {Type: Number, Default: 6}
   ServerDesiredCount: {Type: Number, Default: 2, MinValue: 1}
@@ -42,6 +47,8 @@ Parameters:
 Conditions:
   HasCert: !Not [!Equals [!Ref CertificateArn, ""]]
   GoogleAuthEnabled: !Equals [!Ref EnableGoogleAuth, "true"]
+  GnaniSpeechEnabled: !Equals [!Ref EnableGnaniSpeech, "true"]
+  UseGroq: !Equals [!Ref LlmProvider, groq]
 
 Resources:
   LogGroup:
@@ -227,23 +234,28 @@ Resources:
           StopTimeout: 60
           PortMappings: [{ContainerPort: 8001}]
           HealthCheck:
-            Command: [CMD-SHELL, "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)\""]
+            Command: [CMD-SHELL, "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=3)\""]
             Interval: 15
             Timeout: 5
             Retries: 3
             StartPeriod: 60
           Environment:
+            - {Name: NODE_ENV, Value: production}
             - {Name: LLM_PROVIDER, Value: !Ref LlmProvider}
             - {Name: LLM_MODEL, Value: !Ref LlmModel}
             - {Name: LLM_RPM, Value: !Ref LlmRpm}
             - {Name: AI_CORE_MAX_INFLIGHT, Value: !Ref AiCoreMaxInflight}
             - {Name: LLM_CACHE_ENABLED, Value: "1"}
             - {Name: AI_CORE_STATE_BACKEND, Value: mongo}
+            - {Name: AI_CORE_READY_REQUIRES_STATE, Value: "true"}
             - {Name: REDIS_URL, Value: !Sub "redis://${Redis.PrimaryEndPoint.Address}:6379"}
           Secrets:
             - {Name: MONGO_URI, ValueFrom: !Sub "${AppSecretArn}:MONGO_URI::"}
             - {Name: AI_CORE_INTERNAL_TOKEN, ValueFrom: !Sub "${AppSecretArn}:AI_CORE_INTERNAL_TOKEN::"}
-            - {Name: GEMINI_API_KEYS, ValueFrom: !Sub "${AppSecretArn}:GEMINI_API_KEYS::"}
+            - !If
+              - UseGroq
+              - {Name: GROQ_API_KEY, ValueFrom: !Sub "${AppSecretArn}:GROQ_API_KEY::"}
+              - {Name: GEMINI_API_KEYS, ValueFrom: !Sub "${AppSecretArn}:GEMINI_API_KEYS::"}
           LogConfiguration:
             LogDriver: awslogs
             Options: {awslogs-group: !Ref LogGroup, awslogs-region: !Ref "AWS::Region", awslogs-stream-prefix: ai-core}
@@ -303,6 +315,10 @@ Resources:
             - {Name: MONGO_URI, ValueFrom: !Sub "${AppSecretArn}:MONGO_URI::"}
             - {Name: AI_CORE_INTERNAL_TOKEN, ValueFrom: !Sub "${AppSecretArn}:AI_CORE_INTERNAL_TOKEN::"}
             - {Name: WEBHOOK_CREDENTIALS_KEY, ValueFrom: !Sub "${AppSecretArn}:WEBHOOK_CREDENTIALS_KEY::"}
+            - !If
+              - GnaniSpeechEnabled
+              - {Name: GNANI_API_KEY, ValueFrom: !Sub "${AppSecretArn}:GNANI_API_KEY::"}
+              - !Ref "AWS::NoValue"
             - !If
               - GoogleAuthEnabled
               - {Name: GOOGLE_CLIENT_ID, ValueFrom: !Sub "${AppSecretArn}:GOOGLE_CLIENT_ID::"}

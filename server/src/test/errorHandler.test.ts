@@ -59,6 +59,16 @@ describe("errorHandler", () => {
     next = vi.fn();
   });
 
+  it.each([
+    ["entity.parse.failed", 400, "INVALID_REQUEST_BODY"],
+    ["entity.too.large", 413, "REQUEST_BODY_TOO_LARGE"],
+  ] as const)("returns a bounded response for %s", (type, status, code) => {
+    errorHandler(Object.assign(new Error("Parser diagnostic"), { type, body: "private submitted text" }), req, res, next);
+    expect(res.status).toHaveBeenCalledWith(status);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code }));
+    expect(JSON.stringify(res.json.mock.calls)).not.toContain("private submitted text");
+  });
+
   describe("HttpError handling", () => {
     it("returns correct status code for HttpError", () => {
       const err = new HttpError(400, "VALIDATION_ERROR", "Invalid input");

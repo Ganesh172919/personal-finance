@@ -120,7 +120,7 @@ import WorkspaceFileModel from "../models/workspaceFileModel";
 import { IUserDocument } from "../models/userModel";
 import OrganizationModel from "../models/organizationModel";
 import mongoose from "mongoose";
-import { processAiCoreRequest, type AiCoreProcessRequest } from "../services/aiCoreClient";
+import { processAiCoreRequest, type AiCoreProcessRequest, type AiCoreProcessResponse } from "../services/aiCoreClient";
 import { isAiCapacityError } from "../services/aiConcurrency";
 import { AiCoreOverloadedError, AiCoreUnavailableError } from "../services/aiCoreResilience";
 import { buildProcessRequest } from "../services/aiRequestBuilder";
@@ -142,8 +142,8 @@ import { logger } from "../config/logger";
 import { buildSavedActivityDocument, chatTextFilename, createChatDocument, parseChatDocumentRequest } from "../services/chatDocuments";
 import { renderLocalAuthoredPdf } from "../services/richDocumentRenderer";
 import { getOrGenerateConversationInsights } from "../services/conversationInsightsCache";
-import { getMonthlyLedgerSummary, getMonthlySpendingFollowUp, getMonthlySpendingPeriod } from "../services/monthlyLedgerSummary";
-import { formatBillingCurrency } from "../utils/currencyFx";
+import { getMonthlyLedgerSummary, getMonthlySpendingFollowUp, getMonthlySpendingPeriod, getMonthlySpendingUnitRequest } from "../services/monthlyLedgerSummary";
+import { convertUsdToCurrency, formatBillingCurrency, normalizeCurrency, type SupportedCurrency } from "../utils/currencyFx";
 import { ensureUserTransactionsMigrated } from "../services/transactionMigration";
 
 // Normalizes request parameter values that may arrive as arrays into a single string.
@@ -662,9 +662,11 @@ export async function sendMessage(req: Request, res: Response) {
         content: String(message.content)
       }));
 
-    const monthlySpendingQuestion = webQuestion || requestedFileIds.length || originalUserMessage?.metadata?.attachments?.length
+    const useLedger = !webQuestion && !requestedFileIds.length && !originalUserMessage?.metadata?.attachments?.length;
+    const monthlyUnitRequest = useLedger ? getMonthlySpendingUnitRequest(content) : null;
+    const monthlySpendingQuestion = !useLedger
       ? null
-      : getMonthlySpendingPeriod(content) ?? getMonthlySpendingFollowUp(content, historyDocs.map(message => ({
+      : monthlyUnitRequest?.period ?? getMonthlySpendingPeriod(content) ?? getMonthlySpendingFollowUp(content, historyDocs.map(message => ({
         role: message.role,
         content: String(message.content),
         hasAttachments: Boolean(message.metadata?.attachments?.length),
@@ -692,7 +694,7 @@ export async function sendMessage(req: Request, res: Response) {
 
     let aiResponseContent = "I apologize, but I'm having trouble processing your request right now. Please try again.";
     let aiMetadata: any = {};
-    let aiUsage: any = undefined;
+    let aiUsage: AiCoreProcessResponse["usage"];
     let aiCacheKey: string | null = null;
     let aiContextStats: any = undefined;
     let normalizedPlanValid: boolean | null = null;
@@ -724,7 +726,7 @@ export async function sendMessage(req: Request, res: Response) {
           body = result.final_output.trim();
           aiUsage = result.usage;
           Object.assign(aiMetadata, { activeProvider: result.active_provider, activeModel: result.active_model,
-            aiCoreDurationMs: Date.now() - draftStartedAt, llmCallCount: result.llm_call_count, tokenUsage: result.usage,
+            aiCoreDurationMs: Date.now() - draftStartedAt, llmCallCount: result.llm_call_count,
             agentsInvolved: ["document_draft", "document_renderer"], workflowTrace: result.workflow_trace });
         }
         if (!body) {
@@ -763,6 +765,23 @@ export async function sendMessage(req: Request, res: Response) {
         aiResponseContent = top
           ? `You spent **${format(summary.totalSpent)}** in ${period}. Your highest spending category was **${category}** at **${format(top.amount)}**.`
           : `You have no recorded expenses in ${period}.`;
+        if (monthlyUnitRequest) {
+          const currency = normalizeCurrency(settings.currency);
+          const minorUnit: Record<SupportedCurrency, string | null> = {
+            USD: "cents", CAD: "cents", AUD: "cents", EUR: "cents", INR: "paise", GBP: "pence", JPY: null,
+          };
+          const unit = minorUnit[currency];
+          const total = `You spent **${format(summary.totalSpent)}** in ${period}.`;
+          if (unit) {
+            const amount = Math.round(convertUsdToCurrency(summary.totalSpent, currency) * 100);
+            const rendered = `**${amount.toLocaleString("en-US")} ${unit}**`;
+            aiResponseContent = monthlyUnitRequest.unit === unit
+              ? `${total} That is ${rendered}.`
+              : `${total} The minor unit for ${currency} is ${unit}, so that is ${rendered}.`;
+          } else {
+            aiResponseContent = `${total} The displayed JPY total is in whole yen.`;
+          }
+        }
         aiMetadata = {
           analysisType: "monthly_spending",
           agentsInvolved: ["Monthly ledger summary"],
@@ -801,8 +820,7 @@ export async function sendMessage(req: Request, res: Response) {
       if (cached?.responseData && typeof cached.responseData === "object") {
         const cachedData = cached.responseData as any;
         aiResponseContent = String(cachedData.content || aiResponseContent);
-        aiMetadata = { ...(cachedData.metadata || {}), cacheHit: true, aiCoreDurationMs: 0 };
-        aiUsage = (cachedData.metadata as any)?.tokenUsage || (cachedData.metadata as any)?.usage;
+        aiMetadata = { ...(cachedData.metadata || {}), cacheHit: true, aiCoreDurationMs: 0, llmCallCount: 0 };
         logger.info(`[requestId=${requestId}] chat-message cache_hit=true`);
         recordAiCache({ endpoint: "chat-message", hit: true });
       } else {
@@ -892,7 +910,6 @@ export async function sendMessage(req: Request, res: Response) {
             workflowTrace: aiResponse.workflow_trace || [],
             fallbackUsed: aiResponse.fallback_used || false,
             llmCallCount: aiResponse.llm_call_count || 0,
-            tokenUsage: aiResponse.usage,
             requestId: aiResponse.request_id || requestId,
             actionLinkId: aiResponse.request_id || requestId,
             linkedTaskIds: [],
@@ -1101,6 +1118,14 @@ export async function sendMessage(req: Request, res: Response) {
       logger.warn(`[requestId=${requestId}] Failed to persist chat agent output:`, persistError?.message || persistError);
     }
 
+    const tokens = aiUsage && {
+      tokens_in: aiUsage.tokens_in,
+      tokens_out: aiUsage.tokens_out,
+      total_tokens: Math.max(aiUsage.total_tokens ?? 0, aiUsage.tokens_in + aiUsage.tokens_out),
+    };
+    aiMetadata.tokenUsage = tokens && tokens.total_tokens > 0 &&
+      Object.values(tokens).every(value => Number.isSafeInteger(value) && value >= 0) ? tokens : undefined;
+
     // Create AI response message
     const aiMessage = await ChatMessageModel.create({
       orgId,
@@ -1181,6 +1206,7 @@ export async function sendMessage(req: Request, res: Response) {
       provider: aiMetadata.activeProvider,
       model: aiMetadata.activeModel,
       llmCalls: aiMetadata.llmCallCount,
+      totalTokens: aiMetadata.tokenUsage?.total_tokens,
       coreDurationMs: aiMetadata.aiCoreDurationMs,
       cacheHit: aiMetadata.cacheHit === true,
       fallback: aiMetadata.fallbackUsed === true,

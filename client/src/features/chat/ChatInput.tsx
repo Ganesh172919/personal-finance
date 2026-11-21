@@ -31,6 +31,7 @@ import { Switch as ToggleSwitch } from "@/components/ui/Switch";
 import type { IChatAttachment } from "@/types/chat.types";
 
 const WEB_SEARCH_PREFIX = "Search the web for ";
+const WEB_SEARCH_DIRECTIVE = /^\s*(?:\/search|(?:please\s+)?search (?:the )?web(?: for)?)\b\s*:?[ \t]*/i;
 
 // Property definition contract for the conversational chat input component.
 // Configures send dispatchers, loading states, custom placeholders, and attachments.
@@ -60,8 +61,10 @@ export function ChatInput({
   placeholder = "Ask a question or attach a file...",
 }: ChatInputProps) {
   const [message, setMessage] = useState(initialMessage);
-  const webSearch = message.toLowerCase().startsWith(WEB_SEARCH_PREFIX.toLowerCase());
-  const searchQuestionMissing = webSearch && !message.slice(WEB_SEARCH_PREFIX.length).trim();
+  const [searchEnabled, setSearchEnabled] = useState(false);
+  const searchDirective = WEB_SEARCH_DIRECTIVE.exec(message);
+  const webSearch = searchEnabled || searchDirective !== null;
+  const searchQuestionMissing = webSearch && !message.slice(searchDirective?.[0].length ?? 0).trim();
   const [narrative, setNarrative] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -217,7 +220,8 @@ export function ChatInput({
       const uploadedFileIds = [...new Set([...workspaceAttachments.map(file => file.workspaceFileId), ...selectedFiles.map(file => uploadedFilesRef.current.get(file)!)])];
 
       const sent = await onSend(
-        hasMessage ? trimmedMessage : "Please analyze the attached files and tell me what matters most.",
+        searchEnabled && !searchDirective ? WEB_SEARCH_PREFIX + trimmedMessage
+          : hasMessage ? trimmedMessage : "Please analyze the attached files and tell me what matters most.",
         {
           narrative,
           fileIds: uploadedFileIds,
@@ -229,6 +233,7 @@ export function ChatInput({
       }
 
       setMessage("");
+      setSearchEnabled(false);
       setSelectedFiles([]);
       uploadedFilesRef.current.clear();
       if (textareaRef.current) {
@@ -386,7 +391,8 @@ export function ChatInput({
               aria-describedby={webSearch ? "chat-composer-hint" : undefined}
               disabled={isBusy || Boolean(dictationPhase)}
               onClick={() => {
-                setMessage(webSearch ? message.slice(WEB_SEARCH_PREFIX.length) : WEB_SEARCH_PREFIX + message);
+                setSearchEnabled(!webSearch);
+                if (searchDirective) setMessage(message.slice(searchDirective[0].length));
                 setSendError(null);
                 textareaRef.current?.focus();
               }}

@@ -114,7 +114,7 @@ export const buildChatMessageCacheKey = (params: {
   const journalUpdatedAt = params.journalUpdatedAt || "";
   const narrative = params.narrative === undefined ? "" : params.narrative ? "1" : "0";
   return sha256(
-    `chat-message-v4|${params.orgId}|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${journalUpdatedAt}|${narrative}|${params.sessionId}|${params.sessionMessageCount}|${summaryUpdatedAt}|${params.content.trim()}`
+    `chat-message-v5|${params.orgId}|${params.userId}|${params.profileUpdatedAt}|${txUpdatedAt}|${journalUpdatedAt}|${narrative}|${params.sessionId}|${params.sessionMessageCount}|${summaryUpdatedAt}|${params.content.trim()}`
   );
 };
 

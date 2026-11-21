@@ -436,20 +436,22 @@ const normalizeProcessResponse = (data: any, requestId: string): AiCoreProcessRe
     : [];
 
   // Normalize usage data
+  const readCount = (value: unknown) =>
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
   const usageRaw = data?.usage;
+  const inputTokens = readCount(usageRaw?.tokens_in);
+  const outputTokens = readCount(usageRaw?.tokens_out);
+  const totalTokens = readCount(usageRaw?.total_tokens);
+  const validCost = typeof usageRaw?.cost_usd === "number" && Number.isFinite(usageRaw.cost_usd) && usageRaw.cost_usd >= 0;
   const usage =
-    usageRaw && typeof usageRaw === "object" && !Array.isArray(usageRaw)
+    inputTokens != null && outputTokens != null && Number.isSafeInteger(inputTokens + outputTokens)
       ? {
-          tokens_in: Math.max(0, Number((usageRaw as any).tokens_in || 0)),
-          tokens_out: Math.max(0, Number((usageRaw as any).tokens_out || 0)),
-          total_tokens: Number.isFinite(Number((usageRaw as any).total_tokens))
-            ? Math.max(0, Number((usageRaw as any).total_tokens))
-            : undefined,
-          cost_usd: Number.isFinite(Number((usageRaw as any).cost_usd))
-            ? Math.max(0, Number((usageRaw as any).cost_usd))
-            : undefined,
-          models: Array.isArray((usageRaw as any).models)
-            ? (usageRaw as any).models.map((m: unknown) => String(m))
+          tokens_in: inputTokens,
+          tokens_out: outputTokens,
+          total_tokens: Math.max(totalTokens ?? 0, inputTokens + outputTokens),
+          cost_usd: validCost ? usageRaw.cost_usd : undefined,
+          models: Array.isArray(usageRaw.models)
+            ? usageRaw.models.filter((model: unknown): model is string => typeof model === "string")
             : undefined,
         }
       : undefined;
@@ -861,7 +863,7 @@ const checkAiCoreHealth = async (env: Env, requestId: string): Promise<boolean> 
  * FLOW:
  * 1. Acquire a concurrency slot (prevents overwhelming the AI service)
  * 2. Check circuit breaker -- if open, return fallback immediately
- * 3. Check service health -- if unhealthy, mark failure and return fallback
+ * 3. Check service health for requests that use the heuristic fallback
  * 4. POST to /api/agents/process -- the main AI orchestration endpoint
  * 5. On success: normalize response and return
  * 6. On failure: mark failure, extract error reason, return fallback
@@ -904,10 +906,9 @@ export const processAiCoreRequest = async (
         return fallback("AI core circuit breaker open");
       }
 
-      // STEP 2: Health check -- verifies the AI service is reachable
-      // Uses cached result to avoid redundant network calls
-      const healthy = await checkAiCoreHealth(env, requestId);
-      if (!healthy) {
+      // The chat POST already uses a circuit breaker, a timeout and overloaded responses.
+      // A separate preflight can reject a healthy chat worker before it sees the request.
+      if (!payload.options?.conversation_mode && !(await checkAiCoreHealth(env, requestId))) {
         markFailure(env);
         const durationMs = Date.now() - startedAt;
         svcLog.warn({ ...logCtx, reason: "health_check_failed", lastHealthError, duration_ms: durationMs }, "AI Core request failed: health check");
@@ -1017,8 +1018,7 @@ export const streamAiCoreRequest = async (
     throw new Error("AI core circuit breaker open");
   }
 
-  const healthy = await checkAiCoreHealth(env, requestId);
-  if (!healthy) {
+  if (!payload.options?.conversation_mode && !(await checkAiCoreHealth(env, requestId))) {
     markFailure(env);
     const durationMs = Date.now() - startedAt;
     svcLog.warn({ ...logCtx, reason: "health_check_failed", duration_ms: durationMs }, "AI Core stream failed: health check");

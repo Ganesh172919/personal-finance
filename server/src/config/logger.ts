@@ -22,6 +22,7 @@ import { createRequire } from "node:module";
 import pino from "pino"; // Fast JSON logger
 import pinoHttp from "pino-http"; // HTTP request/response logging middleware
 import type { Request } from "express"; // Express types
+import { safeHttpPath } from "../observability/httpPath";
 
 // Flag to check if running in test environment
 const isTest = process.env.NODE_ENV === "test";
@@ -105,6 +106,9 @@ export const createRequestLogger = (req: Request): pino.Logger => {
 // Automatically derives log severity levels from response status codes and records request context.
 export const httpLogger = pinoHttp({
   logger, // Use the application logger
+  serializers: {
+    req: req => ({ id: req.id, method: req.method, url: safeHttpPath(req.url || "/") }),
+  },
   genReqId: req => (req as any).requestId, // Reuse the existing requestId
   customProps: req => ({
     requestId: (req as any).requestId, // Request ID for tracing

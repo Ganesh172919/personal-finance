@@ -153,6 +153,7 @@ describe("chat v1 API", () => {
       analysis_type: "public_web_research", agent: "public_web_research", agents_involved: ["public_web_research"],
       detailed_analysis: {}, insights: [], workflow_trace: [], fallback_used: false,
       llm_call_count: 1, request_id: "public-research-test",
+      usage: { tokens_in: 120, tokens_out: 38, total_tokens: 158, cost_usd: 0.001, models: ["test-model"] },
     });
     const response = await ask("Search the web for public school events").expect(200);
     expect(core.mock.calls[0]?.[0]).toEqual({
@@ -161,6 +162,11 @@ describe("chat v1 API", () => {
     });
     expect(response.body.assistantMessage.metadata.analysisType).toBe("public_web_research");
     expect(response.body.assistantMessage.metadata.cacheHit).toBe(false);
+    const tokenUsage = { tokens_in: 120, tokens_out: 38, total_tokens: 158 };
+    expect(response.body.assistantMessage.metadata.tokenUsage).toEqual(tokenUsage);
+    const history = await request(app).get(`/api/chat/sessions/${created.body.id}/messages`)
+      .set("Cookie", headers).expect(200);
+    expect(history.body.messages.at(-1).metadata.tokenUsage).toEqual(tokenUsage);
   });
 
   it("answers a current-month spending question from the caller’s ledger without AI Core", async () => {
@@ -187,6 +193,12 @@ describe("chat v1 API", () => {
     expect(response.body.assistantMessage.content).toContain("You spent **$7.00**");
     expect(response.body.assistantMessage.content).toContain("Food & Dining");
     expect(response.body.assistantMessage.metadata.llmCallCount).toBe(0);
+    const unitReply = await request(app).post(url)
+      .set("Cookie", headers).set("X-CSRF-Token", csrfToken)
+      .send({ content: "How much did I spend this month? Then convert that exact amount to cents and give the result in the second sentence." })
+      .expect(200);
+    expect(unitReply.body.assistantMessage.content).toMatch(/\*\*\$7\.00\*\*.*\. That is \*\*700 cents\*\*\./);
+    expect(unitReply.body.assistantMessage.metadata.llmCallCount).toBe(0);
     const previous = await request(app).post(url)
       .set("Cookie", headers).set("X-CSRF-Token", csrfToken)
       .send({ content: "What was my total spending last month?" }).expect(200);

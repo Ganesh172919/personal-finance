@@ -123,7 +123,21 @@ export const notFoundHandler = (req: Request, res: Response) => {
 export const errorHandler = (err: unknown, req: Request, res: Response, _next: NextFunction) => {
   // Skip if headers already sent (response already started)
   if (res.headersSent) {
+    _next(err);
     return;
+  }
+
+  // Body-parser errors carry the submitted body. Return metadata only.
+  if (err && typeof err === "object" && "type" in err) {
+    const parseFailed = err.type === "entity.parse.failed";
+    if (parseFailed || err.type === "entity.too.large") {
+      sendErrorResponse(res, parseFailed ? 400 : 413, {
+        message: parseFailed ? "Invalid request body" : "Request body is too large",
+        code: parseFailed ? "INVALID_REQUEST_BODY" : "REQUEST_BODY_TOO_LARGE",
+        requestId: req.requestId,
+      });
+      return;
+    }
   }
 
   // Handle custom HTTP errors

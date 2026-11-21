@@ -196,6 +196,12 @@ jobs:
         run: |
           docker compose -f compose.yaml -f loadtest/compose.loadtest.yaml up -d --build --wait --wait-timeout 300
 
+      - name: Verify headers on a direct SPA route
+        run: |
+          headers=$(curl --fail --silent --show-error --dump-header - --output /dev/null http://127.0.0.1:8080/chat/local)
+          printf '%s\n' "$headers" | tr -d '\r' | grep -ix 'x-frame-options: DENY'
+          printf '%s\n' "$headers" | tr -d '\r' | grep -ix 'referrer-policy: strict-origin-when-cross-origin'
+
       - uses: grafana/setup-k6-action@v1
 
       - name: k6 smoke

@@ -89,6 +89,7 @@ import { useEffect, useRef, useState } from "react";
 import { synthesizeVoice } from "@/lib/api/voice";
 import { prepareChatSpeech } from "@/lib/chatSpeech";
 import ReactMarkdown from "react-markdown";
+import { modelMarkdownComponents } from "@/lib/modelMarkdown";
 import remarkGfm from "remark-gfm";
 import type { IChatAttachment, IChatMessage } from "@/types/chat.types";
 import { Avatar, AvatarFallback } from "@/components/ui/Avatar";
@@ -527,6 +528,7 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
 
   // Custom markdown components for AI responses
   const markdownComponents = {
+    ...modelMarkdownComponents,
     h1: ({ children }: any) => (
       <h3 className="text-xl font-bold text-foreground mb-3 mt-4">{children}</h3>
     ),
@@ -721,7 +723,7 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
           </div>
         ) : null}
 
-        {!isUser && !["financial_education", "chat_assistant", "compound_interest_calculator", "public_web_research"].includes(message.metadata?.analysisType || "") &&
+        {!isUser && !["financial_education", "chat_assistant", "compound_interest_calculator", "flat_rate_calculator", "public_web_research"].includes(message.metadata?.analysisType || "") &&
           (message.metadata?.confidence || message.metadata?.evidence?.length || message.metadata?.suggestedActions?.length) ? (
           <div className="mt-2 w-full space-y-2">
             {message.metadata?.confidence ? (
@@ -898,14 +900,17 @@ export function ChatMessage({ message, onUseDocument, isSending }: ChatMessagePr
 
         {!isUser &&
           ((message.metadata?.workflowTrace && message.metadata.workflowTrace.length > 0) ||
-            (message.metadata?.agentsInvolved && message.metadata.agentsInvolved.length > 0)) && (
+            (message.metadata?.agentsInvolved && message.metadata.agentsInvolved.length > 0) ||
+            message.metadata?.llmCallCount != null || message.metadata?.tokenUsage) && (
           <div className="mt-2 w-full">
             <AgentWorkflowVisualizer
               workflowTrace={message.metadata?.workflowTrace || []}
               agentsInvolved={message.metadata?.agentsInvolved || []}
               fallbackUsed={message.metadata?.fallbackUsed || false}
               recoveredProvider={recoveredFailureCount > 0}
-              llmCallCount={message.metadata?.llmCallCount || 0}
+              llmCallCount={message.metadata?.llmCallCount}
+              tokenUsage={message.metadata?.tokenUsage}
+              cacheHit={message.metadata?.cacheHit}
             />
           </div>
           )}

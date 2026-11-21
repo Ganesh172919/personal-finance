@@ -37,6 +37,7 @@ import { ApiError, createTasksFromPlan, executeToolCall, processAICommand, simul
 import { useToast } from "@/hooks/useToast";
 import { useOrgFormatters } from "@/hooks/useOrgFormatters";
 import ReactMarkdown from "react-markdown";
+import { modelMarkdownComponents } from "@/lib/modelMarkdown";
 import remarkGfm from "remark-gfm";
 import { AgentWorkflowVisualizer } from "@/components/AgentWorkflowVisualizer";
 import { IWorkflowTraceEntry } from "@/types";
@@ -276,6 +277,7 @@ export function AICommandBar({ onCommand }: AICommandBarProps) {
 
   // Custom components for ReactMarkdown to ensure consistent styling
   const markdownComponents = {
+    ...modelMarkdownComponents,
     h1: ({children}: any) => (
       <h1 className="text-xl font-bold text-foreground mb-3 mt-4">{children}</h1>
     ),

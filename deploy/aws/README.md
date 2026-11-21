@@ -1,5 +1,7 @@
 # Deploying FinWise to AWS (ECS Fargate, AWS CLI only)
 
+For a single-host deployment with MongoDB, Redis and HTTPS on AWS, see [FinWise on EC2](EC2.md).
+
 `finwise.yaml` creates: ECS cluster, four Fargate services (web, server, worker, ai-core), an ALB
 (`/api/*` -> server, everything else -> web), Cloud Map DNS (`ai-core.finwise.local`), ElastiCache
 Redis, log group, CPU autoscaling for server and ai-core, and rollback-on-failure deployments.
@@ -24,7 +26,9 @@ JSON
 )"
 ```
 
-All five keys are required; ECS fails task start if one is missing.
+The default Gemini deployment requires the five keys shown. For Groq, set `LLM_PROVIDER=groq` and provide `GROQ_API_KEY` in place of `GEMINI_API_KEYS`. Set `LLM_MODEL` to override the selected provider's default.
+
+For Bharat Voice and chat dictation, set `ENABLE_GNANI_SPEECH=true` and add `GNANI_API_KEY` to the same secret. The gateway receives the key when speech is enabled.
 
 ### Optional: Google sign-in
 
@@ -51,11 +55,9 @@ export ENABLE_GOOGLE_AUTH=true   # optional, see "Optional: Google sign-in" abov
 deploy/aws/deploy.sh
 ```
 
-The script creates ECR repos, builds and pushes `web`, `server`, `ai-core` tagged with the git SHA,
-and runs `aws cloudformation deploy`. Point your DNS at the printed `AlbDnsName`.
+The script creates ECR repositories and pushes `web`, `server`, and `ai-core` with one release tag. The default tag combines the Git SHA and UTC timestamp. Keep that tag and the provider settings with the release record. Point DNS at the reported `AlbDnsName`.
 
-Rollback: re-run with `IMAGE_TAG=<previous sha>` (images are immutable per SHA); failed deployments
-roll back automatically via the ECS deployment circuit breaker.
+To redeploy a previous release, run `DEPLOY_EXISTING_IMAGES=true IMAGE_TAG=<previous release tag> deploy/aws/deploy.sh` with its original configuration. The script verifies that all three images exist and deploys those tags without rebuilding or pushing. ECS also rolls back failed task deployments through its deployment circuit breaker.
 
 ## 3. Capacity and limits to know about
 

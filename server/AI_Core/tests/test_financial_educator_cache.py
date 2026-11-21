@@ -46,6 +46,26 @@ def test_hypothetical_compound_interest_and_rate_follow_up_use_the_calculator(mo
             assert f"**{interest}** in total interest" in data["final_output"]
 
 
+def test_compound_interest_question_with_formula_requirements_uses_chat(monkeypatch):
+    example = "Explain compound interest using a hypothetical example of 1,000 rupees at 10% per year for 2 years."
+    question = example + " Then give the general formula in terms of P, r, and t and define each variable."
+    answer = "₹1,210. A = P(1 + r)^t, where P is principal, r is the annual rate, and t is the number of years."
+
+    def respond(_self, prompt, _history, _document_context):
+        assert prompt == question
+        return {"response": answer, "fallback_used": False}
+
+    monkeypatch.setattr(FinancialEducatorAgent, "answer_chat", respond)
+    with TestClient(app) as client:
+        response = client.post("/api/agents/process", json={
+            "user_input": question,
+            "options": {"conversation_mode": True},
+        })
+    assert response.status_code == 200
+    assert response.json()["analysis_type"] == "chat_assistant"
+    assert response.json()["final_output"] == answer
+
+
 def test_financial_educator_never_reuses_another_users_concept_answer(monkeypatch):
     agent = FinancialEducatorAgent()
     prompts = []

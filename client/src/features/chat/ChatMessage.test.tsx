@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { ChatMessage } from "./ChatMessage";
 import { synthesizeVoice } from "@/lib/api/voice";
+import type { IChatMessage } from "@/types/chat.types";
 
 const toast = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api/voice", () => ({ synthesizeVoice: vi.fn() }));
@@ -14,15 +15,38 @@ vi.mock("@/hooks/useOrgFormatters", () => ({ useOrgFormatters: () => ({
 const content = "Saved USD 25.25 toward USD 1250.50. Source: page 1.";
 const clients: QueryClient[] = [];
 const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
-function renderMessage(writeText: ReturnType<typeof vi.fn>) {
+function renderMessage(writeText: ReturnType<typeof vi.fn>, overrides: Partial<IChatMessage> = {}) {
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
   const client = new QueryClient(); clients.push(client);
-  render(<QueryClientProvider client={client}><ChatMessage message={{ id: "answer", sessionId: "chat", role: "assistant", content, createdAt: "2026-11-06T00:00:00Z" }} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><ChatMessage message={{ id: "answer", sessionId: "chat", role: "assistant", content, createdAt: "2026-11-06T00:00:00Z", ...overrides }} /></QueryClientProvider>);
 }
 afterEach(() => {
   cleanup(); clients.splice(0).forEach(client => client.clear()); vi.clearAllMocks();
   if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
   else Reflect.deleteProperty(navigator, "clipboard");
+});
+
+it("shows input, output and total tokens on the assistant reply", () => {
+  renderMessage(vi.fn(), { metadata: { llmCallCount: 1, tokenUsage: { tokens_in: 300, tokens_out: 56, total_tokens: 356 } } });
+  expect(screen.getByText("Tokens: 356 (300 input · 56 output)")).toBeInTheDocument();
+});
+
+it("shows zero new tokens for a cached reply even when its metadata has historical usage", () => {
+  renderMessage(vi.fn(), { metadata: { llmCallCount: 1, cacheHit: true, tokenUsage: { tokens_in: 300, tokens_out: 56, total_tokens: 356 } } });
+  expect(screen.getByText("Tokens: 0")).toBeInTheDocument();
+  expect(screen.getByText("Cached reply")).toBeInTheDocument();
+});
+
+it("shows unavailable usage when a model call has no measured counts", () => {
+  renderMessage(vi.fn(), { metadata: { llmCallCount: 1 } });
+  expect(screen.getByText("Token usage unavailable")).toBeInTheDocument();
+});
+
+it("does not render images from model Markdown and omits the referrer on links", () => {
+  renderMessage(vi.fn(), { content: "![Chart description](https://example.com/chart.png)\n\n[Source](https://example.org/notes)" });
+  expect(screen.queryByRole("img", { name: "Chart description" })).not.toBeInTheDocument();
+  expect(screen.getByText("Chart description")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Source" })).toHaveAttribute("referrerpolicy", "no-referrer");
 });
 
 it("waits for the actual clipboard write before confirming and retains the exact quote", async () => {

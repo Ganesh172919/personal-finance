@@ -1,7 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
-import { createClientErrorRouter } from "./clientErrors";
+import { createClientErrorRouter } from "../routes/clientErrors";
 
 const diagnostic = {
   source: "render",

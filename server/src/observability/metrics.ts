@@ -39,6 +39,7 @@ import type { RequestHandler } from "express";
 import { Counter, Gauge, Histogram } from "prom-client";
 import { getEnv } from "../config/env";
 import { registry } from "./registry"; // Shared registry (also used by platformMetrics)
+import { safeHttpPath } from "./httpPath";
 import "./platformMetrics"; // Registers infrastructure metrics (SSE, pool, DLQ, cache layers, ...)
 export * from "./platformMetrics";
 
@@ -61,7 +62,7 @@ export * from "./platformMetrics";
 // Restricts metric label cardinality to prevent Prometheus time-series explosion.
 const normalizePath = (path: string) => {
   // Remove query string
-  const withoutQuery = path.split("?")[0] || "/";
+  const withoutQuery = safeHttpPath(path);
   return withoutQuery
     // Replace MongoDB ObjectIds (24 hex chars) with :id
     .replace(/\/[a-f\d]{24}(?=\/|$)/gi, "/:id")

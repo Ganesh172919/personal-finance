@@ -17,6 +17,7 @@
 
 import type { Plan, ToolCall } from "@/types/ai.types";
 import type { EvidenceItem } from "@/types/evidence.types";
+import type { IWorkflowTraceEntry } from "@/types";
 
 // Models binary and document attachments associated with chat messages.
 // Points to underlying workspace file records, names, mime types, and byte sizes.
@@ -80,15 +81,10 @@ export interface IChatMessageMetadata {
     entity_id?: string;
   }>;
   linkedEntityIds?: Record<string, string[]>;
-  workflowTrace?: Array<{
-    agent: string;
-    startedAt: string;
-    endedAt: string;
-    status: string;
-    error?: string;
-  }>;
+  workflowTrace?: IWorkflowTraceEntry[];
   fallbackUsed?: boolean;
   llmCallCount?: number;
+  tokenUsage?: { tokens_in: number; tokens_out: number; total_tokens: number };
   requestId?: string;
   actionLinkId?: string;
   linkedTaskIds?: string[];

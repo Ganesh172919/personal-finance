@@ -5,7 +5,7 @@
 # the root .env (git-ignored) or your orchestrator's env injection (ECS secrets, k8s Secret
 # env), see deploy/aws/README.md and deploy/k8s/.
 # Overrides: SERVER_REPLICAS, AI_CORE_REPLICAS, AI_CORE_MAX_INFLIGHT, METRICS_ENABLED,
-# METRICS_TOKEN, LLM_PROVIDER (mock for CI), LLM_MOCK_LATENCY_MS.
+# METRICS_TOKEN, LLM_PROVIDER (mock for CI), LLM_MODEL, LLM_MOCK_LATENCY_MS.
 services:
   mongo:
     image: mongo:7.0
@@ -129,18 +129,25 @@ services:
       # LLM_PROVIDER=mock serves a deterministic canned reply with no network call or key
       # (CI smoke test, load tests). LLM_MOCK_LATENCY_MS simulates provider latency.
       LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
-      LLM_MODEL: gemini-3.5-flash-lite
+      LLM_MODEL: ${LLM_MODEL:-}
       LLM_MOCK_LATENCY_MS: ${LLM_MOCK_LATENCY_MS:-0}
       # Optional Bearer token for GET /metrics on AI Core (unset = endpoint stays closed).
       AI_CORE_METRICS_TOKEN: ${AI_CORE_METRICS_TOKEN:-}
       # AI Core state (sessions, checkpoints, memories) lives in MongoDB; the sqlite
       # path + ai-memory volume are only used when AI_CORE_STATE_BACKEND=sqlite (dev).
       AI_CORE_STATE_BACKEND: mongo
+      AI_CORE_READY_REQUIRES_STATE: "true"
       AI_CORE_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       FINWISE_MEMORY_DB_PATH: /app/data/memory.sqlite3
       REDIS_URL: redis://redis:6379
       AI_CORE_MAX_INFLIGHT: ${AI_CORE_MAX_INFLIGHT:-6}
       LLM_CACHE_ENABLED: "1"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=3)"]
+      interval: 15s
+      timeout: 4s
+      start_period: 60s
+      retries: 5
     depends_on:
       mongo:
         condition: service_healthy

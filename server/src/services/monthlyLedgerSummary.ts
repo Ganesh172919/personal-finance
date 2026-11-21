@@ -46,6 +46,15 @@ export function getMonthlySpendingPeriod(input: string): SpendingPeriod | null {
   return period === "last month" || period === "the previous month" ? "previous" : "current";
 }
 
+export function getMonthlySpendingUnitRequest(input: string) {
+  const match = input.trim().match(
+    /^([^?!.]+)[?!.]\s+(?:then\s+)?(?:convert|express|give)\s+(?:(?:that|the)\s+(?:exact\s+)?(?:amount|total)|it)\s+(?:to|in|as)\s+(cents|paise|pence)(?:\s+and\s+give\s+the\s+result\s+in\s+the\s+second\s+sentence)?[?.!]*$/i,
+  );
+  if (!match) return null;
+  const period = getMonthlySpendingPeriod(match[1]);
+  return period ? { period, unit: match[2].toLowerCase() } : null;
+}
+
 function relativeSpendingPeriod(input: string): SpendingPeriod | null {
   const question = input.trim().replace(/[?.!]+$/, "").replace(/\s+/g, " ");
   const month = question.match(/^(?:(?:and |(?:what|how) about )?(?:for |in )?)(this month|last month|the current month|the previous month)$/i)?.[1];
@@ -62,7 +71,7 @@ export function getMonthlySpendingFollowUp(
   const recentQuestions = history.filter(({ role }) => role === "user").slice(-3);
   for (const question of recentQuestions.reverse()) {
     if (question.hasAttachments) break;
-    if (getMonthlySpendingPeriod(question.content)) return period;
+    if (getMonthlySpendingPeriod(question.content) || getMonthlySpendingUnitRequest(question.content)) return period;
     if (!relativeSpendingPeriod(question.content)) break;
   }
   return null;

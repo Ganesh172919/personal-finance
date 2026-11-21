@@ -1,5 +1,5 @@
 import request from "supertest";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import mongoose from "mongoose";
 
 import { createApp } from "../app";
@@ -10,6 +10,19 @@ import OrganizationModel from "../models/organizationModel";
 import { ensurePersonalOrgForUser } from "../services/orgService";
 import { createAuthedUser } from "./authHelpers";
 import { clearTestDb, startTestDb, stopTestDb } from "./testDb";
+
+vi.mock("../services/aiCoreClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/aiCoreClient")>();
+  return {
+    ...actual,
+    processAiCoreRequest: vi.fn(async (_payload: unknown, requestId: string) => ({
+      success: true, conversation_mode: true, final_output: "Synthetic workspace summary.",
+      agent: "chat_assistant", analysis_type: "chat_assistant", agents_involved: ["chat_assistant"],
+      insights: [], detailed_analysis: {}, workflow_trace: [], fallback_used: false,
+      llm_call_count: 1, request_id: requestId,
+    })),
+  };
+});
 
 describe("org isolation across key endpoints", () => {
   const app = createApp();

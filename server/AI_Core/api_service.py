@@ -1168,18 +1168,22 @@ async def health_check(request: Request):
 async def readiness_check():
     """Readiness probe: 200 only when the workflow is built and we are not draining."""
     gate = get_work_gate().stats()
+    requires_state = os.getenv("AI_CORE_READY_REQUIRES_STATE", "").strip().lower() in {"1", "true", "yes", "on"}
     ready = globals().get("workflow") is not None and not _DRAINING
-    body = {"ready": ready, "draining": _DRAINING, **gate}
     try:
         from memory.state_store import state_backend_health
 
         state = await offload(state_backend_health)
-        body["state_backend"] = state
-        if not state.get("ok") and os.getenv("AI_CORE_READY_REQUIRES_STATE", "").strip().lower() in {"1", "true", "yes", "on"}:
-            ready = False
-            body["ready"] = False
-    except Exception as exc:
-        body["state_backend"] = {"ok": False, "error": str(exc)[:200]}
+    except Exception:
+        state = {"ok": False}
+    if requires_state and not state.get("ok"):
+        ready = False
+    body = {
+        "ready": ready,
+        "draining": _DRAINING,
+        **gate,
+        "state_backend": {key: state[key] for key in ("backend", "ok") if key in state},
+    }
     return JSONResponse(status_code=200 if ready else 503, content=body)
 
 
@@ -2574,7 +2578,7 @@ def _process_financial_request_sync(
         )
 
         # Build structured plan (always present)
-        direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator", "public_web_research", "document_draft"}
+        direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator", "flat_rate_calculator", "public_web_research", "document_draft"}
         if direct_answer:
             plan = Plan(executive_summary="")
             action_type = None
@@ -3262,7 +3266,7 @@ async def process_financial_request_stream(request: ProcessRequest, http_request
                 str(analysis_raw).split(".")[-1].lower() if hasattr(analysis_raw, "name") else str(analysis_raw).lower()
             )
 
-            direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator", "public_web_research", "document_draft"}
+            direct_answer = analysis_type in {"financial_education", "chat_assistant", "compound_interest_calculator", "flat_rate_calculator", "public_web_research", "document_draft"}
             if direct_answer:
                 plan = Plan(executive_summary="")
                 action_type = None

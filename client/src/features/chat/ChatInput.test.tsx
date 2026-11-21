@@ -22,6 +22,21 @@ beforeEach(() => { vi.clearAllMocks(); });
 afterEach(cleanup);
 
 describe("chat composer recovery", () => {
+  it("keeps the search mode selected when the draft is replaced", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    render(<ChatInput onSend={onSend} isSending={false} />);
+    const search = screen.getByRole("button", { name: "Search web" });
+    fireEvent.click(search);
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+    typeMessage("public transport data");
+    typeMessage("public university dates");
+    expect(search).toHaveAttribute("aria-pressed", "true");
+    send();
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith(
+      "Search the web for public university dates", { narrative: false, fileIds: [] },
+    ));
+  });
+
   it("keeps a public web search separate from attachments and clears the marker after sending", async () => {
     const onSend = vi.fn().mockResolvedValue(true);
     const { rerender } = render(<ChatInput onSend={onSend} isSending={false} workspaceAttachments={[savedFile]} />);

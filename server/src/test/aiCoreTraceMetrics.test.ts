@@ -13,6 +13,20 @@ describe("AI Core trace metrics contract", () => {
     http.get.mockResolvedValue({ data: { status: "ok" } });
   });
 
+  it("sends conversational turns directly to the work endpoint", async () => {
+    http.get.mockClear();
+    http.post.mockResolvedValueOnce({ data: {
+      success: true, conversation_mode: true, analysis_type: "chat_assistant", final_output: "Live answer",
+    } });
+    const result = await processAiCoreRequest({
+      user_input: "Compare these options",
+      user_profile: null,
+      options: { conversation_mode: true },
+    }, "direct-chat");
+    expect(result.final_output).toBe("Live answer");
+    expect(http.get).not.toHaveBeenCalled();
+  });
+
   it("preserves an explicit PDF page citation from Python", async () => {
     const citation = { id: "retrieval:qa", type: "retrieval_chunk", label: "loan.pdf · page 4",
       snippet: "Prepayment fee USD 25", entity_id: "507f1f77bcf86cd799439011", page_number: 4 };
@@ -50,6 +64,17 @@ describe("AI Core trace metrics contract", () => {
       agent: "budget_planner", latencyMs: 0, llmCalls: 0, inputTokens: 0, outputTokens: 5,
       tokenCount: 0, fallbackUsed: false, cacheHit: false,
     });
+  });
+
+  it("derives a coherent total and ignores malformed provider counters", async () => {
+    const ask = (usage: Record<string, unknown>) => {
+      http.post.mockResolvedValueOnce({ data: { success: true, final_output: "Ready", usage } });
+      return processAiCoreRequest({ user_input: "Explain a formula", user_profile: null }, "usage-contract");
+    };
+    const measured = await ask({ tokens_in: 321, tokens_out: 67, total_tokens: 4, cost_usd: -1 });
+    expect(measured.usage).toMatchObject({ tokens_in: 321, tokens_out: 67, total_tokens: 388, cost_usd: undefined });
+    const invalid = await ask({ tokens_in: "321", tokens_out: -1, total_tokens: 320 });
+    expect(invalid.usage).toBeUndefined();
   });
 
   it("authenticates requests when AI Core has internal token protection enabled", async () => {

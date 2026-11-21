@@ -104,6 +104,7 @@ import { Button } from "@/components/ui/Button";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { processAICommand } from "@/lib/api/ai";
 import ReactMarkdown from "react-markdown";
+import { modelMarkdownComponents } from "@/lib/modelMarkdown";
 import remarkGfm from "remark-gfm";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppConfig } from "@/hooks/useAppConfig";
@@ -263,10 +264,10 @@ export function FinancialCopilot() {
 function CopilotResponse({ content }: { content: string }) {
   const parts = splitAnswerAndPlan(content);
   return <div className="prose prose-sm dark:prose-invert max-w-none break-words [&>*]:text-foreground [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_p]:my-1 [&_ul]:my-1 [&_li]:text-xs [&_p]:text-sm">
-    <ReactMarkdown remarkPlugins={[remarkGfm]}>{parts.answer}</ReactMarkdown>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={modelMarkdownComponents}>{parts.answer}</ReactMarkdown>
     {parts.plan ? <details className="mt-3 rounded-md border border-border p-2">
       <summary className="cursor-pointer text-xs font-medium">View financial plan</summary>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{parts.plan}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={modelMarkdownComponents}>{parts.plan}</ReactMarkdown>
     </details> : null}
   </div>;
 }

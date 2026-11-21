@@ -84,6 +84,7 @@
 
 import type { Request, Response, NextFunction } from "express";
 import { createRequestLogger } from "../config/logger";
+import { safeHttpPath } from "../observability/httpPath";
 
 /** Threshold in milliseconds for marking a request as slow */
 const SLOW_REQUEST_THRESHOLD_MS = 2000;
@@ -114,7 +115,7 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
       req.log.warn(
         {
           method: req.method,
-          path: req.originalUrl || req.url,
+          path: safeHttpPath(req.originalUrl || req.url),
           statusCode: res.statusCode,
           duration_ms: Math.round(durationMs * 100) / 100,
           slow: true,

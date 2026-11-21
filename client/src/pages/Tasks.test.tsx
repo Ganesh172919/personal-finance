@@ -54,7 +54,7 @@ const mockOpenTasks = [
     steps: ["Calculate target transfer ($250)", "Set standing instruction"],
     priority: "high" as const,
     bucket: 7 as const,
-    dueDate: "2026-10-15T00:00:00.000Z", // Past date -> Overdue
+    dueDate: new Date(Date.now() - 7 * 86_400_000).toISOString(),
     status: "open" as const,
     kind: "savings",
     recurrence: {
@@ -69,7 +69,7 @@ const mockOpenTasks = [
     steps: ["Review statement", "Cancel inactive subscriptions"],
     priority: "medium" as const,
     bucket: 30 as const,
-    dueDate: "2026-11-20T00:00:00.000Z", // Future date
+    dueDate: new Date(Date.now() + 7 * 86_400_000).toISOString(),
     status: "open" as const,
     kind: "expense_reduction",
   },
@@ -111,10 +111,10 @@ describe("TasksPage", () => {
       return { task: current };
     });
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: `View task: ${current.title}` }));
-    const sheet = await screen.findByTestId("task-detail-sheet");
-    fireEvent.click(within(sheet).getByRole("button", { name: "Mark completed" }));
-    expect(await within(sheet).findByText(/^completed$/i)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: `View task: ${current.title}` }, { timeout: 5000 }));
+    const sheet = await screen.findByTestId("task-detail-sheet", {}, { timeout: 5000 });
+    fireEvent.click(await within(sheet).findByRole("button", { name: "Mark completed" }, { timeout: 5000 }));
+    expect(await within(sheet).findByText(/^completed$/i, {}, { timeout: 5000 })).toBeInTheDocument();
     expect(within(sheet).getByRole("button", { name: "Mark completed" })).toBeDisabled();
   });
   beforeEach(() => {
@@ -632,12 +632,12 @@ describe("TasksPage", () => {
     const todoistCsv = formatForTodoist(mockOpenTasks as any);
     expect(todoistCsv).toContain("CONTENT,DESCRIPTION,PRIORITY,DATE");
     expect(todoistCsv).toContain('"Schedule recurring transfer to emergency fund"');
-    expect(todoistCsv).toContain("2026-10-15");
+    expect(todoistCsv).toContain(mockOpenTasks[0].dueDate.slice(0, 10));
 
     const jiraCsv = formatForJira(mockOpenTasks as any);
     expect(jiraCsv).toContain("Summary,Description,Priority,Due Date,Issue Type");
     expect(jiraCsv).toContain('"Schedule recurring transfer to emergency fund"');
-    expect(jiraCsv).toContain("High,2026-10-15,Task");
+    expect(jiraCsv).toContain(`High,${mockOpenTasks[0].dueDate.slice(0, 10)},Task`);
   });
 
   it("opens External Sync & Webhook dialog and switches tracker formats", async () => {

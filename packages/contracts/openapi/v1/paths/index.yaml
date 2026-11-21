@@ -198,6 +198,8 @@
 /api/chat/sessions/{sessionId}/messages:
   get:
   post:
+/api/chat/sessions/{sessionId}/messages/{messageId}/download:
+  get:
 /api/command-center:
   get:
 /api/comments:
@@ -678,6 +680,8 @@
 /api/v1/chat/sessions/{sessionId}/messages:
   get:
   post:
+/api/v1/chat/sessions/{sessionId}/messages/{messageId}/download:
+  get:
 /api/v1/command-center:
   get:
 /api/v1/comments:

@@ -160,6 +160,7 @@ export interface IChatMessageMetadata {
 
   /** Number of LLM API calls made to generate this response (higher for complex multi-step tasks) */
   llmCallCount?: number;
+  tokenUsage?: { tokens_in: number; tokens_out: number; total_tokens: number };
 
   /** Total time in milliseconds the AI core service spent processing this message */
   aiCoreDurationMs?: number;
@@ -351,6 +352,11 @@ const chatMessageSchema = new Schema<IChatMessageDocument>(
       activeModel: String,
       recoveredFailureCount: Number,
       llmCallCount: Number,  // Number of LLM API calls made
+      tokenUsage: {
+        tokens_in: { type: Number, min: 0, validate: Number.isSafeInteger },
+        tokens_out: { type: Number, min: 0, validate: Number.isSafeInteger },
+        total_tokens: { type: Number, min: 0, validate: Number.isSafeInteger },
+      },
       aiCoreDurationMs: Number, // Total AI processing time in ms
       cacheHit: Boolean,     // Whether response was served from cache
 

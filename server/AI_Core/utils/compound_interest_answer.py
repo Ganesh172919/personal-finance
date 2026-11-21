@@ -4,14 +4,15 @@ import re
 
 from tools.financial_calculators import FinancialCalculators
 
-
 _EXAMPLE = re.compile(
-    r"\bcompound interest\b[^\n]{0,100}?\b(?:a hypothetical|hypothetical example of)\s+"
+    r"(?:answer briefly[.!]\s+)?(?:please\s+)?(?:(?:explain|calculate|illustrate)\s+)?"
+    r"compound interest\s+(?:(?:using|with|on|for)\s+)?(?:a hypothetical(?: example of)?|hypothetical example of)\s+"
     r"(?:(?P<prefix>₹|\$|INR\s+|USD\s+))?(?P<principal>\d[\d,]*(?:\.\d{1,2})?)"
     r"(?:\s*(?P<suffix>rupees|dollars|INR|USD))?"
     r"\s+(?:earns?|at)\s+(?P<rate>\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent)"
     r"\s+(?:per year|annually)(?:\s+compounded\s+(?P<frequency>annually|monthly|quarterly|daily))?"
-    r"\s+for\s+(?P<years>\d{1,2}|one|two|three|four|five)\s+years?\b",
+    r"\s+for\s+(?P<years>\d{1,2}|one|two|three|four|five)\s+years?"
+    r"(?:\s+in one sentence)?[?.!]*",
     re.I,
 )
 _CHANGE_YEARS = re.compile(r"^(?:(?:and )?(?:what|how) about |and )after (\d{1,2}|one|two|three|four|five) years?[?.!]*$", re.I)
@@ -21,18 +22,10 @@ _FREQUENCY = {"annually": "annual", "monthly": "monthly", "quarterly": "quarterl
 
 
 def compound_interest_answer(question: str, earlier: list[str]) -> str | None:
-    original = earlier[0] if earlier else question
-    match = _EXAMPLE.search(original)
+    original = (earlier[0] if earlier else question).strip()
+    # Use the calculator only when it can answer the entire turn.
+    match = _EXAMPLE.fullmatch(original)
     if not match or not original.replace("₹", "").isascii():
-        return None
-    # Leave cases with extra financial inputs or conditions to the general educator.
-    other_input = original[:match.start()] + original[match.end():]
-    if re.search(
-        r"\d|\b(?:tax|fees?|deposits?|withdrawals?|contributions?|simple interest|compounded|compare|translate|"
-        r"in (?:hindi|telugu|tamil|kannada|malayalam|bengali|marathi|gujarati|punjabi|odia))\b",
-        other_input,
-        re.I,
-    ):
         return None
     currencies = {
         "₹" if marker.strip().lower() in {"₹", "inr", "rupees"} else "$"
