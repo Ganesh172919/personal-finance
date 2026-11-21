@@ -128,7 +128,7 @@ const csvArray = (defaultValue: string) =>
  * Parses the TRUST_PROXY environment variable.
  *
  * Accepts:
- * - Boolean-like values: "1", "true", "yes", "on" (true) or "0", "false", "no", "off" (false)
+ * - Boolean-like values: "true", "yes", "on" (true) or "false", "no", "off" (false)
  * - Non-negative integers (number of proxies to trust)
  *
  * @param {string | undefined} rawValue - Raw TRUST_PROXY value
@@ -142,11 +142,11 @@ const parseTrustProxy = (rawValue: string | undefined) => {
 
   const normalized = rawValue.trim().toLowerCase();
   // Boolean true values
-  if (["1", "true", "yes", "on"].includes(normalized)) {
+  if (["true", "yes", "on"].includes(normalized)) {
     return true;
   }
   // Boolean false values
-  if (["0", "false", "no", "off"].includes(normalized)) {
+  if (["false", "no", "off"].includes(normalized)) {
     return false;
   }
 

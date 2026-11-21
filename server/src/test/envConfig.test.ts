@@ -6,6 +6,7 @@ const originalClientUrl = process.env.CLIENT_URL;
 const originalCorsOrigins = process.env.CORS_ORIGINS;
 const originalNodeEnv = process.env.NODE_ENV;
 const originalAiCoreToken = process.env.AI_CORE_INTERNAL_TOKEN;
+const originalTrustProxy = process.env.TRUST_PROXY;
 
 afterEach(() => {
   if (originalClientUrl === undefined) {
@@ -25,9 +26,20 @@ afterEach(() => {
 
   if (originalAiCoreToken === undefined) delete process.env.AI_CORE_INTERNAL_TOKEN;
   else process.env.AI_CORE_INTERNAL_TOKEN = originalAiCoreToken;
+
+  if (originalTrustProxy === undefined) delete process.env.TRUST_PROXY;
+  else process.env.TRUST_PROXY = originalTrustProxy;
 });
 
 describe("environment config", () => {
+  it.each([["0", 0], ["1", 1], ["2", 2], ["true", true], ["false", false]])(
+    "parses TRUST_PROXY=%s as %s",
+    (value, expected) => {
+      process.env.TRUST_PROXY = value;
+      expect(getEnv().TRUST_PROXY).toBe(expected);
+    }
+  );
+
   it("treats localhost and 127.0.0.1 as equivalent local origins", () => {
     process.env.CLIENT_URL = "http://localhost:5173";
     process.env.CORS_ORIGINS = "http://localhost:5173";

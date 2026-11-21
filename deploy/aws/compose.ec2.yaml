@@ -2,6 +2,10 @@ services:
   web:
     networks: [default, edge]
 
+  server:
+    environment:
+      TRUST_PROXY: "2" # Caddy and nginx are the two ingress proxies.
+
   caddy:
     image: caddy:2.11.9-alpine
     environment:
