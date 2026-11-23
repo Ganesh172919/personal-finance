@@ -2,12 +2,12 @@
 
 ## Observed status
 
-The latest recorded remote Tests run for `600d509` failed the EC2 HTTPS and k6 Smoke job during the OCR import check.
+The earlier remote Tests run for `600d509` failed the EC2 HTTPS and k6 Smoke job during the OCR import check.
 The error was a `pyclipper` zlib decompression failure in the Linux runtime image.
 Other jobs in that run passed, including client, server, AI Core, lint and Docker builds.
 A candidate commit on the release branch modifies the runtime library loading, adds separate OCR and Mongo smoke checks, and expands release tests.
-Check the latest GitHub Actions run to determine whether that candidate passed validation.
-Do not claim the branch is green or the candidate is deployed without a newer successful run and release verification.
+[Tests run 45105575104](https://github.com/Ganesh172919/personal-finance/actions/runs/45105575104) later passed for `f1ed41a`, including the candidate OCR and release checks. Check the run for the exact SHA you intend to release.
+A passing run does not establish that the candidate is deployed; verify the actual host release separately.
 
 [View the recorded failed run](https://github.com/Ganesh172919/personal-finance/actions/runs/44880286169)
 

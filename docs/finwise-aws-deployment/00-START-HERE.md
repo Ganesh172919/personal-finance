@@ -10,6 +10,16 @@ Snapshot date: 23 November 2026. Configuration can change after this date.
 - [Client test inventory](04-client-test-inventory.md)
 - [Server test inventory](05-server-test-inventory.md)
 - [AI Core test inventory](06-ai-test-inventory.md)
+- [Infrastructure and network operations](07-infrastructure-and-network.md)
+- [Configuration and secrets](08-configuration-and-secrets.md)
+- [GitHub, CI and release procedures](09-release-and-ci.md)
+- [Backup, recovery and incidents](10-backup-recovery-and-incidents.md)
+- [Maintenance checklists](11-maintenance-checklists.md)
+- [EC2 and Compose source snapshot](12-source-snapshot-ec2-and-compose.md)
+- [Release and CI source snapshot](13-source-snapshot-release-and-ci.md)
+- [Images and example configuration snapshot](14-source-snapshot-images-and-environment.md)
+- [Monitoring and load-test snapshot](15-source-snapshot-monitoring-and-load.md)
+- [Alternative ECS and Kubernetes source snapshot](16-source-snapshot-other-hosting-options.md)
 
 The inventory files are a source-code index, not proof that any test passed.
 They intentionally include existing test declarations to make navigation and impact assessment easier.
@@ -27,9 +37,9 @@ A working login page alone does not verify sign-in, data recovery, all third-par
 - The deployed checkout was last recorded at `b70ef81024b57f328477a2420e8dff4117f553fa` on 21 November 2026.
 - The release branch is [codex/aws-deploy](https://github.com/Ganesh172919/personal-finance/tree/codex/aws-deploy).
 - Direct pushes start CI but do not automatically update the EC2 application.
-- The most recent remote run observed while creating these documents failed in EC2 HTTPS and k6 Smoke.
-- Earlier jobs in that run, including client, server, AI tests, lint, and image builds, succeeded.
-- Follow-up commit `73a4111` includes a candidate OCR runtime fix and a release script; it was pushed with these documents, and its resulting CI run must be checked before a release.
+- [Tests run 45105575104](https://github.com/Ganesh172919/personal-finance/actions/runs/45105575104) passed for commit `f1ed41a`, including OCR and release checks.
+- A previous remote run failed in EC2 HTTPS and k6 Smoke. Follow-up commit `73a4111` supplied a candidate OCR runtime fix and release script.
+- Check the CI run for the exact SHA being released; passing CI does not deploy the branch to EC2.
 - `personalfinanceagent.dpdns.org` did not have a public A record when checked on 23 November 2026.
 - Remaining Python dependency advisories and the single-host architecture need further work before claiming full production readiness.
 
