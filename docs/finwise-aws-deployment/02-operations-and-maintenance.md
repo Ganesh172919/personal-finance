@@ -11,8 +11,8 @@ A pull request and branch protection can require review and passing checks befor
 ## Current warning for operators
 
 The last recorded production checkout was a legacy release at `b70ef81`.
-The local worktree has a later unpushed commit with a candidate `deploy/aws/release-ec2.sh` and SHA-tagged Compose overlay.
-That candidate must pass CI and be reviewed before production use. Do not assume it is already on GitHub or on the instance.
+The release branch includes a later commit with a candidate `deploy/aws/release-ec2.sh` and SHA-tagged Compose overlay.
+That candidate must pass CI and be reviewed before production use. It has not been recorded as deployed to the instance.
 The existing local `deploy/aws/PRODUCTION_RUNBOOK.md` describes the candidate procedure, not proof that it has been executed.
 
 ## Before a release

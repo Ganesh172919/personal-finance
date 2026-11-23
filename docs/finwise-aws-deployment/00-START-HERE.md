@@ -29,7 +29,7 @@ A working login page alone does not verify sign-in, data recovery, all third-par
 - Direct pushes start CI but do not automatically update the EC2 application.
 - The most recent remote run observed while creating these documents failed in EC2 HTTPS and k6 Smoke.
 - Earlier jobs in that run, including client, server, AI tests, lint, and image builds, succeeded.
-- A local follow-up commit `73a4111` includes a candidate OCR runtime fix and a release script; it had not been pushed or verified by GitHub Actions at the time of this snapshot.
+- Follow-up commit `73a4111` includes a candidate OCR runtime fix and a release script; it was pushed with these documents, and its resulting CI run must be checked before a release.
 - `personalfinanceagent.dpdns.org` did not have a public A record when checked on 23 November 2026.
 - Remaining Python dependency advisories and the single-host architecture need further work before claiming full production readiness.
 
